@@ -1,0 +1,148 @@
+name: build-apk
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: "Control API base URL compiled into the APK"
+        required: false
+        default: "https://api.gluk.tech"
+  push:
+    branches: [main]
+    paths:
+      - "lib/**"
+      - "test/**"
+      - "pubspec.yaml"
+      - "android_overrides/**"
+      - ".github/workflows/build-apk.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      API_BASE_URL: ${{ github.event.inputs.api_base_url || 'https://api.gluk.tech' }}
+      # The `secrets` context cannot be used in a step-level `if:`, so the
+      # presence check is folded into a plain env flag here.
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.24.5"
+          channel: stable
+          cache: true
+
+      - name: Toolchain versions
+        run: |
+          flutter --version
+          java -version
+
+      # android/ is deliberately not committed: generating it here guarantees the
+      # Gradle / AGP / Kotlin versions always match this exact Flutter SDK.
+      - name: Generate android/ scaffold
+        run: |
+          set -euo pipefail
+          if [ ! -d android ]; then
+            flutter create --platforms=android --org tech.gluk --project-name glukvpn /tmp/scaffold
+            cp -R /tmp/scaffold/android ./android
+          fi
+
+      - name: Apply our Android overrides
+        run: |
+          set -euo pipefail
+          cp android_overrides/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          # wireguard_flutter 0.1.3 predates AGP 8 and declares no `namespace`.
+          cat android_overrides/namespace_patch.gradle >> android/build.gradle
+          # The debug/profile manifests would shadow our permission set.
+          rm -f android/app/src/debug/AndroidManifest.xml
+          rm -f android/app/src/profile/AndroidManifest.xml
+          echo "--- permissions compiled into the app ---"
+          grep -E "uses-permission" android/app/src/main/AndroidManifest.xml
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      # Analysis is informational: lint findings must not block a prototype APK.
+      - name: Analyze
+        run: flutter analyze || true
+
+      # Tests DO block: they cover the WireGuard key handling and JSON contracts.
+      - name: Unit tests
+        run: flutter test
+
+      - name: Build release APK
+        run: |
+          set -euo pipefail
+          flutter build apk --release --dart-define=API_BASE_URL="$API_BASE_URL"
+
+      - name: Sign with the release keystore
+        if: env.HAS_KEYSTORE == 'true'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          echo "Using $BUILD_TOOLS"
+          # The keystore only ever exists in the runner's tmpfs, never in the repo.
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > /tmp/release.jks
+          "$BUILD_TOOLS/zipalign" -p -f 4 \
+            build/app/outputs/flutter-apk/app-release.apk /tmp/glukvpn-aligned.apk
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks /tmp/release.jks \
+            --ks-pass env:KEYSTORE_PASSWORD \
+            --ks-key-alias "$KEY_ALIAS" \
+            --key-pass env:KEY_PASSWORD \
+            --out glukvpn-release.apk \
+            /tmp/glukvpn-aligned.apk
+          "$BUILD_TOOLS/apksigner" verify --print-certs glukvpn-release.apk
+          rm -f /tmp/release.jks /tmp/glukvpn-aligned.apk
+
+      - name: Keep the Flutter-signed APK (no keystore configured)
+        if: env.HAS_KEYSTORE != 'true'
+        run: |
+          set -euo pipefail
+          cp build/app/outputs/flutter-apk/app-release.apk glukvpn-release.apk
+          echo "::warning::ANDROID_KEYSTORE_BASE64 is not set, so this APK is signed with Flutter's debug key. Installable for testing, not for distribution."
+
+      - name: APK fingerprint
+        run: |
+          set -euo pipefail
+          ls -lh glukvpn-release.apk
+          sha256sum glukvpn-release.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: glukvpn-apk
+          path: glukvpn-release.apk
+          if-no-files-found: error
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: GlukVPN APK build ${{ github.run_number }}
+          prerelease: true
+          files: glukvpn-release.apk
+          body: |
+            Prototype build of the GlukVPN Android client.
+
+            * API base URL: `${{ env.API_BASE_URL }}`
+            * Commit: ${{ github.sha }}
+            * Signed with a release keystore: `${{ env.HAS_KEYSTORE }}`

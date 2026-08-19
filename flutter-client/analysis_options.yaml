@@ -1,0 +1,7 @@
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # Secrets (WireGuard private key, tokens) must never reach stdout/logcat.
+    avoid_print: true
+    prefer_final_locals: true

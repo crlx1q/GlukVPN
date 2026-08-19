@@ -1,0 +1,59 @@
+# ============================================================
+# GlukVPN — secrets must NEVER be committed
+# ============================================================
+.env
+.env.*
+!.env.example
+secrets/
+*.key
+*.pem
+*.p12
+*.jks
+*.keystore
+key.properties
+node-secret*
+node_secret*
+wg0.conf
+wg-*.conf
+privatekey
+publickey
+
+# ---- Node / TypeScript ----
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ---- Prisma ----
+control-server/prisma/*.db
+control-server/prisma/*.db-journal
+
+# ---- Flutter / Android ----
+flutter-client/.dart_tool/
+flutter-client/.flutter-plugins
+flutter-client/.flutter-plugins-dependencies
+flutter-client/.packages
+flutter-client/build/
+flutter-client/android/.gradle/
+flutter-client/android/local.properties
+flutter-client/android/app/release/
+flutter-client/ios/Pods/
+*.apk
+*.aab
+*.jks.base64
+
+# ---- OS / editors ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ---- Runtime ----
+logs/
+*.log
+tmp/
