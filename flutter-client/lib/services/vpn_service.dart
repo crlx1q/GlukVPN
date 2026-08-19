@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:wireguard_flutter/wireguard_flutter.dart';
-import 'package:wireguard_flutter_platform_interface/wireguard_flutter_platform_interface.dart';
+import 'package:wireguard_flutter/wireguard_flutter_platform_interface.dart';
 
 import '../config.dart';
 import '../models/models.dart';
