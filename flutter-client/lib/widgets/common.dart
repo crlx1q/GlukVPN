@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../utils/format.dart';
 
@@ -24,9 +24,9 @@ class MessageBanner extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
+        border: Border.all(color: color.withOpacity(0.35)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -210,7 +210,7 @@ class StatusDot extends StatelessWidget {
         color: color,
         shape: BoxShape.circle,
         boxShadow: online
-            ? <BoxShadow>[BoxShadow(color: color.withValues(alpha: 0.6), blurRadius: 6)]
+            ? <BoxShadow>[BoxShadow(color: color.withOpacity(0.6), blurRadius: 6)]
             : null,
       ),
     );
@@ -235,7 +235,7 @@ class LoadBar extends StatelessWidget {
             child: LinearProgressIndicator(
               value: value,
               minHeight: 6,
-              backgroundColor: scheme.onSurfaceVariant.withValues(alpha: 0.2),
+              backgroundColor: scheme.onSurfaceVariant.withOpacity(0.2),
             ),
           ),
         ),

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
@@ -92,7 +92,7 @@ class _SubscriptionChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
+        color: color.withOpacity(0.14),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
@@ -137,12 +137,12 @@ class _ConnectOrb extends StatelessWidget {
           height: 210,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: color.withValues(alpha: 0.10),
-            border: Border.all(color: color.withValues(alpha: 0.65), width: 3),
+            color: color.withOpacity(0.10),
+            border: Border.all(color: color.withOpacity(0.65), width: 3),
             boxShadow: connected
                 ? <BoxShadow>[
                     BoxShadow(
-                      color: color.withValues(alpha: 0.30),
+                      color: color.withOpacity(0.30),
                       blurRadius: 30,
                       spreadRadius: 2,
                     ),

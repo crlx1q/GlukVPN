@@ -60,7 +60,7 @@ ThemeData buildGlukTheme() {
     ),
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: kSurface,
-      indicatorColor: kAccent.withValues(alpha: 0.18),
+      indicatorColor: kAccent.withOpacity(0.18),
       labelTextStyle: const WidgetStatePropertyAll<TextStyle>(
         TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
       ),
