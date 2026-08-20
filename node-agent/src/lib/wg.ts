@@ -119,7 +119,9 @@ export async function dumpInterface(iface: string): Promise<WgInterfaceState> {
 	if (lines.length === 0) return state
 
 	// Interface line: <private-key> <public-key> <listen-port> <fwmark>
-	const header = lines[0].split("\t")
+	const firstLine = lines[0]
+	if (!firstLine) return state
+	const header = firstLine.split("\t")
 	state.interfacePublicKey = header[1] && isValidWgKey(header[1]) ? header[1] : null
 	state.listenPort = header[2] ? Number(header[2]) : null
 

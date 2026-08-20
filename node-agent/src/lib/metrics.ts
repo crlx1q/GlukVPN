@@ -39,7 +39,9 @@ export async function cpuPercent(): Promise<number> {
 	const sample = await readCpuSample()
 	if (!sample) {
 		const cores = os.cpus().length || 1
-		return Math.min(100, Math.round((os.loadavg()[0] / cores) * 100))
+		const avg = os.loadavg()[0]
+	if (avg === undefined) return 0
+	return Math.min(100, Math.round((avg / cores) * 100))
 	}
 
 	const previous = previousCpuSample
@@ -47,7 +49,9 @@ export async function cpuPercent(): Promise<number> {
 
 	if (!previous) {
 		const cores = os.cpus().length || 1
-		return Math.min(100, Math.round((os.loadavg()[0] / cores) * 100))
+		const avg = os.loadavg()[0]
+		if (avg === undefined) return 0
+		return Math.min(100, Math.round((avg / cores) * 100))
 	}
 
 	const totalDelta = sample.total - previous.total
@@ -94,7 +98,7 @@ export async function interfaceCounters(iface: string): Promise<InterfaceCounter
 		const content = await fs.readFile("/proc/net/dev", "utf8")
 		for (const line of content.split("\n")) {
 			const [name, rest] = line.split(":")
-			if (!rest || name.trim() !== iface) continue
+			if (!rest || !name || name.trim() !== iface) continue
 			const columns = rest.trim().split(/\s+/).map((value) => Number(value) || 0)
 			return { bytesRx: columns[0] ?? 0, bytesTx: columns[8] ?? 0 }
 		}

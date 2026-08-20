@@ -126,8 +126,8 @@ export function persistCredentials(values: Record<string, string>): void {
 	const updated = existing.map((line) => {
 		const match = /^([A-Z0-9_]+)=/.exec(line.trim())
 		if (!match) return line
-		const key = match[1]
-		if (!remaining.has(key)) return line
+		const [key] = line.split("=")
+		if (!key || !remaining.has(key)) return line
 		const value = remaining.get(key) as string
 		remaining.delete(key)
 		return `${key}=${value}`
