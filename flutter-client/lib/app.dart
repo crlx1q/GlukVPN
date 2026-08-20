@@ -2,78 +2,31 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'screens/home_screen.dart';
-import 'screens/login_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'screens/servers_screen.dart';
 import 'screens/settings_screen.dart';
 import 'state/auth_controller.dart';
+import 'state/channel_controller.dart';
 import 'state/vpn_controller.dart';
-
-const Color kAccent = Color(0xFF3DDC97);
-const Color kDanger = Color(0xFFFF6B6B);
-const Color kBackground = Color(0xFF0B0F14);
-const Color kSurface = Color(0xFF151B23);
-
-ThemeData buildGlukTheme() {
-  final ColorScheme scheme = ColorScheme.fromSeed(
-    seedColor: kAccent,
-    brightness: Brightness.dark,
-  ).copyWith(
-    primary: kAccent,
-    secondary: kAccent,
-    surface: kSurface,
-    error: kDanger,
-  );
-
-  return ThemeData(
-    useMaterial3: true,
-    colorScheme: scheme,
-    scaffoldBackgroundColor: kBackground,
-    appBarTheme: const AppBarTheme(
-      backgroundColor: kBackground,
-      elevation: 0,
-      centerTitle: false,
-    ),
-    cardTheme: CardTheme(
-      color: kSurface,
-      elevation: 0,
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-    ),
-    inputDecorationTheme: InputDecorationTheme(
-      filled: true,
-      fillColor: kSurface,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide.none,
-      ),
-    ),
-    filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(
-        minimumSize: const Size.fromHeight(52),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-      ),
-    ),
-    navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: kSurface,
-      indicatorColor: kAccent.withOpacity(0.18),
-      labelTextStyle: const WidgetStatePropertyAll<TextStyle>(
-        TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-      ),
-    ),
-    snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
-  );
-}
+import 'theme/app_theme.dart';
+import 'theme/motion.dart';
+import 'theme/tokens.dart';
+import 'widgets/logo.dart';
+import 'widgets/nav_bar.dart';
 
 class GlukVpnApp extends StatefulWidget {
-  const GlukVpnApp({super.key, required this.auth, required this.vpn});
+  const GlukVpnApp({
+    super.key,
+    required this.auth,
+    required this.vpn,
+    required this.channel,
+    required this.motion,
+  });
 
   final AuthController auth;
   final VpnController vpn;
+  final ChannelController channel;
+  final MotionController motion;
 
   @override
   State<GlukVpnApp> createState() => _GlukVpnAppState();
@@ -83,28 +36,40 @@ class _GlukVpnAppState extends State<GlukVpnApp> {
   @override
   void initState() {
     super.initState();
-    // Restores a stored session, if any, before the first frame settles.
+    // The channel was already restored in main(); this fills in the version
+    // badges in the background and restores the stored session, if any.
+    widget.channel.probeAll();
     widget.auth.bootstrap();
   }
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
+      // Type argument omitted on purpose: MultiProvider wants
+      // List<SingleChildWidget>, which provider.dart does not re-export.
       providers: [
         ChangeNotifierProvider<AuthController>.value(value: widget.auth),
         ChangeNotifierProvider<VpnController>.value(value: widget.vpn),
+        ChangeNotifierProvider<ChannelController>.value(value: widget.channel),
+        ChangeNotifierProvider<MotionController>.value(value: widget.motion),
       ],
       child: MaterialApp(
         title: 'GlukVPN',
         debugShowCheckedModeBanner: false,
-        theme: buildGlukTheme(),
+        theme: GlukTheme.build(),
+        builder: (BuildContext context, Widget? child) {
+          // Picks up "Remove animations" from accessibility settings; the whole
+          // app then holds its loops still.
+          widget.motion.syncWithMediaQuery(context);
+          return child ?? const SizedBox.shrink();
+        },
         home: const AuthGate(),
       ),
     );
   }
 }
 
-/// Chooses between the login screen and the main shell, and starts VPN state
+/// Chooses between onboarding/login and the main shell, and starts VPN state
 /// loading exactly once per signed-in session.
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
@@ -119,45 +84,71 @@ class _AuthGateState extends State<AuthGate> {
   @override
   Widget build(BuildContext context) {
     final AuthController auth = context.watch<AuthController>();
+    final MotionController motion = context.watch<MotionController>();
 
-    switch (auth.stage) {
-      case AuthStage.unknown:
-      case AuthStage.restoring:
-        return const _SplashView();
-      case AuthStage.unauthenticated:
-        _vpnInitStarted = false;
-        return const LoginScreen();
-      case AuthStage.authenticated:
-        if (!_vpnInitStarted) {
-          _vpnInitStarted = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            context.read<VpnController>().init();
-          });
-        }
-        return const HomeShell();
+    if (auth.stage == AuthStage.unauthenticated) {
+      // A new session (or a new channel) has to load nodes and status again.
+      _vpnInitStarted = false;
     }
+    if (auth.stage == AuthStage.authenticated && !_vpnInitStarted) {
+      _vpnInitStarted = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        context.read<VpnController>().init();
+      });
+    }
+
+    final Widget child = switch (auth.stage) {
+      AuthStage.unknown || AuthStage.restoring => const SplashView(),
+      AuthStage.unauthenticated => const OnboardingScreen(),
+      AuthStage.authenticated => const HomeShell(),
+    };
+
+    // `.screen` in the mock-up: opacity + a 24 px slide, 400 ms.
+    return AnimatedSwitcher(
+      duration: motion.transition(GlukMotion.screen),
+      switchInCurve: Curves.easeOut,
+      switchOutCurve: Curves.easeIn,
+      transitionBuilder: (Widget page, Animation<double> animation) {
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0.06, 0),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+            child: page,
+          ),
+        );
+      },
+      child: KeyedSubtree(key: ValueKey<AuthStage>(auth.stage), child: child),
+    );
   }
 }
 
-class _SplashView extends StatelessWidget {
-  const _SplashView();
+/// Shown while the stored session is being restored. Deliberately cheap: no
+/// map, no loops, just the mark and a hairline progress bar.
+class SplashView extends StatelessWidget {
+  const SplashView({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    final TextTheme text = Theme.of(context).textTheme;
+    return Scaffold(
+      backgroundColor: GlukColors.bg,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            Icon(Icons.shield_outlined, size: 56, color: kAccent),
-            SizedBox(height: 18),
-            Text('GlukVPN', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
-            SizedBox(height: 22),
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
+            const GlukLogo(size: 72),
+            const SizedBox(height: 20),
+            Text('GlukVPN', style: text.titleLarge),
+            const SizedBox(height: 6),
+            Text('Securing your connection', style: text.bodySmall),
+            const SizedBox(height: 26),
+            const SizedBox(
+              width: 120,
+              child: LinearProgressIndicator(minHeight: 2),
             ),
           ],
         ),
@@ -196,30 +187,41 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     }
   }
 
+  void _select(int index) => setState(() => _index = index);
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: GlukColors.bg,
+      extendBody: true,
       body: IndexedStack(
         index: _index,
-        children: const <Widget>[HomeScreen(), ServersScreen(), SettingsScreen()],
+        children: <Widget>[
+          HomeScreen(
+            onOpenServers: () => _select(1),
+            onOpenProfile: () => _select(2),
+          ),
+          ServersScreen(onDone: () => _select(0)),
+          const SettingsScreen(),
+        ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (int value) => setState(() => _index = value),
-        destinations: const <Widget>[
-          NavigationDestination(
-            icon: Icon(Icons.shield_outlined),
-            selectedIcon: Icon(Icons.shield),
+      bottomNavigationBar: GlukNavBar(
+        index: _index,
+        onChanged: _select,
+        items: const <GlukNavItem>[
+          GlukNavItem(
+            icon: Icons.shield_outlined,
+            activeIcon: Icons.shield,
             label: 'VPN',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.public_outlined),
-            selectedIcon: Icon(Icons.public),
+          GlukNavItem(
+            icon: Icons.public_outlined,
+            activeIcon: Icons.public,
             label: 'Servers',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
+          GlukNavItem(
+            icon: Icons.settings_outlined,
+            activeIcon: Icons.settings,
             label: 'Settings',
           ),
         ],

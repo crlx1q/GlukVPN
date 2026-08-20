@@ -367,7 +367,11 @@ class VpnController extends ChangeNotifier {
 
   Future<void> _samplePing() async {
     if (_state != VpnUiState.connected) return;
-    final PingSample sample = await _pingService.measure(gatewayIp: _tunnel?.gatewayIp);
+    // The HTTPS fallback must hit the channel we are actually signed in to.
+    final PingSample sample = await _pingService.measure(
+      gatewayIp: _tunnel?.gatewayIp,
+      apiBaseUrl: _api.baseUrl,
+    );
     _pingSample = sample;
     _safeNotify();
   }

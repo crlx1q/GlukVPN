@@ -58,14 +58,18 @@ class PingService {
   /// [gatewayIp] is the node's WireGuard address (e.g. 10.8.0.1). Note that the
   /// node's firewall must accept ICMP on the wg interface for this to answer;
   /// otherwise the HTTPS fallback is used and labelled as such.
-  Future<PingSample> measure({String? gatewayIp}) async {
+  ///
+  /// [apiBaseUrl] overrides the host used by that fallback. The app can be
+  /// pointed at either control plane at runtime, so the fallback has to follow
+  /// the active channel instead of the compile-time default.
+  Future<PingSample> measure({String? gatewayIp, String? apiBaseUrl}) async {
     if (gatewayIp != null && gatewayIp.isNotEmpty) {
       final int? icmp = await _icmpRtt(gatewayIp);
       if (icmp != null) {
         return PingSample(source: PingSource.tunnelGateway, milliseconds: icmp);
       }
     }
-    final int? https = await _httpRtt();
+    final int? https = await _httpRtt(apiBaseUrl ?? AppConfig.apiBaseUrl);
     if (https != null) {
       return PingSample(source: PingSource.controlApi, milliseconds: https);
     }
@@ -87,11 +91,11 @@ class PingService {
     return null;
   }
 
-  Future<int?> _httpRtt() async {
+  Future<int?> _httpRtt(String baseUrl) async {
     final Stopwatch watch = Stopwatch()..start();
     try {
       final http.Response response = await _http
-          .get(Uri.parse('${AppConfig.apiBaseUrl}/api/health'))
+          .get(Uri.parse('$baseUrl/api/health'))
           .timeout(const Duration(seconds: 5));
       watch.stop();
       // Any answer at all, even an error status, is a valid RTT measurement.

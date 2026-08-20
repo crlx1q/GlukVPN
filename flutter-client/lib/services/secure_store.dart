@@ -29,14 +29,40 @@ class DeviceIdentity {
 /// On Android this is backed by EncryptedSharedPreferences (AES key held in the
 /// Android Keystore), so a plain filesystem dump of the app data does not reveal
 /// the key material.
+///
+/// ## Channels
+///
+/// PROD and BETA are two separate control planes with separate databases, so a
+/// PROD refresh token, device id and WireGuard key pair mean nothing on BETA and
+/// must never be sent there. Every entry is therefore scoped by [channelId]:
+///
+///  * `prod` keeps the original, unsuffixed key names, so an app that updates
+///    from the pre-channel build stays logged in and keeps its registered
+///    device instead of silently registering a second one;
+///  * every other channel appends `_<channelId>` (`refresh_token_beta`, ...).
+///
+/// Switching channels therefore parks the other channel's session instead of
+/// destroying it: flipping BETA on and back off returns to the same PROD login.
 class SecureStore {
-  SecureStore({FlutterSecureStorage? storage})
+  SecureStore({FlutterSecureStorage? storage, String channelId = 'prod'})
       : _storage = storage ??
             FlutterSecureStorage(
               aOptions: AndroidOptions(encryptedSharedPreferences: true),
-            );
+            ),
+        _channelId = channelId.isEmpty ? 'prod' : channelId;
 
   final FlutterSecureStorage _storage;
+
+  String _channelId;
+
+  /// Channel the reads and writes below belong to (`prod` or `beta`).
+  String get channelId => _channelId;
+
+  /// Repointed by ChannelController before any request is made on the new
+  /// channel. Nothing is copied between channels.
+  set channelId(String value) {
+    _channelId = value.isEmpty ? 'prod' : value;
+  }
 
   static const String _kRefreshToken = 'refresh_token';
   static const String _kDeviceId = 'device_id';
@@ -45,25 +71,59 @@ class SecureStore {
   static const String _kWgPublicKey = 'wg_public_key';
   static const String _kUsername = 'username';
 
-  Future<String?> _read(String key) async {
-    final String? value = await _storage.read(key: key);
+  /// The channel pointer itself is deliberately NOT channel-scoped: it is what
+  /// decides which scope everything else uses, so it must be readable before a
+  /// channel is known.
+  static const String _kActiveChannel = 'active_channel';
+
+  /// All base keys, used by the per-channel [wipe].
+  static const List<String> _allKeys = <String>[
+    _kRefreshToken,
+    _kDeviceId,
+    _kDeviceName,
+    _kWgPrivateKey,
+    _kWgPublicKey,
+    _kUsername,
+  ];
+
+  /// `prod` keeps the legacy names; other channels get a suffix.
+  String _key(String base) =>
+      _channelId == 'prod' ? base : '${base}_$_channelId';
+
+  Future<String?> _read(String base) async {
+    final String? value = await _storage.read(key: _key(base));
     if (value == null || value.isEmpty) return null;
     return value;
   }
+
+  Future<void> _write(String base, String value) =>
+      _storage.write(key: _key(base), value: value);
+
+  Future<void> _delete(String base) => _storage.delete(key: _key(base));
+
+  // --- channel selection ---------------------------------------------------
+
+  Future<String?> readActiveChannel() async {
+    final String? value = await _storage.read(key: _kActiveChannel);
+    if (value == null || value.isEmpty) return null;
+    return value;
+  }
+
+  Future<void> writeActiveChannel(String channelId) =>
+      _storage.write(key: _kActiveChannel, value: channelId);
 
   // --- session -------------------------------------------------------------
 
   Future<String?> readRefreshToken() => _read(_kRefreshToken);
 
   Future<void> writeRefreshToken(String token) =>
-      _storage.write(key: _kRefreshToken, value: token);
+      _write(_kRefreshToken, token);
 
-  Future<void> deleteRefreshToken() => _storage.delete(key: _kRefreshToken);
+  Future<void> deleteRefreshToken() => _delete(_kRefreshToken);
 
   Future<String?> readUsername() => _read(_kUsername);
 
-  Future<void> writeUsername(String username) =>
-      _storage.write(key: _kUsername, value: username);
+  Future<void> writeUsername(String username) => _write(_kUsername, username);
 
   // --- device identity -----------------------------------------------------
 
@@ -77,11 +137,13 @@ class SecureStore {
     return DeviceIdentity(deviceId: id, deviceName: name, publicKeyBase64: publicKey);
   }
 
-  Future<void> writeDeviceId(String deviceId) =>
-      _storage.write(key: _kDeviceId, value: deviceId);
+  Future<void> writeDeviceId(String deviceId) => _write(_kDeviceId, deviceId);
 
   /// Stable, human-readable name shown in the admin panel and in Settings.
   /// Generated once per install; the random suffix keeps two test phones apart.
+  ///
+  /// BETA gets its own name so that one phone testing both channels shows up as
+  /// two clearly different devices in the two admin panels.
   Future<String> ensureDeviceName() async {
     final String? existing = await _read(_kDeviceName);
     if (existing != null) return existing;
@@ -90,8 +152,9 @@ class SecureStore {
       4,
       (_) => random.nextInt(16).toRadixString(16),
     ).join();
-    final String name = 'android-$suffix';
-    await _storage.write(key: _kDeviceName, value: name);
+    final String name =
+        _channelId == 'prod' ? 'android-$suffix' : 'android-$_channelId-$suffix';
+    await _write(_kDeviceName, name);
     return name;
   }
 
@@ -107,23 +170,23 @@ class SecureStore {
     required String privateKeyBase64,
     required String publicKeyBase64,
   }) async {
-    await _storage.write(key: _kWgPrivateKey, value: privateKeyBase64);
-    await _storage.write(key: _kWgPublicKey, value: publicKeyBase64);
+    await _write(_kWgPrivateKey, privateKeyBase64);
+    await _write(_kWgPublicKey, publicKeyBase64);
   }
 
   /// Drops the key pair and the device id, e.g. after the device was revoked
   /// server-side: the next connect attempt then registers a fresh key pair.
   Future<void> clearDeviceIdentity() async {
-    await _storage.delete(key: _kWgPrivateKey);
-    await _storage.delete(key: _kWgPublicKey);
-    await _storage.delete(key: _kDeviceId);
+    await _delete(_kWgPrivateKey);
+    await _delete(_kWgPublicKey);
+    await _delete(_kDeviceId);
   }
 
-  /// Full logout: nothing about the previous account stays behind.
+  /// Full logout **for the current channel only**: nothing about the previous
+  /// account stays behind, while the other channel's parked session survives.
   Future<void> wipe() async {
-    await _storage.delete(key: _kRefreshToken);
-    await _storage.delete(key: _kUsername);
-    await clearDeviceIdentity();
-    await _storage.delete(key: _kDeviceName);
+    for (final String base in _allKeys) {
+      await _delete(base);
+    }
   }
 }

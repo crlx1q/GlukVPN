@@ -302,5 +302,104 @@ void main() {
       });
       expect(user.isActive, isFalse);
     });
+
+    test('keeps the immutable public id and labels it for the UI', () {
+      final AuthUser user = AuthUser.fromJson(<String, dynamic>{
+        'id': 'user-3',
+        'publicId': '00000042',
+        'username': 'testuser',
+        'status': 'ACTIVE',
+      });
+
+      expect(user.publicId, '00000042');
+      expect(user.publicIdLabel, 'ID 00000042');
+    });
+
+    test('renaming changes the nickname and never the public id', () {
+      final AuthUser user = AuthUser.fromJson(<String, dynamic>{
+        'id': 'user-3',
+        'publicId': '00000042',
+        'username': 'oldname',
+        'status': 'ACTIVE',
+      });
+
+      final AuthUser renamed = user.copyWith(username: 'newname');
+      expect(renamed.username, 'newname');
+      expect(renamed.publicId, '00000042');
+      expect(renamed.id, user.id);
+    });
+
+    test('an older server that does not send publicId still parses', () {
+      final AuthUser user = AuthUser.fromJson(<String, dynamic>{
+        'id': 'user-4',
+        'username': 'legacy',
+        'status': 'ACTIVE',
+      });
+      expect(user.publicId, isEmpty);
+      expect(user.publicIdLabel, 'ID unavailable');
+    });
+  });
+
+  group('ChannelVersion', () {
+    test('parses GET /api/version for the prod channel', () {
+      final ChannelVersion version = ChannelVersion.fromJson(<String, dynamic>{
+        'service': 'glukvpn-control',
+        'channel': 'prod',
+        'version': '1.0.0',
+        'commit': '6ed631cd6bd54ab461b920f903484e0049ed3edf',
+        'migration': '20260820130000_deploy_jobs',
+        'database': 'up',
+        'releasedAt': '2026-08-20T12:00:00.000Z',
+      });
+
+      expect(version.channel, 'prod');
+      expect(version.isBeta, isFalse);
+      expect(version.channelLabel, 'PROD');
+      expect(version.label, 'PROD 1.0.0');
+      expect(version.commitShort, '6ed631c');
+      expect(version.databaseUp, isTrue);
+      expect(version.releasedAt, isNotNull);
+    });
+
+    test('flags the beta channel and a database that is down', () {
+      final ChannelVersion version = ChannelVersion.fromJson(<String, dynamic>{
+        'channel': 'beta',
+        'version': '1.2.0',
+        'database': 'down',
+      });
+
+      expect(version.isBeta, isTrue);
+      expect(version.channelLabel, 'BETA');
+      expect(version.label, 'BETA 1.2.0');
+      expect(version.databaseUp, isFalse);
+      expect(version.commitShort, isEmpty);
+    });
+  });
+
+  group('UsernameChangeResult', () {
+    test('reads the nested user object returned by the rename endpoint', () {
+      final UsernameChangeResult result =
+          UsernameChangeResult.fromJson(<String, dynamic>{
+        'user': <String, dynamic>{
+          'id': 'user-1',
+          'publicId': '00000001',
+          'username': 'newname',
+        },
+        'changed': true,
+      });
+
+      expect(result.username, 'newname');
+      expect(result.publicId, '00000001');
+      expect(result.changed, isTrue);
+    });
+
+    test('a no-op rename is reported as unchanged', () {
+      final UsernameChangeResult result =
+          UsernameChangeResult.fromJson(<String, dynamic>{
+        'user': <String, dynamic>{'publicId': '00000001', 'username': 'same'},
+        'changed': false,
+      });
+      expect(result.changed, isFalse);
+    });
   });
 }

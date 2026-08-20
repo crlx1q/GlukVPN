@@ -1,0 +1,71 @@
+[Unit]
+# GlukVPN deploy worker.
+#
+# Executes the Deploy Beta / Promote / Rollback buttons from the admin panel.
+# It polls the deploy_jobs table and runs ONE of three fixed scripts - it never
+# receives a command, a path or an argument from the database or the network.
+#
+# WHY THIS RUNS AS ROOT
+#   It has to `systemctl restart` the two API services, write release
+#   directories under /opt and chown them to vpncontrol/vpnbeta. There is no
+#   smaller privilege set that can do that honestly. What keeps it safe is the
+#   shape of the interface, not the uid: three parameterless scripts, owned by
+#   root, not writable by the API users.
+#
+# WHY IT LIVES OUTSIDE THE RELEASES
+#   Its code sits in /opt/glukvpn-deploy/worker, never inside a release
+#   directory. Otherwise a promote could prune the very directory the running
+#   worker is loading files from.
+Description=GlukVPN deploy worker (beta deploy, promote, rollback)
+Documentation=file:///opt/vpn-control/README.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+WorkingDirectory=/opt/glukvpn-deploy/worker
+
+Environment=NODE_ENV=production
+# The queue lives in the prod database, because the prod panel owns the buttons.
+Environment=ENV_FILE=/etc/vpn-control/control.env
+Environment=DEPLOY_SCRIPT_DIR=/opt/glukvpn-deploy/bin
+
+ExecStart=/usr/bin/node dist/scripts/deployWorker.js
+
+# A deployment must finish or fail, never be killed halfway. On stop the worker
+# stops picking up new jobs and exits after the current one.
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGTERM
+TimeoutStopSec=25min
+
+# --- Hardening -------------------------------------------------------------
+# Deliberately lighter than the API units: this service exists to modify /opt
+# and restart other units. Everything it does not need is still closed off.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0027
+
+# The only writable locations.
+ReadWritePaths=/opt/vpn-control
+ReadWritePaths=/opt/vpn-control-beta
+ReadWritePaths=/opt/glukvpn-src
+ReadWritePaths=/var/backups/glukvpn
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=glukvpn-deploy-worker
+
+[Install]
+WantedBy=multi-user.target

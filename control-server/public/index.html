@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="robots" content="noindex, nofollow" />
+		<title>GlukVPN — control plane</title>
+		<link rel="stylesheet" href="./admin.css" />
+	</head>
+	<body>
+		<!-- Two soft violet lights, the only decoration. No external requests:
+		     the CSP is self-only, so fonts, images and scripts are all local. -->
+		<div class="glow glow-a" aria-hidden="true"></div>
+		<div class="glow glow-b" aria-hidden="true"></div>
+
+		<header class="topbar">
+			<div class="brand">
+				<svg class="mark" viewBox="0 0 48 48" role="img" aria-label="GlukVPN">
+					<defs>
+						<linearGradient id="markGrad" x1="0" y1="0" x2="1" y2="1">
+							<stop offset="0" stop-color="#8b5cf6" />
+							<stop offset="1" stop-color="#4f7cff" />
+						</linearGradient>
+					</defs>
+					<rect x="1" y="1" width="46" height="46" rx="13" fill="url(#markGrad)" />
+					<circle cx="19.5" cy="19.5" r="7.6" fill="none" stroke="#fff" stroke-width="3.4" />
+					<path
+						d="M24.9 24.9 34 34"
+						stroke="#fff"
+						stroke-width="3.4"
+						stroke-linecap="round"
+					/>
+					<path
+						d="M30.2 30.2 33.6 26.8"
+						stroke="#fff"
+						stroke-width="3.4"
+						stroke-linecap="round"
+					/>
+				</svg>
+				<span class="brand-text">
+					<strong>GlukVPN</strong>
+					<span class="sub">control plane</span>
+				</span>
+				<span class="chan-badge" id="channel-badge">…</span>
+			</div>
+			<div class="topbar-actions" id="session-box" hidden>
+				<span class="who" id="who"></span>
+				<label class="toggle">
+					<input type="checkbox" id="auto-refresh" checked />
+					<span>auto 10s</span>
+				</label>
+				<button type="button" id="refresh-btn" class="ghost">Refresh</button>
+				<button type="button" id="logout-btn" class="ghost">Log out</button>
+			</div>
+		</header>
+
+		<main>
+			<!-- ---------------- login ---------------- -->
+			<section id="login-view" class="glass login-card">
+				<svg class="login-mark" viewBox="0 0 48 48" aria-hidden="true">
+					<rect x="1" y="1" width="46" height="46" rx="13" fill="url(#markGrad)" />
+					<circle cx="19.5" cy="19.5" r="7.6" fill="none" stroke="#fff" stroke-width="3.4" />
+					<path d="M24.9 24.9 34 34" stroke="#fff" stroke-width="3.4" stroke-linecap="round" />
+					<path d="M30.2 30.2 33.6 26.8" stroke="#fff" stroke-width="3.4" stroke-linecap="round" />
+				</svg>
+				<h1>Admin sign in</h1>
+				<p class="muted small" id="login-channel"></p>
+				<form id="login-form" autocomplete="on">
+					<label for="username">Username</label>
+					<input id="username" name="username" autocomplete="username" required />
+					<label for="password">Password</label>
+					<input
+						id="password"
+						name="password"
+						type="password"
+						autocomplete="current-password"
+						required
+					/>
+					<button type="submit" class="primary">Sign in</button>
+					<p class="error" id="login-error" hidden></p>
+				</form>
+				<p class="muted small">
+					An admin account is required. Tokens are kept in memory only — reloading the
+					page asks for the password again.
+				</p>
+			</section>
+
+			<!-- ---------------- dashboard ---------------- -->
+			<nav class="tabs" id="tabs" hidden>
+				<button type="button" class="tab is-active" data-tab="overview">Overview</button>
+				<button type="button" class="tab" data-tab="channels">Channels</button>
+				<button type="button" class="tab" data-tab="nodes">Nodes</button>
+				<button type="button" class="tab" data-tab="users">Users</button>
+				<button type="button" class="tab" data-tab="devices">Devices</button>
+				<button type="button" class="tab" data-tab="sessions">Sessions</button>
+				<button type="button" class="tab" data-tab="audit">Audit</button>
+			</nav>
+
+			<div id="dashboard-view" hidden>
+				<!-- overview -->
+				<section class="tabview" data-view="overview">
+					<div class="cards" id="cards"></div>
+					<div class="glass block" id="version-block">
+						<div class="block-head">
+							<h3>Channels at a glance</h3>
+							<span class="muted small" id="overview-updated"></span>
+						</div>
+						<div class="chan-grid compact" id="overview-channels"></div>
+					</div>
+				</section>
+
+				<!-- channels -->
+				<section class="tabview" data-view="channels" hidden>
+					<div class="chan-grid" id="channel-cards"></div>
+
+					<div class="glass block">
+						<div class="block-head">
+							<h3>Promote readiness</h3>
+							<span class="muted small" id="deploy-updated"></span>
+						</div>
+						<ul class="checklist" id="checklist"></ul>
+						<div class="deploy-actions">
+							<button type="button" id="deploy-beta-btn" class="primary">
+								Deploy Beta
+							</button>
+							<button type="button" id="promote-btn" class="warn">
+								Promote Beta → PROD
+							</button>
+							<button type="button" id="rollback-btn" class="danger">Rollback PROD</button>
+						</div>
+						<p class="muted small">
+							Promote moves <strong>code only</strong>: the current source tree is built,
+							activated through a new release directory and the symlink is flipped
+							atomically. The prod database is dumped with <code>pg_dump</code> first and is
+							never overwritten by beta data. Rollback only points prod back at the
+							previous release.
+						</p>
+					</div>
+
+					<div class="glass block" id="active-job-box" hidden></div>
+
+					<div class="block-head standalone">
+						<h3>Deployment history</h3>
+						<span class="muted small">last 20 jobs, newest first</span>
+					</div>
+					<div class="jobs" id="jobs-list"></div>
+				</section>
+
+				<!-- nodes -->
+				<section class="tabview" data-view="nodes" hidden>
+					<div class="block-head standalone">
+						<h3>VPN nodes</h3>
+						<button type="button" id="enroll-btn" class="primary small">
+							New enrollment token
+						</button>
+					</div>
+					<div id="enroll-box" class="notice" hidden></div>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Node</th>
+									<th>Country</th>
+									<th>Status</th>
+									<th>Endpoint</th>
+									<th>Load</th>
+									<th>CPU</th>
+									<th>RAM</th>
+									<th>Uptime</th>
+									<th>Peers</th>
+									<th>Sessions</th>
+									<th>Traffic rx / tx</th>
+									<th>Heartbeat</th>
+									<th>Actions</th>
+								</tr>
+							</thead>
+							<tbody id="nodes-body"></tbody>
+						</table>
+					</div>
+				</section>
+
+				<!-- users -->
+				<section class="tabview" data-view="users" hidden>
+					<div class="block-head standalone">
+						<h3>Users</h3>
+						<div class="head-tools">
+							<input
+								id="user-search"
+								type="search"
+								placeholder="search by ID (00000001) or nickname"
+								aria-label="Search users"
+							/>
+							<button type="button" id="create-user-btn" class="ghost small">
+								Create user
+							</button>
+						</div>
+					</div>
+					<form id="create-user-form" class="inline-form" hidden>
+						<input id="new-username" placeholder="nickname" minlength="3" required />
+						<input
+							id="new-password"
+							type="password"
+							placeholder="password (min 8 chars)"
+							minlength="8"
+							required
+						/>
+						<button type="submit" class="primary small">Create</button>
+						<button type="button" id="cancel-user-btn" class="ghost small">Cancel</button>
+					</form>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>ID</th>
+									<th>Nickname</th>
+									<th>Status</th>
+									<th>Admin</th>
+									<th>Devices</th>
+									<th>Live sessions</th>
+									<th>Subscription</th>
+									<th>Actions</th>
+								</tr>
+							</thead>
+							<tbody id="users-body"></tbody>
+						</table>
+					</div>
+					<p class="muted small">
+						The ID is assigned by the database and cannot be changed — a trigger rejects
+						any update. Nicknames are free to change, so bans and support lookups go by
+						ID.
+					</p>
+				</section>
+
+				<!-- devices -->
+				<section class="tabview" data-view="devices" hidden>
+					<div class="block-head standalone"><h3>Devices</h3></div>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Device</th>
+									<th>Owner</th>
+									<th>Platform</th>
+									<th>Node</th>
+									<th>Status</th>
+									<th>Last seen</th>
+									<th>Actions</th>
+								</tr>
+							</thead>
+							<tbody id="devices-body"></tbody>
+						</table>
+					</div>
+				</section>
+
+				<!-- sessions -->
+				<section class="tabview" data-view="sessions" hidden>
+					<div class="block-head standalone">
+						<h3>Sessions</h3>
+						<label class="toggle">
+							<input type="checkbox" id="live-only" checked />
+							<span>live only</span>
+						</label>
+					</div>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>User</th>
+									<th>Device</th>
+									<th>Node</th>
+									<th>VPN IP</th>
+									<th>Status</th>
+									<th>Connected</th>
+									<th>Handshake</th>
+									<th>Traffic rx / tx</th>
+									<th>Actions</th>
+								</tr>
+							</thead>
+							<tbody id="sessions-body"></tbody>
+						</table>
+					</div>
+				</section>
+
+				<!-- audit -->
+				<section class="tabview" data-view="audit" hidden>
+					<div class="block-head standalone"><h3>Audit log</h3></div>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Time</th>
+									<th>Action</th>
+									<th>User</th>
+									<th>IP</th>
+									<th>Metadata</th>
+								</tr>
+							</thead>
+							<tbody id="audit-body"></tbody>
+						</table>
+					</div>
+				</section>
+
+				<p class="muted small footnote">
+					This panel only shows control-plane metadata: accounts, devices, nodes, byte
+					counters and connection state. VPN traffic never passes through the control
+					server, and its contents are never recorded.
+				</p>
+			</div>
+		</main>
+
+		<div id="toast" hidden></div>
+		<script src="./admin.js" defer></script>
+	</body>
+</html>

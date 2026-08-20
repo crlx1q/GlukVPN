@@ -1,0 +1,359 @@
+// ============================================================================
+// GlukVPN — control plane schema (PostgreSQL, managed by Prisma Migrate)
+// Never store: client WireGuard private keys, raw tokens, raw node secrets.
+// Tokens/secrets are stored only as HMAC-SHA256 hashes (peppered).
+// ============================================================================
+
+generator client {
+  provider      = "prisma-client-js"
+  // linux-arm64-openssl-3.0.x is required for Ubuntu 24.04 ARM64 (Oracle Cloud)
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------- enums ---------------------------------------
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum DeviceStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum NodeStatus {
+  PENDING
+  ONLINE
+  OFFLINE
+  DISABLED
+}
+
+enum SessionStatus {
+  PENDING
+  ACTIVE
+  CLOSED
+  FAILED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  DISABLED
+}
+
+enum CommandType {
+  ADD_PEER
+  REMOVE_PEER
+  SYNC_PEERS
+}
+
+enum CommandStatus {
+  PENDING
+  DELIVERED
+  DONE
+  FAILED
+}
+
+/// Fixed, parameterless deployment scenarios. The worker maps each value to one
+/// hard-coded script; nothing from this table is ever passed to a shell. That
+/// is what keeps the admin "Promote" button from being remote code execution.
+enum DeployAction {
+  DEPLOY_BETA
+  PROMOTE_BETA_TO_PROD
+  ROLLBACK_PROD
+}
+
+enum DeployJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+// ----------------------------- users ---------------------------------------
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  /// Public, immutable account number rendered as 8 digits ("00000001").
+  /// Assigned by a Postgres sequence; a DB trigger rejects every change.
+  /// `username` is freely renameable, this is not — use it to search and ban.
+  publicId     String     @unique @map("public_id") @default(dbgenerated("lpad(nextval('user_public_id_seq')::text, 8, '0')"))
+  username     String     @unique
+  passwordHash String     @map("password_hash")
+  status       UserStatus @default(ACTIVE)
+  isAdmin      Boolean    @default(false) @map("is_admin")
+  maxDevices   Int        @default(3) @map("max_devices")
+  maxSessions  Int        @default(1) @map("max_concurrent_sessions")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  devices       Device[]
+  sessions      Session[]
+  subscriptions Subscription[]
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+  deployJobs    DeployJob[]
+
+  @@map("users")
+}
+
+model Device {
+  id         String       @id @default(uuid()) @db.Uuid
+  userId     String       @map("user_id") @db.Uuid
+  deviceName String       @map("device_name")
+  // WireGuard public key of the device. The private key never leaves the phone.
+  publicKey  String       @unique @map("public_key")
+  platform   String?
+  status     DeviceStatus @default(ACTIVE)
+  createdAt  DateTime     @default(now()) @map("created_at")
+  lastSeen   DateTime?    @map("last_seen")
+  revokedAt  DateTime?    @map("revoked_at")
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions      Session[]
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("devices")
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  deviceId     String?   @map("device_id") @db.Uuid
+  // HMAC-SHA256(pepper, raw token) — raw token exists only on the device
+  tokenHash    String    @unique @map("token_hash")
+  expiresAt    DateTime  @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+  lastUsedAt   DateTime? @map("last_used_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  replacedById String?   @unique @map("replaced_by_id") @db.Uuid
+
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device     Device?       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  replacedBy RefreshToken? @relation("TokenRotation", fields: [replacedById], references: [id])
+  replaces   RefreshToken? @relation("TokenRotation")
+
+  @@index([userId])
+  @@index([deviceId])
+  @@map("refresh_tokens")
+}
+
+model LoginAttempt {
+  id        String   @id @default(uuid()) @db.Uuid
+  username  String
+  ip        String
+  success   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([username, createdAt])
+  @@index([ip, createdAt])
+  @@map("login_attempts")
+}
+
+// ----------------------------- nodes ---------------------------------------
+
+model VpnNode {
+  id                 String     @id @default(uuid()) @db.Uuid
+  name               String     @unique
+  country            String
+  countryCode        String     @map("country_code")
+  hostname           String
+  publicIp           String     @map("public_ip")
+  wireguardPublicKey String?    @map("wireguard_public_key")
+  wireguardPort      Int        @default(51820) @map("wireguard_port")
+  subnetCidr         String     @default("10.8.0.0/24") @map("subnet_cidr")
+  dns                String     @default("1.1.1.1,1.0.0.1")
+  mtu                Int        @default(1420)
+  status             NodeStatus @default(PENDING)
+  capacity           Int        @default(50)
+  activePeers        Int        @default(0) @map("active_peers")
+  cpuPercent         Float?     @map("cpu_percent")
+  ramPercent         Float?     @map("ram_percent")
+  uptimeSeconds      Int?       @map("uptime_seconds")
+  agentVersion       String?    @map("agent_version")
+  lastHeartbeat      DateTime?  @map("last_heartbeat")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+
+  tokens    NodeToken[]
+  sessions  Session[]
+  commands  NodeCommand[]
+  ipLeases  IpLease[]
+  auditLogs AuditLog[]
+
+  @@index([status])
+  @@map("vpn_nodes")
+}
+
+/// One-time enrollment token: lets a fresh node exchange it for its own node token.
+model NodeEnrollmentToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  tokenHash    String    @unique @map("token_hash")
+  note         String?
+  expiresAt    DateTime  @map("expires_at")
+  usedAt       DateTime? @map("used_at")
+  usedByNodeId String?   @map("used_by_node_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@map("node_enrollment_tokens")
+}
+
+/// Per-node credential. Supports rotation, revoke and expiration.
+model NodeToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  nodeId     String    @map("node_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash")
+  label      String?
+  expiresAt  DateTime  @map("expires_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  node VpnNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@index([nodeId])
+  @@map("node_tokens")
+}
+
+/// Command queue consumed by the node agent over HTTPS (pull model, no inbound port).
+model NodeCommand {
+  id          String        @id @default(uuid()) @db.Uuid
+  nodeId      String        @map("node_id") @db.Uuid
+  sessionId   String?       @map("session_id") @db.Uuid
+  type        CommandType
+  status      CommandStatus @default(PENDING)
+  payload     Json          @db.JsonB
+  result      Json?         @db.JsonB
+  attempts    Int           @default(0)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  deliveredAt DateTime?     @map("delivered_at")
+  completedAt DateTime?     @map("completed_at")
+
+  node    VpnNode  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  session Session? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([nodeId, status])
+  @@map("node_commands")
+}
+
+/// VPN IP address pool allocation, one row per usable address per node.
+model IpLease {
+  id          String    @id @default(uuid()) @db.Uuid
+  nodeId      String    @map("node_id") @db.Uuid
+  ip          String
+  sessionId   String?   @unique @map("session_id") @db.Uuid
+  allocatedAt DateTime? @map("allocated_at")
+
+  node    VpnNode  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  session Session? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@unique([nodeId, ip])
+  @@index([nodeId, sessionId])
+  @@map("ip_leases")
+}
+
+// --------------------------- sessions --------------------------------------
+
+model Session {
+  id              String        @id @default(uuid()) @db.Uuid
+  userId          String        @map("user_id") @db.Uuid
+  deviceId        String        @map("device_id") @db.Uuid
+  nodeId          String        @map("node_id") @db.Uuid
+  assignedVpnIp   String        @map("assigned_vpn_ip")
+  peerPublicKey   String        @map("peer_public_key")
+  status          SessionStatus @default(PENDING)
+  connectedAt     DateTime      @default(now()) @map("connected_at")
+  disconnectedAt  DateTime?     @map("disconnected_at")
+  lastHandshakeAt DateTime?     @map("last_handshake_at")
+  // Byte counters only — no traffic content, no URLs, no DPI.
+  bytesRx         BigInt        @default(0) @map("bytes_rx")
+  bytesTx         BigInt        @default(0) @map("bytes_tx")
+  closeReason     String?       @map("close_reason")
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device   Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  node     VpnNode       @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  commands NodeCommand[]
+  ipLease  IpLease?
+
+  @@index([userId, status])
+  @@index([nodeId, status])
+  @@index([deviceId, status])
+  @@map("sessions")
+}
+
+model Subscription {
+  id        String             @id @default(uuid()) @db.Uuid
+  userId    String             @map("user_id") @db.Uuid
+  plan      String             @default("test")
+  status    SubscriptionStatus @default(ACTIVE)
+  expiresAt DateTime           @map("expires_at")
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("subscriptions")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  deviceId  String?  @map("device_id") @db.Uuid
+  nodeId    String?  @map("node_id") @db.Uuid
+  action    String
+  ip        String?
+  metadata  Json?    @db.JsonB
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  device Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  node   VpnNode? @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+// --------------------------- deployments -----------------------------------
+
+/// Queue between the admin panel and the local deploy worker.
+///
+/// The panel only inserts a row with one of three fixed actions. The worker
+/// picks it up, runs the matching script and writes back the outcome. No shell
+/// string, path or argument ever crosses this table, so a compromised database
+/// can at worst trigger a normal deployment - never arbitrary commands.
+model DeployJob {
+  id                String          @id @default(uuid()) @db.Uuid
+  action            DeployAction
+  status            DeployJobStatus @default(QUEUED)
+  requestedById     String?         @map("requested_by_id") @db.Uuid
+  /// Release directory activated by this job (worker-generated timestamp).
+  releaseId         String?         @map("release_id")
+  /// Release that was live before, i.e. the rollback target.
+  previousReleaseId String?         @map("previous_release_id")
+  /// Path of the pg_dump taken before a promote.
+  backupPath        String?         @map("backup_path")
+  exitCode          Int?            @map("exit_code")
+  /// Trimmed script output. Scripts are written to never echo secrets.
+  log               String?
+  createdAt         DateTime        @default(now()) @map("created_at")
+  startedAt         DateTime?       @map("started_at")
+  finishedAt        DateTime?       @map("finished_at")
+
+  requestedBy User? @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@map("deploy_jobs")
+}

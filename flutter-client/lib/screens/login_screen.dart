@@ -2,20 +2,35 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../config.dart';
+import '../models/models.dart';
 import '../state/auth_controller.dart';
-import '../widgets/common.dart';
+import '../state/channel_controller.dart';
+import '../theme/tokens.dart';
+import '../widgets/glass.dart';
+import '../widgets/logo.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+/// Sign-in, rendered on top of the onboarding backdrop (see
+/// `onboarding_screen.dart`) so the map stays behind the card instead of the
+/// screen jumping to a flat form.
+///
+/// Registration is intentionally not here: self-service sign-up stays closed
+/// until Telegram verification exists, otherwise the endpoint is an open
+/// invitation to create thousands of accounts. The Telegram and Google buttons
+/// are rendered disabled rather than hidden, so the layout already matches the
+/// final design.
+class LoginView extends StatefulWidget {
+  const LoginView({super.key, this.onBack});
+
+  final VoidCallback? onBack;
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<LoginView> createState() => _LoginViewState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
-  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+class _LoginViewState extends State<LoginView> {
   final TextEditingController _username = TextEditingController();
   final TextEditingController _password = TextEditingController();
+  final GlobalKey<FormState> _form = GlobalKey<FormState>();
   bool _obscure = true;
 
   @override
@@ -26,126 +41,252 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _submit() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+    final AuthController auth = context.read<AuthController>();
+    if (auth.busy) return;
+    if (!(_form.currentState?.validate() ?? false)) return;
     FocusScope.of(context).unfocus();
-    // The controller owns the error state, so nothing to handle here.
-    await context.read<AuthController>().login(
-          username: _username.text,
-          password: _password.text,
-        );
+    await auth.login(
+      username: _username.text.trim(),
+      password: _password.text,
+    );
+  }
+
+  String? _validateUsername(String? value) {
+    final String text = (value ?? '').trim();
+    if (text.isEmpty) return 'Enter your username';
+    if (text.length < AppConfig.minUsernameLength) {
+      return 'At least ${AppConfig.minUsernameLength} characters';
+    }
+    if (text.length > AppConfig.maxUsernameLength) {
+      return 'At most ${AppConfig.maxUsernameLength} characters';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    final String text = value ?? '';
+    if (text.isEmpty) return 'Enter your password';
+    if (text.length < AppConfig.minPasswordLength) {
+      return 'At least ${AppConfig.minPasswordLength} characters';
+    }
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
+    final TextTheme text = Theme.of(context).textTheme;
     final AuthController auth = context.watch<AuthController>();
-    final ColorScheme scheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Icon(Icons.shield_outlined, size: 64, color: scheme.primary),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'GlukVPN',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Personal WireGuard test service',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
-                    ),
-                    const SizedBox(height: 32),
-                    if (auth.error != null)
-                      MessageBanner(
-                        message: auth.error!,
-                        isError: true,
-                        onDismiss: auth.clearError,
-                      ),
-                    TextFormField(
-                      controller: _username,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: 'Username',
-                        prefixIcon: Icon(Icons.person_outline),
-                      ),
-                      validator: (String? value) {
-                        final String text = (value ?? '').trim();
-                        if (text.length < AppConfig.minUsernameLength) {
-                          return 'At least ${AppConfig.minUsernameLength} characters';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 14),
-                    TextFormField(
-                      controller: _password,
-                      obscureText: _obscure,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      textInputAction: TextInputAction.done,
-                      onFieldSubmitted: (_) => _submit(),
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        suffixIcon: IconButton(
-                          icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
-                          onPressed: () => setState(() => _obscure = !_obscure),
-                          tooltip: _obscure ? 'Show password' : 'Hide password',
-                        ),
-                      ),
-                      validator: (String? value) {
-                        if ((value ?? '').length < AppConfig.minPasswordLength) {
-                          return 'At least ${AppConfig.minPasswordLength} characters';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                    FilledButton(
-                      onPressed: auth.busy ? null : _submit,
-                      child: auth.busy
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('SIGN IN'),
-                    ),
-                    const SizedBox(height: 26),
-                    Text(
-                      'Control API\n${AppConfig.apiBaseUrl}',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-                    ),
-                    if (!AppConfig.usesHttps)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10),
-                        child: Text(
-                          'This build talks to the API over plain HTTP. '
-                          'Credentials would travel unencrypted.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 11, color: scheme.error),
-                        ),
-                      ),
-                  ],
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
+      child: Form(
+        key: _form,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            if (widget.onBack != null)
+              CircleIconButton(
+                icon: Icons.arrow_back_rounded,
+                onTap: widget.onBack!,
+                tooltip: 'Back',
+              ),
+            const SizedBox(height: 26),
+            const GlukLogo(size: 56),
+            const SizedBox(height: 18),
+            Text('Welcome back', style: text.headlineMedium),
+            const SizedBox(height: 6),
+            Text(
+              'Sign in to reach your nodes and start the tunnel.',
+              style: text.bodyMedium,
+            ),
+            const SizedBox(height: 24),
+            TextFormField(
+              controller: _username,
+              autocorrect: false,
+              enableSuggestions: false,
+              textInputAction: TextInputAction.next,
+              style: text.bodyLarge,
+              decoration: const InputDecoration(
+                labelText: 'Username',
+                prefixIcon: Icon(Icons.alternate_email_rounded),
+              ),
+              validator: _validateUsername,
+              onChanged: (_) => auth.clearError(),
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _password,
+              obscureText: _obscure,
+              autocorrect: false,
+              enableSuggestions: false,
+              textInputAction: TextInputAction.done,
+              style: text.bodyLarge,
+              decoration: InputDecoration(
+                labelText: 'Password',
+                prefixIcon: const Icon(Icons.lock_outline_rounded),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscure
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                  ),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                  tooltip: _obscure ? 'Show password' : 'Hide password',
                 ),
               ),
+              validator: _validatePassword,
+              onFieldSubmitted: (_) => _submit(),
+              onChanged: (_) => auth.clearError(),
             ),
+            if (auth.error != null) ...<Widget>[
+              const SizedBox(height: 16),
+              InlineNotice(message: auth.error!),
+            ],
+            const SizedBox(height: 22),
+            PrimaryPillButton(
+              label: 'Sign In',
+              busy: auth.busy,
+              onPressed: auth.busy ? null : _submit,
+            ),
+            const SizedBox(height: 22),
+            const _OrDivider(),
+            const SizedBox(height: 16),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: _SocialButton(
+                    icon: Icons.send_rounded,
+                    label: 'Telegram',
+                    enabled: AppConfig.telegramSignInEnabled,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _SocialButton(
+                    icon: Icons.g_mobiledata_rounded,
+                    label: 'Google',
+                    enabled: AppConfig.googleSignInEnabled,
+                  ),
+                ),
+              ],
+            ),
+            if (!AppConfig.selfRegistrationEnabled) ...<Widget>[
+              const SizedBox(height: 18),
+              const InlineNotice(
+                message:
+                    'Sign-up opens once Telegram verification is live. Until then '
+                    'an admin creates accounts; your account ID never changes, '
+                    'only the nickname does.',
+                tone: GlukColors.violetLight,
+              ),
+            ],
+            const SizedBox(height: 18),
+            const Center(child: _ChannelChip()),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Kept as a standalone screen for deep links and for tests that pump the
+/// sign-in form on its own.
+class LoginScreen extends StatelessWidget {
+  const LoginScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: GlukColors.pageBg,
+      body: SafeArea(child: LoginView()),
+    );
+  }
+}
+
+class _OrDivider extends StatelessWidget {
+  const _OrDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme text = Theme.of(context).textTheme;
+    return Row(
+      children: <Widget>[
+        const Expanded(child: Divider()),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text('or continue with', style: text.bodySmall),
+        ),
+        const Expanded(child: Divider()),
+      ],
+    );
+  }
+}
+
+/// A provider button that is visibly present but not yet wired up. Disabled
+/// rather than hidden so the screen does not reflow when the feature lands.
+class _SocialButton extends StatelessWidget {
+  const _SocialButton({
+    required this.icon,
+    required this.label,
+    required this.enabled,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme text = Theme.of(context).textTheme;
+    return Tooltip(
+      message: enabled ? label : '$label sign-in is coming soon',
+      child: Opacity(
+        opacity: enabled ? 1 : 0.45,
+        child: GlassPanel(
+          radius: 999,
+          padding: const EdgeInsets.symmetric(vertical: 13),
+          onTap: enabled ? () {} : null,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(icon, size: 18, color: GlukColors.violetLight),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Which control plane this build is pointed at, and its version. Visible
+/// before sign-in on purpose: on BETA you are looking at a different database
+/// with different accounts, and that should never be a surprise.
+class _ChannelChip extends StatelessWidget {
+  const _ChannelChip();
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme text = Theme.of(context).textTheme;
+    final ChannelController channel = context.watch<ChannelController>();
+    final ChannelVersion? version = channel.versionOf(channel.active);
+    final Color tone =
+        channel.active.isBeta ? GlukColors.amber : GlukColors.violetLight;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: tone.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: tone.withOpacity(0.32)),
+      ),
+      child: Text(
+        version?.label ?? '${channel.active.label} \u00b7 offline',
+        style: text.labelSmall?.copyWith(color: tone),
       ),
     );
   }

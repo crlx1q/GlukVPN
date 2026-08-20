@@ -1,0 +1,58 @@
+# ============================================================================
+# GlukVPN node — WireGuard interface template
+#
+# Install to /etc/wireguard/wg0.conf  (root:root, chmod 600)
+#
+# IMPORTANT
+#  * [Peer] sections are NOT in this file on purpose. Peers are created and
+#    removed at runtime by the node agent (`wg set wg0 peer ...`), one peer per
+#    device, each pinned to a single /32.
+#  * SaveConfig MUST stay false, otherwise wg-quick rewrites this file on stop
+#    and bakes in whatever peers happened to exist.
+#  * The private key below never leaves the node and is never sent to the
+#    control plane. Generate it locally:
+#        umask 077 && wg genkey | sudo tee /etc/wireguard/node.key | wg pubkey
+#    The first value is the private key, the printed value is the public key.
+#
+# Replace before use:
+#    <NODE_PRIVATE_KEY>   output of `wg genkey`
+#    <EGRESS_IF>          uplink interface from `ip route show default`
+#                         (Oracle Cloud ARM instances are usually enp0s6)
+# ============================================================================
+
+[Interface]
+Address = 10.8.0.1/24
+ListenPort = 51820
+PrivateKey = <NODE_PRIVATE_KEY>
+# 1420 = 1500 - 80 (WireGuard overhead over IPv4). Lower it to 1380 if you see
+# large downloads stalling behind a PPPoE / mobile link.
+MTU = 1420
+SaveConfig = false
+
+# --------------------------------------------------------------------------
+# Forwarding + NAT.
+#
+# What these lines change on the host:
+#  1. net.ipv4.ip_forward=1 turns the machine into a router (persist it in
+#     /etc/sysctl.d/99-glukvpn.conf so a reboot keeps it).
+#  2. one MASQUERADE rule in the nat table rewrites the source address of
+#     10.8.0.0/24 traffic to the node's public IP.
+#  3. two FORWARD rules allow wg0 -> uplink and the return path only.
+#
+# The rules are INSERTED at position 1 so they land BEFORE any existing
+# REJECT rule (Oracle Cloud images ship a REJECT at the end of both INPUT and
+# FORWARD). Appending instead of inserting silently breaks forwarding.
+#
+# Verify afterwards: sudo iptables -S FORWARD ; sudo iptables -t nat -S POSTROUTING
+# --------------------------------------------------------------------------
+PostUp = sysctl -q -w net.ipv4.ip_forward=1
+PostUp = iptables -t nat -I POSTROUTING 1 -s 10.8.0.0/24 -o <EGRESS_IF> -j MASQUERADE
+PostUp = iptables -I FORWARD 1 -i %i -o <EGRESS_IF> -j ACCEPT
+PostUp = iptables -I FORWARD 2 -i <EGRESS_IF> -o %i -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+# MSS clamping keeps TCP working when the path MTU is smaller than ours.
+PostUp = iptables -t mangle -I FORWARD 1 -o %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+
+PostDown = iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -o <EGRESS_IF> -j MASQUERADE
+PostDown = iptables -D FORWARD -i %i -o <EGRESS_IF> -j ACCEPT
+PostDown = iptables -D FORWARD -i <EGRESS_IF> -o %i -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+PostDown = iptables -t mangle -D FORWARD -o %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu

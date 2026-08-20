@@ -1,0 +1,62 @@
+# GlukVPN node agent
+#
+# Install to /etc/systemd/system/vpn-node-agent.service
+#
+# Privileges: the agent runs as the unprivileged "vpnagent" user and gets exactly
+# one capability, CAP_NET_ADMIN, which is what `wg set` needs to talk to the
+# WireGuard netlink API. It is NOT root, has no sudo rules, and cannot write
+# anywhere except /etc/vpn-node-agent (needed to persist a rotated node token).
+
+[Unit]
+Description=GlukVPN node agent (WireGuard peer management + heartbeat)
+Documentation=file:/opt/vpn-node-agent/README.md
+After=network-online.target wg-quick@wg0.service
+Wants=network-online.target wg-quick@wg0.service
+
+[Service]
+Type=simple
+User=vpnagent
+Group=vpnagent
+WorkingDirectory=/opt/vpn-node-agent
+Environment=NODE_ENV=production
+Environment=ENV_FILE=/etc/vpn-node-agent/agent.env
+ExecStart=/usr/bin/node /opt/vpn-node-agent/dist/agent.js
+
+Restart=always
+RestartSec=10
+# Exit code 78 (EX_CONFIG) = broken config or revoked credential.
+# Do not restart in a loop; fix the problem and start the unit again.
+RestartPreventExitStatus=78
+
+# ---------------------------- hardening -------------------------------------
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# The rotated node token is written back here (0600, owned by vpnagent).
+ReadWritePaths=/etc/vpn-node-agent
+
+# ---------------------------- logging ---------------------------------------
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vpn-node-agent
+
+[Install]
+WantedBy=multi-user.target

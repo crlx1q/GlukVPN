@@ -117,11 +117,13 @@ class AuthUser {
     required this.isAdmin,
     required this.maxDevices,
     required this.maxConcurrentSessions,
+    this.publicId = '',
     this.createdAt,
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) => AuthUser(
         id: _asString(json['id']),
+        publicId: _asString(json['publicId']),
         username: _asString(json['username']),
         status: _asString(json['status'], 'ACTIVE'),
         isAdmin: _asBool(json['isAdmin']),
@@ -130,7 +132,14 @@ class AuthUser {
         createdAt: _asDate(json['createdAt']),
       );
 
+  /// Internal UUID. Used in API paths, never shown to the user.
   final String id;
+
+  /// Immutable 8-digit handle (`00000001`) assigned by the database on insert.
+  /// The nickname is editable, this is not: support, search and bans key on it.
+  /// Empty only when talking to a control server older than this build.
+  final String publicId;
+
   final String username;
   final String status;
   final bool isAdmin;
@@ -139,6 +148,90 @@ class AuthUser {
   final DateTime? createdAt;
 
   bool get isActive => status == 'ACTIVE';
+
+  /// Label for the profile card in Settings.
+  String get publicIdLabel => publicId.isEmpty ? 'ID unavailable' : 'ID $publicId';
+
+  AuthUser copyWith({String? username}) => AuthUser(
+        id: id,
+        publicId: publicId,
+        username: username ?? this.username,
+        status: status,
+        isAdmin: isAdmin,
+        maxDevices: maxDevices,
+        maxConcurrentSessions: maxConcurrentSessions,
+        createdAt: createdAt,
+      );
+}
+
+/// Build fingerprint of one control plane, from `GET /api/version`.
+///
+/// Settings shows one of these per channel ("PROD 1.0.0" / "BETA 1.2.0") and
+/// uses a failed request as the signal that BETA is currently switched off.
+class ChannelVersion {
+  const ChannelVersion({
+    required this.channel,
+    required this.version,
+    this.commit = '',
+    this.migration = '',
+    this.releasedAt,
+    this.databaseUp = true,
+  });
+
+  factory ChannelVersion.fromJson(Map<String, dynamic> json) => ChannelVersion(
+        channel: _asString(json['channel'], 'prod'),
+        version: _asString(json['version'], '0.0.0'),
+        commit: _asString(json['commit']),
+        migration: _asString(json['migration']),
+        releasedAt: _asDate(json['releasedAt']),
+        databaseUp: _asString(json['database'], 'up') == 'up',
+      );
+
+  final String channel;
+  final String version;
+  final String commit;
+
+  /// Last applied Prisma migration, so a promote can be checked for a schema
+  /// mismatch before it is started.
+  final String migration;
+  final DateTime? releasedAt;
+  final bool databaseUp;
+
+  bool get isBeta => channel.toLowerCase() == 'beta';
+
+  String get channelLabel => channel.toUpperCase();
+
+  String get label => '$channelLabel $version';
+
+  String get commitShort =>
+      commit.length <= 7 ? commit : commit.substring(0, 7);
+}
+
+/// Result of `POST /api/auth/username`.
+class UsernameChangeResult {
+  const UsernameChangeResult({
+    required this.publicId,
+    required this.username,
+    required this.changed,
+  });
+
+  factory UsernameChangeResult.fromJson(Map<String, dynamic> json) {
+    final Object? raw = json['user'];
+    final Map<String, dynamic> user =
+        raw is Map ? raw.cast<String, dynamic>() : <String, dynamic>{};
+    return UsernameChangeResult(
+      publicId: _asString(user['publicId']),
+      username: _asString(user['username']),
+      changed: _asBool(json['changed']),
+    );
+  }
+
+  final String publicId;
+  final String username;
+
+  /// False when the requested name equalled the current one: the UI then says
+  /// nothing changed instead of claiming a rename.
+  final bool changed;
 }
 
 class SubscriptionInfo {

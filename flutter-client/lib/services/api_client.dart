@@ -52,10 +52,15 @@ class ApiException implements Exception {
 class ApiClient {
   ApiClient({http.Client? httpClient, String? baseUrl})
       : _http = httpClient ?? http.Client(),
-        _baseUrl = (baseUrl ?? AppConfig.apiBaseUrl).replaceAll(RegExp(r'/+$'), '');
+        _baseUrl = _normalise(baseUrl ?? AppConfig.apiBaseUrl);
+
+  static String _normalise(String url) => url.replaceAll(RegExp(r'/+$'), '');
 
   final http.Client _http;
-  final String _baseUrl;
+
+  /// Not final: one client instance follows the active channel. See
+  /// [setBaseUrl] for why the session is dropped on every switch.
+  String _baseUrl;
 
   TokenBundle? _tokens;
   Future<void>? _refreshing;
@@ -72,6 +77,20 @@ class ApiClient {
   void setTokens(TokenBundle? tokens, {bool notify = true}) {
     _tokens = tokens;
     if (notify) onTokensChanged?.call(tokens);
+  }
+
+  /// Repoints this client at another channel's control plane (PROD <-> BETA).
+  ///
+  /// The session is dropped *before* the switch, never after: access and refresh
+  /// tokens are signed with one channel's JWT secret and the user rows behind
+  /// them only exist in that channel's database, so carrying them over would
+  /// send a PROD credential to the BETA host. ChannelController restores the
+  /// target channel's own stored session immediately after this call.
+  void setBaseUrl(String url) {
+    final String next = _normalise(url);
+    if (next == _baseUrl) return;
+    setTokens(null, notify: false);
+    _baseUrl = next;
   }
 
   void close() => _http.close();
@@ -205,6 +224,16 @@ class ApiClient {
     return json['ok'] == true;
   }
 
+  /// Build fingerprint of whichever stack answers this base URL: channel, app
+  /// version, commit, last applied migration.
+  ///
+  /// Unauthenticated on purpose (it carries no user data), so Settings can show
+  /// "PROD 1.0.0 / BETA 1.2.0" and probe whether BETA is even up before the
+  /// user switches to it.
+  Future<ChannelVersion> version() async => ChannelVersion.fromJson(
+        await _request('GET', '/api/version', authenticated: false),
+      );
+
   Future<LoginResult> login({required String username, required String password}) async {
     final Map<String, dynamic> json = await _request(
       'POST',
@@ -251,6 +280,17 @@ class ApiClient {
   }
 
   Future<MeResult> me() async => MeResult.fromJson(await _request('GET', '/api/auth/me'));
+
+  /// Renames the account. The immutable public id is untouched by design, so
+  /// support, search and bans keep working across renames.
+  Future<UsernameChangeResult> changeUsername(String username) async =>
+      UsernameChangeResult.fromJson(
+        await _request(
+          'POST',
+          '/api/auth/username',
+          body: <String, dynamic>{'username': username},
+        ),
+      );
 
   // --- nodes ---------------------------------------------------------------
 

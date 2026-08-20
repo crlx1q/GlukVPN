@@ -1,0 +1,68 @@
+[Unit]
+Description=GlukVPN control plane API
+Documentation=file:///opt/vpn-control/README.md
+# postgresql.service may not exist if PostgreSQL is managed by aaPanel; an
+# ordering dependency on a missing unit is harmless.
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vpncontrol
+Group=vpncontrol
+# Release directories are immutable; `current` is a symlink the deploy worker
+# swaps atomically. systemd resolves it at start time, so restarting the unit
+# is what activates a new release.
+#
+# MIGRATING AN EXISTING INSTALL (prod is running from the old path):
+#   sudo mkdir -p /opt/vpn-control/releases
+#   sudo cp -a /opt/vpn-control/control-server /opt/vpn-control/releases/0001-initial
+#   sudo ln -sfn /opt/vpn-control/releases/0001-initial /opt/vpn-control/current
+#   sudo systemctl daemon-reload && sudo systemctl restart vpn-control
+# Keep the old control-server directory until the new path is verified.
+WorkingDirectory=/opt/vpn-control/current
+
+Environment=NODE_ENV=production
+# src/config.ts loads this file through dotenv. Keep it root:vpncontrol 0640.
+Environment=ENV_FILE=/etc/vpn-control/control.env
+
+ExecStart=/usr/bin/node dist/server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+
+# --- Hardening -------------------------------------------------------------
+# The API needs no privileges whatsoever: it listens on loopback only and
+# talks to PostgreSQL. It never touches WireGuard, iptables or the network
+# configuration.
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+# Node.js JITs, so a writable+executable mapping is unavoidable.
+MemoryDenyWriteExecute=false
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0077
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vpn-control
+
+[Install]
+WantedBy=multi-user.target

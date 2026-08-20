@@ -1,0 +1,62 @@
+# ============================================================================
+# GlukVPN BETA node — WireGuard interface template
+#
+# Install to /etc/wireguard/wg1.conf  (root:root, chmod 600)
+#
+# This is the beta twin of wg0.conf. Everything that could collide with
+# production is different on purpose:
+#
+#     prod   wg0   UDP 51820   10.8.0.0/24   /etc/vpn-node-agent
+#     beta   wg1   UDP 51821   10.9.0.0/24   /etc/vpn-node-agent-beta
+#
+# Both interfaces can live on the same host. They use separate keys, so a
+# leaked beta key gives no access to production peers.
+#
+# IMPORTANT
+#  * [Peer] sections are NOT in this file on purpose. Peers are created and
+#    removed at runtime by the beta node agent (`wg set wg1 peer ...`).
+#  * SaveConfig MUST stay false, otherwise wg-quick rewrites this file on stop
+#    and bakes in whatever peers happened to exist.
+#  * Generate a NEW private key for beta — never reuse the wg0 key:
+#        umask 077 && wg genkey | sudo tee /etc/wireguard/node-beta.key | wg pubkey
+#    The first value is the private key, the printed value is the public key.
+#
+# Replace before use:
+#    <BETA_NODE_PRIVATE_KEY>   output of `wg genkey`
+#    <EGRESS_IF>               uplink interface from `ip route show default`
+#                              (Oracle Cloud ARM instances are usually enp0s6)
+#
+# Firewall: UDP 51821 has to be open in the same place UDP 51820 was opened
+# (both the cloud security list and the host iptables INPUT chain), plus
+# `iptables -I INPUT <N> -i wg1 -j ACCEPT` so the gateway answers pings.
+# ============================================================================
+
+[Interface]
+Address = 10.9.0.1/24
+ListenPort = 51821
+PrivateKey = <BETA_NODE_PRIVATE_KEY>
+MTU = 1420
+SaveConfig = false
+
+# --------------------------------------------------------------------------
+# Forwarding + NAT for the beta subnet only.
+#
+# The rules are INSERTED at position 1 so they land BEFORE the REJECT rule that
+# Oracle Cloud images ship at the end of INPUT and FORWARD. Appending instead
+# of inserting silently breaks forwarding.
+#
+# Verify afterwards:
+#   sudo iptables -S FORWARD ; sudo iptables -t nat -S POSTROUTING
+# Production rules for 10.8.0.0/24 stay untouched — these only match 10.9.0.0/24
+# and the wg1 interface.
+# --------------------------------------------------------------------------
+PostUp = sysctl -q -w net.ipv4.ip_forward=1
+PostUp = iptables -t nat -I POSTROUTING 1 -s 10.9.0.0/24 -o <EGRESS_IF> -j MASQUERADE
+PostUp = iptables -I FORWARD 1 -i %i -o <EGRESS_IF> -j ACCEPT
+PostUp = iptables -I FORWARD 2 -i <EGRESS_IF> -o %i -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+PostUp = iptables -t mangle -I FORWARD 1 -o %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+
+PostDown = iptables -t nat -D POSTROUTING -s 10.9.0.0/24 -o <EGRESS_IF> -j MASQUERADE
+PostDown = iptables -D FORWARD -i %i -o <EGRESS_IF> -j ACCEPT
+PostDown = iptables -D FORWARD -i <EGRESS_IF> -o %i -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+PostDown = iptables -t mangle -D FORWARD -o %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu

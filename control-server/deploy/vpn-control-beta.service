@@ -1,0 +1,71 @@
+[Unit]
+# GlukVPN control plane — BETA channel.
+#
+# Same code as prod, everything else separate:
+#   port      127.0.0.1:8082      (prod: 8081)
+#   database  glukvpn_beta        (prod: glukvpn)
+#   env file  /etc/vpn-control-beta/control.env
+#   unix user vpnbeta             (prod: vpncontrol)
+#
+# The separate unix user is deliberate: vpnbeta cannot read the prod env file,
+# so a mistake in beta code can never reach prod credentials or the prod DB.
+#
+# Beta is meant to be switched off when unused:
+#   sudo systemctl stop vpn-control-beta      # BETA OFF
+#   sudo systemctl start vpn-control-beta     # BETA ON
+# It is NOT enabled at boot by default — prod must always come back up first.
+Description=GlukVPN control plane API (beta channel)
+Documentation=file:///opt/vpn-control/README.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vpnbeta
+Group=vpnbeta
+
+# Releases are immutable directories; `current` is a symlink swapped
+# atomically by the deploy worker. systemd resolves it at start time, so a
+# restart is what actually activates a new release.
+WorkingDirectory=/opt/vpn-control-beta/current
+
+Environment=NODE_ENV=production
+Environment=ENV_FILE=/etc/vpn-control-beta/control.env
+
+ExecStart=/usr/bin/node dist/server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+
+# --- Hardening -------------------------------------------------------------
+# Identical to prod: loopback socket plus PostgreSQL, nothing else.
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0077
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vpn-control-beta
+
+[Install]
+WantedBy=multi-user.target
