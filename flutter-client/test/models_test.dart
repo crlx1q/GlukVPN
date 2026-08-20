@@ -336,7 +336,7 @@ void main() {
         'status': 'ACTIVE',
       });
       expect(user.publicId, isEmpty);
-      expect(user.publicIdLabel, 'ID unavailable');
+      expect(user.publicIdLabel, '');
     });
   });
 
