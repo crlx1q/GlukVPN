@@ -163,7 +163,7 @@ class SocialSignInButton extends StatelessWidget {
         color: GlukColors.glass,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(size / 2),
-          side: const BorderSide(color: GlukColors.stroke),
+          side: BorderSide(color: GlukColors.stroke),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
