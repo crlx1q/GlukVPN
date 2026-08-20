@@ -41,7 +41,7 @@ function isLocatableIp(ip: string): boolean {
 		// Any other IPv6 address: allow the lookup, the provider will decide.
 		return value.includes(":")
 	}
-	const [a, b] = octets.map((part) => Number(part))
+	const a = Number(octets[0]); const b = Number(octets[1]);
 	if (!Number.isInteger(a) || !Number.isInteger(b)) return false
 	if (a === 0 || a === 10 || a === 127) return false
 	if (a === 169 && b === 254) return false
