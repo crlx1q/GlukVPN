@@ -113,7 +113,13 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
 
 	const enqueue = async (
 		request: { ip: string; [key: string]: unknown },
-		action: "DEPLOY_BETA" | "PROMOTE_BETA_TO_PROD" | "ROLLBACK_PROD",
+		action:
+			| "DEPLOY_BETA"
+			| "PROMOTE_BETA_TO_PROD"
+			| "ROLLBACK_PROD"
+			| "START_BETA"
+			| "STOP_BETA"
+			| "RESTART_BETA",
 	) => {
 		requireProdChannel()
 		const { user } = getAuthUser(request as never)
@@ -176,6 +182,43 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
 		})
 	})
 
+	// ------------------------- beta lifecycle -------------------------------
+	// Same pattern as a deploy: a fixed enum value goes into the queue and the
+	// worker maps it to one hard-coded script that takes no arguments. No part
+	// of the request ever reaches a shell.
+	//
+	// Prod has no equivalent of these routes on purpose - production is not
+	// something a web button switches off.
+
+	/** Bring the beta stack up: wg1, beta API, beta node agent. */
+	app.post("/api/admin/deploy/beta/start", async (request, reply) => {
+		const job = await enqueue(request as never, "START_BETA")
+		return reply.code(202).send({
+			queued: true,
+			job: serializeJob(job),
+			note: "Starting wg1, the beta control server and the beta node agent. The job only succeeds once beta answers its health check.",
+		})
+	})
+
+	/** Switch beta off for real: sessions closed, units stopped and disabled. */
+	app.post("/api/admin/deploy/beta/stop", async (request, reply) => {
+		const job = await enqueue(request as never, "STOP_BETA")
+		return reply.code(202).send({
+			queued: true,
+			job: serializeJob(job),
+			note: "Closing beta sessions, then stopping the beta agent, the beta API and wg1 (udp/51821). Prod keeps running on wg0 (udp/51820).",
+		})
+	})
+
+	app.post("/api/admin/deploy/beta/restart", async (request, reply) => {
+		const job = await enqueue(request as never, "RESTART_BETA")
+		return reply.code(202).send({
+			queued: true,
+			job: serializeJob(job),
+			note: "Stopping and starting beta in one job, so the audit log shows a restart rather than an unexplained outage.",
+		})
+	})
+
 	/** Everything the channels panel needs in one call. */
 	app.get("/api/admin/deploy/status", async (_request, reply) => {
 		const [prod, beta, activeJob, recentJobs] = await Promise.all([
@@ -194,6 +237,11 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
 
 		const lastPromote = recentJobs.find(
 			(job) => job.action === "PROMOTE_BETA_TO_PROD" && job.status === "SUCCEEDED",
+		)
+		// Whether beta was last switched on or off, so the panel can label the
+		// button honestly even while beta is unreachable.
+		const lastLifecycle = recentJobs.find((job) =>
+			["START_BETA", "STOP_BETA", "RESTART_BETA"].includes(job.action),
 		)
 
 		// A readiness checklist, so "can I promote?" is answered before clicking.
@@ -244,6 +292,15 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
 			promoteReady: checks.every((check) => check.ok),
 			activeJob: activeJob ? serializeJob(activeJob) : null,
 			lastPromote: lastPromote ? serializeJob(lastPromote) : null,
+			beta: {
+				running: beta.reachable,
+				// STOP_BETA disables the units, so "off" survives a reboot.
+				intendedState:
+					lastLifecycle?.action === "STOP_BETA" && lastLifecycle.status === "SUCCEEDED"
+						? "stopped"
+						: "running",
+				lastLifecycleJob: lastLifecycle ? serializeJob(lastLifecycle) : null,
+			},
 			jobs: recentJobs.map(serializeJob),
 			serverTime: new Date().toISOString(),
 		})

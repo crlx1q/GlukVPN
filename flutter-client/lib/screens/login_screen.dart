@@ -8,16 +8,18 @@ import '../state/channel_controller.dart';
 import '../theme/tokens.dart';
 import '../widgets/glass.dart';
 import '../widgets/logo.dart';
+import '../widgets/social_icons.dart';
 
 /// Sign-in, rendered on top of the onboarding backdrop (see
-/// `onboarding_screen.dart`) so the map stays behind the card instead of the
+/// `onboarding_screen.dart`) so the planet stays behind the card instead of the
 /// screen jumping to a flat form.
 ///
-/// Registration is intentionally not here: self-service sign-up stays closed
-/// until Telegram verification exists, otherwise the endpoint is an open
-/// invitation to create thousands of accounts. The Telegram and Google buttons
-/// are rendered disabled rather than hidden, so the layout already matches the
-/// final design.
+/// One field for both identities: the control plane accepts a username or an
+/// email address on `POST /api/auth/login`, so the form does not ask the user
+/// to know which one they signed up with.
+///
+/// Self-service registration is deliberately absent while verification is not
+/// in place; the screen simply does not advertise it.
 class LoginView extends StatefulWidget {
   const LoginView({super.key, this.onBack});
 
@@ -28,14 +30,14 @@ class LoginView extends StatefulWidget {
 }
 
 class _LoginViewState extends State<LoginView> {
-  final TextEditingController _username = TextEditingController();
+  final TextEditingController _identifier = TextEditingController();
   final TextEditingController _password = TextEditingController();
   final GlobalKey<FormState> _form = GlobalKey<FormState>();
   bool _obscure = true;
 
   @override
   void dispose() {
-    _username.dispose();
+    _identifier.dispose();
     _password.dispose();
     super.dispose();
   }
@@ -46,14 +48,24 @@ class _LoginViewState extends State<LoginView> {
     if (!(_form.currentState?.validate() ?? false)) return;
     FocusScope.of(context).unfocus();
     await auth.login(
-      username: _username.text.trim(),
+      identifier: _identifier.text.trim(),
       password: _password.text,
     );
   }
 
-  String? _validateUsername(String? value) {
+  /// Accepts either identity. An address is recognised by the `@`, everything
+  /// else is treated as a username - the server does the authoritative lookup.
+  String? _validateIdentifier(String? value) {
     final String text = (value ?? '').trim();
-    if (text.isEmpty) return 'Enter your username';
+    if (text.isEmpty) return 'Enter your username or email';
+    if (text.contains('@')) {
+      final int at = text.indexOf('@');
+      final bool looksLikeEmail = at > 0 &&
+          text.length > at + 3 &&
+          text.indexOf('.', at) > at + 1 &&
+          !text.contains(' ');
+      return looksLikeEmail ? null : 'Enter a valid email address';
+    }
     if (text.length < AppConfig.minUsernameLength) {
       return 'At least ${AppConfig.minUsernameLength} characters';
     }
@@ -96,21 +108,22 @@ class _LoginViewState extends State<LoginView> {
             Text('Welcome back', style: text.headlineMedium),
             const SizedBox(height: 6),
             Text(
-              'Sign in to reach your nodes and start the tunnel.',
+              'Sign in to pick a country and connect.',
               style: text.bodyMedium,
             ),
             const SizedBox(height: 24),
             TextFormField(
-              controller: _username,
+              controller: _identifier,
               autocorrect: false,
               enableSuggestions: false,
+              keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
               style: text.bodyLarge,
               decoration: const InputDecoration(
-                labelText: 'Username',
-                prefixIcon: Icon(Icons.alternate_email_rounded),
+                labelText: 'Username or email',
+                prefixIcon: Icon(Icons.person_outline_rounded),
               ),
-              validator: _validateUsername,
+              validator: _validateIdentifier,
               onChanged: (_) => auth.clearError(),
             ),
             const SizedBox(height: 14),
@@ -155,7 +168,7 @@ class _LoginViewState extends State<LoginView> {
               children: <Widget>[
                 Expanded(
                   child: _SocialButton(
-                    icon: Icons.send_rounded,
+                    mark: const TelegramMark(size: 20),
                     label: 'Telegram',
                     enabled: AppConfig.telegramSignInEnabled,
                   ),
@@ -163,25 +176,20 @@ class _LoginViewState extends State<LoginView> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _SocialButton(
-                    icon: Icons.g_mobiledata_rounded,
+                    mark: const GoogleMark(size: 20),
                     label: 'Google',
                     enabled: AppConfig.googleSignInEnabled,
                   ),
                 ),
               ],
             ),
-            if (!AppConfig.selfRegistrationEnabled) ...<Widget>[
+            // The channel indicator only exists in builds that are allowed to
+            // switch control planes (the internal APK). A release build points
+            // at one API and says nothing about it.
+            if (AppConfig.betaChannelAvailable) ...<Widget>[
               const SizedBox(height: 18),
-              const InlineNotice(
-                message:
-                    'Sign-up opens once Telegram verification is live. Until then '
-                    'an admin creates accounts; your account ID never changes, '
-                    'only the nickname does.',
-                tone: GlukColors.violetLight,
-              ),
+              const Center(child: _ChannelChip()),
             ],
-            const SizedBox(height: 18),
-            const Center(child: _ChannelChip()),
           ],
         ),
       ),
@@ -222,16 +230,16 @@ class _OrDivider extends StatelessWidget {
   }
 }
 
-/// A provider button that is visibly present but not yet wired up. Disabled
-/// rather than hidden so the screen does not reflow when the feature lands.
+/// A provider button carrying the official mark. Disabled rather than hidden
+/// so the screen does not reflow when the provider is switched on.
 class _SocialButton extends StatelessWidget {
   const _SocialButton({
-    required this.icon,
+    required this.mark,
     required this.label,
     required this.enabled,
   });
 
-  final IconData icon;
+  final Widget mark;
   final String label;
   final bool enabled;
 
@@ -239,7 +247,7 @@ class _SocialButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final TextTheme text = Theme.of(context).textTheme;
     return Tooltip(
-      message: enabled ? label : '$label sign-in is coming soon',
+      message: label,
       child: Opacity(
         opacity: enabled ? 1 : 0.45,
         child: GlassPanel(
@@ -249,7 +257,7 @@ class _SocialButton extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
-              Icon(icon, size: 18, color: GlukColors.violetLight),
+              mark,
               const SizedBox(width: 8),
               Text(
                 label,

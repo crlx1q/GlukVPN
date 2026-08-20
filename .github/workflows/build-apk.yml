@@ -8,7 +8,7 @@ on:
         required: false
         default: "https://api.gluk.tech"
   push:
-    branches: [main, master]
+    branches: [main, master, beta]
     paths:
       - "flutter-client/lib/**"
       - "flutter-client/test/**"

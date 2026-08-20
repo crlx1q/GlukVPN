@@ -67,6 +67,12 @@ enum DeployAction {
   DEPLOY_BETA
   PROMOTE_BETA_TO_PROD
   ROLLBACK_PROD
+  // Lifecycle of the beta stack only (control server + node agent + wg1).
+  // There is deliberately no equivalent for prod: prod is never stopped from
+  // a web button.
+  START_BETA
+  STOP_BETA
+  RESTART_BETA
 }
 
 enum DeployJobStatus {
@@ -79,26 +85,39 @@ enum DeployJobStatus {
 // ----------------------------- users ---------------------------------------
 
 model User {
-  id           String     @id @default(uuid()) @db.Uuid
-  /// Public, immutable account number rendered as 8 digits ("00000001").
-  /// Assigned by a Postgres sequence; a DB trigger rejects every change.
-  /// `username` is freely renameable, this is not — use it to search and ban.
-  publicId     String     @unique @map("public_id") @default(dbgenerated("lpad(nextval('user_public_id_seq')::text, 8, '0')"))
-  username     String     @unique
-  passwordHash String     @map("password_hash")
-  status       UserStatus @default(ACTIVE)
-  isAdmin      Boolean    @default(false) @map("is_admin")
-  maxDevices   Int        @default(3) @map("max_devices")
-  maxSessions  Int        @default(1) @map("max_concurrent_sessions")
-  createdAt    DateTime   @default(now()) @map("created_at")
-  updatedAt    DateTime   @updatedAt @map("updated_at")
+  id              String     @id @default(uuid()) @db.Uuid
+  /// Public, immutable account number: 8 digits that always start with 1
+  /// ("10758930"). Random, so it leaks neither signup order nor user count and
+  /// cannot be enumerated. A DB trigger rejects every change to it.
+  /// `username` and `email` are renameable — this is not. Search and ban by it.
+  publicId        String     @unique @map("public_id") @default(dbgenerated("gen_user_public_id()"))
+  username        String     @unique
+  /// Second login identity. Stored lower-cased; login accepts username OR
+  /// email. A new address only replaces the old one once it is confirmed.
+  email           String?    @unique
+  emailVerifiedAt DateTime?  @map("email_verified_at")
+  passwordHash    String     @map("password_hash")
+  status          UserStatus @default(ACTIVE)
+  isAdmin         Boolean    @default(false) @map("is_admin")
+  maxDevices      Int        @default(3) @map("max_devices")
+  maxSessions     Int        @default(1) @map("max_concurrent_sessions")
+  /// Approximate origin resolved from the login IP: country/region only.
+  /// Never GPS coordinates — the map marker is drawn from the country centre.
+  lastCountry     String?    @map("last_country")
+  lastCountryCode String?    @map("last_country_code")
+  lastRegion      String?    @map("last_region")
+  geoUpdatedAt    DateTime?  @map("geo_updated_at")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
 
-  devices       Device[]
-  sessions      Session[]
-  subscriptions Subscription[]
-  refreshTokens RefreshToken[]
-  auditLogs     AuditLog[]
-  deployJobs    DeployJob[]
+  devices           Device[]
+  sessions          Session[]
+  subscriptions     Subscription[]
+  refreshTokens     RefreshToken[]
+  auditLogs         AuditLog[]
+  deployJobs        DeployJob[]
+  verificationCodes VerificationCode[]
+  identityLinks     IdentityLink[]
 
   @@map("users")
 }
@@ -163,9 +182,16 @@ model LoginAttempt {
 
 model VpnNode {
   id                 String     @id @default(uuid()) @db.Uuid
+  /// Internal handle ("de-01"). Admin/debug only — never shown in the app.
   name               String     @unique
+  /// User-facing geography. The app renders "Germany · Frankfurt" from these.
   country            String
   countryCode        String     @map("country_code")
+  region             String?
+  city               String?
+  /// Host or IP the client measures latency against. Falls back to the
+  /// tunnel gateway when empty.
+  pingTarget         String?    @map("ping_target")
   hostname           String
   publicIp           String     @map("public_ip")
   wireguardPublicKey String?    @map("wireguard_public_key")
@@ -356,4 +382,68 @@ model DeployJob {
   @@index([status, createdAt])
   @@index([createdAt])
   @@map("deploy_jobs")
+}
+
+// -------------------- identity, verification & social ----------------------
+
+/// Short-lived confirmation code: email verification, email change, password
+/// reset, self-registration and new-device confirmation, over email today and
+/// Telegram later. Only the HMAC of the code is stored, so a database dump
+/// cannot be replayed — same rule as refresh and node tokens.
+model VerificationCode {
+  id          String              @id @default(uuid()) @db.Uuid
+  userId      String?             @map("user_id") @db.Uuid
+  purpose     VerificationPurpose
+  channel     VerificationChannel @default(EMAIL)
+  /// Target address or handle. For EMAIL_CHANGE this is the *new* address,
+  /// which is why the change can only land after the code is consumed.
+  destination String
+  codeHash    String              @map("code_hash")
+  attempts    Int                 @default(0)
+  expiresAt   DateTime            @map("expires_at")
+  consumedAt  DateTime?           @map("consumed_at")
+  createdIp   String?             @map("created_ip")
+  createdAt   DateTime            @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([purpose, destination])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("verification_codes")
+}
+
+/// Google / Telegram account link. Stays empty until those sign-in flows are
+/// switched on; it exists now so they never have to alter the users table.
+model IdentityLink {
+  id             String           @id @default(uuid()) @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  provider       IdentityProvider
+  providerUserId String           @map("provider_user_id")
+  providerEmail  String?          @map("provider_email")
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+  @@map("identity_links")
+}
+
+enum VerificationPurpose {
+  EMAIL_VERIFY
+  EMAIL_CHANGE
+  PASSWORD_RESET
+  REGISTRATION
+  DEVICE_CONFIRM
+}
+
+enum VerificationChannel {
+  EMAIL
+  TELEGRAM
+}
+
+enum IdentityProvider {
+  GOOGLE
+  TELEGRAM
 }

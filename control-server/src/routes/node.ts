@@ -31,6 +31,11 @@ const RegisterBody = z.object({
 		.regex(/^[a-z0-9][a-z0-9-]*$/i, "Use letters, digits and dashes"),
 	country: z.string().trim().min(2).max(60),
 	countryCode: z.string().trim().length(2),
+	// User-facing geography: the app renders these, never the node name.
+	region: z.string().trim().max(80).optional(),
+	city: z.string().trim().max(80).optional(),
+	// Optional latency target; falls back to the node's public host.
+	pingTarget: z.string().trim().max(255).optional(),
 	hostname: z.string().trim().min(1).max(255),
 	publicIp: ipv4,
 	wireguardPublicKey: wireGuardKeySchema,
@@ -133,6 +138,10 @@ export async function nodeAgentRoutes(app: FastifyInstance): Promise<void> {
 						data: {
 							country: body.country,
 							countryCode: body.countryCode.toUpperCase(),
+							// Absent fields keep whatever an operator set by hand.
+							region: body.region ?? existing.region,
+							city: body.city ?? existing.city,
+							pingTarget: body.pingTarget ?? existing.pingTarget,
 							hostname: body.hostname,
 							publicIp: body.publicIp,
 							wireguardPublicKey: body.wireguardPublicKey,
@@ -152,6 +161,9 @@ export async function nodeAgentRoutes(app: FastifyInstance): Promise<void> {
 							name: body.name,
 							country: body.country,
 							countryCode: body.countryCode.toUpperCase(),
+							region: body.region ?? null,
+							city: body.city ?? null,
+							pingTarget: body.pingTarget ?? null,
 							hostname: body.hostname,
 							publicIp: body.publicIp,
 							wireguardPublicKey: body.wireguardPublicKey,
@@ -188,7 +200,11 @@ export async function nodeAgentRoutes(app: FastifyInstance): Promise<void> {
 				action: existing ? "node.reregister" : "node.register",
 				nodeId: node.id,
 				ip,
-				metadata: { name: node.name, country: node.country },
+				metadata: {
+					name: node.name,
+					country: node.country,
+					city: node.city,
+				},
 			})
 
 			const { prefix } = parseCidr(node.subnetCidr)

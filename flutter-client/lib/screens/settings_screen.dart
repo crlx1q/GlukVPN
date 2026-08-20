@@ -95,14 +95,18 @@ class SettingsScreen extends StatelessWidget {
           _Panel(
             title: 'This build',
             children: <Widget>[
-              _Row(label: 'Channel', value: channel.active.label),
-              _Row(label: 'Control API', value: channel.baseUrl, mono: true),
+              // Diagnostics: internal builds only. A release build shows the
+              // app version and nothing about the deployment behind it.
+              if (AppConfig.betaChannelAvailable) ...<Widget>[
+                _Row(label: 'Channel', value: channel.active.label),
+                _Row(label: 'Control API', value: channel.baseUrl, mono: true),
+              ],
               _Row(
                 label: 'Server version',
                 value: channel.versionOf(channel.active)?.version ?? '\u2014',
               ),
               _Row(
-                label: 'Migration',
+                label: 'Data version',
                 value: channel.versionOf(channel.active)?.migration ?? '\u2014',
                 mono: true,
               ),
@@ -136,9 +140,8 @@ class SettingsScreen extends StatelessWidget {
           _LogoutButton(auth: auth, vpn: vpn),
           const SizedBox(height: 14),
           Text(
-            'GlukVPN is a personal test service. Traffic accounting records only '
-            'byte counters and session times \u2014 never addresses, URLs or '
-            'payloads.',
+            'Traffic accounting records only byte counters and session times '
+            '\u2014 never addresses, URLs or payloads.',
             style: text.bodySmall,
           ),
         ],
@@ -213,7 +216,7 @@ class _AccountPanel extends StatelessWidget {
                   Text(name, style: text.titleMedium),
                   const SizedBox(height: 2),
                   Text(
-                    user?.publicIdLabel ?? 'ID unavailable',
+                    user?.publicIdLabel ?? '',
                     style: text.bodySmall?.copyWith(
                       fontFeatures: const <FontFeature>[
                         FontFeature.tabularFigures(),

@@ -27,6 +27,11 @@ const SCRIPTS: Record<DeployAction, string> = {
 	DEPLOY_BETA: "deploy-beta.sh",
 	PROMOTE_BETA_TO_PROD: "promote.sh",
 	ROLLBACK_PROD: "rollback.sh",
+	// Beta lifecycle. Each action maps to exactly one script that takes no
+	// arguments, so nothing a caller sends can influence what runs.
+	START_BETA: "beta-start.sh",
+	STOP_BETA: "beta-stop.sh",
+	RESTART_BETA: "beta-restart.sh",
 }
 
 const SCRIPT_DIR = process.env.DEPLOY_SCRIPT_DIR ?? "/opt/glukvpn-deploy/bin"

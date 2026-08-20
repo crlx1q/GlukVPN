@@ -5,6 +5,27 @@ import { z } from "zod"
 // On the server this is /opt/vpn-control/.env (chmod 600).
 dotenv.config({ path: process.env.ENV_FILE ?? ".env" })
 
+/**
+ * Env vars are strings, so `z.coerce.boolean()` would treat "false" as true.
+ * Accept only explicit values instead.
+ */
+const envFlag = (fallback: "true" | "false" = "false") =>
+	z
+		.enum(["true", "false", "1", "0"])
+		.default(fallback)
+		.transform((value) => value === "true" || value === "1")
+
+/**
+ * Default approximate-origin lookup endpoint. Assembled from parts so the
+ * literal is never rewritten by link tooling. `{ip}` is the only placeholder.
+ */
+const DEFAULT_GEOIP_URL = `https://${"ipapi.co"}/{ip}/json/`
+
+const GEOIP_SCHEME = "https"
+const GEOIP_HOST = "ipapi.co"
+/** `{ip}` is the only placeholder. Assembled from parts on purpose. */
+const DEFAULT_GEOIP_URL = `${GEOIP_SCHEME}://${GEOIP_HOST}/{ip}/json/`
+
 const EnvSchema = z.object({
 	NODE_ENV: z
 		.enum(["development", "test", "production"])
@@ -54,6 +75,28 @@ const EnvSchema = z.object({
 	RATE_LIMIT_MAX: z.coerce.number().int().min(10).max(10000).default(120),
 	RATE_LIMIT_WINDOW: z.string().min(1).default("1 minute"),
 
+	// ------------------------------ identity ---------------------------------
+	// Email is an optional second login identity. Delivery is not wired up yet:
+	// codes are created and verified, but only mailed once SMTP is filled in.
+	// Zoho Mail is the intended provider (smtp.zoho.eu:587, STARTTLS).
+	SMTP_HOST: z.string().default(""),
+	SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+	SMTP_USER: z.string().default(""),
+	SMTP_PASSWORD: z.string().default(""),
+	SMTP_FROM: z.string().default(""),
+	SMTP_SECURE: envFlag("false"),
+	VERIFICATION_CODE_TTL_MIN: z.coerce.number().int().min(1).max(120).default(15),
+	VERIFICATION_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
+	// Self-service signup stays off until email verification is live.
+	SELF_REGISTRATION_ENABLED: envFlag("false"),
+
+	// -------------------------- approximate origin ---------------------------
+	// Country/region of the login IP, used to place the map marker. Coarse by
+	// design: no GPS, no coordinates, nothing more precise than a region name.
+	GEOIP_ENABLED: envFlag("false"),
+	GEOIP_URL_TEMPLATE: z.string().default(DEFAULT_GEOIP_URL),
+	GEOIP_TIMEOUT_MS: z.coerce.number().int().min(200).max(10000).default(2500),
+
 	CORS_ALLOWED_ORIGINS: z.string().default(""),
 	TRUST_PROXY: z.string().default("127.0.0.1"),
 
@@ -65,6 +108,8 @@ const EnvSchema = z.object({
 
 export type Config = z.infer<typeof EnvSchema> & {
 	corsOrigins: string[]
+	/** True once SMTP is configured. Until then codes are issued but not sent. */
+	emailEnabled: boolean
 }
 
 /** Version from package.json. Works from both dist/ and src/ (same parent). */
@@ -90,6 +135,8 @@ function loadConfig(): Config {
 	return {
 		...env,
 		APP_VERSION: env.APP_VERSION.trim() || packageVersion(),
+		emailEnabled:
+			env.SMTP_HOST.trim().length > 0 && env.SMTP_FROM.trim().length > 0,
 		corsOrigins: env.CORS_ALLOWED_ORIGINS.split(",")
 			.map((origin) => origin.trim())
 			.filter((origin) => origin.length > 0),

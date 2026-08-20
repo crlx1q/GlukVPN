@@ -99,12 +99,28 @@ async function main(): Promise<void> {
 	const nodeName = process.env.SEED_NODE_NAME || "de-01"
 	const nodeCountry = process.env.SEED_NODE_COUNTRY || "Germany"
 	const nodeCountryCode = (process.env.SEED_NODE_COUNTRY_CODE || "DE").toUpperCase()
+	// User-facing geography. The app renders "Germany / Frankfurt" from these and
+	// never shows the internal node name.
+	const nodeCity = process.env.SEED_NODE_CITY || "Frankfurt"
+	const nodeRegion = process.env.SEED_NODE_REGION || "Hesse"
+	const nodePingTarget = process.env.SEED_NODE_PING_TARGET || ""
 	const nodePublicIp = process.env.SEED_NODE_PUBLIC_IP || ""
 	let nodeInfo = "skipped (set SEED_NODE_PUBLIC_IP to pre-create a placeholder row)"
 
 	if (nodePublicIp) {
 		const existingNode = await prisma.vpnNode.findUnique({ where: { name: nodeName } })
 		if (existingNode) {
+			// Backfill geography on a node that was registered before these
+			// columns existed; anything an operator already set is kept.
+			if (!existingNode.city || !existingNode.region) {
+				await prisma.vpnNode.update({
+					where: { id: existingNode.id },
+					data: {
+						city: existingNode.city ?? nodeCity,
+						region: existingNode.region ?? nodeRegion,
+					},
+				})
+			}
 			nodeInfo = `${nodeName} already exists (status ${existingNode.status})`
 		} else {
 			const node = await prisma.vpnNode.create({
@@ -112,6 +128,9 @@ async function main(): Promise<void> {
 					name: nodeName,
 					country: nodeCountry,
 					countryCode: nodeCountryCode,
+					city: nodeCity,
+					region: nodeRegion,
+					pingTarget: nodePingTarget || null,
 					hostname: process.env.SEED_NODE_HOSTNAME || nodePublicIp,
 					publicIp: nodePublicIp,
 					// The real key arrives with the agent's registration.
@@ -145,6 +164,7 @@ async function main(): Promise<void> {
 		`test user  : ${testUser.username} ${testUser.created ? "(created)" : "(already existed, password unchanged)"}`,
 		testUser.created ? `test pass  : ${testUser.password}` : "test pass  : <unchanged>",
 		`node row   : ${nodeInfo}`,
+		`node place : ${nodeCountry} / ${nodeCity} (${nodeCountryCode})`,
 		"",
 		"Node enrollment token (valid until " + enrollmentExpiresAt.toISOString() + "):",
 		enrollmentToken,

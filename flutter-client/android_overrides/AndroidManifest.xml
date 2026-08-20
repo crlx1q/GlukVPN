@@ -15,9 +15,18 @@
     <!-- Android 13+: needed for the persistent "VPN is on" notification. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+      enableOnBackInvokedCallback opts the app into the predictive back gesture
+      (Android 13+, mandatory behaviour on Android 16). Without it the platform
+      keeps the legacy path and a back press on the first route finishes the
+      activity outright, which is why Servers -> Back used to close GlukVPN.
+      With it, Flutter's PopScope decides: the tab shell walks back to Home and
+      only the Home tab actually leaves the app.
+    -->
     <application
         android:label="GlukVPN"
         android:name="${applicationName}"
+        android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"

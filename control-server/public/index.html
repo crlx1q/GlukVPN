@@ -128,6 +128,12 @@
 							</button>
 							<button type="button" id="rollback-btn" class="danger">Rollback PROD</button>
 						</div>
+						<div class="deploy-actions">
+							<button type="button" id="beta-start-btn" class="ghost">Start Beta</button>
+							<button type="button" id="beta-restart-btn" class="ghost">Restart Beta</button>
+							<button type="button" id="beta-stop-btn" class="danger">Stop Beta</button>
+							<span class="muted small" id="beta-state"></span>
+						</div>
 						<p class="muted small">
 							Promote moves <strong>code only</strong>: the current source tree is built,
 							activated through a new release directory and the symlink is flipped

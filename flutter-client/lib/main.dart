@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'app.dart';
 import 'config.dart';
 import 'services/api_client.dart';
+import 'services/connectivity_service.dart';
 import 'services/ping_service.dart';
 import 'services/secure_store.dart';
 import 'services/vpn_service.dart';
@@ -21,7 +22,15 @@ Future<void> main() async {
   // secure store, a single tunnel handle and one battery/motion listener.
   final ApiClient api = ApiClient();
   final SecureStore store = SecureStore();
-  final AuthController auth = AuthController(api: api, store: store);
+  final ConnectivityService connectivity = ConnectivityService(api: api);
+  final AuthController auth = AuthController(
+    api: api,
+    store: store,
+    connectivity: connectivity,
+  );
+  // The network came back: finish restoring the session instead of asking for
+  // a password again.
+  connectivity.onBackOnline = auth.resumeSession;
   final VpnController vpn = VpnController(
     api: api,
     vpn: VpnService(),
@@ -45,6 +54,12 @@ Future<void> main() async {
   await channel.restore();
 
   runApp(
-    GlukVpnApp(auth: auth, vpn: vpn, channel: channel, motion: motion),
+    GlukVpnApp(
+      auth: auth,
+      vpn: vpn,
+      channel: channel,
+      motion: motion,
+      connectivity: connectivity,
+    ),
   );
 }

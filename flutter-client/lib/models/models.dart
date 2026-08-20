@@ -118,48 +118,91 @@ class AuthUser {
     required this.maxDevices,
     required this.maxConcurrentSessions,
     this.publicId = '',
+    this.email,
+    this.emailVerified = false,
+    this.originCountry,
+    this.originCountryCode,
+    this.originRegion,
     this.createdAt,
   });
 
-  factory AuthUser.fromJson(Map<String, dynamic> json) => AuthUser(
-        id: _asString(json['id']),
-        publicId: _asString(json['publicId']),
-        username: _asString(json['username']),
-        status: _asString(json['status'], 'ACTIVE'),
-        isAdmin: _asBool(json['isAdmin']),
-        maxDevices: _asInt(json['maxDevices'], 3),
-        maxConcurrentSessions: _asInt(json['maxConcurrentSessions'], 1),
-        createdAt: _asDate(json['createdAt']),
-      );
+  factory AuthUser.fromJson(Map<String, dynamic> json) {
+    final Map<String, dynamic> origin = _asMap(json['origin']);
+    return AuthUser(
+      id: _asString(json['id']),
+      publicId: _asString(json['publicId']),
+      username: _asString(json['username']),
+      email: _asStringOrNull(json['email']),
+      emailVerified: _asBool(json['emailVerified']),
+      status: _asString(json['status'], 'ACTIVE'),
+      isAdmin: _asBool(json['isAdmin']),
+      maxDevices: _asInt(json['maxDevices'], 3),
+      maxConcurrentSessions: _asInt(json['maxConcurrentSessions'], 1),
+      originCountry: _asStringOrNull(origin['country']),
+      originCountryCode: _asStringOrNull(origin['countryCode']),
+      originRegion: _asStringOrNull(origin['region']),
+      createdAt: _asDate(json['createdAt']),
+    );
+  }
 
   /// Internal UUID. Used in API paths, never shown to the user.
   final String id;
 
-  /// Immutable 8-digit handle (`00000001`) assigned by the database on insert.
-  /// The nickname is editable, this is not: support, search and bans key on it.
-  /// Empty only when talking to a control server older than this build.
+  /// Immutable 8-digit account number, always starting with 1 (`10758930`).
+  /// Random, so it reveals neither signup order nor how many accounts exist.
+  /// The nickname and the email are editable, this is not: support, search and
+  /// bans key on it. Empty only against a control server older than this build.
   final String publicId;
 
   final String username;
+
+  /// Second login identity. Either identity works at the login screen.
+  final String? email;
+  final bool emailVerified;
+
   final String status;
   final bool isAdmin;
   final int maxDevices;
   final int maxConcurrentSessions;
+
+  /// Approximate origin, resolved server-side from the login IP: country and
+  /// region only. This app asks for no location permission and stores no
+  /// coordinates; the map marker is drawn at the centre of the country.
+  final String? originCountry;
+  final String? originCountryCode;
+  final String? originRegion;
+
   final DateTime? createdAt;
 
   bool get isActive => status == 'ACTIVE';
 
-  /// Label for the profile card in Settings.
-  String get publicIdLabel => publicId.isEmpty ? 'ID unavailable' : 'ID $publicId';
+  /// Account number for the profile card. Empty string when unknown, so the UI
+  /// can hide the row instead of showing a placeholder.
+  String get publicIdLabel => publicId.isEmpty ? '' : 'ID $publicId';
 
-  AuthUser copyWith({String? username}) => AuthUser(
+  /// "Germany" or "Germany, Hesse" - whatever the server could resolve.
+  String? get originLabel {
+    final String country = originCountry ?? '';
+    final String region = originRegion ?? '';
+    if (country.isEmpty) return region.isEmpty ? null : region;
+    if (region.isEmpty || region == country) return country;
+    return '$country, $region';
+  }
+
+  AuthUser copyWith({String? username, String? email, bool? emailVerified}) =>
+      AuthUser(
         id: id,
         publicId: publicId,
         username: username ?? this.username,
+        email: email ?? this.email,
+        emailVerified: emailVerified ?? this.emailVerified,
         status: status,
         isAdmin: isAdmin,
         maxDevices: maxDevices,
         maxConcurrentSessions: maxConcurrentSessions,
+        originCountry: originCountry,
+        originCountryCode: originCountryCode,
+        originRegion: originRegion,
         createdAt: createdAt,
       );
 }
@@ -264,6 +307,11 @@ class VpnNodeInfo {
     required this.loadPercent,
     required this.activePeers,
     required this.capacity,
+    this.region,
+    this.city,
+    this.title = '',
+    this.subtitle = '',
+    this.pingTarget = '',
     this.cpuPercent,
     this.ramPercent,
     this.uptimeSeconds,
@@ -276,6 +324,11 @@ class VpnNodeInfo {
         name: _asString(json['name']),
         country: _asString(json['country']),
         countryCode: _asString(json['countryCode']),
+        region: _asStringOrNull(json['region']),
+        city: _asStringOrNull(json['city']),
+        title: _asString(json['title']),
+        subtitle: _asString(json['subtitle']),
+        pingTarget: _asString(json['pingTarget']),
         host: _asString(json['host']),
         port: _asInt(json['port'], 51820),
         status: _asString(json['status'], 'OFFLINE'),
@@ -292,9 +345,24 @@ class VpnNodeInfo {
       );
 
   final String id;
+
+  /// Internal handle ("de-01"). Debug and admin only - the user-facing rows use
+  /// [displayTitle] / [displaySubtitle], so a node name never reaches the UI.
   final String name;
+
   final String country;
   final String countryCode;
+  final String? region;
+  final String? city;
+
+  /// Ready-made display lines from the backend ("Germany" / "Frankfurt"), so
+  /// no geography is hardcoded in the app.
+  final String title;
+  final String subtitle;
+
+  /// Host to measure latency against before a tunnel exists.
+  final String pingTarget;
+
   final String host;
   final int port;
 
@@ -312,6 +380,67 @@ class VpnNodeInfo {
   final DateTime? lastHeartbeat;
 
   String get endpoint => '$host:$port';
+
+  /// First line of a server row. Falls back gracefully against an older API.
+  String get displayTitle {
+    if (title.isNotEmpty) return title;
+    if (country.isNotEmpty) return country;
+    return countryCode;
+  }
+
+  /// Second line: city, else region, else the country code. Never the name.
+  String get displaySubtitle {
+    if (subtitle.isNotEmpty) return subtitle;
+    final String cityName = city ?? '';
+    if (cityName.isNotEmpty) return cityName;
+    final String regionName = region ?? '';
+    if (regionName.isNotEmpty) return regionName;
+    return countryCode;
+  }
+
+  String get latencyHost => pingTarget.isNotEmpty ? pingTarget : host;
+}
+
+/// Latency buckets behind the `///` signal bars in the server list.
+///
+/// Users read bars, not milliseconds; the exact figure stays available for the
+/// details row.
+enum PingLevel { unknown, low, medium, excellent }
+
+PingLevel pingLevelFor(int? milliseconds) {
+  if (milliseconds == null || milliseconds <= 0) return PingLevel.unknown;
+  if (milliseconds < 80) return PingLevel.excellent;
+  if (milliseconds < 180) return PingLevel.medium;
+  return PingLevel.low;
+}
+
+extension PingLevelDisplay on PingLevel {
+  /// How many of the three bars are lit.
+  int get bars {
+    switch (this) {
+      case PingLevel.excellent:
+        return 3;
+      case PingLevel.medium:
+        return 2;
+      case PingLevel.low:
+        return 1;
+      case PingLevel.unknown:
+        return 0;
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case PingLevel.excellent:
+        return 'Excellent';
+      case PingLevel.medium:
+        return 'Medium';
+      case PingLevel.low:
+        return 'Low';
+      case PingLevel.unknown:
+        return '';
+    }
+  }
 }
 
 class DeviceInfo {

@@ -29,8 +29,10 @@ class DottedWorld extends StatelessWidget {
 		this.dotOpacity = 0.5,
 		this.selfPoint,
 		this.serverPoint,
+		this.nodePoints = const <MapPoint>[],
 		this.arcProgress = 0,
 		this.arcPhase = 0,
+		this.orbitalPhase = 0,
 		this.pulse = 0,
 		this.connected = false,
 	});
@@ -57,11 +59,19 @@ class DottedWorld extends StatelessWidget {
 	/// The selected node's position.
 	final MapPoint? serverPoint;
 
+	/// Every node that is currently online, drawn as a small green point with
+	/// hair-thin links between them. These come from `GET /api/nodes`, so the
+	/// constellation is the real fleet rather than decoration.
+	final List<MapPoint> nodePoints;
+
 	/// 0..1 - how much of the connection arc to draw.
 	final double arcProgress;
 
 	/// 0..1 - marching-dash offset (`dashFlow` in the mockup).
 	final double arcPhase;
+
+	/// 0..1 - travel of the light along the orbital threads.
+	final double orbitalPhase;
 
 	/// 0..1 - shared phase for the expanding rings under the two markers.
 	final double pulse;
@@ -81,8 +91,10 @@ class DottedWorld extends StatelessWidget {
 					dotOpacity: dotOpacity,
 					selfPoint: selfPoint,
 					serverPoint: serverPoint,
+					nodePoints: nodePoints,
 					arcProgress: arcProgress.clamp(0.0, 1.0),
 					arcPhase: arcPhase,
+					orbitalPhase: orbitalPhase,
 					pulse: pulse,
 					connected: connected,
 				),
@@ -101,8 +113,10 @@ class _DottedWorldPainter extends CustomPainter {
 		required this.dotOpacity,
 		required this.selfPoint,
 		required this.serverPoint,
+		required this.nodePoints,
 		required this.arcProgress,
 		required this.arcPhase,
+		required this.orbitalPhase,
 		required this.pulse,
 		required this.connected,
 	});
@@ -114,8 +128,10 @@ class _DottedWorldPainter extends CustomPainter {
 	final double dotOpacity;
 	final MapPoint? selfPoint;
 	final MapPoint? serverPoint;
+	final List<MapPoint> nodePoints;
 	final double arcProgress;
 	final double arcPhase;
+	final double orbitalPhase;
 	final double pulse;
 	final bool connected;
 
@@ -168,6 +184,33 @@ class _DottedWorldPainter extends CustomPainter {
 				..strokeCap = StrokeCap.round
 				..isAntiAlias = true;
 			canvas.drawPoints(ui.PointMode.points, points, paint);
+		}
+
+		// Light threads sweeping around the scene. Two thin ellipses with a short
+		// bright segment travelling along each, the same idea as the rings around
+		// the connect button - which is why they are drawn with one stroke each
+		// and no glow stack: subtle, not busy.
+		if (orbitalPhase > 0) {
+			_paintOrbitals(canvas, size, globeCentre, globeRadius);
+		}
+
+		// The live fleet: one green point per online node, linked by hair-thin
+		// lines so the map reads as a network instead of wallpaper.
+		if (nodePoints.isNotEmpty) {
+			final fleet = <Offset>[];
+			for (final point in nodePoints) {
+				final projected = _project(
+					point,
+					flatScale: flatScale,
+					flatCentre: centre,
+					globeRadius: globeRadius,
+					globeCentre: globeCentre,
+					size: size,
+				);
+				if (projected == null || projected.visibility <= 0.08) continue;
+				fleet.add(projected.offset);
+			}
+			_paintFleet(canvas, size, fleet, flatScale);
 		}
 
 		// Markers and arc are only meaningful on (or near) the flat map.
@@ -341,6 +384,95 @@ class _DottedWorldPainter extends CustomPainter {
 		);
 	}
 
+	/// Two tilted ellipses with a light running along them.
+	void _paintOrbitals(Canvas canvas, Size size, Offset globeCentre, double radius) {
+		// On the flat map there is no sphere to orbit, so the threads are anchored
+		// to the upper third of the scene, where the composition's mass is.
+		final anchor = Offset.lerp(
+			Offset(size.width * 0.5, size.height * 0.30),
+			globeCentre,
+			globeness,
+		)!;
+		final base = math.max(size.shortestSide * 0.36, radius * 1.18);
+
+		for (var i = 0; i < 2; i++) {
+			final rx = base * (i == 0 ? 1.0 : 0.74);
+			final ry = rx * (i == 0 ? 0.30 : 0.21);
+			canvas.save();
+			canvas.translate(anchor.dx, anchor.dy);
+			canvas.rotate(i == 0 ? -0.26 : 0.33);
+
+			final path = Path()
+				..addOval(Rect.fromCenter(
+					center: Offset.zero,
+					width: rx * 2,
+					height: ry * 2,
+				));
+
+			canvas.drawPath(
+				path,
+				Paint()
+					..style = PaintingStyle.stroke
+					..strokeWidth = 0.9
+					..isAntiAlias = true
+					..color = GlukColors.violetLight.withOpacity(0.09),
+			);
+
+			final metric = path.computeMetrics().first;
+			final length = metric.length;
+			final head = ((orbitalPhase + i * 0.45) % 1.0) * length;
+			final tail = head - length * 0.15;
+			final glow = Paint()
+				..style = PaintingStyle.stroke
+				..strokeWidth = 1.5
+				..strokeCap = StrokeCap.round
+				..isAntiAlias = true
+				..color = GlukColors.violetLight.withOpacity(0.38);
+			// Wrap around the seam instead of blinking out at the top of the loop.
+			if (tail < 0) {
+				canvas.drawPath(metric.extractPath(0, head), glow);
+				canvas.drawPath(metric.extractPath(length + tail, length), glow);
+			} else {
+				canvas.drawPath(metric.extractPath(tail, head), glow);
+			}
+			canvas.restore();
+		}
+	}
+
+	/// Green points for online nodes, with links between neighbours.
+	void _paintFleet(Canvas canvas, Size size, List<Offset> fleet, double flatScale) {
+		if (fleet.isEmpty) return;
+		final reach = size.width * 0.62;
+		final link = Paint()
+			..style = PaintingStyle.stroke
+			..strokeWidth = 0.7
+			..isAntiAlias = true
+			..color = GlukColors.connected.withOpacity(0.16);
+
+		for (var i = 0; i < fleet.length; i++) {
+			for (var j = i + 1; j < fleet.length; j++) {
+				if ((fleet[i] - fleet[j]).distance > reach) continue;
+				canvas.drawLine(fleet[i], fleet[j], link);
+			}
+		}
+
+		final dot = math.max(2.0, 0.75 * flatScale);
+		for (final point in fleet) {
+			canvas.drawCircle(
+				point,
+				dot * 2.6,
+				Paint()
+					..color = GlukColors.connected.withOpacity(0.20)
+					..maskFilter = MaskFilter.blur(BlurStyle.normal, dot * 1.3),
+			);
+			canvas.drawCircle(
+				point,
+				dot,
+				Paint()..color = GlukColors.connected.withOpacity(0.9),
+			);
+		}
+	}
+
 	/// A dot with an expanding ring (`mapPulse` in the mockup).
 	void _paintMarker(
 		Canvas canvas,
@@ -410,6 +542,14 @@ class _DottedWorldPainter extends CustomPainter {
 		return result;
 	}
 
+	static bool _sameFleet(List<MapPoint> a, List<MapPoint> b) {
+		if (a.length != b.length) return false;
+		for (var i = 0; i < a.length; i++) {
+			if (a[i].x != b[i].x || a[i].y != b[i].y) return false;
+		}
+		return true;
+	}
+
 	@override
 	bool shouldRepaint(_DottedWorldPainter old) =>
 			old.globeness != globeness ||
@@ -423,6 +563,8 @@ class _DottedWorldPainter extends CustomPainter {
 			old.serverPoint?.y != serverPoint?.y ||
 			old.arcProgress != arcProgress ||
 			old.arcPhase != arcPhase ||
+			old.orbitalPhase != orbitalPhase ||
 			old.pulse != pulse ||
+			!_sameFleet(old.nodePoints, nodePoints) ||
 			old.connected != connected;
 }

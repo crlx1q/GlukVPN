@@ -59,6 +59,12 @@ const Schema = z.object({
 		.length(2)
 		.transform((value) => value.toUpperCase())
 		.default("DE"),
+	// Shown in the app as the second line of a server row ("Frankfurt").
+	// Set these on the node so no geography is ever hardcoded in the client.
+	NODE_REGION: optionalString,
+	NODE_CITY: optionalString,
+	// Optional ICMP-friendly host for latency checks; defaults to the node host.
+	NODE_PING_TARGET: optionalString,
 	NODE_PUBLIC_IP: optionalString,
 	NODE_HOSTNAME: optionalString,
 

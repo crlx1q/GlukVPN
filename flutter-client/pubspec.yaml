@@ -46,7 +46,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  # No image assets on purpose: the logo is drawn by a painter
-  # (lib/widgets/logo.dart) and the world map is a 2 KB bitmask decoded at
-  # runtime (lib/data/world_map_data.dart), so the CI APK build never depends on
-  # a binary file that the text-only publish path cannot carry.
+  assets:
+    # Drop logo.png in here (flutter-client/assets/logo.png). The whole folder
+    # is declared rather than the single file, so the build still succeeds while
+    # the artwork is missing - GlukLogo falls back to a plain violet tile.
+    # The world map is not an asset: it is a 2 KB bitmask decoded at runtime
+    # (lib/data/world_map_data.dart).
+    - assets/

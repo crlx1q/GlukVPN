@@ -125,6 +125,7 @@ Nodes
 Sessions
   sessions:list [--live]
   sessions:close <sessionId>
+  sessions:drain                           beta only: close all, free addresses
 
 Deployments (read-only here; the worker runs the scripts)
   deploy:status                            this channel + last promote
@@ -529,6 +530,48 @@ async function main(): Promise<void> {
 			const closed = await closeSession({ sessionId, reason: "admin_closed" })
 			if (!closed) throw new Error("Session not found")
 			console.log(`session ${sessionId} closed; REMOVE_PEER queued for the node`)
+			return
+		}
+
+		case "sessions:drain": {
+			// Used by beta-stop.sh. wg1 is about to disappear together with every
+			// peer on it, so there is nothing for a REMOVE_PEER round trip to do:
+			// close the rows and free their addresses in one transaction.
+			//
+			// Beta-only on purpose. On prod, closing every tunnel at once is never
+			// something a script should be able to do by accident.
+			if (config.CHANNEL !== "beta") {
+				throw new Error(
+					"sessions:drain runs on the beta channel only; use sessions:close <sessionId> here",
+				)
+			}
+			const live = await prisma.session.findMany({
+				where: { status: { in: ["PENDING", "ACTIVE"] } },
+				select: { id: true },
+			})
+			if (live.length === 0) {
+				console.log("no live beta sessions")
+				return
+			}
+			const ids = live.map((session) => session.id)
+			const now = new Date()
+			await prisma.$transaction([
+				prisma.session.updateMany({
+					where: { id: { in: ids } },
+					data: {
+						status: "CLOSED",
+						disconnectedAt: now,
+						closeReason: "beta_stopped",
+					},
+				}),
+				prisma.ipLease.updateMany({
+					where: { sessionId: { in: ids } },
+					data: { sessionId: null, allocatedAt: null },
+				}),
+			])
+			console.log(
+				`closed ${ids.length} beta session(s) and released their tunnel addresses`,
+			)
 			return
 		}
 

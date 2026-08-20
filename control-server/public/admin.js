@@ -378,6 +378,24 @@ function renderDeploy(status) {
 	el("promote-btn").disabled = !state.canDeploy || Boolean(active) || !betaUp
 	el("rollback-btn").disabled = !state.canDeploy || Boolean(active)
 
+	// Beta lifecycle: only offer the action that makes sense in the current state.
+	el("beta-start-btn").disabled = !state.canDeploy || Boolean(active) || betaUp
+	el("beta-restart-btn").disabled = !state.canDeploy || Boolean(active) || !betaUp
+	el("beta-stop-btn").disabled = !state.canDeploy || Boolean(active) || !betaUp
+
+	const betaState = el("beta-state")
+	if (betaState) {
+		const intended = status.beta ? status.beta.intendedState : null
+		if (betaUp) {
+			betaState.textContent = "beta is running"
+		} else if (intended === "stopped") {
+			// Stop Beta disables the units, so this survives a reboot.
+			betaState.textContent = "beta is switched off"
+		} else {
+			betaState.textContent = "beta is not answering"
+		}
+	}
+
 	const box = el("active-job-box")
 	if (active) {
 		box.replaceChildren()
@@ -774,6 +792,30 @@ el("deploy-beta-btn").addEventListener("click", (event) => {
 		event.currentTarget,
 		"/api/admin/deploy/beta",
 		"Rebuild BETA from the current source tree? Production is not touched.",
+	)
+})
+
+el("beta-start-btn").addEventListener("click", (event) => {
+	void runDeployAction(
+		event.currentTarget,
+		"/api/admin/deploy/beta/start",
+		"Start BETA (wg1 on udp/51821, beta API, beta node agent)? Production is not touched.",
+	)
+})
+
+el("beta-restart-btn").addEventListener("click", (event) => {
+	void runDeployAction(
+		event.currentTarget,
+		"/api/admin/deploy/beta/restart",
+		"Restart BETA? Beta tunnels drop for a few seconds. Production is not touched.",
+	)
+})
+
+el("beta-stop-btn").addEventListener("click", (event) => {
+	void runDeployAction(
+		event.currentTarget,
+		"/api/admin/deploy/beta/stop",
+		"Stop BETA completely? Beta sessions are closed and wg1 goes down until you start it again. Production keeps running on wg0.",
 	)
 })
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../config.dart';
 import '../models/models.dart';
 import '../state/auth_controller.dart';
 import '../state/channel_controller.dart';
@@ -9,6 +10,7 @@ import '../theme/motion.dart';
 import '../theme/tokens.dart';
 import '../utils/format.dart' hide countryFlag;
 import '../utils/geo.dart';
+import '../widgets/connect_button.dart';
 import '../widgets/dotted_world.dart';
 import '../widgets/glass.dart';
 import '../widgets/logo.dart';
@@ -49,6 +51,19 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  ConnectPhase _phaseFor(VpnUiState state) {
+    switch (state) {
+      case VpnUiState.connected:
+        return ConnectPhase.connected;
+      case VpnUiState.connecting:
+        return ConnectPhase.connecting;
+      case VpnUiState.disconnecting:
+        return ConnectPhase.disconnecting;
+      case VpnUiState.disconnected:
+        return ConnectPhase.idle;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final VpnController vpn = context.watch<VpnController>();
@@ -58,6 +73,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final VpnNodeInfo? node = vpn.selectedNode;
     final MapPoint? serverPoint = countryPoint(node?.countryCode);
+    // Every node that is up right now, so the map shows the real fleet.
+    final List<MapPoint> fleet = vpn.nodes
+        .where((VpnNodeInfo item) => item.online)
+        .map((VpnNodeInfo item) => countryPoint(item.countryCode))
+        .whereType<MapPoint>()
+        .toList();
 
     final (String badgeLabel, Color badgeTone) = switch (vpn.state) {
       VpnUiState.connected => ('connected', GlukColors.connected),
@@ -73,6 +94,7 @@ class _HomeScreenState extends State<HomeScreen> {
             motion: motion,
             selfPoint: _self.point,
             serverPoint: serverPoint,
+            fleet: fleet,
             connected: vpn.isConnected,
             live: vpn.isConnected || vpn.state == VpnUiState.connecting,
           ),
@@ -102,10 +124,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 10),
                       Center(
-                        child: _PowerButton(
-                          state: vpn.state,
-                          motion: motion,
-                          onTap: () => _toggle(vpn),
+                        child: GlukConnectButton(
+                          phase: _phaseFor(vpn.state),
+                          reduceMotion: motion.reduceMotion,
+                          onTap: vpn.busy ? null : () => _toggle(vpn),
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -165,18 +187,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       if (node != null && !node.online) ...<Widget>[
                         const SizedBox(height: 12),
                         InlineNotice(
-                          message:
-                              '${node.country} is offline right now, so new '
-                              'connections are refused. Pick another server.',
+                          message: '${node.displayTitle} is offline right now. '
+                              'Pick another server.',
                           tone: GlukColors.amber,
                         ),
                       ],
                       if (!auth.subscriptionActive) ...<Widget>[
                         const SizedBox(height: 12),
                         const InlineNotice(
-                          message:
-                              'No active subscription: the control plane will '
-                              'refuse new sessions.',
+                          message: 'Your plan is inactive, so new connections '
+                              'are paused.',
                           tone: GlukColors.amber,
                         ),
                       ],
@@ -216,6 +236,7 @@ class _MapBackdrop extends StatelessWidget {
     required this.motion,
     required this.selfPoint,
     required this.serverPoint,
+    required this.fleet,
     required this.connected,
     required this.live,
   });
@@ -223,6 +244,7 @@ class _MapBackdrop extends StatelessWidget {
   final MotionController motion;
   final MapPoint selfPoint;
   final MapPoint? serverPoint;
+  final List<MapPoint> fleet;
   final bool connected;
   final bool live;
 
@@ -242,16 +264,27 @@ class _MapBackdrop extends StatelessWidget {
               reduceMotion: motion.reduceMotion,
               frozenValue: 0.35,
               builder: (BuildContext context, double pulse) {
-                return DottedWorld(
-                  zoom: 1.35,
-                  focus: const Offset(0.60, 0.30),
-                  dotOpacity: 0.5,
-                  selfPoint: selfPoint,
-                  serverPoint: serverPoint,
-                  arcProgress: arc,
-                  arcPhase: dash,
-                  pulse: live ? pulse : 0,
-                  connected: connected,
+                return LoopingBuilder(
+                  duration: const Duration(seconds: 14),
+                  reduceMotion: motion.reduceMotion,
+                  frozenValue: 0.2,
+                  builder: (BuildContext context, double orbit) {
+                    return DottedWorld(
+                  // Bigger and higher than before: the planet now anchors the
+                  // top of the composition instead of sitting behind the cells.
+                      zoom: 1.85,
+                      focus: const Offset(0.52, 0.19),
+                      dotOpacity: 0.58,
+                      selfPoint: selfPoint,
+                      serverPoint: serverPoint,
+                      nodePoints: fleet,
+                      arcProgress: arc,
+                      arcPhase: dash,
+                      orbitalPhase: orbit,
+                      pulse: live ? pulse : 0,
+                      connected: connected,
+                    );
+                  },
                 );
               },
             );
@@ -279,7 +312,7 @@ class _MapFade extends StatelessWidget {
             Color(0x660A0714),
             Color(0xF20A0714),
           ],
-          stops: <double>[0, 0.42, 0.78],
+          stops: <double>[0, 0.50, 0.86],
         ),
       ),
       child: SizedBox.expand(),
@@ -310,7 +343,9 @@ class _Header extends StatelessWidget {
           const GlukLogo(size: 34, glow: false),
           const SizedBox(width: 10),
           Text('GlukVPN', style: text.titleMedium),
-          if (channel.isBeta) ...<Widget>[
+          // Internal builds only. A release APK talks to a single control plane
+          // and never labels itself.
+          if (AppConfig.betaChannelAvailable && channel.isBeta) ...<Widget>[
             const SizedBox(width: 8),
             _BetaTag(label: channel.versionOf(channel.active)?.label ?? 'BETA'),
           ],
@@ -397,7 +432,7 @@ class _ProfileChip extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               Text(name, style: text.bodySmall?.copyWith(color: GlukColors.text0)),
-              if (publicIdLabel != null)
+              if (publicIdLabel != null && publicIdLabel!.isNotEmpty)
                 Text(
                   publicIdLabel!,
                   style: text.bodySmall?.copyWith(fontSize: 9.5),
@@ -561,11 +596,11 @@ class _ServerRow extends StatelessWidget {
         children: <Widget>[
           FlagCircle(flag: countryFlag(node!.countryCode)),
           const SizedBox(width: 10),
-          Text(node!.country, style: text.titleMedium),
+          Text(node!.displayTitle, style: text.titleMedium),
           const SizedBox(width: 6),
           Flexible(
             child: Text(
-              '\u00b7 ${node!.name}',
+              '\u00b7 ${node!.displaySubtitle}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: text.bodySmall,

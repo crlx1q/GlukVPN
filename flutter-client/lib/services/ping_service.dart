@@ -76,6 +76,19 @@ class PingService {
     return const PingSample.empty();
   }
 
+  /// ICMP round-trip to one host, with **no** HTTPS fallback.
+  ///
+  /// The server list needs each node's own latency. Falling back to the control
+  /// API here would quietly report the same number on every row, which is worse
+  /// than an empty reading. The source label is not surfaced in the list, only
+  /// the millisecond value and the signal level derived from it.
+  Future<PingSample> probeHost(String host) async {
+    if (host.isEmpty) return const PingSample.empty();
+    final int? icmp = await _icmpRtt(host);
+    if (icmp == null) return const PingSample.empty();
+    return PingSample(source: PingSource.tunnelGateway, milliseconds: icmp);
+  }
+
   Future<int?> _icmpRtt(String host) async {
     try {
       final Ping ping = Ping(host, count: 1, timeout: 2);

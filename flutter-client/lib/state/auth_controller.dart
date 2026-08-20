@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
 import '../services/api_client.dart';
+import '../services/connectivity_service.dart';
 import '../services/secure_store.dart';
 import '../services/wg_keys.dart';
 
@@ -12,14 +13,19 @@ enum AuthStage { unknown, restoring, unauthenticated, authenticated }
 /// Key invariant: the private key is generated here, stored in [SecureStore],
 /// and only its public half is ever handed to [ApiClient.registerDevice].
 class AuthController extends ChangeNotifier {
-  AuthController({required ApiClient api, required SecureStore store})
-      : _api = api,
-        _store = store {
+  AuthController({
+    required ApiClient api,
+    required SecureStore store,
+    ConnectivityService? connectivity,
+  })  : _api = api,
+        _store = store,
+        _connectivity = connectivity {
     _api.onTokensChanged = _handleTokens;
   }
 
   final ApiClient _api;
   final SecureStore _store;
+  final ConnectivityService? _connectivity;
 
   AuthStage _stage = AuthStage.unknown;
   AuthUser? _user;
@@ -32,6 +38,11 @@ class AuthController extends ChangeNotifier {
   String? _deviceName;
   String? _devicePublicKey;
 
+  /// The session was restored from storage but the control plane has not
+  /// confirmed it yet (started with no internet). The user stays signed in and
+  /// the UI shows the offline state instead of a login screen.
+  bool _unconfirmed = false;
+
   ApiClient get api => _api;
   AuthStage get stage => _stage;
   AuthUser? get user => _user;
@@ -43,6 +54,9 @@ class AuthController extends ChangeNotifier {
   String? get devicePublicKey => _devicePublicKey;
   bool get isAuthenticated => _stage == AuthStage.authenticated;
   bool get subscriptionActive => _subscription?.isActive ?? false;
+
+  /// True while signed in with a session the server has not re-confirmed yet.
+  bool get sessionUnconfirmed => _unconfirmed;
 
   void clearError() {
     if (_error == null) return;
@@ -86,10 +100,21 @@ class AuthController extends ChangeNotifier {
       return;
     }
 
-    final bool restored = await _api.restoreSession(refreshToken);
-    if (!restored) {
+    final SessionRefreshOutcome outcome = await _api.restoreSession(refreshToken);
+    if (outcome == SessionRefreshOutcome.revoked) {
+      // The server explicitly refused this token: this is the only case that
+      // sends the user back to the login screen.
       await _store.deleteRefreshToken();
       _stage = AuthStage.unauthenticated;
+      notifyListeners();
+      return;
+    }
+    if (outcome == SessionRefreshOutcome.offline) {
+      // No internet at start-up. Keep the stored token and stay signed in;
+      // [resumeSession] finishes the job once the network is back.
+      _unconfirmed = true;
+      _stage = AuthStage.authenticated;
+      _connectivity?.reportNetworkFailure();
       notifyListeners();
       return;
     }
@@ -97,23 +122,74 @@ class AuthController extends ChangeNotifier {
     try {
       await _loadMe();
       await ensureDeviceRegistered();
+      _unconfirmed = false;
       _stage = AuthStage.authenticated;
+      _connectivity?.reportSuccess();
     } on ApiException catch (error) {
-      _error = error.message;
-      _stage = AuthStage.unauthenticated;
+      if (error.isNetwork) {
+        // Reachable a second ago, gone now. Still not a reason to log out.
+        _unconfirmed = true;
+        _stage = AuthStage.authenticated;
+        _connectivity?.reportNetworkFailure();
+      } else if (error.isUnauthorized || error.isForbidden) {
+        _error = error.message;
+        _stage = AuthStage.unauthenticated;
+      } else {
+        // A server-side hiccup: keep the session, show the offline state.
+        _unconfirmed = true;
+        _stage = AuthStage.authenticated;
+      }
     }
     notifyListeners();
   }
 
-  Future<bool> login({required String username, required String password}) async {
+  /// Completes a session that was restored while offline, or re-validates one
+  /// after the network came back. Safe to call at any time.
+  Future<void> resumeSession() async {
+    if (_stage != AuthStage.authenticated) return;
+    final SessionRefreshOutcome outcome = await _api.resumeSession();
+    if (outcome == SessionRefreshOutcome.revoked) {
+      await _store.deleteRefreshToken();
+      _user = null;
+      _subscription = null;
+      _unconfirmed = false;
+      _stage = AuthStage.unauthenticated;
+      _error = 'Your session has ended. Please sign in again.';
+      notifyListeners();
+      return;
+    }
+    if (outcome == SessionRefreshOutcome.offline) {
+      _unconfirmed = true;
+      notifyListeners();
+      return;
+    }
+    try {
+      await _loadMe();
+      await ensureDeviceRegistered();
+      _unconfirmed = false;
+      _connectivity?.reportSuccess();
+    } on ApiException catch (error) {
+      if (error.isUnauthorized || error.isForbidden) {
+        _error = error.message;
+        _stage = AuthStage.unauthenticated;
+      }
+      // Anything else: stay signed in, keep showing the offline state.
+    }
+    notifyListeners();
+  }
+
+  /// Signs in with a username **or** an email address.
+  Future<bool> login({required String identifier, required String password}) async {
     _error = null;
     _busy = true;
     notifyListeners();
     try {
       final LoginResult result =
-          await _api.login(username: username.trim(), password: password);
+          await _api.login(identifier: identifier.trim(), password: password);
       _user = result.user;
       _subscription = result.subscription;
+      _unconfirmed = false;
+      _connectivity?.reportSuccess();
       await _store.writeUsername(result.user.username);
       // Upgrades the session to device-scoped tokens, which /api/vpn/connect
       // requires, and registers our public key with the control plane.
@@ -121,6 +197,7 @@ class AuthController extends ChangeNotifier {
       _stage = AuthStage.authenticated;
       return true;
     } on ApiException catch (error) {
+      if (error.isNetwork) _connectivity?.reportNetworkFailure();
       _error = error.message;
       return false;
     } finally {
@@ -189,10 +266,30 @@ class AuthController extends ChangeNotifier {
   Future<void> refreshMe() async {
     try {
       await _loadMe();
+      _unconfirmed = false;
+      _connectivity?.reportSuccess();
       notifyListeners();
-    } on ApiException {
-      // Keep the previous snapshot; the UI stays usable.
+    } on ApiException catch (error) {
+      // Keep the previous snapshot; the UI stays usable and signed in.
+      if (error.isNetwork) {
+        _unconfirmed = true;
+        _connectivity?.reportNetworkFailure();
+        notifyListeners();
+      }
     }
+  }
+
+  /// Starts an email change. The address only moves once the code is confirmed.
+  Future<DateTime?> requestEmailChange(String email) =>
+      _api.requestEmailChange(email.trim());
+
+  Future<void> confirmEmailChange(String code) async {
+    final AuthUser updated = await _api.confirmEmailChange(code.trim());
+    final AuthUser? current = _user;
+    _user = current == null
+        ? updated
+        : current.copyWith(email: updated.email, emailVerified: true);
+    notifyListeners();
   }
 
   Future<void> _loadMe() async {

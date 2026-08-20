@@ -45,6 +45,11 @@ async function main(): Promise<void> {
 	console.log(`env file:    ${ENV_FILE}`)
 	console.log(`control api: ${config.CONTROL_API_URL}`)
 	console.log(`node name:   ${config.NODE_NAME} (${config.NODE_COUNTRY_CODE})`)
+	console.log(
+		`location:    ${config.NODE_COUNTRY}` +
+			`${config.NODE_CITY ? ` / ${config.NODE_CITY}` : ""}` +
+			`${config.NODE_REGION ? ` (${config.NODE_REGION})` : ""}`,
+	)
 
 	if (config.NODE_TOKEN && !force) {
 		fail(
@@ -94,6 +99,10 @@ async function main(): Promise<void> {
 			name: config.NODE_NAME,
 			country: config.NODE_COUNTRY,
 			countryCode: config.NODE_COUNTRY_CODE,
+			// Reported so the app can show "Germany / Frankfurt" instead of "de-01".
+			region: config.NODE_REGION ?? undefined,
+			city: config.NODE_CITY ?? undefined,
+			pingTarget: config.NODE_PING_TARGET ?? undefined,
 			hostname,
 			publicIp,
 			wireguardPublicKey,

@@ -5,12 +5,14 @@ import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/servers_screen.dart';
 import 'screens/settings_screen.dart';
+import 'services/connectivity_service.dart';
 import 'state/auth_controller.dart';
 import 'state/channel_controller.dart';
 import 'state/vpn_controller.dart';
 import 'theme/app_theme.dart';
 import 'theme/motion.dart';
 import 'theme/tokens.dart';
+import 'widgets/glass.dart';
 import 'widgets/logo.dart';
 import 'widgets/nav_bar.dart';
 
@@ -21,12 +23,14 @@ class GlukVpnApp extends StatefulWidget {
     required this.vpn,
     required this.channel,
     required this.motion,
+    required this.connectivity,
   });
 
   final AuthController auth;
   final VpnController vpn;
   final ChannelController channel;
   final MotionController motion;
+  final ConnectivityService connectivity;
 
   @override
   State<GlukVpnApp> createState() => _GlukVpnAppState();
@@ -40,6 +44,7 @@ class _GlukVpnAppState extends State<GlukVpnApp> {
     // badges in the background and restores the stored session, if any.
     widget.channel.probeAll();
     widget.auth.bootstrap();
+    widget.connectivity.start();
   }
 
   @override
@@ -52,6 +57,9 @@ class _GlukVpnAppState extends State<GlukVpnApp> {
         ChangeNotifierProvider<VpnController>.value(value: widget.vpn),
         ChangeNotifierProvider<ChannelController>.value(value: widget.channel),
         ChangeNotifierProvider<MotionController>.value(value: widget.motion),
+        ChangeNotifierProvider<ConnectivityService>.value(
+          value: widget.connectivity,
+        ),
       ],
       child: MaterialApp(
         title: 'GlukVPN',
@@ -61,9 +69,159 @@ class _GlukVpnAppState extends State<GlukVpnApp> {
           // Picks up "Remove animations" from accessibility settings; the whole
           // app then holds its loops still.
           widget.motion.syncWithMediaQuery(context);
-          return child ?? const SizedBox.shrink();
+          return _ConnectivityLayer(child: child ?? const SizedBox.shrink());
         },
         home: const AuthGate(),
+      ),
+    );
+  }
+}
+
+/// Puts the offline state on top of whatever is on screen.
+///
+/// Two shapes, on purpose:
+///  * signed out (or still restoring) - a full, blocking screen, because there
+///    is genuinely nothing the user can do until the network is back;
+///  * signed in - a slim banner, because the last known tunnel state is still
+///    worth showing and disconnecting must keep working.
+///
+/// Neither shape ever prints an API error, a status code or a stack trace.
+class _ConnectivityLayer extends StatelessWidget {
+  const _ConnectivityLayer({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final ConnectivityService connectivity = context.watch<ConnectivityService>();
+    final AuthController auth = context.watch<AuthController>();
+
+    if (connectivity.online) return child;
+
+    final bool signedIn = auth.stage == AuthStage.authenticated;
+    return Stack(
+      children: <Widget>[
+        child,
+        if (signedIn)
+          const Positioned(left: 0, right: 0, top: 0, child: _OfflineBanner())
+        else
+          const Positioned.fill(child: _OfflineScreen()),
+      ],
+    );
+  }
+}
+
+Future<void> _retryConnection(BuildContext context) async {
+  final ConnectivityService connectivity = context.read<ConnectivityService>();
+  final AuthController auth = context.read<AuthController>();
+  final bool back = await connectivity.check();
+  if (back) await auth.resumeSession();
+}
+
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final ConnectivityService connectivity = context.watch<ConnectivityService>();
+    final TextTheme text = Theme.of(context).textTheme;
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        child: GlassPanel(
+          radius: 999,
+          padding: const EdgeInsets.fromLTRB(14, 9, 8, 9),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: GlukColors.amber,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  connectivity.checking ? 'Reconnecting...' : "You're offline",
+                  style: text.bodyMedium,
+                ),
+              ),
+              TextButton(
+                onPressed: connectivity.checking
+                    ? null
+                    : () => _retryConnection(context),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OfflineScreen extends StatelessWidget {
+  const _OfflineScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final ConnectivityService connectivity = context.watch<ConnectivityService>();
+    final TextTheme text = Theme.of(context).textTheme;
+    return Container(
+      color: GlukColors.pageBg,
+      child: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: GlukSizes.pagePadding),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Container(
+                  width: 96,
+                  height: 96,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: <Color>[
+                        GlukColors.violet.withOpacity(0.28),
+                        GlukColors.violet.withOpacity(0.02),
+                      ],
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.wifi_off_rounded,
+                    size: 38,
+                    color: GlukColors.violetLight,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Text(
+                  'No internet connection',
+                  style: text.headlineSmall,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Check your Wi-Fi or mobile data. Everything continues as soon '
+                  'as you are back online.',
+                  style: text.bodyMedium,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 26),
+                PrimaryPillButton(
+                  label: 'Retry',
+                  busy: connectivity.checking,
+                  onPressed: connectivity.checking
+                      ? null
+                      : () => _retryConnection(context),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -181,50 +339,69 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Coming back from the background: re-sync with the real tunnel and session.
+    // Coming back from the background: re-sync with the real tunnel and session,
+    // and re-check reachability so a stale offline banner clears itself.
     if (state == AppLifecycleState.resumed && mounted) {
       context.read<VpnController>().refreshStatus();
+      context.read<ConnectivityService>().check();
     }
   }
 
-  void _select(int index) => setState(() => _index = index);
+  void _select(int index) {
+    if (_index == index) return;
+    setState(() => _index = index);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: GlukColors.bg,
-      extendBody: true,
-      body: IndexedStack(
-        index: _index,
-        children: <Widget>[
-          HomeScreen(
-            onOpenServers: () => _select(1),
-            onOpenProfile: () => _select(2),
-          ),
-          ServersScreen(onDone: () => _select(0)),
-          const SettingsScreen(),
-        ],
-      ),
-      bottomNavigationBar: GlukNavBar(
-        index: _index,
-        onChanged: _select,
-        items: const <GlukNavItem>[
-          GlukNavItem(
-            icon: Icons.shield_outlined,
-            activeIcon: Icons.shield,
-            label: 'VPN',
-          ),
-          GlukNavItem(
-            icon: Icons.public_outlined,
-            activeIcon: Icons.public,
-            label: 'Servers',
-          ),
-          GlukNavItem(
-            icon: Icons.settings_outlined,
-            activeIcon: Icons.settings,
-            label: 'Settings',
-          ),
-        ],
+    // System back must walk the tab stack instead of leaving the app: on
+    // Android 16 an unhandled back on the first route closes the process
+    // straight away, which is what made Servers -> Back quit GlukVPN.
+    //
+    // canPop stays true on the Home tab so the predictive-back animation is
+    // still native there (the user really is leaving the app), and only the
+    // nested tabs intercept it.
+    return PopScope(
+      canPop: _index == 0,
+      onPopInvoked: (bool didPop) {
+        if (didPop || _index == 0) return;
+        _select(0);
+      },
+      child: Scaffold(
+        backgroundColor: GlukColors.bg,
+        extendBody: true,
+        body: IndexedStack(
+          index: _index,
+          children: <Widget>[
+            HomeScreen(
+              onOpenServers: () => _select(1),
+              onOpenProfile: () => _select(2),
+            ),
+            ServersScreen(onDone: () => _select(0)),
+            const SettingsScreen(),
+          ],
+        ),
+        bottomNavigationBar: GlukNavBar(
+          index: _index,
+          onChanged: _select,
+          items: const <GlukNavItem>[
+            GlukNavItem(
+              icon: Icons.shield_outlined,
+              activeIcon: Icons.shield,
+              label: 'VPN',
+            ),
+            GlukNavItem(
+              icon: Icons.public_outlined,
+              activeIcon: Icons.public,
+              label: 'Servers',
+            ),
+            GlukNavItem(
+              icon: Icons.settings_outlined,
+              activeIcon: Icons.settings,
+              label: 'Settings',
+            ),
+          ],
+        ),
       ),
     );
   }

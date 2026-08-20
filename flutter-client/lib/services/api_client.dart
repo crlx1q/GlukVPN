@@ -12,6 +12,12 @@ Map<String, dynamic> _map(Object? value) {
   return <String, dynamic>{};
 }
 
+/// Why a token refresh did not produce a new session.
+///
+/// The distinction is the whole point: `offline` must never sign the user out
+/// (the server never said anything), while `revoked` always must.
+enum SessionRefreshOutcome { ok, offline, revoked }
+
 /// A failed API call, already translated into something showable to the user.
 class ApiException implements Exception {
   ApiException({
@@ -64,6 +70,11 @@ class ApiClient {
 
   TokenBundle? _tokens;
   Future<void>? _refreshing;
+  SessionRefreshOutcome _lastRefresh = SessionRefreshOutcome.ok;
+
+  /// Result of the most recent refresh attempt, for callers that must tell an
+  /// offline start-up apart from a session the server actually killed.
+  SessionRefreshOutcome get lastRefreshOutcome => _lastRefresh;
 
   /// Fired whenever tokens are issued, rotated, or dropped. `null` means the
   /// session is gone and the UI must return to the login screen.
@@ -205,10 +216,18 @@ class ApiClient {
       );
       final TokenBundle rotated = TokenBundle.fromJson(json);
       setTokens(rotated.deviceId == null ? rotated.withDeviceId(current.deviceId) : rotated);
+      _lastRefresh = SessionRefreshOutcome.ok;
       return true;
     } on ApiException catch (error) {
-      // A rejected refresh token is terminal: force a clean logout.
-      if (error.isUnauthorized || error.isForbidden) setTokens(null);
+      // Only an explicit rejection ends the session. A timeout, a DNS failure
+      // or a 5xx means "ask again later", so the stored refresh token is kept
+      // and the user stays signed in.
+      if (error.isUnauthorized || error.isForbidden) {
+        _lastRefresh = SessionRefreshOutcome.revoked;
+        setTokens(null);
+      } else {
+        _lastRefresh = SessionRefreshOutcome.offline;
+      }
       return false;
     } finally {
       if (!completer.isCompleted) completer.complete();
@@ -234,11 +253,22 @@ class ApiClient {
         await _request('GET', '/api/version', authenticated: false),
       );
 
-  Future<LoginResult> login({required String username, required String password}) async {
+  /// Signs in with a username **or** an email address.
+  ///
+  /// `identifier` is what this build sends; `username` is kept alongside it so
+  /// a control server from before the email rollout still understands the call.
+  Future<LoginResult> login({
+    required String identifier,
+    required String password,
+  }) async {
     final Map<String, dynamic> json = await _request(
       'POST',
       '/api/auth/login',
-      body: <String, dynamic>{'username': username, 'password': password},
+      body: <String, dynamic>{
+        'identifier': identifier,
+        'username': identifier,
+        'password': password,
+      },
       authenticated: false,
     );
     final LoginResult result = LoginResult.fromJson(json);
@@ -246,8 +276,12 @@ class ApiClient {
     return result;
   }
 
-  /// Restores a session from a stored refresh token on app start.
-  Future<bool> restoreSession(String refreshToken) async {
+  /// Restores a session from the stored refresh token on app start.
+  ///
+  /// Returns [SessionRefreshOutcome.offline] when the control plane could not
+  /// be reached at all. The caller keeps the session in that case: starting the
+  /// app on a train must not log anybody out.
+  Future<SessionRefreshOutcome> restoreSession(String refreshToken) async {
     setTokens(
       TokenBundle(
         accessToken: '',
@@ -256,9 +290,23 @@ class ApiClient {
       ),
       notify: false,
     );
-    final bool ok = await _tryRefresh();
-    if (!ok) setTokens(null, notify: false);
-    return ok;
+    if (await _tryRefresh()) return SessionRefreshOutcome.ok;
+    if (_lastRefresh == SessionRefreshOutcome.offline) {
+      // Keep the placeholder bundle: it still holds the refresh token, so a
+      // later retry can resume the session without asking for a password.
+      return SessionRefreshOutcome.offline;
+    }
+    setTokens(null, notify: false);
+    return SessionRefreshOutcome.revoked;
+  }
+
+  /// Retries a refresh, used when connectivity comes back.
+  Future<SessionRefreshOutcome> resumeSession() async {
+    if (_tokens == null) return SessionRefreshOutcome.revoked;
+    if (await _tryRefresh()) return SessionRefreshOutcome.ok;
+    return _lastRefresh == SessionRefreshOutcome.offline
+        ? SessionRefreshOutcome.offline
+        : SessionRefreshOutcome.revoked;
   }
 
   Future<void> logout({bool allDevices = false}) async {
@@ -291,6 +339,27 @@ class ApiClient {
           body: <String, dynamic>{'username': username},
         ),
       );
+
+  /// Starts an email change: the code goes to the **new** address, and the
+  /// address only moves once that code comes back.
+  Future<DateTime?> requestEmailChange(String email) async {
+    final Map<String, dynamic> json = await _request(
+      'POST',
+      '/api/auth/email',
+      body: <String, dynamic>{'email': email},
+    );
+    final Object? expires = json['expiresAt'];
+    return expires is String ? DateTime.tryParse(expires) : null;
+  }
+
+  Future<AuthUser> confirmEmailChange(String code) async {
+    final Map<String, dynamic> json = await _request(
+      'POST',
+      '/api/auth/email/confirm',
+      body: <String, dynamic>{'code': code},
+    );
+    return AuthUser.fromJson(_map(json['user']));
+  }
 
   // --- nodes ---------------------------------------------------------------
 

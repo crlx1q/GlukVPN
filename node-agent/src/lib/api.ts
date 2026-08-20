@@ -142,6 +142,11 @@ export async function registerNode(input: {
 	name: string
 	country: string
 	countryCode: string
+	/** User-facing geography; the app shows these instead of `name`. */
+	region?: string
+	city?: string
+	/** Optional latency target; the control plane falls back to the host. */
+	pingTarget?: string
 	hostname: string
 	publicIp: string
 	wireguardPublicKey: string

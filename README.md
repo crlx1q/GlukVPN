@@ -576,3 +576,143 @@ GlukVPN/
 - mTLS или короткоживущие signed tokens вместо bearer-токена ноды;
 - денилист access-токенов, чтобы revoke действовал мгновенно;
 - `vpn.gluk.tech` для лендинга — DNS-запись пока не создана.
+
+---
+
+## BETA sprint: identity, offline sessions, beta lifecycle, polished client
+
+Everything in this section landed on the **beta channel only**. Production
+(`api.gluk.tech`, `glukvpn`, `wg0` on 51820, `10.8.0.0/24`) is untouched: no
+migration is applied to it and no service on it is restarted until you press
+**Promote Beta -> PROD** in the production admin panel.
+
+### 1. Identity
+
+| Concern | Before | Now |
+| --- | --- | --- |
+| Primary key | `uuid` | unchanged - still the only thing rows reference |
+| Public account number | `00000001`, sequential | random 8 digits starting with `1` (e.g. `10758930`), unique, immutable |
+| Login | username only | username **or** email, one field in the app |
+| Rename | changes identity | `POST /api/auth/username` keeps id, number, devices, sessions |
+| Email | absent | optional, unique, only becomes the account's email after a code is confirmed |
+
+The number is generated in Postgres by `gen_user_public_id()` (default on
+`users.public_id`), so it is impossible to insert a row without one. Existing
+rows keep the numbers they already have - a public identifier that changes under
+a user is worse than an ugly one.
+
+### 2. Sessions that survive a dead network
+
+The client now distinguishes three outcomes when it refreshes
+(`SessionRefreshOutcome`):
+
+- `ok` - tokens rotated, carry on;
+- `offline` - transport failure, timeout, DNS, 5xx. **The refresh token is kept**
+  and the user stays signed in;
+- `revoked` - only 401/403 from the control plane. Tokens are wiped and the
+  login screen appears.
+
+That single distinction is what fixes "opened the app on the underground, had to
+type my password again". `ConnectivityService` polls `GET /api/health`
+(2/4/8/15/30 s backoff while down, 25 s while up), and the moment it flips back
+to online it calls `AuthController.resumeSession()`.
+
+Offline UI: a slim retry pill above the tab bar when signed in, a full "No
+internet connection" screen with a Retry button when signed out. No transport
+detail, status code or stack trace is ever shown.
+
+### 3. Beta lifecycle
+
+The production admin panel gained **Start Beta / Stop Beta / Restart Beta**
+next to Deploy/Promote/Rollback, plus a live beta state block.
+
+- Each button queues a `DeployJob` (`START_BETA`, `STOP_BETA`, `RESTART_BETA`).
+  The API never runs a shell command; it inserts a row.
+- `glukvpn-deploy-worker` picks the row up and executes exactly one of six
+  fixed scripts in `/opt/glukvpn-deploy/bin` with no arguments and no shell.
+- `beta-stop.sh` drains beta sessions (`sessions:drain`), stops
+  `vpn-control-beta`, `vpn-node-agent-beta` and `wg-quick@wg1`, then verifies
+  that port 8082 is dead. It never touches `vpn-control`, `vpn-node-agent` or
+  `wg-quick@wg0`; the prod unit names are not even in the file.
+- `beta-start.sh` starts the three units and waits for `/api/health` on 8082 and
+  for a fresh node heartbeat before reporting success.
+- Every job writes an audit entry with the admin who requested it.
+
+Beta lifecycle is driven **from production** on purpose: a stopped beta cannot
+restart itself.
+
+### 4. Client polish
+
+- Three-screen onboarding on one continuous stage: the planet is never
+  re-created, the camera moves (zoom + focus) between three framings and then
+  unrolls the sphere into the flat map when you tap **Let's Go**.
+- The mock-up's connect button is now ported layer for layer: breathing radial
+  glow under the button, two counter-rotating morphing rings, seven orbiting
+  particles with depth fade and trailing threads, and a per-state accent
+  (violet / violet-light / green / amber) with its own orbit period.
+- Home planet is larger and higher (`zoom` 1.35 -> 1.85, focus 60/30 -> 52/19),
+  with orbital light threads and a green dot per online node, linked by
+  hair-thin lines.
+- Server rows show `Germany` / `Frankfurt - Hesse - 12% load - 34 ms` with signal
+  bars (`///`, low / medium / excellent from a real ICMP probe). Internal handles
+  like `de-01` are gone from the user interface entirely.
+- Official Google and Telegram marks, drawn as paths in the official palettes -
+  no binary asset, no SVG runtime.
+- `Servers -> Back -> Home` works on Android 16: `PopScope` in the tab shell plus
+  `android:enableOnBackInvokedCallback="true"` in the manifest.
+
+### 5. Where the logo goes
+
+Drop the same square `logo.png` in these three places; nothing is drawn by hand
+any more:
+
+| Path | Used for |
+| --- | --- |
+| `flutter-client/assets/logo.png` | app UI (splash, onboarding, login, header) |
+| `control-server/public/logo.png` | admin panel header and favicon |
+| `logo.png` (repo root) | source of truth / readme |
+
+The `assets/` **folder** is declared in `pubspec.yaml` rather than the single
+file, so the APK still builds before the file exists (the app falls back to a
+plain violet tile).
+
+### 6. Environment variables added this sprint
+
+Beta control server (`/etc/vpn-control-beta/control.env`):
+
+```
+SMTP_HOST=                 # smtp.zoho.eu when the mailbox exists
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASSWORD=
+SMTP_FROM=
+SMTP_SECURE=false
+VERIFICATION_CODE_TTL_MIN=15
+VERIFICATION_MAX_ATTEMPTS=5
+GEOIP_ENABLED=true         # country/region only, never coordinates
+GEOIP_TIMEOUT_MS=2500
+```
+
+Beta node agent (`/etc/vpn-node-agent-beta/agent.env`):
+
+```
+NODE_REGION=Hesse
+NODE_CITY=Frankfurt
+NODE_PING_TARGET=          # public address the app pings for latency
+```
+
+Email routes answer `503` until `SMTP_HOST` and `SMTP_FROM` are set, so nothing
+issues codes that cannot be delivered.
+
+### 7. Migration
+
+One migration, beta only: `20260820160000_beta_sprint`.
+
+```
+sudo -u vpnbeta ENV_FILE=/etc/vpn-control-beta/control.env \
+  npx prisma migrate deploy --schema prisma/schema.prisma
+```
+
+It adds `gen_user_public_id()`, the email and approximate-origin columns on
+`users`, `region`/`city`/`ping_target` on `vpn_nodes`, the `verification_codes`
+and `identity_links` tables, and the three new `DeployAction` values.
