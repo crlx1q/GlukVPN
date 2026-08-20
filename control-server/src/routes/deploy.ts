@@ -112,7 +112,7 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
 	}
 
 	const enqueue = async (
-		request: Parameters<Parameters<FastifyInstance["post"]>[2]>[0],
+		request: { ip: string; [key: string]: unknown },
 		action: "DEPLOY_BETA" | "PROMOTE_BETA_TO_PROD" | "ROLLBACK_PROD",
 	) => {
 		requireProdChannel()

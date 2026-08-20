@@ -29,6 +29,7 @@ function parseArgs(argv: string[]): Args {
 	const flags: Record<string, string | boolean> = {}
 	for (let i = 0; i < argv.length; i += 1) {
 		const token = argv[i]
+		if (!token) continue
 		if (token.startsWith("--")) {
 			const name = token.slice(2)
 			const next = argv[i + 1]
@@ -58,7 +59,7 @@ function table(rows: Array<Record<string, string | number | null>>): void {
 		),
 	)
 	const line = (cells: string[]) =>
-		cells.map((cell, index) => cell.padEnd(widths[index])).join("  ")
+		cells.map((cell, index) => cell.padEnd(widths[index]!)).join("  ")
 	console.log(line(columns))
 	console.log(line(widths.map((width) => "-".repeat(width))))
 	for (const row of rows) {
