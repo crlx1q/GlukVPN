@@ -19,7 +19,7 @@ const envFlag = (fallback: "true" | "false" = "false") =>
  * Default approximate-origin lookup endpoint. Assembled from parts so the
  * literal is never rewritten by link tooling. `{ip}` is the only placeholder.
  */
-const DEFAULT_GEOIP_URL = `https://${"ipapi.co"}/{ip}/json/`
+
 
 const GEOIP_SCHEME = "https"
 const GEOIP_HOST = "ipapi.co"
