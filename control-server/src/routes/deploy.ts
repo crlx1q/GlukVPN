@@ -141,7 +141,7 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
 
 	/** Build the current source tree and activate it on beta. Prod untouched. */
 	app.post("/api/admin/deploy/beta", async (request, reply) => {
-		const job = await enqueue(request, "DEPLOY_BETA")
+		const job = await enqueue(request as never, "DEPLOY_BETA")
 		return reply.code(202).send({
 			queued: true,
 			job: serializeJob(job),
@@ -157,7 +157,7 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
 				"Beta is not running. Start it, deploy to it and test it before promoting.",
 			)
 		}
-		const job = await enqueue(request, "PROMOTE_BETA_TO_PROD")
+		const job = await enqueue(request as never, "PROMOTE_BETA_TO_PROD")
 		return reply.code(202).send({
 			queued: true,
 			job: serializeJob(job),
@@ -168,7 +168,7 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
 
 	/** Point prod back at the previous release. Code only. */
 	app.post("/api/admin/deploy/rollback", async (request, reply) => {
-		const job = await enqueue(request, "ROLLBACK_PROD")
+		const job = await enqueue(request as never, "ROLLBACK_PROD")
 		return reply.code(202).send({
 			queued: true,
 			job: serializeJob(job),

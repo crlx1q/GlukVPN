@@ -51,7 +51,7 @@ function table(rows: Array<Record<string, string | number | null>>): void {
 		console.log("(no rows)")
 		return
 	}
-	const columns = Object.keys(rows[0])
+	const columns = Object.keys(rows[0]!)
 	const widths = columns.map((column) =>
 		Math.max(
 			column.length,
