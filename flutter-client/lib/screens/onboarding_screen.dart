@@ -153,7 +153,7 @@ class _Halo extends StatelessWidget {
           child: Container(
             width: GlukSizes.globeHalo,
             height: GlukSizes.globeHalo,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: GlukGradients.globeHalo,
             ),
