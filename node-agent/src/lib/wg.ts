@@ -15,7 +15,7 @@ const execFileAsync = promisify(execFile)
 
 const WG_BIN = "/usr/bin/wg"
 const IP_BIN = "/usr/sbin/ip"
-const WG_KEY_RE = /^[A-Za-z0-9+/]{42}=$/
+const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/
 const IPV4_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/
 const IFACE_RE = /^[a-zA-Z0-9_.-]{2,15}$/
 
