@@ -6,7 +6,9 @@ import '../services/ping_service.dart';
 import '../state/vpn_controller.dart';
 import '../theme/tokens.dart';
 import '../utils/geo.dart';
+import '../utils/signal.dart';
 import '../widgets/glass.dart';
+import '../widgets/signal_bars.dart';
 
 /// The server list: rounded rows, a 26 px radio, a flag disc and the signal
 /// bars on the right.
@@ -252,8 +254,14 @@ class _ServerTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final TextTheme text = Theme.of(context).textTheme;
-    final PingLevel level =
-        node.online ? pingLevelFor(sample?.milliseconds) : PingLevel.unknown;
+    // Three bars, computed from the node's own numbers: whether it is online,
+    // how loaded it says it is, and the round trip this phone just measured.
+    final SignalStrength signal = signalStrengthFor(
+      online: node.online,
+      available: node.connectable,
+      pingMs: sample?.milliseconds,
+      loadPercent: node.loadPercent,
+    );
 
     return Opacity(
       opacity: node.connectable ? 1 : 0.55,
@@ -303,7 +311,7 @@ class _ServerTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
-            SignalBars(level: level),
+            SignalBars(strength: signal),
             const SizedBox(width: 10),
             _Radio(selected: selected, enabled: node.connectable),
           ],
@@ -311,89 +319,6 @@ class _ServerTile extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Latency as `///` - three leaning bars, lit according to the round-trip.
-///
-/// A level reads faster than a number, and the number is still in the row for
-/// anyone who wants it.
-class SignalBars extends StatelessWidget {
-  const SignalBars({super.key, required this.level, this.showLabel = true});
-
-  final PingLevel level;
-  final bool showLabel;
-
-  Color get _tone {
-    switch (level) {
-      case PingLevel.excellent:
-        return GlukColors.connected;
-      case PingLevel.medium:
-        return GlukColors.violetLight;
-      case PingLevel.low:
-        return GlukColors.amber;
-      case PingLevel.unknown:
-        return GlukColors.text2;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final TextTheme text = Theme.of(context).textTheme;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: <Widget>[
-        CustomPaint(
-          size: const Size(22, 14),
-          painter: _SignalBarsPainter(bars: level.bars, tone: _tone),
-        ),
-        if (showLabel && level != PingLevel.unknown) ...<Widget>[
-          const SizedBox(height: 3),
-          Text(
-            level.label,
-            style: text.bodySmall?.copyWith(fontSize: 9, color: _tone),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _SignalBarsPainter extends CustomPainter {
-  const _SignalBarsPainter({required this.bars, required this.tone});
-
-  final int bars;
-  final Color tone;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const int count = 3;
-    const double lean = 3.4; // how far the top of each bar leans right
-    final double width = 3.0;
-    final double gap = (size.width - lean - count * width) / (count - 1);
-
-    for (int i = 0; i < count; i++) {
-      final double height = size.height * (0.45 + 0.275 * i);
-      final double left = i * (width + gap);
-      final double bottom = size.height;
-      final Path bar = Path()
-        ..moveTo(left, bottom)
-        ..lineTo(left + lean, bottom - height)
-        ..lineTo(left + lean + width, bottom - height)
-        ..lineTo(left + width, bottom)
-        ..close();
-      canvas.drawPath(
-        bar,
-        Paint()
-          ..color = i < bars ? tone : GlukColors.stroke
-          ..style = PaintingStyle.fill,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_SignalBarsPainter oldDelegate) =>
-      oldDelegate.bars != bars || oldDelegate.tone != tone;
 }
 
 /// `.radio` - 26 px, violet-to-blue gradient with a tick when chosen.

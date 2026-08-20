@@ -41,12 +41,15 @@ class GlukNavBar extends StatelessWidget {
       child: ClipRRect(
         borderRadius: shape,
         child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          filter: ui.ImageFilter.blur(
+            sigmaX: GlukSizes.navBlur,
+            sigmaY: GlukSizes.navBlur,
+          ),
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: GlukColors.navbar,
               borderRadius: shape,
-              border: Border.all(color: Colors.white.withOpacity(0.07)),
+              border: Border.all(color: Colors.white.withOpacity(0.10)),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),

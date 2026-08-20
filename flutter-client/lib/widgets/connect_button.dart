@@ -1,26 +1,43 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
 import '../theme/motion.dart';
 import '../theme/tokens.dart';
 
-/// Phases the button can be in. Each one has its own motion, not just its own
-/// colour: the mock-up's whole point is that the button feels alive.
+/// Phases the button can be in. Each one keeps the same motion language and
+/// only changes accent and tempo.
 enum ConnectPhase { idle, connecting, connected, disconnecting }
 
-/// The power button from the mock-up, ported to Flutter.
+/// The connect control from `gluk_vpn_v5_connection.html`, ported layer for
+/// layer rather than reinterpreted.
 ///
-/// Layer for layer, this is `gluk_vpn_v5_connection.html`:
-///   `.blob-glow`        260 px radial violet glow, `glowPulse 3.6s`
-///   `.blob-outer`       210 px morphing ring, `morph1 7s`
-///   `.blob-inner-ring`  210 px counter-morphing ring, `morph2 7s`
-///   orbiting particles  the light threads that made the original feel alive
-///   `.power-btn`        150 px sphere, `radial-gradient(at 35% 30%, ...)`
-///   `:active`           scale(.96)
+/// The original is four stacked elements inside `.blob-zone`:
 ///
-/// The effect *under* the button is the point, so it is drawn as one painter
-/// below the sphere rather than as a box-shadow on it.
+/// ```css
+/// .blob-glow       { 260px; radial-gradient(circle, rgba(124,92,246,.35), transparent 65%);
+///                    filter: blur(4px); animation: glowPulse 3.6s ease-in-out infinite; }
+/// .blob-outer      { 210px; linear-gradient(150deg, violet-light, indigo); opacity:.95;
+///                    animation: morph1 7s ease-in-out infinite; }
+/// .blob-inner-ring { 210px; linear-gradient(320deg, blue, violet); opacity:.4;
+///                    filter: blur(2px); animation: morph2 7s ease-in-out infinite; }
+/// .power-btn       { 150px; radial-gradient(circle at 35% 30%, #201a30, #0a0812 75%);
+///                    box-shadow: inset 0 0 0 1px rgba(255,255,255,.06),
+///                                0 20px 40px rgba(0,0,0,.6);
+///                    transition: transform .15s;  &:active { transform: scale(.96) } }
+/// ```
+///
+/// Two points matter for getting it right:
+///
+///  * the energy is a pair of **filled** blobs whose eight border radii morph,
+///    not a ring of orbiting particles, and
+///  * the glow is one of the stacked layers **under** the sphere, not a shadow
+///    attached to it - which is what makes the button read as sitting inside a
+///    field rather than glowing at the edges.
+///
+/// Everything here is authored at the mock-up's 150 px button and scaled from
+/// [size], so the proportions between glow, blobs and sphere never drift.
 class GlukConnectButton extends StatefulWidget {
   const GlukConnectButton({
     super.key,
@@ -44,8 +61,17 @@ class GlukConnectButton extends StatefulWidget {
 class _GlukConnectButtonState extends State<GlukConnectButton> {
   bool _pressed = false;
 
-  /// One accent per phase. Connected leans green, but the violet body and the
-  /// orbital threads stay: a flat green glow is exactly what we are replacing.
+  /// The mock-up is authored at 150 px; everything else is proportional.
+  double get _k => widget.size / GlukSizes.powerButton;
+
+  bool get _enabled => widget.onTap != null;
+
+  bool get _busy =>
+      widget.phase == ConnectPhase.connecting ||
+      widget.phase == ConnectPhase.disconnecting;
+
+  /// One accent per phase. `idle` is the mock-up untouched; the others tint the
+  /// same gradients instead of replacing them.
   Color get _accent {
     switch (widget.phase) {
       case ConnectPhase.connected:
@@ -59,25 +85,40 @@ class _GlukConnectButtonState extends State<GlukConnectButton> {
     }
   }
 
-  /// Orbit speed. Connecting spins up, disconnecting winds down, connected
-  /// breathes slowly, idle drifts.
-  Duration get _orbitPeriod {
+  /// How far the blob gradients are pulled towards the accent. Idle stays at
+  /// zero so the resting state is exactly the approved artwork.
+  double get _tint {
+    switch (widget.phase) {
+      case ConnectPhase.connected:
+        return 0.50;
+      case ConnectPhase.disconnecting:
+        return 0.34;
+      case ConnectPhase.connecting:
+        return 0.22;
+      case ConnectPhase.idle:
+        return 0;
+    }
+  }
+
+  /// `morph1` / `morph2` run at 7s in the mock-up. Connecting speeds the field
+  /// up, a settled tunnel slows it down; the shapes never change.
+  Duration get _morphPeriod {
     switch (widget.phase) {
       case ConnectPhase.connecting:
-        return const Duration(milliseconds: 2600);
+        return const Duration(milliseconds: 3400);
       case ConnectPhase.disconnecting:
-        return const Duration(milliseconds: 5200);
+        return const Duration(milliseconds: 5000);
       case ConnectPhase.connected:
         return const Duration(milliseconds: 9000);
       case ConnectPhase.idle:
-        return const Duration(milliseconds: 7000);
+        return GlukMotion.blobMorph;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool enabled = widget.onTap != null;
-    final double stage = widget.size * (GlukSizes.blobGlow / GlukSizes.powerButton);
+    // `.blob-zone` is 260 px across - the glow is the widest layer.
+    final double stage = GlukSizes.blobGlow * _k;
 
     return SizedBox(
       width: stage,
@@ -85,72 +126,81 @@ class _GlukConnectButtonState extends State<GlukConnectButton> {
       child: Stack(
         alignment: Alignment.center,
         children: <Widget>[
-          // --- everything under the sphere -------------------------------
+          // --- .blob-glow ------------------------------------------------
+          _Glow(
+            size: stage,
+            colour: Color.lerp(_glowViolet, _accent, _tint)!,
+            blur: 4 * _k,
+            dim: _enabled ? 1 : 0.45,
+            reduceMotion: widget.reduceMotion,
+          ),
+
+          // --- .blob-outer / .blob-inner-ring ----------------------------
           LoopingBuilder(
-            duration: _orbitPeriod,
+            duration: _morphPeriod,
             reduceMotion: widget.reduceMotion,
             frozenValue: 0.18,
             builder: (BuildContext context, double t) {
-              return LoopingBuilder(
-                duration: GlukMotion.glowPulse,
-                reduceMotion: widget.reduceMotion,
-                frozenValue: 0.5,
-                builder: (BuildContext context, double pulse) {
-                  return CustomPaint(
-                    size: Size(stage, stage),
-                    painter: _OrbitalFieldPainter(
-                      orbit: t,
-                      pulse: pulse,
-                      accent: _accent,
-                      phase: widget.phase,
-                      buttonRadius: widget.size / 2,
-                      dimmed: !enabled,
-                    ),
-                  );
-                },
+              return Stack(
+                alignment: Alignment.center,
+                children: <Widget>[
+                  _MorphBlob(
+                    size: GlukSizes.blob * _k,
+                    t: t,
+                    frames: _morph1,
+                    gradient: _tinted(GlukGradients.blobOuter),
+                    opacity: 0.95 * (_enabled ? 1 : 0.5),
+                  ),
+                  _MorphBlob(
+                    size: GlukSizes.blob * _k,
+                    t: t,
+                    frames: _morph2,
+                    gradient: _tinted(GlukGradients.blobInner),
+                    opacity: 0.40 * (_enabled ? 1 : 0.5),
+                    blur: 2 * _k,
+                  ),
+                ],
               );
             },
           ),
 
-          // --- the sphere itself ------------------------------------------
+          // --- .power-btn -------------------------------------------------
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
-            onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
-            onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
+            onTapDown: _enabled ? (_) => setState(() => _pressed = true) : null,
+            onTapUp: _enabled ? (_) => setState(() => _pressed = false) : null,
+            onTapCancel: _enabled ? () => setState(() => _pressed = false) : null,
             onTap: widget.onTap,
             child: AnimatedScale(
-              // `.power-btn:active { transform: scale(.96) }`
+              // `transition: transform .15s ease` + `:active { scale(.96) }`
               scale: _pressed ? 0.96 : 1,
-              duration: const Duration(milliseconds: 120),
+              duration: const Duration(milliseconds: 150),
               curve: Curves.easeOut,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 320),
+              child: Container(
                 width: widget.size,
                 height: widget.size,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: GlukGradients.powerButton,
-                  border: Border.all(
-                    color: _accent.withOpacity(enabled ? 0.34 : 0.14),
-                    width: 1.2,
-                  ),
+                  // `inset 0 0 0 1px rgba(255,255,255,0.06)`
+                  border: Border.all(color: Colors.white.withOpacity(0.06)),
                   boxShadow: <BoxShadow>[
+                    // `0 20px 40px rgba(0,0,0,0.6)` - depth, not glow.
                     BoxShadow(
-                      color: _accent.withOpacity(enabled ? 0.22 : 0.06),
-                      blurRadius: 34,
-                      spreadRadius: 2,
+                      color: Colors.black.withOpacity(0.6),
+                      blurRadius: 40 * _k,
+                      offset: Offset(0, 20 * _k),
                     ),
                   ],
                 ),
                 child: Center(
-                  child: _PowerGlyph(
-                    size: widget.size * 0.27,
-                    color: widget.phase == ConnectPhase.idle
+                  child: _Glyph(
+                    size: 40 * _k,
+                    colour: widget.phase == ConnectPhase.idle
                         ? GlukColors.powerGlyph
-                        : _accent,
-                    busy: widget.phase == ConnectPhase.connecting ||
-                        widget.phase == ConnectPhase.disconnecting,
+                        : Color.lerp(GlukColors.powerGlyph, _accent, 0.85)!,
+                    accent: _accent,
+                    busy: _busy,
                     reduceMotion: widget.reduceMotion,
                   ),
                 ),
@@ -161,20 +211,258 @@ class _GlukConnectButtonState extends State<GlukConnectButton> {
       ),
     );
   }
+
+  /// `rgba(124,92,246,0.35)` from `.blob-glow`.
+  static const Color _glowViolet = Color(0xFF7C5CF6);
+
+  LinearGradient _tinted(LinearGradient base) {
+    if (_tint == 0) return base;
+    return LinearGradient(
+      begin: base.begin,
+      end: base.end,
+      colors: base.colors
+          .map((Color c) => Color.lerp(c, _accent, _tint)!)
+          .toList(growable: false),
+    );
+  }
 }
 
-/// The power symbol, with a thin sweep while a tunnel is being set up or torn
-/// down so the wait never looks frozen.
-class _PowerGlyph extends StatelessWidget {
-  const _PowerGlyph({
+/// `.blob-glow`: a soft radial field that breathes under everything else.
+///
+/// `glowPulse` is `opacity .6 -> 1 -> .6` with `scale .94 -> 1.05 -> .94`, so
+/// the layer is never fully still and never flashes.
+class _Glow extends StatelessWidget {
+  const _Glow({
     required this.size,
-    required this.color,
+    required this.colour,
+    required this.blur,
+    required this.dim,
+    required this.reduceMotion,
+  });
+
+  final double size;
+  final Color colour;
+  final double blur;
+  final double dim;
+  final bool reduceMotion;
+
+  @override
+  Widget build(BuildContext context) {
+    return LoopingBuilder(
+      duration: GlukMotion.glowPulse,
+      reduceMotion: reduceMotion,
+      frozenValue: 0.5,
+      builder: (BuildContext context, double t) {
+        // A cosine gives the ease-in-out shape of the CSS keyframe for free.
+        final double k = 0.5 - 0.5 * math.cos(t * 2 * math.pi);
+        return Opacity(
+          opacity: ui.lerpDouble(0.6, 1, k)! * dim,
+          child: Transform.scale(
+            scale: ui.lerpDouble(0.94, 1.05, k)!,
+            child: ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+              child: Container(
+                width: size,
+                height: size,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: <Color>[
+                      colour.withOpacity(0.35),
+                      colour.withOpacity(0),
+                    ],
+                    stops: const <double>[0, 0.65],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// One keyframe of `morph1` / `morph2`.
+///
+/// CSS writes eight radii as `TL TR BR BL / TL TR BR BL`, horizontal first,
+/// each a percentage of the box. Flutter says the same thing with four
+/// [Radius.elliptical] corners, so the shape can be reproduced exactly instead
+/// of approximated with a sine wave.
+class _MorphFrame {
+  const _MorphFrame({
+    required this.at,
+    required this.h,
+    required this.v,
+    required this.rotation,
+    required this.scale,
+  });
+
+  /// Position in the timeline, 0..1.
+  final double at;
+
+  /// Horizontal radii, in box fractions: TL, TR, BR, BL.
+  final List<double> h;
+
+  /// Vertical radii, same order.
+  final List<double> v;
+
+  /// Degrees.
+  final double rotation;
+  final double scale;
+}
+
+/// `@keyframes morph1` - the opaque blob.
+const List<_MorphFrame> _morph1 = <_MorphFrame>[
+  _MorphFrame(
+    at: 0,
+    h: <double>[0.42, 0.58, 0.65, 0.35],
+    v: <double>[0.45, 0.40, 0.60, 0.55],
+    rotation: 0,
+    scale: 1,
+  ),
+  _MorphFrame(
+    at: 0.33,
+    h: <double>[0.60, 0.40, 0.45, 0.55],
+    v: <double>[0.55, 0.65, 0.35, 0.45],
+    rotation: 8,
+    scale: 1.02,
+  ),
+  _MorphFrame(
+    at: 0.66,
+    h: <double>[0.48, 0.52, 0.38, 0.62],
+    v: <double>[0.40, 0.55, 0.45, 0.60],
+    rotation: -6,
+    scale: 0.99,
+  ),
+  _MorphFrame(
+    at: 1,
+    h: <double>[0.42, 0.58, 0.65, 0.35],
+    v: <double>[0.45, 0.40, 0.60, 0.55],
+    rotation: 0,
+    scale: 1,
+  ),
+];
+
+/// `@keyframes morph2` - the blurred counter-rotating blob.
+const List<_MorphFrame> _morph2 = <_MorphFrame>[
+  _MorphFrame(
+    at: 0,
+    h: <double>[0.55, 0.45, 0.40, 0.60],
+    v: <double>[0.50, 0.45, 0.55, 0.50],
+    rotation: 0,
+    scale: 1.08,
+  ),
+  _MorphFrame(
+    at: 0.5,
+    h: <double>[0.40, 0.60, 0.55, 0.45],
+    v: <double>[0.60, 0.50, 0.50, 0.40],
+    rotation: -10,
+    scale: 1.14,
+  ),
+  _MorphFrame(
+    at: 1,
+    h: <double>[0.55, 0.45, 0.40, 0.60],
+    v: <double>[0.50, 0.45, 0.55, 0.50],
+    rotation: 0,
+    scale: 1.08,
+  ),
+];
+
+/// A filled gradient blob whose corner radii, rotation and scale follow a CSS
+/// keyframe list. `ease-in-out` is applied between each pair of stops, exactly
+/// like `animation-timing-function` does.
+class _MorphBlob extends StatelessWidget {
+  const _MorphBlob({
+    required this.size,
+    required this.t,
+    required this.frames,
+    required this.gradient,
+    required this.opacity,
+    this.blur = 0,
+  });
+
+  final double size;
+
+  /// 0..1 through the keyframe list.
+  final double t;
+  final List<_MorphFrame> frames;
+  final LinearGradient gradient;
+  final double opacity;
+  final double blur;
+
+  @override
+  Widget build(BuildContext context) {
+    final double clamped = t.clamp(0.0, 1.0);
+    int index = 0;
+    for (int i = 0; i < frames.length - 1; i++) {
+      if (clamped >= frames[i].at) index = i;
+    }
+    final _MorphFrame from = frames[index];
+    final _MorphFrame to = frames[math.min(index + 1, frames.length - 1)];
+    final double span = (to.at - from.at).abs();
+    final double local =
+        span == 0 ? 0 : ((clamped - from.at) / span).clamp(0.0, 1.0);
+    final double eased = Curves.easeInOut.transform(local);
+
+    double radius(int corner, bool horizontal) {
+      final double a = horizontal ? from.h[corner] : from.v[corner];
+      final double b = horizontal ? to.h[corner] : to.v[corner];
+      return ui.lerpDouble(a, b, eased)! * size;
+    }
+
+    Widget blob = Opacity(
+      opacity: opacity.clamp(0.0, 1.0),
+      child: Transform.rotate(
+        angle: ui.lerpDouble(from.rotation, to.rotation, eased)! *
+            math.pi /
+            180,
+        child: Transform.scale(
+          scale: ui.lerpDouble(from.scale, to.scale, eased)!,
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              gradient: gradient,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.elliptical(radius(0, true), radius(0, false)),
+                topRight: Radius.elliptical(radius(1, true), radius(1, false)),
+                bottomRight:
+                    Radius.elliptical(radius(2, true), radius(2, false)),
+                bottomLeft:
+                    Radius.elliptical(radius(3, true), radius(3, false)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (blur > 0) {
+      blob = ImageFiltered(
+        imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        child: blob,
+      );
+    }
+    return blob;
+  }
+}
+
+/// The power symbol. While a tunnel is being set up or torn down a hairline
+/// sweep runs just inside the sphere's edge, so a slow handshake never looks
+/// frozen - one thin arc, no spinner furniture.
+class _Glyph extends StatelessWidget {
+  const _Glyph({
+    required this.size,
+    required this.colour,
+    required this.accent,
     required this.busy,
     required this.reduceMotion,
   });
 
   final double size;
-  final Color color;
+  final Color colour;
+  final Color accent;
   final bool busy;
   final bool reduceMotion;
 
@@ -183,28 +471,28 @@ class _PowerGlyph extends StatelessWidget {
     final Widget glyph = Icon(
       Icons.power_settings_new_rounded,
       size: size,
-      color: color,
+      color: colour,
     );
     if (!busy) return glyph;
+
+    final double ring = size * 2.2;
     return SizedBox(
-      width: size * 1.9,
-      height: size * 1.9,
+      width: ring,
+      height: ring,
       child: Stack(
         alignment: Alignment.center,
         children: <Widget>[
           LoopingBuilder(
-            duration: const Duration(milliseconds: 1400),
+            duration: const Duration(milliseconds: 1600),
             reduceMotion: reduceMotion,
             frozenValue: 0.25,
-            builder: (BuildContext context, double t) {
-              return Transform.rotate(
-                angle: t * 2 * math.pi,
-                child: CustomPaint(
-                  size: Size(size * 1.9, size * 1.9),
-                  painter: _SweepPainter(color: color),
-                ),
-              );
-            },
+            builder: (BuildContext context, double t) => Transform.rotate(
+              angle: t * 2 * math.pi,
+              child: CustomPaint(
+                size: Size(ring, ring),
+                painter: _SweepPainter(colour: accent),
+              ),
+            ),
           ),
           glyph,
         ],
@@ -214,189 +502,24 @@ class _PowerGlyph extends StatelessWidget {
 }
 
 class _SweepPainter extends CustomPainter {
-  const _SweepPainter({required this.color});
+  const _SweepPainter({required this.colour});
 
-  final Color color;
+  final Color colour;
 
   @override
   void paint(Canvas canvas, Size size) {
     final Rect rect = Offset.zero & size;
     final Paint paint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6
+      ..strokeWidth = 1.4
       ..strokeCap = StrokeCap.round
+      ..isAntiAlias = true
       ..shader = SweepGradient(
-        colors: <Color>[color.withOpacity(0), color.withOpacity(0.85)],
+        colors: <Color>[colour.withOpacity(0), colour.withOpacity(0.55)],
       ).createShader(rect);
-    canvas.drawArc(rect.deflate(1), -math.pi / 2, math.pi * 1.35, false, paint);
+    canvas.drawArc(rect.deflate(1), -math.pi / 2, math.pi * 1.25, false, paint);
   }
 
   @override
-  bool shouldRepaint(_SweepPainter oldDelegate) => oldDelegate.color != color;
-}
-
-/// Glow + two morphing rings + orbiting particles, all below the sphere.
-class _OrbitalFieldPainter extends CustomPainter {
-  const _OrbitalFieldPainter({
-    required this.orbit,
-    required this.pulse,
-    required this.accent,
-    required this.phase,
-    required this.buttonRadius,
-    required this.dimmed,
-  });
-
-  /// 0..1 orbit progress.
-  final double orbit;
-
-  /// 0..1 glow breath.
-  final double pulse;
-  final Color accent;
-  final ConnectPhase phase;
-  final double buttonRadius;
-  final bool dimmed;
-
-  static const int _particles = 7;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Offset centre = Offset(size.width / 2, size.height / 2);
-    final double maxRadius = size.width / 2;
-    // `glowPulse`: 0.55 -> 1 -> 0.55 over the cycle.
-    final double breath = 0.55 + 0.45 * (0.5 - 0.5 * math.cos(pulse * 2 * math.pi));
-    final double intensity = dimmed ? 0.35 : 1;
-
-    // --- .blob-glow ------------------------------------------------------
-    final Paint glow = Paint()
-      ..shader = RadialGradient(
-        colors: <Color>[
-          accent.withOpacity(0.30 * breath * intensity),
-          accent.withOpacity(0.10 * breath * intensity),
-          accent.withOpacity(0),
-        ],
-        stops: const <double>[0, 0.45, 1],
-      ).createShader(Rect.fromCircle(center: centre, radius: maxRadius));
-    canvas.drawCircle(centre, maxRadius, glow);
-
-    // --- .blob-outer / .blob-inner-ring ----------------------------------
-    // Two counter-rotating morphing rings. The radius is modulated by two sine
-    // waves, which is what CSS border-radius morphing looks like once traced.
-    final double blobRadius = maxRadius * (GlukSizes.blob / GlukSizes.blobGlow);
-    _drawMorphRing(
-      canvas,
-      centre,
-      blobRadius,
-      phaseShift: orbit * 2 * math.pi,
-      lobes: 3,
-      amplitude: 0.055,
-      paint: Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.1
-        ..color = accent.withOpacity(0.30 * intensity),
-    );
-    _drawMorphRing(
-      canvas,
-      centre,
-      blobRadius * 0.88,
-      phaseShift: -orbit * 2 * math.pi + math.pi / 3,
-      lobes: 4,
-      amplitude: 0.042,
-      paint: Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.9
-        ..color = GlukColors.blue.withOpacity(0.22 * intensity),
-    );
-
-    // --- orbiting particles ----------------------------------------------
-    // An ellipse rather than a circle, tilted, so the ring reads as an orbit
-    // around a sphere instead of a flat halo.
-    final double orbitRx = buttonRadius * 1.34;
-    final double orbitRy = buttonRadius * 0.52;
-    const double tilt = -0.38;
-
-    for (int i = 0; i < _particles; i++) {
-      final double t = (orbit + i / _particles) % 1;
-      final double angle = t * 2 * math.pi;
-      final Offset raw = Offset(
-        math.cos(angle) * orbitRx,
-        math.sin(angle) * orbitRy,
-      );
-      final Offset point = centre +
-          Offset(
-            raw.dx * math.cos(tilt) - raw.dy * math.sin(tilt),
-            raw.dx * math.sin(tilt) + raw.dy * math.cos(tilt),
-          );
-
-      // Particles behind the sphere fade out, which is what sells the depth.
-      final double front = 0.5 + 0.5 * math.sin(angle);
-      final double opacity = (0.18 + 0.62 * front) * intensity;
-      final double radius = 1.1 + 1.5 * front;
-
-      canvas.drawCircle(
-        point,
-        radius * 3.2,
-        Paint()..color = accent.withOpacity(opacity * 0.18),
-      );
-      canvas.drawCircle(
-        point,
-        radius,
-        Paint()..color = Color.lerp(Colors.white, accent, 0.35)!.withOpacity(opacity),
-      );
-
-      // A short light thread trailing each particle: the "живые нити" bit.
-      final double trail = angle - 0.42;
-      final Offset rawTail = Offset(
-        math.cos(trail) * orbitRx,
-        math.sin(trail) * orbitRy,
-      );
-      final Offset tail = centre +
-          Offset(
-            rawTail.dx * math.cos(tilt) - rawTail.dy * math.sin(tilt),
-            rawTail.dx * math.sin(tilt) + rawTail.dy * math.cos(tilt),
-          );
-      canvas.drawLine(
-        tail,
-        point,
-        Paint()
-          ..strokeWidth = 0.9
-          ..strokeCap = StrokeCap.round
-          ..color = accent.withOpacity(opacity * 0.45),
-      );
-    }
-  }
-
-  void _drawMorphRing(
-    Canvas canvas,
-    Offset centre,
-    double radius, {
-    required double phaseShift,
-    required int lobes,
-    required double amplitude,
-    required Paint paint,
-  }) {
-    final Path path = Path();
-    const int steps = 96;
-    for (int i = 0; i <= steps; i++) {
-      final double a = i / steps * 2 * math.pi;
-      final double r = radius *
-          (1 + amplitude * math.sin(a * lobes + phaseShift) +
-              amplitude * 0.6 * math.sin(a * (lobes + 2) - phaseShift));
-      final Offset p = centre + Offset(math.cos(a) * r, math.sin(a) * r);
-      if (i == 0) {
-        path.moveTo(p.dx, p.dy);
-      } else {
-        path.lineTo(p.dx, p.dy);
-      }
-    }
-    path.close();
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(_OrbitalFieldPainter oldDelegate) =>
-      oldDelegate.orbit != orbit ||
-      oldDelegate.pulse != pulse ||
-      oldDelegate.accent != accent ||
-      oldDelegate.phase != phase ||
-      oldDelegate.dimmed != dimmed;
+  bool shouldRepaint(_SweepPainter old) => old.colour != colour;
 }

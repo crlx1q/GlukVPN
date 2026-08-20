@@ -187,3 +187,73 @@ The app reports nothing but what the control plane needs: device name, public
 key, and platform string. Traffic accounting comes from WireGuard byte counters
 on the node. No URLs, no DNS queries and no payload data are collected anywhere
 in this project.
+
+## Visual system (BETA sprint 2)
+
+The mock-ups in `gluk_vpn_v5_connection.html` are treated as the specification,
+not as inspiration. Where a value could be read out of the CSS, it was.
+
+### Connect button
+
+`lib/widgets/connect_button.dart` is a direct port of `.blob-zone`:
+
+| Mock-up | Flutter |
+| --- | --- |
+| `.blob-glow` 260 px radial `rgba(124,92,246,.35)`, `blur(4px)`, `glowPulse 3.6s` | `_Glow` - the glow is a layer of the effect, underneath the button, not a shadow on it |
+| `.blob-outer` 210 px `linear-gradient(150deg,…)`, `morph1 7s` | `_MorphBlob` with the CSS keyframes transcribed into `_morph1` |
+| `.blob-inner-ring` `linear-gradient(320deg,…)`, `opacity .4`, `blur(2px)`, `morph2 7s` | second `_MorphBlob` with `_morph2` |
+| `.power-btn` 150 px, `radial-gradient(circle at 35% 30%,#201a30,#0a0812 75%)`, inset hairline, `0 20px 40px rgba(0,0,0,.6)`, `:active scale(.96)` | the sphere on top, `AnimatedScale` on press |
+
+Each elliptical border radius from `@keyframes morph1/morph2` is stored as an
+`_MorphFrame` (eight radii, rotation, scale) and interpolated - which is why the
+blobs breathe like the HTML instead of merely rotating. States change accent and
+tempo only (`_tint`, `_morphPeriod`); the motion language is shared. There are
+no particles: the original has none.
+
+### One camera, one planet
+
+Onboarding is a single `DottedWorld` filmed by `IntroCamera`
+(`lib/screens/onboarding_screen.dart`), which is plain data and unit-tested in
+`test/onboarding_camera_test.dart`:
+
+1. the whole globe, small, slightly below centre;
+2. a flight to the user's approximate position - `centreLongitude` /
+   `centreLatitude` move the camera, and the marker fades in;
+3. a flight on to the node: `zoom` passes `pi`, so the planet no longer fits,
+   `globeAnchor` pushes its middle to `x = 0.30`, and only the right half stays
+   on screen while a light thread joins the two points.
+
+Zoom dips at the midpoint of each move, so it reads as travel rather than as a
+zoom ramp. "Let's Go" continues the same shot: `globeness` 1 -> 0 unrolls the
+sphere into the flat map at `zoom 2.85`, which runs off both edges - a full
+bleed background for sign-in, not a strip in a box. The page view only reads
+swipes; every visual is driven by the fractional page offset.
+
+The location is approximate and derived from the device region or its UTC
+offset. No GPS, no location permission, no geolocation request.
+
+### Signal bars
+
+`lib/utils/signal.dart` grades a node from its own numbers - measured round
+trip, reported load, online status - and never from its country:
+
+* good/bad anchors: 40/220 ms and 40/95 % load;
+* weighted 0.65 ping + 0.35 load;
+* either dimension being bad on its own caps the result, so a 20 ms node that is
+  93 % full still shows one bar;
+* an unmeasured ping is never three bars (an ICMP probe can be filtered).
+
+`SignalBars` draws three upright bars: green / amber / red / grey, with no
+number inside. The ping value stays in the row's metadata line.
+
+### Glass
+
+`GlukSizes.glassBlur = 7` and `navBlur = 10` with `cell = 0x40120E1C` follow the
+mock-up's `--glass: rgba(255,255,255,0.05)`: the world behind a card has to stay
+readable. Panels are glass, not dark rectangles.
+
+### Checks
+
+`flutter analyze`, `flutter test` and the Android build have to run on a machine
+with the Flutter SDK - they were not executed in the authoring environment. The
+APK workflow builds the `beta` branch on push.

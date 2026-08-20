@@ -47,9 +47,15 @@ class GlukColors {
 	/// The dotted world map's dot colour in the mockup SVG.
 	static const mapDot = Color(0xFF8B7CF6);
 
-	/// Card surfaces from the mockup: `.cell` and `.navbar` backgrounds.
-	static const cell = Color(0x8C140F1E);
-	static const navbar = Color(0x99140F1E);
+	/// Card surfaces. The mockup's `--glass` is `rgba(255,255,255,0.05)`: a thin
+	/// film, not a panel. These are deliberately low-alpha so the dotted world
+	/// keeps reading through every card - glass, not a dark rectangle.
+	static const cell = Color(0x40120E1C);
+
+	/// The nav bar sits over the busiest part of the map and carries small
+	/// labels, so it gets a little more body than a metric cell - but still far
+	/// less than an opaque surface.
+	static const navbar = Color(0x66120E1C);
 
 	/// `--glass` and `--stroke`.
 	static Color get glass => Colors.white.withOpacity(0.05);
@@ -74,17 +80,21 @@ class GlukGradients {
 		colors: [GlukColors.violetLight, GlukColors.blue],
 	);
 
-	/// `.blob-outer`: `150deg, violet-light -> indigo`.
+	/// `.blob-outer`: `linear-gradient(150deg, violet-light, indigo)`.
+	///
+	/// A CSS angle of 150deg points along (sin150, -cos150) = (0.5, 0.866) in
+	/// screen space, so the stops run from the upper left to the lower right.
 	static const blobOuter = LinearGradient(
-		begin: Alignment(-0.6, -1),
-		end: Alignment(0.6, 1),
+		begin: Alignment(-0.5, -0.866),
+		end: Alignment(0.5, 0.866),
 		colors: [GlukColors.violetLight, GlukColors.indigo],
 	);
 
-	/// `.blob-inner-ring`: `320deg, blue -> violet`.
+	/// `.blob-inner-ring`: `linear-gradient(320deg, blue, violet)`.
+	/// 320deg points along (-0.643, -0.766), i.e. up and to the left.
 	static const blobInner = LinearGradient(
-		begin: Alignment(0.8, 0.6),
-		end: Alignment(-0.8, -0.6),
+		begin: Alignment(0.643, 0.766),
+		end: Alignment(-0.643, -0.766),
 		colors: [GlukColors.blue, GlukColors.violet],
 	);
 
@@ -121,6 +131,13 @@ class GlukSizes {
 
 	/// `.cell` radius.
 	static const cellRadius = 15.0;
+
+	/// `backdrop-filter: blur(...)` on the mockup's cards. Kept low on purpose:
+	/// a heavy blur turns glass into frosted plastic and hides the map behind it.
+	static const glassBlur = 7.0;
+
+	/// The nav bar blurs a touch more, since text sits on it.
+	static const navBlur = 10.0;
 
 	/// `.traffic` radius.
 	static const trafficRadius = 16.0;

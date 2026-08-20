@@ -24,11 +24,17 @@ class DottedWorld extends StatelessWidget {
 		super.key,
 		this.globeness = 0,
 		this.rotationDegrees = 0,
+		this.centreLongitude = 0,
+		this.centreLatitude = 0,
+		this.globeAnchor = const Offset(0.5, 0.5),
+		this.driftDegrees = 0,
 		this.zoom = 1,
 		this.focus = const Offset(0.5, 0.5),
 		this.dotOpacity = 0.5,
 		this.selfPoint,
+		this.selfOpacity = 1,
 		this.serverPoint,
+		this.serverOpacity = 1,
 		this.nodePoints = const <MapPoint>[],
 		this.arcProgress = 0,
 		this.arcPhase = 0,
@@ -43,6 +49,25 @@ class DottedWorld extends StatelessWidget {
 	/// Rotation applied to the globe (and, proportionally, to the morphing map).
 	final double rotationDegrees;
 
+	/// The longitude the camera is looking at: the meridian that ends up in the
+	/// middle of the sphere. Flying from one place to another is a change of this
+	/// value, which is a camera move rather than a zoom.
+	final double centreLongitude;
+
+	/// The latitude the camera is looking at. The sphere is tilted about its X
+	/// axis by this much, so a point at ([centreLongitude], [centreLatitude])
+	/// lands exactly at the middle of the globe.
+	final double centreLatitude;
+
+	/// Where the middle of the sphere sits on the canvas, in 0..1 fractions.
+	/// The default is the centre; onboarding's last frame pushes it left so the
+	/// planet runs off the screen and only its right half is visible.
+	final Offset globeAnchor;
+
+	/// A slow horizontal drift for the flat map, in degrees of longitude, so the
+	/// home screen's world is never completely still.
+	final double driftDegrees;
+
 	/// 1 fits the map's width to the widget; larger values zoom in.
 	final double zoom;
 
@@ -56,8 +81,14 @@ class DottedWorld extends StatelessWidget {
 	/// The user's approximate position, if known.
 	final MapPoint? selfPoint;
 
+	/// Fades the user's marker in without moving it.
+	final double selfOpacity;
+
 	/// The selected node's position.
 	final MapPoint? serverPoint;
+
+	/// Fades the node's marker in without moving it.
+	final double serverOpacity;
 
 	/// Every node that is currently online, drawn as a small green point with
 	/// hair-thin links between them. These come from `GET /api/nodes`, so the
@@ -86,11 +117,17 @@ class DottedWorld extends StatelessWidget {
 				painter: _DottedWorldPainter(
 					globeness: globeness.clamp(0.0, 1.0),
 					rotationDegrees: rotationDegrees,
+					centreLongitude: centreLongitude,
+					centreLatitude: centreLatitude,
+					globeAnchor: globeAnchor,
+					driftDegrees: driftDegrees,
 					zoom: zoom,
 					focus: focus,
 					dotOpacity: dotOpacity,
 					selfPoint: selfPoint,
+					selfOpacity: selfOpacity.clamp(0.0, 1.0),
 					serverPoint: serverPoint,
+					serverOpacity: serverOpacity.clamp(0.0, 1.0),
 					nodePoints: nodePoints,
 					arcProgress: arcProgress.clamp(0.0, 1.0),
 					arcPhase: arcPhase,
@@ -108,11 +145,17 @@ class _DottedWorldPainter extends CustomPainter {
 	_DottedWorldPainter({
 		required this.globeness,
 		required this.rotationDegrees,
+		required this.centreLongitude,
+		required this.centreLatitude,
+		required this.globeAnchor,
+		required this.driftDegrees,
 		required this.zoom,
 		required this.focus,
 		required this.dotOpacity,
 		required this.selfPoint,
+		required this.selfOpacity,
 		required this.serverPoint,
+		required this.serverOpacity,
 		required this.nodePoints,
 		required this.arcProgress,
 		required this.arcPhase,
@@ -123,11 +166,17 @@ class _DottedWorldPainter extends CustomPainter {
 
 	final double globeness;
 	final double rotationDegrees;
+	final double centreLongitude;
+	final double centreLatitude;
+	final Offset globeAnchor;
+	final double driftDegrees;
 	final double zoom;
 	final Offset focus;
 	final double dotOpacity;
 	final MapPoint? selfPoint;
+	final double selfOpacity;
 	final MapPoint? serverPoint;
+	final double serverOpacity;
 	final List<MapPoint> nodePoints;
 	final double arcProgress;
 	final double arcPhase;
@@ -154,7 +203,12 @@ class _DottedWorldPainter extends CustomPainter {
 			size.width * 0.5 + (0.5 - focus.dx) * mapWidth * flatScale,
 			size.height * 0.5 + (0.5 - focus.dy) * mapHeight * flatScale,
 		);
-		final globeCentre = Offset(size.width * 0.5, size.height * 0.5);
+		// The sphere does not have to sit in the middle of the canvas: the last
+		// onboarding frame pushes it left, off the screen, on purpose.
+		final globeCentre = Offset(
+			size.width * globeAnchor.dx,
+			size.height * globeAnchor.dy,
+		);
 
 		final dotRadius = math.max(0.55, 0.4 * flatScale);
 
@@ -186,6 +240,13 @@ class _DottedWorldPainter extends CustomPainter {
 			canvas.drawPoints(ui.PointMode.points, points, paint);
 		}
 
+		// Sphere shading: the mockup's `.globe::before` / `.globe::after` inset
+		// gradients. This is what turns a field of dots into a lit ball instead of
+		// a flat sticker, and it costs three draw calls.
+		if (globeness > 0.02) {
+			_paintGlobeShading(canvas, globeCentre, globeRadius);
+		}
+
 		// Light threads sweeping around the scene. Two thin ellipses with a short
 		// bright segment travelling along each, the same idea as the rings around
 		// the connect button - which is why they are drawn with one stroke each
@@ -213,10 +274,10 @@ class _DottedWorldPainter extends CustomPainter {
 			_paintFleet(canvas, size, fleet, flatScale);
 		}
 
-		// Markers and arc are only meaningful on (or near) the flat map.
-		final markerFade = 1 - globeness;
-		if (markerFade <= 0.01) return;
-
+		// Markers and the thread between them are drawn on the globe as well as on
+		// the flat map: the onboarding camera flies to the user's dot and then on
+		// to the node, so hiding them while globeness > 0 would remove the whole
+		// point of the scene.
 		final self = selfPoint == null
 				? null
 				: _project(
@@ -227,7 +288,7 @@ class _DottedWorldPainter extends CustomPainter {
 						globeCentre: globeCentre,
 						size: size,
 						cull: false,
-					)?.offset;
+					);
 		final server = serverPoint == null
 				? null
 				: _project(
@@ -238,31 +299,57 @@ class _DottedWorldPainter extends CustomPainter {
 						globeCentre: globeCentre,
 						size: size,
 						cull: false,
-					)?.offset;
+					);
 
+		// A place on the far side of the sphere must not shine through it, so a
+		// marker's opacity follows how much of it faces the camera.
+		double facing(({Offset offset, double visibility})? projected) {
+			if (projected == null) return 0;
+			return ui.lerpDouble(1, projected.visibility.clamp(0.0, 1.0), globeness)!;
+		}
+
+		final selfFade = facing(self) * selfOpacity;
+		final serverFade = facing(server) * serverOpacity;
 		final accent = connected ? GlukColors.connected : GlukColors.violetLight;
 
 		if (self != null && server != null && arcProgress > 0) {
-			_paintArc(
-				canvas,
-				from: self,
-				to: server,
-				arc: ConnectionArc(from: selfPoint!, to: serverPoint!),
-				flatScale: flatScale,
-				flatCentre: centre,
-				globeRadius: globeRadius,
-				globeCentre: globeCentre,
-				size: size,
-				opacity: markerFade,
-				accent: accent,
-			);
+			final routeFade = math.min(selfFade, serverFade);
+			if (routeFade > 0.02) {
+				_paintArc(
+					canvas,
+					from: self.offset,
+					to: server.offset,
+					arc: ConnectionArc(from: selfPoint!, to: serverPoint!),
+					flatScale: flatScale,
+					flatCentre: centre,
+					globeRadius: globeRadius,
+					globeCentre: globeCentre,
+					size: size,
+					opacity: routeFade,
+					accent: accent,
+				);
+			}
 		}
 
-		if (self != null) {
-			_paintMarker(canvas, self, GlukColors.violetLight, markerFade, flatScale);
+		if (self != null && selfFade > 0.02) {
+			_paintMarker(
+				canvas,
+				self.offset,
+				GlukColors.violetLight,
+				selfFade,
+				flatScale,
+				pulsing: true,
+			);
 		}
-		if (server != null) {
-			_paintMarker(canvas, server, accent, markerFade, flatScale, pulsing: true);
+		if (server != null && serverFade > 0.02) {
+			_paintMarker(
+				canvas,
+				server.offset,
+				accent,
+				serverFade,
+				flatScale,
+				pulsing: true,
+			);
 		}
 	}
 
@@ -281,11 +368,17 @@ class _DottedWorldPainter extends CustomPainter {
 		final lat = 90 - dot.y / mapHeight * 180;
 		final lon = dot.x / mapWidth * 360 - 180;
 
-		// Rotation only makes sense once we are (partly) a globe.
-		final spin = rotationDegrees * globeness;
+		// Where the camera is pointing. Subtracting the centre longitude is what
+		// brings a chosen meridian to the middle of the sphere; the tilt does the
+		// same for latitude.
+		final spin = (rotationDegrees - centreLongitude) * globeness;
+		final tilt = centreLatitude * globeness * math.pi / 180;
 
 		// --- flat ---
-		final wrappedX = ((dot.x + spin / 360 * mapWidth) % mapWidth + mapWidth) % mapWidth;
+		// `driftDegrees` only applies to the flat map, where there is no sphere to
+		// rotate but the world should still breathe.
+		final shift = (spin + driftDegrees * (1 - globeness)) / 360 * mapWidth;
+		final wrappedX = ((dot.x + shift) % mapWidth + mapWidth) % mapWidth;
 		final flat = Offset(
 			flatCentre.dx + (wrappedX - mapWidth / 2) * flatScale,
 			flatCentre.dy + (dot.y - mapHeight / 2) * flatScale,
@@ -296,13 +389,17 @@ class _DottedWorldPainter extends CustomPainter {
 			return (offset: flat, visibility: 1);
 		}
 
-		// --- globe (orthographic) ---
+		// --- globe (orthographic, camera tilted to a latitude) ---
 		final phi = lat * math.pi / 180;
 		final lambda = (lon + spin) * math.pi / 180;
 		final cosPhi = math.cos(phi);
 		final x3 = cosPhi * math.sin(lambda);
-		final y3 = -math.sin(phi);
-		final z3 = cosPhi * math.cos(lambda);
+		// North-positive vertical and depth, rotated about the X axis by `tilt`,
+		// so a point at (centreLongitude, centreLatitude) lands dead centre.
+		final north = math.sin(phi);
+		final front = cosPhi * math.cos(lambda);
+		final y3 = -(north * math.cos(tilt) - front * math.sin(tilt));
+		final z3 = north * math.sin(tilt) + front * math.cos(tilt);
 		final globe = Offset(
 			globeCentre.dx + x3 * globeRadius,
 			globeCentre.dy + y3 * globeRadius,
@@ -381,6 +478,55 @@ class _DottedWorldPainter extends CustomPainter {
 		canvas.drawPath(
 			_dashed(path, dash: dash, gap: gap, phase: arcPhase * (dash + gap), progress: arcProgress),
 			paint,
+		);
+	}
+
+	/// `.globe::before` / `.globe::after`: a violet highlight at 32% / 26%, a
+	/// deep shadow at 70% / 78%, and the blue rim glow inside the limb
+	/// (`inset 0 0 26px 6px rgba(79,124,255,0.35)`).
+	void _paintGlobeShading(Canvas canvas, Offset centre, double radius) {
+		final rect = Rect.fromCircle(center: centre, radius: radius);
+		final k = globeness.clamp(0.0, 1.0);
+
+		canvas.drawCircle(
+			centre,
+			radius,
+			Paint()
+				..shader = ui.Gradient.radial(
+					Offset(rect.left + rect.width * 0.32, rect.top + rect.height * 0.26),
+					radius * 0.95,
+					<Color>[
+						const Color(0xFFB4A5FF).withOpacity(0.15 * k),
+						const Color(0x00B4A5FF),
+					],
+					<double>[0, 1],
+				),
+		);
+
+		canvas.drawCircle(
+			centre,
+			radius,
+			Paint()
+				..shader = ui.Gradient.radial(
+					Offset(rect.left + rect.width * 0.70, rect.top + rect.height * 0.78),
+					radius * 1.05,
+					<Color>[
+						Colors.black.withOpacity(0.42 * k),
+						const Color(0x00000000),
+					],
+					<double>[0, 1],
+				),
+		);
+
+		canvas.drawCircle(
+			centre,
+			radius * 0.97,
+			Paint()
+				..style = PaintingStyle.stroke
+				..strokeWidth = radius * 0.10
+				..isAntiAlias = true
+				..color = GlukColors.blue.withOpacity(0.20 * k)
+				..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * 0.09),
 		);
 	}
 
@@ -554,6 +700,12 @@ class _DottedWorldPainter extends CustomPainter {
 	bool shouldRepaint(_DottedWorldPainter old) =>
 			old.globeness != globeness ||
 			old.rotationDegrees != rotationDegrees ||
+			old.centreLongitude != centreLongitude ||
+			old.centreLatitude != centreLatitude ||
+			old.globeAnchor != globeAnchor ||
+			old.driftDegrees != driftDegrees ||
+			old.selfOpacity != selfOpacity ||
+			old.serverOpacity != serverOpacity ||
 			old.zoom != zoom ||
 			old.focus != focus ||
 			old.dotOpacity != dotOpacity ||

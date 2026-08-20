@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../config.dart';
-import '../models/models.dart';
 import '../state/auth_controller.dart';
-import '../state/channel_controller.dart';
 import '../theme/tokens.dart';
 import '../widgets/glass.dart';
 import '../widgets/logo.dart';
@@ -90,7 +88,17 @@ class _LoginViewState extends State<LoginView> {
     final AuthController auth = context.watch<AuthController>();
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
+      // The layout is final on the first frame - onboarding fades this in over
+      // the map instead of centring it and then lifting it into place. The only
+      // thing that moves is the keyboard inset, which is added to the bottom so
+      // the password field is never left under the keyboard.
+      padding: EdgeInsets.fromLTRB(
+        24,
+        16,
+        24,
+        28 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       child: Form(
         key: _form,
         child: Column(
@@ -183,13 +191,9 @@ class _LoginViewState extends State<LoginView> {
                 ),
               ],
             ),
-            // The channel indicator only exists in builds that are allowed to
-            // switch control planes (the internal APK). A release build points
-            // at one API and says nothing about it.
-            if (AppConfig.betaChannelAvailable) ...<Widget>[
-              const SizedBox(height: 18),
-              const Center(child: _ChannelChip()),
-            ],
+            // Nothing about channels, builds or deployments appears here. Sign
+            // in is a product screen; the PROD/BETA switch and the version
+            // readouts live in Settings, behind an internal-build flag.
           ],
         ),
       ),
@@ -266,35 +270,6 @@ class _SocialButton extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Which control plane this build is pointed at, and its version. Visible
-/// before sign-in on purpose: on BETA you are looking at a different database
-/// with different accounts, and that should never be a surprise.
-class _ChannelChip extends StatelessWidget {
-  const _ChannelChip();
-
-  @override
-  Widget build(BuildContext context) {
-    final TextTheme text = Theme.of(context).textTheme;
-    final ChannelController channel = context.watch<ChannelController>();
-    final ChannelVersion? version = channel.versionOf(channel.active);
-    final Color tone =
-        channel.active.isBeta ? GlukColors.amber : GlukColors.violetLight;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: tone.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: tone.withOpacity(0.32)),
-      ),
-      child: Text(
-        version?.label ?? '${channel.active.label} \u00b7 offline',
-        style: text.labelSmall?.copyWith(color: tone),
       ),
     );
   }

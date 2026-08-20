@@ -93,7 +93,7 @@ class SettingsScreen extends StatelessWidget {
             const SizedBox(height: 12),
           ],
           _Panel(
-            title: 'This build',
+            title: 'About',
             children: <Widget>[
               // Diagnostics: internal builds only. A release build shows the
               // app version and nothing about the deployment behind it.

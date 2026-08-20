@@ -4,9 +4,14 @@ import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
 
-/// The frosted panel used throughout the mockup (`.cell`, `.traffic`,
-/// `.navbar`): a translucent dark fill, a hairline stroke and a real backdrop
-/// blur so the world map shows through.
+/// The glass panel used throughout the mockup (`.cell`, `.traffic`,
+/// `.navbar`): a very translucent fill, a hairline stroke and a *light*
+/// backdrop blur.
+///
+/// The blur is deliberately small ([GlukSizes.glassBlur]). A large sigma reads
+/// as frosted plastic and erases the dotted world behind the card; a small one
+/// keeps the map legible through the panel, which is what makes the surface
+/// feel like glass.
 class GlassPanel extends StatelessWidget {
 	const GlassPanel({
 		super.key,
@@ -14,7 +19,7 @@ class GlassPanel extends StatelessWidget {
 		this.padding = const EdgeInsets.fromLTRB(13, 12, 13, 12),
 		this.radius = GlukSizes.cellRadius,
 		this.color = GlukColors.cell,
-		this.blur = 12,
+		this.blur = GlukSizes.glassBlur,
 		this.border = true,
 		this.onTap,
 	});
@@ -39,7 +44,7 @@ class GlassPanel extends StatelessWidget {
 						color: color,
 						borderRadius: shape,
 						border: border
-								? Border.all(color: Colors.white.withOpacity(0.07))
+								? Border.all(color: Colors.white.withOpacity(0.10))
 								: null,
 					),
 					child: Padding(padding: padding, child: child),

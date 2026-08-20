@@ -269,20 +269,32 @@ class _MapBackdrop extends StatelessWidget {
                   reduceMotion: motion.reduceMotion,
                   frozenValue: 0.2,
                   builder: (BuildContext context, double orbit) {
-                    return DottedWorld(
-                  // Bigger and higher than before: the planet now anchors the
-                  // top of the composition instead of sitting behind the cells.
-                      zoom: 1.85,
-                      focus: const Offset(0.52, 0.19),
-                      dotOpacity: 0.58,
-                      selfPoint: selfPoint,
-                      serverPoint: serverPoint,
-                      nodePoints: fleet,
-                      arcProgress: arc,
-                      arcPhase: dash,
-                      orbitalPhase: orbit,
-                      pulse: live ? pulse : 0,
-                      connected: connected,
+                    // One turn of longitude every four minutes. Imperceptible
+                    // frame to frame, but it is the difference between a world
+                    // and wallpaper - and a full 360 loop wraps seamlessly.
+                    return LoopingBuilder(
+                      duration: const Duration(seconds: 240),
+                      reduceMotion: motion.reduceMotion,
+                      frozenValue: 0,
+                      builder: (BuildContext context, double drift) {
+                        return DottedWorld(
+                          // Bigger and higher than before: the planet anchors
+                          // the top of the composition instead of sitting
+                          // behind the readouts.
+                          zoom: 1.85,
+                          focus: const Offset(0.52, 0.19),
+                          dotOpacity: 0.58,
+                          driftDegrees: drift * 360,
+                          selfPoint: selfPoint,
+                          serverPoint: serverPoint,
+                          nodePoints: fleet,
+                          arcProgress: arc,
+                          arcPhase: dash,
+                          orbitalPhase: orbit,
+                          pulse: live ? pulse : 0,
+                          connected: connected,
+                        );
+                      },
                     );
                   },
                 );
