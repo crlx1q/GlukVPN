@@ -260,7 +260,7 @@ class _ServerTile extends StatelessWidget {
       online: node.online,
       available: node.connectable,
       pingMs: sample?.milliseconds,
-      loadPercent: node.loadPercent,
+      loadPercent: node.loadPercent.toDouble(),
     );
 
     return Opacity(
