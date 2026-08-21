@@ -147,7 +147,8 @@ void main() {
       // 5h east of UTC is longitude 75; the nearest country we can plot is
       // Kyrgyzstan (lon ≈ 74.6°), which is closer than Kazakhstan (lon ≈ 71.4°).
       expect(self.countryCode, 'KG');
-      expect(countryForUtcOffset(const Duration(hours: 1)), 'DE');
+      // UTC+1 = lon 15°; AT (lon ≈ 16.4°) is closer than DE (lon ≈ 8.5°).
+      expect(countryForUtcOffset(const Duration(hours: 1)), 'AT');
       expect(countryForUtcOffset(const Duration(hours: -5)), 'US');
     });
 
