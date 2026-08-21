@@ -77,8 +77,9 @@ void main() {
     test('always has at least one established link', () {
       // This is what removes the "planet twitches to show a connection again"
       // feeling: there is never a frame where every thread is mid-reach.
-      for (int step = 0; step <= 1200; step++) {
-        final double seconds = step * 0.5;
+      // Sample at 0.1 s intervals over 10 minutes.
+      for (int step = 0; step <= 6000; step++) {
+        final double seconds = step * 0.1;
         expect(
           world.threadsAt(seconds).any((ShowcaseThread thread) => thread.settled),
           isTrue,

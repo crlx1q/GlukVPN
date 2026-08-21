@@ -125,8 +125,8 @@ void main() {
         utcOffsetOverride: const Duration(hours: 5),
       );
       expect(self.precision, 'timezone');
-      expect(self.countryCode, 'KZ');
-      expect(self.label, 'Kazakhstan');
+      expect(self.countryCode, 'KG');
+      expect(self.label, 'Kyrgyzstan');
     });
 
     test('a Russian phone in Moscow still lands in Russia', () {
@@ -145,8 +145,8 @@ void main() {
       );
       expect(self.precision, 'timezone');
       // 5h east of UTC is longitude 75; the nearest country we can plot is
-      // Kazakhstan, which is a better answer than a bare meridian.
-      expect(self.countryCode, 'KZ');
+      // Kyrgyzstan (lon ≈ 74.6°), which is closer than Kazakhstan (lon ≈ 71.4°).
+      expect(self.countryCode, 'KG');
       expect(countryForUtcOffset(const Duration(hours: 1)), 'DE');
       expect(countryForUtcOffset(const Duration(hours: -5)), 'US');
     });

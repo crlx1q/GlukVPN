@@ -145,8 +145,12 @@ void main() {
       );
 
       final BlobShape mid = BlobShape.lerp(a, b, 0.5);
-      expect(mid.h, <double>[0.2, 0.3, 0.4, 0.5]);
-      expect(mid.v, <double>[0.5, 0.4, 0.3, 0.2]);
+      for (int i = 0; i < mid.h.length; i++) {
+        expect(mid.h[i], closeTo(<double>[0.2, 0.3, 0.4, 0.5][i], 1e-9));
+      }
+      for (int i = 0; i < mid.v.length; i++) {
+        expect(mid.v[i], closeTo(<double>[0.5, 0.4, 0.3, 0.2][i], 1e-9));
+      }
       expect(mid.rotation, closeTo(-5, 1e-9));
       expect(mid.scale, closeTo(1.07, 1e-9));
 
