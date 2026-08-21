@@ -108,56 +108,148 @@ String countryFlag(String? countryCode) {
 
 /// The user's approximate position for the "you" dot on the map.
 ///
-/// Deliberately cheap and privacy-preserving:
-///   1. the device locale's region (`ru_KZ` -> KZ) against the table above;
-///   2. failing that, the UTC offset, which pins a longitude to within a
-///      timezone's width and assumes a mid-northern latitude.
+/// Resolved best evidence first:
+///   1. the country the control plane resolved from the request's IP. That is
+///      the network's own view of where the device is, and the only source that
+///      can tell a Russian-language phone in Moscow from the same phone in
+///      Kazakhstan;
+///   2. the device's UTC offset, which pins a longitude to within a timezone's
+///      width, matched to the nearest country we can plot;
+///   3. the locale's region (`ru_KZ` -> KZ) - but only when it agrees with that
+///      longitude.
 ///
-/// No GPS, no location permission, no IP-geolocation request. The dot is
-/// decoration, so an approximation is the right trade.
+/// The locale used to come first, and that is precisely the bug it caused:
+/// `ru_RU` on a phone in Astana parked the marker on Moscow. Language is not
+/// location. The clock is weak evidence but it is *about* where you are, so it
+/// now outranks the keyboard.
+///
+/// Still no GPS and no location permission at any step, and the finest
+/// resolution anywhere in this file is a country centre.
 class SelfLocation {
 	const SelfLocation({
 		required this.point,
 		required this.precision,
 		this.countryCode,
 		this.countryName,
+		this.region,
 	});
 
 	final MapPoint point;
 	final String? countryCode;
 	final String? countryName;
 
-	/// 'country' when we recognised the locale's region, 'timezone' when we fell
-	/// back to the UTC offset.
+	/// City or region, when the control plane reported one.
+	final String? region;
+
+	/// 'network' when the control plane resolved the IP, 'country' when the
+	/// locale's region was used, 'timezone' when only the UTC offset was.
 	final String precision;
 
+	/// True when this came from the network rather than a guess on the device.
+	bool get fromNetwork => precision == 'network';
+
 	String get label => countryName ?? 'Your location';
+
+	/// "Frankfurt, Germany" when both halves are known.
+	String get placeLabel {
+		final String? city = region;
+		final String? country = countryName;
+		if (city != null && city.isNotEmpty && country != null) {
+			return '$city, $country';
+		}
+		return label;
+	}
+
 	String get flag => countryFlag(countryCode);
 }
 
-SelfLocation approximateSelfLocation({String? localeOverride, Duration? utcOffsetOverride}) {
-	final locale = localeOverride ?? _platformLocale();
-	final region = _regionFromLocale(locale);
-	if (region != null) {
-		final centre = countryCentres[region];
+/// Shortest angular distance between two longitudes, in degrees.
+double longitudeGap(double a, double b) {
+	final double delta = ((a - b + 540) % 360) - 180;
+	return delta.abs();
+}
+
+/// How far a locale's region may sit from the longitude the clock implies
+/// before we stop believing it. A little over one and a half timezones: wide
+/// enough for a large country, narrow enough to reject a neighbour.
+const double localeAgreementDegrees = 25;
+
+/// The country in [countryCentres] that best fits a UTC offset.
+///
+/// 15 degrees of longitude per hour, then the nearest centre by longitude with
+/// a mild preference for the northern mid-latitudes, where the devices are.
+/// Null when nothing is close enough to be worth claiming.
+String? countryForUtcOffset(Duration offset) {
+	final double longitude = (offset.inMinutes / 60.0) * 15.0;
+	String? best;
+	double bestScore = double.infinity;
+	for (final String code in countryCentres.keys) {
+		final centre = countryCentres[code]!;
+		final double gap = longitudeGap(centre.lon, longitude);
+		if (gap > 30) continue;
+		final double score = gap + 0.25 * (centre.lat - 45).abs();
+		if (score < bestScore) {
+			bestScore = score;
+			best = code;
+		}
+	}
+	return best;
+}
+
+SelfLocation approximateSelfLocation({
+	String? originCountryCode,
+	String? originCountryName,
+	String? originRegion,
+	String? localeOverride,
+	Duration? utcOffsetOverride,
+}) {
+	// 1. What the control plane saw.
+	final String? origin = originCountryCode?.toUpperCase();
+	if (origin != null && origin.length == 2) {
+		final centre = countryCentres[origin];
 		if (centre != null) {
 			return SelfLocation(
 				point: projectLatLon(centre.lat, centre.lon),
-				precision: 'country',
-				countryCode: region,
-				countryName: centre.name,
+				precision: 'network',
+				countryCode: origin,
+				countryName: originCountryName ?? centre.name,
+				region: originRegion,
 			);
 		}
 	}
 
-	// 15 degrees of longitude per hour of offset.
-	final offset = utcOffsetOverride ?? DateTime.now().timeZoneOffset;
-	final lon = (offset.inMinutes / 60.0) * 15.0;
-	// Most of the world's population, and all of our test devices, sit in the
-	// northern mid-latitudes. Without a region this is the least wrong guess.
-	const lat = 45.0;
+	final Duration offset = utcOffsetOverride ?? DateTime.now().timeZoneOffset;
+	final double tzLongitude = (offset.inMinutes / 60.0) * 15.0;
+
+	// 2. The locale's region, when the clock does not contradict it.
+	final String locale = localeOverride ?? _platformLocale();
+	final String? region = _regionFromLocale(locale);
+	final centre = region == null ? null : countryCentres[region];
+	if (centre != null &&
+			longitudeGap(centre.lon, tzLongitude) <= localeAgreementDegrees) {
+		return SelfLocation(
+			point: projectLatLon(centre.lat, centre.lon),
+			precision: 'country',
+			countryCode: region,
+			countryName: centre.name,
+		);
+	}
+
+	// 3. Nearest country for this timezone.
+	final String? nearest = countryForUtcOffset(offset);
+	final nearestCentre = nearest == null ? null : countryCentres[nearest];
+	if (nearestCentre != null) {
+		return SelfLocation(
+			point: projectLatLon(nearestCentre.lat, nearestCentre.lon),
+			precision: 'timezone',
+			countryCode: nearest,
+			countryName: nearestCentre.name,
+		);
+	}
+
+	// Nothing plottable: put the marker on the meridian the clock implies.
 	return SelfLocation(
-		point: projectLatLon(lat, lon.clamp(-180.0, 180.0)),
+		point: projectLatLon(45, tzLongitude.clamp(-180.0, 180.0)),
 		precision: 'timezone',
 		countryCode: region,
 		countryName: null,

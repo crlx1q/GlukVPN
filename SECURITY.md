@@ -305,3 +305,65 @@ The client no longer surfaces transport diagnostics, status codes, endpoint
 hosts, node handles or channel labels in release builds. This is a security
 property as much as a cosmetic one: error text is a reconnaissance surface, and
 `de-01` or `beta-api` in a screenshot tells an attacker how the fleet is named.
+
+---
+
+## Sprint 3 security notes (BETA)
+
+### BETA lifecycle scripts cannot reach PROD
+
+The rewritten `beta-start.sh` / `beta-stop.sh` / `beta-restart.sh` now kill
+processes when a unit stop is not enough, so they were written under three hard
+rules:
+
+1. **Name guard.** `assert_beta_unit` accepts only `*-beta`, `*-beta.service`
+   or `wg-quick@wg1`. Anything else aborts the script with
+   `refusing to touch '<unit>': not a BETA unit`. `assert_beta_interface`
+   refuses any interface other than `wg1`, so a mistyped override can never
+   take prod's tunnel down.
+2. **Process guard.** Before any signal is sent, `pid_is_prod` inspects the
+   target's cgroup, cwd and cmdline. A hit on `/opt/vpn-control/`,
+   `vpn-control.service`, `vpn-node-agent.service` or `wg-quick@wg0` makes the
+   script die instead of signalling. `/opt/vpn-control-beta/...` deliberately
+   does not match: the check requires the trailing slash.
+3. **Scope.** Only `:8082` is ever cleared, and only after the beta units have
+   been asked to stop normally. TERM first, KILL only if TERM was ignored.
+
+The stop exits non-zero unless the port is verifiably closed, so a failed stop
+can no longer be mistaken for "beta is off". `beta-restart.sh` runs the same
+stop and start scripts rather than its own copies, so there is one code path to
+audit. Nothing in these scripts enables a unit at boot - beta stays opt-in - and
+none of them accepts arguments, so the deploy worker still executes a fixed
+script with an empty argv and `shell: false`.
+
+`control-server/tests/betaLifecycle.test.ts` asserts these properties both
+statically (no prod unit appears on any state-changing line) and behaviourally
+(prod units installed and running on the same host are never passed to
+`systemctl stop`).
+
+### Release id is not a secret
+
+`/api/health` and `/api/version` now return `release`, e.g. `20260821-174500`.
+It is a timestamped directory name: no host paths, no commit contents, no
+secrets, and it is already visible to anyone who can see the deploy jobs in the
+admin panel. `RELEASE_ID` is read from the environment, then `release.json`,
+then the resolved release directory; failures are swallowed and reported as
+`local` so an unknown release can never stop the API from booting.
+
+### Approximate location stays approximate
+
+The rewritten resolution order (control-plane country -> locale, only when the
+UTC offset agrees -> UTC offset) still never uses GPS, never asks for a
+permission and never stores anything finer than a country and a region name.
+The map marker is drawn from a fixed table of country centres, so the pin is a
+country, not a person. Nothing about the user's position is sent to the node
+agent or written to the session rows.
+
+### Client diagnostics are gated
+
+Device ids, the device's WireGuard **public** key, the control API URL, the
+migration name and the release id now live in one Diagnostics panel that is
+rendered only when `AppConfig.betaChannelAvailable` is true (internal builds).
+A release APK shows the profile, the plan and nothing else. Private keys are
+still generated on the device, kept in `flutter_secure_storage` and never sent
+to the API or written to a log.

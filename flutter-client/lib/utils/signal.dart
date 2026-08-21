@@ -80,12 +80,15 @@ double _grade(double value, double good, double bad) {
 
 /// 0..1 quality for a node. Exposed for tests and for anything that wants a
 /// continuous value rather than three buckets.
-double signalScore({int? pingMs, double loadPercent = 0}) {
+double signalScore({num? pingMs, num loadPercent = 0}) {
 	final double ping = pingMs == null
 			? signalUnknownPingScore
 			: _grade(pingMs.toDouble(), signalGoodPingMs, signalBadPingMs);
-	final double load =
-			_grade(loadPercent, signalGoodLoadPercent, signalBadLoadPercent);
+	final double load = _grade(
+		loadPercent.toDouble(),
+		signalGoodLoadPercent,
+		signalBadLoadPercent,
+	);
 	return ping * signalPingWeight + load * signalLoadWeight;
 }
 
@@ -98,19 +101,25 @@ double signalScore({int? pingMs, double loadPercent = 0}) {
 ///
 /// Without a ping sample the result is capped at [SignalStrength.fair]: three
 /// bars is a claim about latency, and unmeasured latency is not a claim.
+/// [pingMs] and [loadPercent] take `num` so callers can pass whatever the API
+/// gave them - an `int` percentage from a heartbeat or a `double` from a
+/// rolling average - without casting at every call site.
 SignalStrength signalStrengthFor({
 	required bool online,
 	bool available = true,
-	int? pingMs,
-	double loadPercent = 0,
+	num? pingMs,
+	num loadPercent = 0,
 }) {
 	if (!online || !available) return SignalStrength.offline;
 
 	final double ping = pingMs == null
 			? signalUnknownPingScore
 			: _grade(pingMs.toDouble(), signalGoodPingMs, signalBadPingMs);
-	final double load =
-			_grade(loadPercent, signalGoodLoadPercent, signalBadLoadPercent);
+	final double load = _grade(
+		loadPercent.toDouble(),
+		signalGoodLoadPercent,
+		signalBadLoadPercent,
+	);
 	final double score = ping * signalPingWeight + load * signalLoadWeight;
 
 	// Either dimension being bad on its own costs bars: a node with a 20 ms

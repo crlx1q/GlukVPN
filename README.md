@@ -716,3 +716,127 @@ sudo -u vpnbeta ENV_FILE=/etc/vpn-control-beta/control.env \
 It adds `gen_user_public_id()`, the email and approximate-origin columns on
 `users`, `region`/`city`/`ping_target` on `vpn_nodes`, the `verification_codes`
 and `identity_links` tables, and the three new `DeployAction` values.
+
+---
+
+## Sprint 3 (BETA only) - onboarding scene, connect button, settings, beta lifecycle
+
+Everything below landed on the `beta` branch. PROD code, the deploy worker,
+Deploy/Promote/Rollback, the wg0/wg1 split and the offline flow were not
+touched.
+
+### Onboarding: one world, one camera, a scene worth watching
+
+| Complaint | Cause | Fix |
+| --- | --- | --- |
+| Orbital threads were sometimes bigger than the planet, sometimes tiny | `_paintOrbitals` sized the rings from the screen (`shortestSide * 0.36`), not from the globe | rings are now `radius * 1.16`, so they scale with the planet on every screen and fade out when the camera flies past them |
+| "Two dots and one thread" | the mock-up is a still picture, so it only needs one link | `lib/utils/showcase.dart`: 5 exit nodes, 12 people, links that reach out, live, fade and rebuild on 12 different periods. Frankfurt is hub #0, so the scene agrees with the server list |
+| The planet "twitched" every half minute to show the connection again | the globe spin was driven by a 30 s looping animation, so 126 deg snapped back to 0 | a monotonic `_SceneClock` drives the whole backdrop; nothing in the scene ever resets |
+| The unfolded map was a narrow band | the flat map was drawn at a fixed zoom | `lib/utils/map_view.dart` computes the zoom that makes the map cover a share of the *viewport height*, and pins the top edge |
+| The map "moves and then stops" | - | the flat map already wraps seamlessly (`wrappedX`), so it drifts forever like a ticker |
+
+Login and registration now sit on the same scene, and after sign-in the map is
+anchored to the top of the home screen (`FlatMapView.topAnchored`).
+
+### Approximate location
+
+`approximateSelfLocation` used to prefer the phone's locale, which reads
+`ru_RU` for a Russian-language phone in Kazakhstan - hence "I look like I am in
+Russia". Now:
+
+1. the country the control plane saw on the login IP wins (`GEOIP_ENABLED=true`),
+2. the locale is used only when the clock agrees with it (within 25 deg of
+   longitude),
+3. otherwise the UTC offset decides.
+
+No GPS, no permission prompt, never finer than a country. The home screen shows
+it as a small `You - Kazakhstan` chip under the status badge.
+
+### Connect button
+
+The "+ / cross" artefact was real geometry, not a rendering glitch: the morph
+keyframes ask for radii whose sums reach exactly one edge (`0.65 + 0.35`), and
+interpolation crosses that line. `BorderRadius` clamps every corner
+independently, so two neighbouring arcs met at an angle and flashed a cusp.
+
+`lib/utils/blob.dart` now builds the blob as an explicit path with CSS's own
+rule - scale *all* radii by one factor until every edge fits (CSS Backgrounds 3,
+"Overlapping curves"). Same silhouette as the HTML, no cusp possible.
+Idle is dimmed to 72% instead of full brightness, and the busy sweep animates
+even under reduce-motion, so it no longer looks like a frozen half-circle.
+
+### Background and glass
+
+`lib/widgets/page_background.dart` ports the wave background from `preview.html`
+(`#05040a` with two gradient wave bands and two hairlines) and sits under every
+screen. The heavy blur is gone: `glassBlur` 14 -> 2.5, `navBlur` -> 6, so the
+background stays visible through the panels and every card blurs the same.
+
+### Settings
+
+Rebuilt as a product screen: profile card (avatar, nickname, permanent account
+number with copy, member-since), a real subscription card (days left, progress
+bar, devices / concurrent tunnels / renewal date), then plain-English rows for
+devices and animations. Device ids, WireGuard key, channel, API URL, migration,
+release and app id moved into one **Diagnostics** panel that only exists in
+internal builds.
+
+### "Promote does not change the prod version"
+
+It never did: `version` comes from `package.json`, and a promote copies code, so
+both channels legitimately report `1.0.0`. `/api/health` and `/api/version` now
+also return `release` - the release directory the process actually runs from
+(`RELEASE_ID` -> `release.json` -> `realpath` of the app root). The admin panel
+shows it per channel, the app shows it in Diagnostics, and "Beta differs from
+prod" now compares releases as well as versions.
+
+### BETA lifecycle
+
+`beta-stop.sh` reported `vpn-control-beta is not installed`, skipped the stop
+and exited 0 while `:8082` kept answering. Rewritten around two ideas:
+
+* **find the unit properly** - `systemctl cat`, `list-unit-files`,
+  `list-units --all`, then a `*beta*` pattern search. A renamed unit is found
+  instead of being declared missing;
+* **the port is the proof** - after the units are stopped, whatever still holds
+  `:8082` is identified, checked for not being prod, TERMed, then KILLed, and
+  the script exits non-zero unless the port is closed.
+
+Shared logic lives in `control-server/deploy/bin/beta-lib.sh`; `beta-restart.sh`
+runs the verified stop and start rather than reimplementing them. Only units
+matching `*-beta` or `wg-quick@wg1` may be touched, and a pid whose
+cgroup/cwd/cmdline points at `/opt/vpn-control/`, `vpn-control.service`,
+`vpn-node-agent.service` or `wg0` is never signalled.
+
+Install on the server (as root):
+
+```bash
+install -m 750 -o root -g root \
+  /opt/glukvpn-src/control-server/deploy/bin/beta-lib.sh \
+  /opt/glukvpn-src/control-server/deploy/bin/beta-start.sh \
+  /opt/glukvpn-src/control-server/deploy/bin/beta-stop.sh \
+  /opt/glukvpn-src/control-server/deploy/bin/beta-restart.sh \
+  /opt/glukvpn-deploy/bin/
+```
+
+### Tests added
+
+* `control-server/tests/betaLifecycle.test.ts` - static safety checks plus the
+  real scripts run under bash with stub `systemctl`/`ss`/`ip`/`wg-quick`: the
+  reported "unit not found but port open" case, TERM -> KILL escalation, a
+  renamed beta unit, "fails loudly when the port stays open", and "restart does
+  not start when the stop failed".
+* `flutter-client/test/blob_test.dart` - radii normalisation, the outline never
+  leaves its box, one closed contour, no discontinuity across a morph.
+* `flutter-client/test/showcase_test.dart` - the scene is never empty, always
+  has an established link, is deterministic, and links fade instead of blinking.
+* `flutter-client/test/map_view_test.dart` - top edge lands where asked,
+  coverage controls the zoom on any screen size.
+
+`flutter analyze`, `flutter test` and the APK build were **not** run in this
+environment (no Flutter/Android SDK). Run locally:
+
+```bash
+cd flutter-client && flutter pub get && flutter analyze && flutter test
+cd ../control-server && npm install && npm test
+```

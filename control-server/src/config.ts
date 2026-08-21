@@ -1,3 +1,5 @@
+import { readFileSync, realpathSync } from "node:fs"
+import path from "node:path"
 import * as dotenv from "dotenv"
 import { z } from "zod"
 
@@ -110,6 +112,15 @@ export type Config = z.infer<typeof EnvSchema> & {
 	corsOrigins: string[]
 	/** True once SMTP is configured. Until then codes are issued but not sent. */
 	emailEnabled: boolean
+	/**
+	 * Which deployed release is answering, e.g. "20260821-174500".
+	 *
+	 * APP_VERSION comes from package.json, so promoting beta to prod copies the
+	 * code without changing the number - which is why prod looked unchanged
+	 * after a promote. This value is the release directory the process actually
+	 * runs from, so it changes on every deploy and every promote.
+	 */
+	release: string
 }
 
 /** Version from package.json. Works from both dist/ and src/ (same parent). */
@@ -119,6 +130,43 @@ function packageVersion(): string {
 		return pkg.version ?? "0.0.0"
 	} catch {
 		return "0.0.0"
+	}
+}
+
+/**
+ * Resolve the running release id, in order of trustworthiness:
+ *
+ *   1. RELEASE_ID from the environment (the deploy scripts set it);
+ *   2. release.json written next to the app root by the deploy scripts;
+ *   3. the release directory the symlink resolves to - `current` is a symlink
+ *      into releases/<id>, and realpath is what makes the id visible.
+ *
+ * Never throws: an unknown release must not stop the API from starting.
+ */
+function releaseId(): string {
+	const explicit = (process.env.RELEASE_ID ?? "").trim()
+	if (explicit) return explicit.slice(0, 64)
+
+	const appRoot = path.join(__dirname, "..")
+	try {
+		const raw = readFileSync(path.join(appRoot, "release.json"), "utf8")
+		const parsed = JSON.parse(raw) as { release?: unknown; id?: unknown }
+		const fromFile = String(parsed.release ?? parsed.id ?? "").trim()
+		if (fromFile) return fromFile.slice(0, 64)
+	} catch {
+		// No release.json: a dev checkout, or a build that predates this field.
+	}
+
+	try {
+		// /opt/vpn-control/current/dist -> /opt/vpn-control/releases/20260821-174500
+		const real = realpathSync(appRoot)
+		const base = path.basename(real)
+		if (/^\d{8}-\d{6}$/.test(base)) return base
+		const parent = path.basename(path.dirname(real))
+		if (/^\d{8}-\d{6}$/.test(parent)) return parent
+		return base || "local"
+	} catch {
+		return "local"
 	}
 }
 
@@ -135,6 +183,7 @@ function loadConfig(): Config {
 	return {
 		...env,
 		APP_VERSION: env.APP_VERSION.trim() || packageVersion(),
+		release: releaseId(),
 		emailEnabled:
 			env.SMTP_HOST.trim().length > 0 && env.SMTP_FROM.trim().length > 0,
 		corsOrigins: env.CORS_ALLOWED_ORIGINS.split(",")

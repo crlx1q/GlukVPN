@@ -50,7 +50,7 @@ class GlukColors {
 	/// Card surfaces. The mockup's `--glass` is `rgba(255,255,255,0.05)`: a thin
 	/// film, not a panel. These are deliberately low-alpha so the dotted world
 	/// keeps reading through every card - glass, not a dark rectangle.
-	static const cell = Color(0x40120E1C);
+	static const cell = Color(0x59120E1C);
 
 	/// The nav bar sits over the busiest part of the map and carries small
 	/// labels, so it gets a little more body than a metric cell - but still far
@@ -132,12 +132,19 @@ class GlukSizes {
 	/// `.cell` radius.
 	static const cellRadius = 15.0;
 
-	/// `backdrop-filter: blur(...)` on the mockup's cards. Kept low on purpose:
-	/// a heavy blur turns glass into frosted plastic and hides the map behind it.
-	static const glassBlur = 7.0;
+	/// `backdrop-filter: blur(...)` on the mockup's cards.
+	///
+	/// One value for every surface in the app, and a small one. A card blurs
+	/// whatever is behind it, so the same panel looked frosted over the dense
+	/// part of the map and clear over the empty part - which read as two
+	/// different materials on one screen. At this radius the world stays legible
+	/// through every card and the difference disappears; the fill in
+	/// [GlukColors.cell] carries the contrast instead.
+	static const glassBlur = 2.5;
 
-	/// The nav bar blurs a touch more, since text sits on it.
-	static const navBlur = 10.0;
+	/// The nav bar sits over the busiest part of the map and carries labels, so
+	/// it gets a little more - still nowhere near frosted.
+	static const navBlur = 6.0;
 
 	/// `.traffic` radius.
 	static const trafficRadius = 16.0;

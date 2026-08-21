@@ -66,77 +66,57 @@ class SettingsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
           ],
-          _AccountPanel(user: user, subscription: subscription),
+          _ProfileCard(user: user),
           const SizedBox(height: 12),
-          _Panel(
-            title: 'Subscription',
-            children: <Widget>[
-              _Row(
-                label: 'Status',
-                value: subscription?.status.toLowerCase() ?? '\u2014',
-                valueColor: auth.subscriptionActive
-                    ? GlukColors.connected
-                    : GlukColors.amber,
-              ),
-              _Row(
-                label: 'Expires',
-                value: formatDateTime(subscription?.expiresAt),
-              ),
-              _Row(label: 'Max devices', value: '${user?.maxDevices ?? 0}'),
-            ],
+          _SubscriptionCard(
+            subscription: subscription,
+            active: auth.subscriptionActive,
+            maxDevices: user?.maxDevices ?? 3,
+            maxSessions: user?.maxConcurrentSessions ?? 1,
           ),
-          const SizedBox(height: 12),
-          _DevicesPanel(auth: auth),
-          const SizedBox(height: 12),
-          if (channel.canSwitch) ...<Widget>[
-            _ChannelPanel(channel: channel, vpn: vpn),
-            const SizedBox(height: 12),
-          ],
-          _Panel(
-            title: 'About',
-            children: <Widget>[
-              // Diagnostics: internal builds only. A release build shows the
-              // app version and nothing about the deployment behind it.
-              if (AppConfig.betaChannelAvailable) ...<Widget>[
-                _Row(label: 'Channel', value: channel.active.label),
-                _Row(label: 'Control API', value: channel.baseUrl, mono: true),
-              ],
-              _Row(
-                label: 'Server version',
-                value: channel.versionOf(channel.active)?.version ?? '\u2014',
+          const SizedBox(height: 20),
+          const _SectionLabel('Account'),
+          const SizedBox(height: 8),
+          _ActionTile(
+            icon: Icons.devices_other_rounded,
+            title: 'My devices',
+            subtitle: 'This device: ${auth.deviceName ?? 'not registered yet'}'
+                ' \u00b7 up to ${user?.maxDevices ?? 3} on the plan',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (BuildContext context) => const DevicesScreen(),
               ),
-              _Row(
-                label: 'Data version',
-                value: channel.versionOf(channel.active)?.migration ?? '\u2014',
-                mono: true,
-              ),
-              _Row(label: 'Tunnel interface', value: AppConfig.tunnelInterfaceName),
-              _Row(label: 'App id', value: AppConfig.appId, mono: true),
-            ],
+            ),
           ),
-          const SizedBox(height: 12),
-          _Panel(
+          const SizedBox(height: 8),
+          _ActionTile(
+            icon: motion.reduceMotion
+                ? Icons.battery_saver_rounded
+                : Icons.animation_rounded,
             title: 'Animations',
-            children: <Widget>[
-              _Row(
-                label: 'Motion',
-                value: motion.reduceMotion ? 'reduced' : 'full',
-                valueColor:
-                    motion.reduceMotion ? GlukColors.amber : GlukColors.connected,
-              ),
-              if (motion.reduceMotion)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'Looping animations are frozen at a representative frame: '
-                    '${motion.reduceMotionReason}. The map, the glow and the '
-                    'globe still render, they just stop moving.',
-                    style: text.bodySmall,
-                  ),
-                ),
-            ],
+            subtitle: motion.reduceMotion
+                ? 'Paused to save power (${motion.reduceMotionReason}). '
+                    'Buttons still show their progress.'
+                : 'Full motion',
+            trailing: _Pill(
+              label: motion.reduceMotion ? 'reduced' : 'full',
+              tone:
+                  motion.reduceMotion ? GlukColors.amber : GlukColors.connected,
+            ),
           ),
-          const SizedBox(height: 18),
+          // Everything below this point is for internal builds. A release APK
+          // talks to one control plane and shows none of it.
+          if (channel.canSwitch) ...<Widget>[
+            const SizedBox(height: 20),
+            const _SectionLabel('Internal'),
+            const SizedBox(height: 8),
+            _ChannelPanel(channel: channel, vpn: vpn),
+          ],
+          if (AppConfig.betaChannelAvailable) ...<Widget>[
+            const SizedBox(height: 12),
+            _DiagnosticsPanel(channel: channel, auth: auth),
+          ],
+          const SizedBox(height: 20),
           _LogoutButton(auth: auth, vpn: vpn),
           const SizedBox(height: 14),
           Text(
@@ -144,17 +124,276 @@ class SettingsScreen extends StatelessWidget {
             '\u2014 never addresses, URLs or payloads.',
             style: text.bodySmall,
           ),
+          const SizedBox(height: 8),
+          // The one line a release build keeps: what version answered.
+          Text(
+            'GlukVPN \u00b7 ${channel.versionOf(channel.active)?.version ?? '\u2014'}',
+            style: text.bodySmall?.copyWith(color: GlukColors.text2),
+          ),
         ],
       ),
     );
   }
 }
 
-class _AccountPanel extends StatelessWidget {
-  const _AccountPanel({required this.user, required this.subscription});
+/// Short, human date for a card: "12 Sep 2026". `formatDateTime` is for rows
+/// where the exact minute matters; a plan expiry does not read like a log line.
+String _shortDate(DateTime? value) {
+  if (value == null) return '\u2014';
+  const List<String> months = <String>[
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final DateTime local = value.toLocal();
+  return '${local.day} ${months[local.month - 1]} ${local.year}';
+}
+
+/// A status word, not a database enum: lower case, tinted, pill-shaped.
+class _Pill extends StatelessWidget {
+  const _Pill({required this.label, required this.tone});
+
+  final String label;
+  final Color tone;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(
+        color: tone.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: tone.withOpacity(0.40)),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context)
+            .textTheme
+            .labelSmall
+            ?.copyWith(color: tone, fontSize: 10),
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        label.toUpperCase(),
+        style: Theme.of(context).textTheme.labelMedium,
+      ),
+    );
+  }
+}
+
+/// One tappable settings row: icon, title, one line of plain English.
+class _ActionTile extends StatelessWidget {
+  const _ActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.trailing,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme text = Theme.of(context).textTheme;
+
+    return GlassPanel(
+      radius: GlukSizes.cellRadius,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      onTap: onTap,
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: GlukColors.violet.withOpacity(0.16),
+            ),
+            child: Icon(icon, size: 17, color: GlukColors.violetLight),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(title, style: text.titleMedium),
+                const SizedBox(height: 2),
+                Text(subtitle, style: text.bodySmall),
+              ],
+            ),
+          ),
+          if (trailing != null) trailing!,
+          if (trailing == null && onTap != null)
+            const Icon(Icons.chevron_right_rounded, color: GlukColors.text2),
+        ],
+      ),
+    );
+  }
+}
+
+/// Three numbers under the plan, laid out like a product page.
+class _MiniStat extends StatelessWidget {
+  const _MiniStat({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme text = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(label.toUpperCase(), style: text.labelMedium),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          style: text.bodyMedium?.copyWith(color: GlukColors.text0),
+        ),
+      ],
+    );
+  }
+}
+
+/// The plan, presented as a product rather than three database rows.
+class _SubscriptionCard extends StatelessWidget {
+  const _SubscriptionCard({
+    required this.subscription,
+    required this.active,
+    required this.maxDevices,
+    required this.maxSessions,
+  });
+
+  final SubscriptionInfo? subscription;
+  final bool active;
+  final int maxDevices;
+  final int maxSessions;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme text = Theme.of(context).textTheme;
+    final DateTime? expires = subscription?.expiresAt;
+    final int? daysLeft = expires == null
+        ? null
+        : expires.difference(DateTime.now()).inMinutes ~/ (60 * 24);
+    // A month is the mental unit of a subscription, so the bar is "how much of
+    // a month is left" rather than a fake percentage of an unknown term.
+    final double progress =
+        daysLeft == null ? 0 : (daysLeft / 30).clamp(0.0, 1.0);
+
+    return GlassPanel(
+      radius: GlukSizes.trafficRadius,
+      color: GlukColors.violet.withOpacity(0.10),
+      padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(
+                Icons.workspace_premium_rounded,
+                size: 18,
+                color: GlukColors.violetLight,
+              ),
+              const SizedBox(width: 8),
+              Text('Premium', style: text.titleMedium),
+              const Spacer(),
+              _Pill(
+                label: active
+                    ? 'active'
+                    : (subscription?.status.toLowerCase() ?? 'none'),
+                tone: active ? GlukColors.connected : GlukColors.amber,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (daysLeft != null && daysLeft >= 0) ...<Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: <Widget>[
+                Text('$daysLeft', style: text.headlineSmall),
+                const SizedBox(width: 6),
+                Text(
+                  daysLeft == 1 ? 'day left' : 'days left',
+                  style: text.bodySmall,
+                ),
+              ],
+            ),
+            const SizedBox(height: 9),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 5,
+                backgroundColor: Colors.white.withOpacity(0.08),
+                color: active ? GlukColors.violetLight : GlukColors.amber,
+              ),
+            ),
+          ] else
+            Text(
+              active ? 'Active' : 'No active plan',
+              style: text.titleMedium?.copyWith(
+                color: active ? GlukColors.connected : GlukColors.amber,
+              ),
+            ),
+          const SizedBox(height: 15),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: _MiniStat(label: 'Devices', value: 'up to $maxDevices'),
+              ),
+              Expanded(
+                child: _MiniStat(
+                  label: 'At once',
+                  value: '$maxSessions tunnel${maxSessions == 1 ? '' : 's'}',
+                ),
+              ),
+              Expanded(
+                child: _MiniStat(label: 'Renews', value: _shortDate(expires)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The profile card: avatar, nickname you can change, account number you
+/// cannot. Both facts are stated on the card, because that is exactly the
+/// question a user asks when they see two identifiers.
+class _ProfileCard extends StatelessWidget {
+  const _ProfileCard({required this.user});
 
   final AuthUser? user;
-  final SubscriptionInfo? subscription;
 
   Future<void> _rename(BuildContext context) async {
     final AuthController auth = context.read<AuthController>();
@@ -183,81 +422,128 @@ class _AccountPanel extends StatelessWidget {
     }
   }
 
+  void _copyId(BuildContext context) {
+    final String id = user?.publicId ?? '';
+    if (id.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: id));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Account ID copied')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final TextTheme text = Theme.of(context).textTheme;
     final String name = user?.username ?? '\u2014';
     final String initial =
         name.isEmpty ? '?' : name.characters.first.toUpperCase();
+    final String id = user?.publicId ?? '';
+    final bool active = user?.isActive ?? false;
+    final DateTime? created = user?.createdAt;
 
-    return _Panel(
-      title: 'Account',
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            Container(
-              width: 46,
-              height: 46,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: GlukGradients.arrow,
+    return GlassPanel(
+      radius: GlukSizes.trafficRadius,
+      padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
+      child: Row(
+        children: <Widget>[
+          Stack(
+            alignment: Alignment.center,
+            children: <Widget>[
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: GlukColors.violet.withOpacity(0.18),
+                ),
               ),
-              child: Text(
-                initial,
-                style: text.titleLarge?.copyWith(color: GlukColors.bg),
+              Container(
+                width: 50,
+                height: 50,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: GlukGradients.arrow,
+                ),
+                child: Text(
+                  initial,
+                  style: text.headlineSmall?.copyWith(color: GlukColors.bg),
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(name, style: text.titleMedium),
-                  const SizedBox(height: 2),
-                  Text(
-                    user?.publicIdLabel ?? '',
-                    style: text.bodySmall?.copyWith(
-                      fontFeatures: const <FontFeature>[
-                        FontFeature.tabularFigures(),
-                      ],
+            ],
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Flexible(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: text.titleLarge,
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                    const SizedBox(width: 8),
+                    _Pill(
+                      label: active
+                          ? 'active'
+                          : (user?.status.toLowerCase() ?? '\u2014'),
+                      tone: active ? GlukColors.connected : GlukColors.amber,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                Row(
+                  children: <Widget>[
+                    Text(
+                      id.isEmpty ? 'ID unavailable' : 'ID $id',
+                      style: text.bodyMedium?.copyWith(
+                        color: GlukColors.text1,
+                        fontFeatures: const <FontFeature>[
+                          FontFeature.tabularFigures(),
+                        ],
+                      ),
+                    ),
+                    if (id.isNotEmpty) ...<Widget>[
+                      const SizedBox(width: 4),
+                      InkWell(
+                        onTap: () => _copyId(context),
+                        borderRadius: BorderRadius.circular(999),
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.copy_rounded,
+                            size: 13,
+                            color: GlukColors.text2,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  created == null
+                      ? 'Nickname can change, this number never does'
+                      : 'Member since ${_shortDate(created)} \u00b7 the number '
+                          'never changes',
+                  style: text.bodySmall?.copyWith(fontSize: 10.5),
+                ),
+              ],
             ),
-            if ((user?.publicId ?? '').isNotEmpty)
-              CircleIconButton(
-                icon: Icons.copy_rounded,
-                tooltip: 'Copy account ID',
-                size: 34,
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: user!.publicId));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Account ID copied')),
-                  );
-                },
-              ),
-            const SizedBox(width: 8),
-            CircleIconButton(
-              icon: Icons.edit_rounded,
-              tooltip: 'Change nickname',
-              size: 34,
-              onTap: () => _rename(context),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _Row(label: 'Status', value: user?.status.toLowerCase() ?? '\u2014'),
-        _Row(label: 'Created', value: formatDateTime(user?.createdAt)),
-        const SizedBox(height: 8),
-        Text(
-          'The nickname can change whenever you like. The account ID is issued '
-          'once by the database and can never change \u2014 it is what admins '
-          'search, ban and audit by.',
-          style: text.bodySmall,
-        ),
-      ],
+          ),
+          CircleIconButton(
+            icon: Icons.edit_rounded,
+            tooltip: 'Change nickname',
+            size: 34,
+            onTap: () => _rename(context),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -324,22 +610,39 @@ class _RenameDialogState extends State<_RenameDialog> {
   }
 }
 
-class _DevicesPanel extends StatelessWidget {
-  const _DevicesPanel({required this.auth});
+/// Internal builds only: the identifiers you need when something misbehaves,
+/// kept in one place instead of scattered through the user-facing screens.
+class _DiagnosticsPanel extends StatelessWidget {
+  const _DiagnosticsPanel({required this.channel, required this.auth});
 
+  final ChannelController channel;
   final AuthController auth;
 
   @override
   Widget build(BuildContext context) {
+    final ChannelVersion? version = channel.versionOf(channel.active);
+
     return _Panel(
-      title: 'This device',
+      title: 'Diagnostics',
       children: <Widget>[
-        _Row(label: 'Name', value: auth.deviceName ?? '\u2014'),
+        _Row(label: 'Channel', value: channel.active.label),
+        _Row(label: 'Control API', value: channel.baseUrl, mono: true),
+        _Row(label: 'Server version', value: version?.version ?? '\u2014'),
+        // The release id is what actually changes when a promote copies the
+        // same version number into another directory.
         _Row(
-          label: 'Device id',
-          value: _short(auth.deviceId),
+          label: 'Release',
+          value: version?.releaseLabel ?? '\u2014',
           mono: true,
         ),
+        _Row(
+          label: 'Data version',
+          value: version?.migration ?? '\u2014',
+          mono: true,
+        ),
+        _Row(label: 'Released', value: formatDateTime(version?.releasedAt)),
+        _Row(label: 'Device', value: auth.deviceName ?? '\u2014'),
+        _Row(label: 'Device id', value: _short(auth.deviceId), mono: true),
         _Row(
           label: 'WireGuard key',
           value: auth.devicePublicKey == null
@@ -347,16 +650,11 @@ class _DevicesPanel extends StatelessWidget {
               : '${_short(auth.devicePublicKey, 12)} (public)',
           mono: true,
         ),
-        const SizedBox(height: 10),
-        PrimaryPillButton(
-          label: 'Manage devices',
-          icon: Icons.devices_other_rounded,
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (BuildContext context) => const DevicesScreen(),
-            ),
-          ),
+        _Row(
+          label: 'Tunnel interface',
+          value: AppConfig.tunnelInterfaceName,
         ),
+        _Row(label: 'App id', value: AppConfig.appId, mono: true),
       ],
     );
   }

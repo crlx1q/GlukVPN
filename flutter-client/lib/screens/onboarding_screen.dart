@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
@@ -9,9 +10,11 @@ import '../state/vpn_controller.dart';
 import '../theme/motion.dart';
 import '../theme/tokens.dart';
 import '../utils/geo.dart';
+import '../utils/map_view.dart';
 import '../widgets/dotted_world.dart';
 import '../widgets/glass.dart';
 import '../widgets/logo.dart';
+import '../widgets/page_background.dart';
 import 'login_screen.dart';
 
 /// One frame of the onboarding camera.
@@ -264,6 +267,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       backgroundColor: GlukColors.pageBg,
       body: Stack(
         children: <Widget>[
+          // The wave study from the mock-up, instead of flat black.
+          const Positioned.fill(child: PageBackground()),
           Positioned.fill(
             child: _Backdrop(
               morph: _morph,
@@ -358,104 +363,110 @@ class _Backdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LoopingBuilder(
-      duration: GlukMotion.globeSpin,
+    return _SceneClock(
       reduceMotion: motion.reduceMotion,
-      frozenValue: 0.17,
-      builder: (BuildContext context, double spin) {
-        return LoopingBuilder(
-          duration: GlukMotion.mapPulse,
-          reduceMotion: motion.reduceMotion,
-          frozenValue: 0.35,
-          builder: (BuildContext context, double pulse) {
-            return LoopingBuilder(
-              duration: GlukMotion.connectionDash,
-              reduceMotion: motion.reduceMotion,
-              frozenValue: 0.2,
-              builder: (BuildContext context, double dash) {
-                return AnimatedBuilder(
-                  animation: Listenable.merge(<Listenable>[morph, page]),
-                  builder: (BuildContext context, Widget? _) {
-                    final double m = Curves.easeInOutCubic.transform(morph.value);
-                    final double p = page.value.clamp(0.0, 2.0);
-                    final IntroFrame frame = camera.at(p);
+      builder: (BuildContext context, double seconds) {
+        return LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            return AnimatedBuilder(
+              animation: Listenable.merge(<Listenable>[morph, page]),
+              builder: (BuildContext context, Widget? _) {
+                final Size viewport = constraints.biggest;
+                final double m = Curves.easeInOutCubic.transform(morph.value);
+                final double p = page.value.clamp(0.0, 2.0);
+                final IntroFrame frame = camera.at(p);
 
-                    // Signing in unrolls the sphere into the flat map. The map
-                    // is deliberately zoomed past the screen so it runs off
-                    // both edges instead of sitting in the middle as a strip.
-                    final MapPoint mid = MapPoint(
-                      (camera.self.x + camera.server.x) / 2,
-                      (camera.self.y + camera.server.y) / 2,
-                    );
-                    final double zoom = lerpDouble(frame.zoom, 2.85, m)!;
-                    final Offset focus = Offset(
-                      mid.fx,
-                      (mid.fy + 0.06).clamp(0.0, 1.0),
-                    );
+                // Every phase here is derived from one forward-running clock,
+                // and each is a whole number of turns per cycle, so nothing
+                // snaps when it wraps. The globe used to travel 126 degrees
+                // over a 30 s loop and then jump back to zero: that jolt is
+                // what read as the planet twitching to restart the story.
+                final double spin = seconds / 150 * 360;
+                final double orbit = seconds / 14 % 1;
+                final double dash = seconds / 1.4 % 1;
+                final double pulse = seconds / 2.4 % 1;
 
-                    // A degree or two of drift keeps the flat map alive.
-                    final double drift = (spin * 360) * 0.06 * m;
+                // Signing in unrolls the sphere into the flat map, and lands on
+                // the same camera the home screen uses - so the composition
+                // behind the form is the one the app keeps afterwards.
+                final MapPoint mid = MapPoint(
+                  (camera.self.x + camera.server.x) / 2,
+                  (camera.self.y + camera.server.y) / 2,
+                );
+                final FlatMapView flat = FlatMapView.topAnchored(
+                  viewport: viewport,
+                  centreOn: mid,
+                  coverage: 0.86,
+                  topPadding: -viewport.height * 0.06,
+                );
+                final double zoom = lerpDouble(frame.zoom, flat.zoom, m)!;
+                final Offset focus = Offset.lerp(
+                  Offset(mid.fx, (mid.fy + 0.06).clamp(0.0, 1.0)),
+                  flat.focus,
+                  m,
+                )!;
 
-                    return Stack(
-                      children: <Widget>[
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: _Aurora(page: p, morph: m, motion: motion),
-                          ),
-                        ),
-                        // The halo travels with the planet, so the light stays
-                        // attached to the sphere as the camera moves.
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: Opacity(
-                              opacity: (1 - m).clamp(0.0, 1.0),
-                              child: Align(
-                                alignment: Alignment(
-                                  frame.anchor.dx * 2 - 1,
-                                  frame.anchor.dy * 2 - 1,
-                                ),
-                                child: _Halo(
-                                  motion: motion,
-                                  scale: 0.85 + 0.42 * p,
-                                ),
-                              ),
+                return Stack(
+                  children: <Widget>[
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: _Aurora(page: p, morph: m, motion: motion),
+                      ),
+                    ),
+                    // The halo travels with the planet, so the light stays
+                    // attached to the sphere as the camera moves.
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: Opacity(
+                          opacity: (1 - m).clamp(0.0, 1.0),
+                          child: Align(
+                            alignment: Alignment(
+                              frame.anchor.dx * 2 - 1,
+                              frame.anchor.dy * 2 - 1,
+                            ),
+                            child: _Halo(
+                              motion: motion,
+                              scale: 0.85 + 0.42 * p,
                             ),
                           ),
                         ),
-                        Positioned.fill(
-                          child: DottedWorld(
-                            globeness: 1 - m,
-                            rotationDegrees: spin * 360 * 0.35,
-                            centreLongitude: frame.longitude,
-                            centreLatitude: frame.latitude,
-                            globeAnchor: Offset.lerp(
-                              frame.anchor,
-                              const Offset(0.5, 0.5),
-                              m,
-                            )!,
-                            driftDegrees: drift,
-                            zoom: zoom,
-                            focus: focus,
-                            dotOpacity: lerpDouble(frame.dotOpacity, 0.52, m)!,
-                            selfPoint: camera.self,
-                            selfOpacity: math.max(
-                              camera.selfOpacity(p),
-                              m,
-                            ),
-                            serverPoint: camera.server,
-                            serverOpacity: math.max(
-                              camera.serverOpacity(p),
-                              m,
-                            ),
-                            arcProgress: math.max(camera.routeProgress(p), m),
-                            arcPhase: dash,
-                            orbitalPhase: spin,
-                            pulse: pulse,
-                          ),
-                        ),
-                      ],
-                    );
-                  },
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: DottedWorld(
+                        globeness: 1 - m,
+                        rotationDegrees: spin,
+                        centreLongitude: frame.longitude,
+                        centreLatitude: frame.latitude,
+                        globeAnchor: Offset.lerp(
+                          frame.anchor,
+                          const Offset(0.5, 0.42),
+                          m,
+                        )!,
+                        // The flat map has no edge to reach: it repeats every
+                        // 360 degrees of longitude, so it can drift for ever.
+                        driftDegrees: spin * 0.6,
+                        zoom: zoom,
+                        focus: focus,
+                        dotOpacity: lerpDouble(frame.dotOpacity, 0.52, m)!,
+                        selfPoint: camera.self,
+                        selfOpacity: math.max(camera.selfOpacity(p), m),
+                        serverPoint: camera.server,
+                        serverOpacity: math.max(camera.serverOpacity(p), m),
+                        arcProgress: math.max(camera.routeProgress(p), m),
+                        arcPhase: dash,
+                        orbitalPhase: orbit,
+                        // The crowd is on stage the whole way through, and
+                        // steps back a little once the user's own route is
+                        // drawn so that thread is the one being read.
+                        showcase:
+                            lerpDouble(1, 0.78, camera.routeProgress(p))! *
+                                (1 - 0.12 * m),
+                        showcaseSeconds: seconds,
+                        pulse: pulse,
+                      ),
+                    ),
+                  ],
                 );
               },
             );
@@ -464,6 +475,69 @@ class _Backdrop extends StatelessWidget {
       },
     );
   }
+}
+
+/// A monotonic clock for the scene, in seconds.
+///
+/// The stage used to hang off looping animations, which is right for a pulse and
+/// wrong for a story: a loop has to return to where it started, and the moment
+/// it does, the whole world visibly resets. A clock only counts forward, so the
+/// planet turns, threads come and go, and nothing ever snaps back.
+///
+/// With motion reduced it holds at a fixed second - a still frame with several
+/// links already up, rather than an empty stage.
+class _SceneClock extends StatefulWidget {
+  const _SceneClock({required this.reduceMotion, required this.builder});
+
+  final bool reduceMotion;
+  final Widget Function(BuildContext context, double seconds) builder;
+
+  /// Where the still frame sits when motion is reduced.
+  static const double restingSeconds = 7.5;
+
+  @override
+  State<_SceneClock> createState() => _SceneClockState();
+}
+
+class _SceneClockState extends State<_SceneClock>
+    with SingleTickerProviderStateMixin {
+  late final Ticker _ticker = createTicker(_tick);
+  double _seconds = _SceneClock.restingSeconds;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.reduceMotion) _ticker.start();
+  }
+
+  @override
+  void didUpdateWidget(_SceneClock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.reduceMotion == oldWidget.reduceMotion) return;
+    if (widget.reduceMotion) {
+      _ticker.stop();
+    } else {
+      _ticker.start();
+    }
+  }
+
+  void _tick(Duration elapsed) {
+    final double next =
+        _SceneClock.restingSeconds + elapsed.inMilliseconds / 1000;
+    // The scene wants a repaint per frame; setState is not free, so drop the
+    // ones that could not change a pixel.
+    if ((next - _seconds).abs() < 1 / 60) return;
+    setState(() => _seconds = next);
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _seconds);
 }
 
 /// Two soft violet/blue lobes drifting behind the planet.
@@ -561,13 +635,13 @@ class _StageFade extends StatelessWidget {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: <Color>[
-            Color(0xB305040A),
-            Color(0x1A05040A),
+            Color(0x8C05040A),
+            Color(0x1405040A),
             Color(0x00000000),
-            Color(0xB805040A),
-            Color(0xF205040A),
+            Color(0xA605040A),
+            Color(0xE605040A),
           ],
-          stops: <double>[0, 0.16, 0.42, 0.80, 1],
+          stops: <double>[0, 0.18, 0.46, 0.82, 1],
         ),
       ),
       child: SizedBox.expand(),

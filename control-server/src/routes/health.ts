@@ -21,6 +21,9 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
 				service: "glukvpn-control",
 				channel: config.CHANNEL,
 				version: config.APP_VERSION,
+				// Which deployed release answered. `version` comes from package.json
+				// and therefore survives a promote unchanged; this does not.
+				release: config.release,
 				database,
 				time: new Date().toISOString(),
 			}
@@ -58,6 +61,7 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
 				service: "glukvpn-control",
 				channel: config.CHANNEL,
 				version: config.APP_VERSION,
+				release: config.release,
 				commit: config.GIT_COMMIT || null,
 				releasedAt: config.RELEASED_AT || null,
 				migration,

@@ -87,13 +87,55 @@ void main() {
   });
 
   group('approximateSelfLocation', () {
-    test('reads the region out of the device locale', () {
-      final SelfLocation self =
-          approximateSelfLocation(localeOverride: 'de_DE.UTF-8');
+    test('the country the control plane resolved wins outright', () {
+      // A Russian-language phone, in a Russian timezone, that the API saw
+      // connect from Kazakhstan. The network is right and both guesses are
+      // wrong, so neither gets a vote.
+      final SelfLocation self = approximateSelfLocation(
+        originCountryCode: 'kz',
+        originRegion: 'Almaty',
+        localeOverride: 'ru_RU.UTF-8',
+        utcOffsetOverride: const Duration(hours: 3),
+      );
+      expect(self.precision, 'network');
+      expect(self.fromNetwork, isTrue);
+      expect(self.countryCode, 'KZ');
+      expect(self.label, 'Kazakhstan');
+      expect(self.placeLabel, 'Almaty, Kazakhstan');
+      expect(self.point.x, closeTo(projectLatLon(51.13, 71.43).x, 1e-9));
+    });
+
+    test('reads the region out of the device locale when the clock agrees', () {
+      final SelfLocation self = approximateSelfLocation(
+        localeOverride: 'de_DE.UTF-8',
+        utcOffsetOverride: const Duration(hours: 2),
+      );
       expect(self.precision, 'country');
       expect(self.countryCode, 'DE');
       expect(self.label, 'Germany');
       expect(self.point.x, closeTo(62.37, 0.02));
+    });
+
+    test('a Russian phone in Kazakhstan is placed by its clock, not its '
+        'language', () {
+      // The regression the marker actually had: ru_RU put "you" on Moscow
+      // while the device was five hours east of UTC.
+      final SelfLocation self = approximateSelfLocation(
+        localeOverride: 'ru_RU.UTF-8',
+        utcOffsetOverride: const Duration(hours: 5),
+      );
+      expect(self.precision, 'timezone');
+      expect(self.countryCode, 'KZ');
+      expect(self.label, 'Kazakhstan');
+    });
+
+    test('a Russian phone in Moscow still lands in Russia', () {
+      final SelfLocation self = approximateSelfLocation(
+        localeOverride: 'ru_RU.UTF-8',
+        utcOffsetOverride: const Duration(hours: 3),
+      );
+      expect(self.precision, 'country');
+      expect(self.countryCode, 'RU');
     });
 
     test('falls back to the UTC offset without asking for a location', () {
@@ -102,10 +144,16 @@ void main() {
         utcOffsetOverride: const Duration(hours: 5),
       );
       expect(self.precision, 'timezone');
-      expect(self.countryCode, isNull);
-      expect(self.label, 'Your location');
-      // 5h east of UTC is longitude 75, and x depends only on longitude.
-      expect(self.point.x, closeTo(projectLatLon(0, 75).x, 1e-9));
+      // 5h east of UTC is longitude 75; the nearest country we can plot is
+      // Kazakhstan, which is a better answer than a bare meridian.
+      expect(self.countryCode, 'KZ');
+      expect(countryForUtcOffset(const Duration(hours: 1)), 'DE');
+      expect(countryForUtcOffset(const Duration(hours: -5)), 'US');
+    });
+
+    test('longitudes wrap the short way round', () {
+      expect(longitudeGap(179, -179), closeTo(2, 1e-9));
+      expect(longitudeGap(-10, 10), closeTo(20, 1e-9));
     });
   });
 

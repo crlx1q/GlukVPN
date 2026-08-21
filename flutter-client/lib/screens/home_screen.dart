@@ -10,6 +10,7 @@ import '../theme/motion.dart';
 import '../theme/tokens.dart';
 import '../utils/format.dart' hide countryFlag;
 import '../utils/geo.dart';
+import '../utils/map_view.dart';
 import '../widgets/connect_button.dart';
 import '../widgets/dotted_world.dart';
 import '../widgets/glass.dart';
@@ -39,8 +40,17 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  /// Computed once: locale/timezone only, no GPS and no geolocation request.
-  late final SelfLocation _self = approximateSelfLocation();
+  /// Where to draw "you".
+  ///
+  /// The control plane's own view of where the request came from goes first: it
+  /// is the only source that can tell a Russian-language phone in Moscow from
+  /// the same phone in Kazakhstan. The device's clock and locale are only the
+  /// fallback. No GPS, no permission prompt, and never finer than a country.
+  SelfLocation _selfFor(AuthUser? user) => approximateSelfLocation(
+        originCountryCode: user?.originCountryCode,
+        originCountryName: user?.originCountry,
+        originRegion: user?.originRegion,
+      );
 
   Future<void> _toggle(VpnController vpn) async {
     if (vpn.busy) return;
@@ -72,6 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final TextTheme text = Theme.of(context).textTheme;
 
     final VpnNodeInfo? node = vpn.selectedNode;
+    final SelfLocation self = _selfFor(auth.user);
     final MapPoint? serverPoint = countryPoint(node?.countryCode);
     // Every node that is up right now, so the map shows the real fleet.
     final List<MapPoint> fleet = vpn.nodes
@@ -92,7 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Positioned.fill(
           child: _MapBackdrop(
             motion: motion,
-            selfPoint: _self.point,
+            selfPoint: self.point,
             serverPoint: serverPoint,
             fleet: fleet,
             connected: vpn.isConnected,
@@ -122,7 +133,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           blinking: vpn.isTransitioning,
                         ),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 7),
+                      Center(child: _LocationChip(self: self)),
+                      const SizedBox(height: 7),
                       Center(
                         child: GlukConnectButton(
                           phase: _phaseFor(vpn.state),
@@ -230,7 +243,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 /// The map, the "you" marker, the node marker and the animated cable between
-/// them. `focus: (0.60, 0.30)` reproduces `object-position: 60% 30%`.
+/// them.
 class _MapBackdrop extends StatelessWidget {
   const _MapBackdrop({
     required this.motion,
@@ -250,6 +263,25 @@ class _MapBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The map is pinned to the top of the screen and covers most of its
+    // height, so it reads as a world instead of a band sitting behind the
+    // readouts. Those numbers depend on the viewport, so they are computed
+    // rather than guessed - a hard-coded zoom is a strip on some phones and a
+    // close-up on others. Framing runs between "you" and the chosen exit, so
+    // the route you are about to take is what the picture is about.
+    final MapPoint centre = serverPoint == null
+        ? selfPoint
+        : MapPoint(
+            (selfPoint.x + serverPoint!.x) / 2,
+            (selfPoint.y + serverPoint!.y) / 2,
+          );
+    final FlatMapView view = FlatMapView.topAnchored(
+      viewport: MediaQuery.sizeOf(context),
+      centreOn: centre,
+      coverage: 0.88,
+      topPadding: -6,
+    );
+
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: live ? 1 : 0),
       duration: motion.transition(const Duration(milliseconds: 900)),
@@ -278,11 +310,8 @@ class _MapBackdrop extends StatelessWidget {
                       frozenValue: 0,
                       builder: (BuildContext context, double drift) {
                         return DottedWorld(
-                          // Bigger and higher than before: the planet anchors
-                          // the top of the composition instead of sitting
-                          // behind the readouts.
-                          zoom: 1.85,
-                          focus: const Offset(0.52, 0.19),
+                          zoom: view.zoom,
+                          focus: view.focus,
                           dotOpacity: 0.58,
                           driftDegrees: drift * 360,
                           selfPoint: selfPoint,
@@ -321,13 +350,53 @@ class _MapFade extends StatelessWidget {
           end: Alignment.bottomCenter,
           colors: <Color>[
             Color(0x000A0714),
-            Color(0x660A0714),
-            Color(0xF20A0714),
+            Color(0x1A0A0714),
+            Color(0x8A0A0714),
+            Color(0xD90A0714),
           ],
-          stops: <double>[0, 0.50, 0.86],
+          stops: <double>[0, 0.38, 0.72, 1],
         ),
       ),
       child: SizedBox.expand(),
+    );
+  }
+}
+
+/// "Roughly here": where the connection appears to come from, as the control
+/// plane saw it. Country-level, never a street, and never a permission prompt.
+class _LocationChip extends StatelessWidget {
+  const _LocationChip({required this.self});
+
+  final SelfLocation self;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme text = Theme.of(context).textTheme;
+    final String flag = countryFlag(self.countryCode ?? '');
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Icon(
+          Icons.my_location_rounded,
+          size: 12,
+          color: GlukColors.text2,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          'You',
+          style: text.bodySmall?.copyWith(color: GlukColors.text2),
+        ),
+        const SizedBox(width: 6),
+        if (flag.isNotEmpty) ...<Widget>[
+          Text(flag, style: const TextStyle(fontSize: 12)),
+          const SizedBox(width: 5),
+        ],
+        Text(
+          self.placeLabel,
+          style: text.bodySmall?.copyWith(color: GlukColors.text1),
+        ),
+      ],
     );
   }
 }
@@ -450,113 +519,6 @@ class _ProfileChip extends StatelessWidget {
                   style: text.bodySmall?.copyWith(fontSize: 9.5),
                 ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// `.power-btn` - 150 px, radial `#201A30 -> #0A0812`, with the glow behind it
-/// (`.blob-glow` / `glowPulse`) tinted green once the tunnel is up.
-class _PowerButton extends StatelessWidget {
-  const _PowerButton({
-    required this.state,
-    required this.motion,
-    required this.onTap,
-  });
-
-  final VpnUiState state;
-  final MotionController motion;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool connected = state == VpnUiState.connected;
-    final bool transitioning =
-        state == VpnUiState.connecting || state == VpnUiState.disconnecting;
-    final Color glow = connected ? GlukColors.connected : GlukColors.violet;
-
-    return SizedBox(
-      width: GlukSizes.blobGlow,
-      height: GlukSizes.blobGlow,
-      child: Stack(
-        alignment: Alignment.center,
-        children: <Widget>[
-          LoopingBuilder(
-            duration: GlukMotion.glowPulse,
-            reduceMotion: motion.reduceMotion,
-            frozenValue: 0.5,
-            reverse: true,
-            builder: (BuildContext context, double t) {
-              final double scale = 0.84 + 0.16 * t;
-              return Container(
-                width: GlukSizes.blobGlow * scale,
-                height: GlukSizes.blobGlow * scale,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: <Color>[
-                      glow.withOpacity(connected ? 0.34 : 0.18),
-                      glow.withOpacity(0),
-                    ],
-                    stops: const <double>[0.22, 1],
-                  ),
-                ),
-              );
-            },
-          ),
-          Semantics(
-            button: true,
-            label: connected ? 'Disconnect' : 'Connect',
-            child: Material(
-              color: Colors.transparent,
-              shape: const CircleBorder(),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: onTap,
-                child: Container(
-                  width: GlukSizes.powerButton,
-                  height: GlukSizes.powerButton,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: GlukGradients.powerButton,
-                    border: Border.all(
-                      color: connected
-                          ? GlukColors.connected.withOpacity(0.55)
-                          : GlukColors.stroke,
-                      width: 1.2,
-                    ),
-                    boxShadow: <BoxShadow>[
-                      BoxShadow(
-                        color: glow.withOpacity(connected ? 0.42 : 0.20),
-                        blurRadius: 38,
-                        spreadRadius: 1,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: transitioning
-                      ? SizedBox(
-                          width: 30,
-                          height: 30,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.4,
-                            color: GlukColors.violetLight,
-                          ),
-                        )
-                      : Icon(
-                          Icons.power_settings_new_rounded,
-                          size: 40,
-                          color: connected
-                              ? GlukColors.connected
-                              : GlukColors.powerGlyph,
-                        ),
-                ),
-              ),
-            ),
           ),
         ],
       ),

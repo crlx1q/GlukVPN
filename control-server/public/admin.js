@@ -234,6 +234,7 @@ async function loadChannelBadge() {
 		const isBeta = data.channel === "beta"
 		const badge = el("channel-badge")
 		badge.textContent = `${String(data.channel || "?").toUpperCase()} ${data.version || ""}`.trim()
+		badge.title = data.release ? `release ${data.release}` : ""
 		badge.classList.toggle("is-beta", isBeta)
 		el("login-channel").textContent = isBeta
 			? "You are on the BETA control plane. Test accounts and test nodes only."
@@ -290,6 +291,9 @@ function channelCard(channel, compact) {
 	if (!compact) {
 		card.appendChild(kv("Admin", channel.admin, true))
 		card.appendChild(kv("Commit", channel.commit ? channel.commit.slice(0, 7) : null, true))
+		// The release id is what actually changes after a promote - the version
+		// number comes from package.json and normally does not.
+		card.appendChild(kv("Release", channel.release, true))
 		card.appendChild(kv("Migration", channel.migration, true))
 		card.appendChild(kv("Released", channel.releasedAt ? new Date(channel.releasedAt).toLocaleString() : null))
 	}

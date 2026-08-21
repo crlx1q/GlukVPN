@@ -1,97 +1,58 @@
 #!/usr/bin/env bash
-# ============================================================================
-# START BETA
+# GlukVPN - start the BETA channel. PROD is never touched.
 #
-# Brings the beta stack back up in dependency order (wg1 -> control server ->
-# node agent) and refuses to report success until beta is actually healthy.
+# Refuses to start when there is no beta release to run, brings wg1 up, starts
+# the control API and the node agent, then waits for :8082 to actually answer.
+# A start that leaves the port closed exits non-zero, so the panel shows a
+# failure instead of a green button and a dead channel.
 #
-# PROD IS NOT TOUCHED: only beta-only units and the beta loopback port appear
-# below.
-#
-# Takes no arguments. Run by the deploy worker, or by hand:
-#   sudo /opt/glukvpn-deploy/bin/beta-start.sh
-# ============================================================================
+# Nothing here is enabled at boot: beta comes up when someone asks for it.
+set -euo pipefail
 
-set -Eeuo pipefail
-# shellcheck source=/opt/glukvpn-deploy/bin/common.sh
-source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-BETA_AGENT_SERVICE="vpn-node-agent-beta"
-BETA_WG_UNIT="wg-quick@wg1"
-BETA_WG_IFACE="wg1"
+if [ -f /etc/glukvpn-deploy/beta.env ]; then
+  # shellcheck source=/dev/null
+  . /etc/glukvpn-deploy/beta.env
+fi
+
+# shellcheck source=beta-lib.sh
+. "$HERE/beta-lib.sh"
 
 log "=== START BETA ==="
 
-# A channel with no release cannot start; the operator has to deploy first.
-[[ -L "${BETA_ROOT}/current" ]] ||
-	die "no beta release is active - run Deploy Beta first"
-log "release: $(basename "$(readlink -f "${BETA_ROOT}/current")")"
+if [ ! -e "$BETA_ROOT/current" ]; then
+  die "no beta release is active ($BETA_ROOT/current is missing) - run Deploy Beta first"
+fi
+log "beta release: $(basename "$(readlink -f "$BETA_ROOT/current" 2>/dev/null || echo unknown)")"
 
-start_unit() {
-	local unit="$1" required="${2:-required}"
-	if ! systemctl cat "$unit" >/dev/null 2>&1; then
-		if [[ "$required" == "optional" ]]; then
-			log "${unit} is not installed, skipping"
-			return 0
-		fi
-		die "${unit} is not installed"
-	fi
-	log "starting ${unit}"
-	# enable --now so beta also comes back after a reboot, mirroring Stop Beta
-	# which disables the same units.
-	systemctl enable --now "$unit"
-	return 0
-}
+start_beta_wireguard || warn "${BETA_WG_IF} did not come up - the API will still be started"
 
-# 1. Tunnel interface first: the agent expects wg1 to exist.
-start_unit "$BETA_WG_UNIT"
-if ip link show "$BETA_WG_IFACE" >/dev/null 2>&1; then
-	log "${BETA_WG_IFACE} is up (udp/51821)"
+control="$(resolve_control_unit || true)"
+if [ -z "$control" ]; then
+  die "beta control api: no systemd unit found (expected one of ${BETA_CONTROL_CANDIDATES})"
+fi
+start_beta_unit "$control" "beta control api"
+
+agent="$(resolve_agent_unit || true)"
+if [ -n "$agent" ]; then
+  start_beta_unit "$agent" "beta node agent" ||
+    warn "$agent did not start - beta API is up but peers will not be installed"
 else
-	die "${BETA_WG_IFACE} did not come up - check: journalctl -u ${BETA_WG_UNIT} -n 50"
+  warn "beta node agent: no matching systemd unit found - beta API only"
 fi
 
-# 2. Control server, then its health gate.
-start_unit "$BETA_SERVICE"
-if ! wait_for_health "$BETA_PORT" 30; then
-	log "journalctl -u ${BETA_SERVICE} -n 50 --no-pager  # to see why"
-	die "beta control server is not healthy on :${BETA_PORT}"
-fi
-log "beta now runs:"
-report_version "$BETA_PORT"
-
-# 3. Node agent last: it registers and starts heartbeating against the API
-#    that is now up.
-start_unit "$BETA_AGENT_SERVICE" optional
-
-# 4. Wait for a heartbeat to land. The agent beats every 10s and the control
-#    plane marks a node OFFLINE after 30s, so ~45s is a fair window.
-node_online="no"
-for attempt in $(seq 1 9); do
-	if ( cd "$(readlink -f "${BETA_ROOT}/current")" &&
-		sudo -u "$BETA_USER" ENV_FILE="$BETA_ENV" npm run --silent cli -- nodes:list 2>/dev/null ) |
-		grep -q "ONLINE"; then
-		node_online="yes"
-		break
-	fi
-	sleep 5
-done
-
-if [[ "$node_online" == "yes" ]]; then
-	log "beta node is ONLINE (heartbeat received)"
-else
-	# Not fatal: the control server is healthy and the panel will show the node
-	# as OFFLINE, which is the honest state.
-	log "warning: no beta node heartbeat yet"
-	log "  check: systemctl status ${BETA_AGENT_SERVICE}"
-	log "  check: journalctl -u ${BETA_AGENT_SERVICE} -n 50 --no-pager"
+if ! wait_port_open "$BETA_PORT" 25; then
+  log "--- last 40 journal lines for $control ---"
+  journalctl -u "$control" -n 40 --no-pager 2>/dev/null || true
+  die "beta did not start answering on :${BETA_PORT}"
 fi
 
-# 5. Prod must still be fine.
-if wait_for_health "$PROD_PORT" 5; then
-	log "prod is healthy and unaffected"
-else
-	die "prod is NOT healthy after starting beta - investigate immediately"
+if command -v curl >/dev/null 2>&1; then
+  log "version: $(curl -fsS --max-time 3 \
+    "${BETA_SCHEME}://${BETA_HOST}:${BETA_PORT}/api/version" 2>/dev/null ||
+    echo unavailable)"
 fi
 
-log "=== START BETA OK ==="
+report_beta_state
+log "=== BETA STARTED ==="

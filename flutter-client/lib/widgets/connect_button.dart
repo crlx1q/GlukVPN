@@ -5,9 +5,10 @@ import 'package:flutter/material.dart';
 
 import '../theme/motion.dart';
 import '../theme/tokens.dart';
+import '../utils/blob.dart';
 
 /// Phases the button can be in. Each one keeps the same motion language and
-/// only changes accent and tempo.
+/// only changes accent, tempo and brightness.
 enum ConnectPhase { idle, connecting, connected, disconnecting }
 
 /// The connect control from `gluk_vpn_v5_connection.html`, ported layer for
@@ -28,13 +29,17 @@ enum ConnectPhase { idle, connecting, connected, disconnecting }
 ///                    transition: transform .15s;  &:active { transform: scale(.96) } }
 /// ```
 ///
-/// Two points matter for getting it right:
+/// Three points matter for getting it right:
 ///
 ///  * the energy is a pair of **filled** blobs whose eight border radii morph,
-///    not a ring of orbiting particles, and
+///    not a ring of orbiting particles;
 ///  * the glow is one of the stacked layers **under** the sphere, not a shadow
 ///    attached to it - which is what makes the button read as sitting inside a
-///    field rather than glowing at the edges.
+///    field rather than glowing at the edges;
+///  * the blob outline is built by [blobPath], not by a rounded rectangle. Two
+///    radii along one edge can add up to more than the edge itself, and an
+///    `RRect` clamps each corner separately, which used to leave a little
+///    cross-shaped spur on the frames where that happened.
 ///
 /// Everything here is authored at the mock-up's 150 px button and scaled from
 /// [size], so the proportions between glow, blobs and sphere never drift.
@@ -100,6 +105,25 @@ class _GlukConnectButtonState extends State<GlukConnectButton> {
     }
   }
 
+  /// Brightness of the field behind the sphere.
+  ///
+  /// A tunnel that is up earns full power. Sitting disconnected, the same
+  /// artwork at full strength shouts for attention it has not earned, so the
+  /// resting state is held back a little - dimmer, not grey, and the hue and
+  /// motion are untouched.
+  double get _energy {
+    switch (widget.phase) {
+      case ConnectPhase.connected:
+        return 1;
+      case ConnectPhase.connecting:
+        return 0.94;
+      case ConnectPhase.disconnecting:
+        return 0.86;
+      case ConnectPhase.idle:
+        return 0.72;
+    }
+  }
+
   /// `morph1` / `morph2` run at 7s in the mock-up. Connecting speeds the field
   /// up, a settled tunnel slows it down; the shapes never change.
   Duration get _morphPeriod {
@@ -119,6 +143,7 @@ class _GlukConnectButtonState extends State<GlukConnectButton> {
   Widget build(BuildContext context) {
     // `.blob-zone` is 260 px across - the glow is the widest layer.
     final double stage = GlukSizes.blobGlow * _k;
+    final double dim = _energy * (_enabled ? 1 : 0.55);
 
     return SizedBox(
       width: stage,
@@ -131,7 +156,7 @@ class _GlukConnectButtonState extends State<GlukConnectButton> {
             size: stage,
             colour: Color.lerp(_glowViolet, _accent, _tint)!,
             blur: 4 * _k,
-            dim: _enabled ? 1 : 0.45,
+            dim: dim,
             reduceMotion: widget.reduceMotion,
           ),
 
@@ -147,16 +172,16 @@ class _GlukConnectButtonState extends State<GlukConnectButton> {
                   _MorphBlob(
                     size: GlukSizes.blob * _k,
                     t: t,
-                    frames: _morph1,
+                    frames: morph1,
                     gradient: _tinted(GlukGradients.blobOuter),
-                    opacity: 0.95 * (_enabled ? 1 : 0.5),
+                    opacity: 0.95 * dim,
                   ),
                   _MorphBlob(
                     size: GlukSizes.blob * _k,
                     t: t,
-                    frames: _morph2,
+                    frames: morph2,
                     gradient: _tinted(GlukGradients.blobInner),
-                    opacity: 0.40 * (_enabled ? 1 : 0.5),
+                    opacity: 0.40 * dim,
                     blur: 2 * _k,
                   ),
                 ],
@@ -201,7 +226,6 @@ class _GlukConnectButtonState extends State<GlukConnectButton> {
                         : Color.lerp(GlukColors.powerGlyph, _accent, 0.85)!,
                     accent: _accent,
                     busy: _busy,
-                    reduceMotion: widget.reduceMotion,
                   ),
                 ),
               ),
@@ -256,7 +280,7 @@ class _Glow extends StatelessWidget {
         // A cosine gives the ease-in-out shape of the CSS keyframe for free.
         final double k = 0.5 - 0.5 * math.cos(t * 2 * math.pi);
         return Opacity(
-          opacity: ui.lerpDouble(0.6, 1, k)! * dim,
+          opacity: (ui.lerpDouble(0.6, 1, k)! * dim).clamp(0.0, 1.0),
           child: Transform.scale(
             scale: ui.lerpDouble(0.94, 1.05, k)!,
             child: ImageFiltered(
@@ -286,92 +310,101 @@ class _Glow extends StatelessWidget {
 /// One keyframe of `morph1` / `morph2`.
 ///
 /// CSS writes eight radii as `TL TR BR BL / TL TR BR BL`, horizontal first,
-/// each a percentage of the box. Flutter says the same thing with four
-/// [Radius.elliptical] corners, so the shape can be reproduced exactly instead
-/// of approximated with a sine wave.
-class _MorphFrame {
-  const _MorphFrame({
-    required this.at,
-    required this.h,
-    required this.v,
-    required this.rotation,
-    required this.scale,
-  });
+/// each a percentage of the box, plus a `rotate()` and a `scale()`.
+class MorphKey {
+  const MorphKey({required this.at, required this.shape});
 
   /// Position in the timeline, 0..1.
   final double at;
-
-  /// Horizontal radii, in box fractions: TL, TR, BR, BL.
-  final List<double> h;
-
-  /// Vertical radii, same order.
-  final List<double> v;
-
-  /// Degrees.
-  final double rotation;
-  final double scale;
+  final BlobShape shape;
 }
 
 /// `@keyframes morph1` - the opaque blob.
-const List<_MorphFrame> _morph1 = <_MorphFrame>[
-  _MorphFrame(
+const List<MorphKey> morph1 = <MorphKey>[
+  MorphKey(
     at: 0,
-    h: <double>[0.42, 0.58, 0.65, 0.35],
-    v: <double>[0.45, 0.40, 0.60, 0.55],
-    rotation: 0,
-    scale: 1,
+    shape: BlobShape(
+      h: <double>[0.42, 0.58, 0.65, 0.35],
+      v: <double>[0.45, 0.40, 0.60, 0.55],
+    ),
   ),
-  _MorphFrame(
+  MorphKey(
     at: 0.33,
-    h: <double>[0.60, 0.40, 0.45, 0.55],
-    v: <double>[0.55, 0.65, 0.35, 0.45],
-    rotation: 8,
-    scale: 1.02,
+    shape: BlobShape(
+      h: <double>[0.60, 0.40, 0.45, 0.55],
+      v: <double>[0.55, 0.65, 0.35, 0.45],
+      rotation: 8,
+      scale: 1.02,
+    ),
   ),
-  _MorphFrame(
+  MorphKey(
     at: 0.66,
-    h: <double>[0.48, 0.52, 0.38, 0.62],
-    v: <double>[0.40, 0.55, 0.45, 0.60],
-    rotation: -6,
-    scale: 0.99,
+    shape: BlobShape(
+      h: <double>[0.48, 0.52, 0.38, 0.62],
+      v: <double>[0.40, 0.55, 0.45, 0.60],
+      rotation: -6,
+      scale: 0.99,
+    ),
   ),
-  _MorphFrame(
+  MorphKey(
     at: 1,
-    h: <double>[0.42, 0.58, 0.65, 0.35],
-    v: <double>[0.45, 0.40, 0.60, 0.55],
-    rotation: 0,
-    scale: 1,
+    shape: BlobShape(
+      h: <double>[0.42, 0.58, 0.65, 0.35],
+      v: <double>[0.45, 0.40, 0.60, 0.55],
+    ),
   ),
 ];
 
 /// `@keyframes morph2` - the blurred counter-rotating blob.
-const List<_MorphFrame> _morph2 = <_MorphFrame>[
-  _MorphFrame(
+const List<MorphKey> morph2 = <MorphKey>[
+  MorphKey(
     at: 0,
-    h: <double>[0.55, 0.45, 0.40, 0.60],
-    v: <double>[0.50, 0.45, 0.55, 0.50],
-    rotation: 0,
-    scale: 1.08,
+    shape: BlobShape(
+      h: <double>[0.55, 0.45, 0.40, 0.60],
+      v: <double>[0.50, 0.45, 0.55, 0.50],
+      scale: 1.08,
+    ),
   ),
-  _MorphFrame(
+  MorphKey(
     at: 0.5,
-    h: <double>[0.40, 0.60, 0.55, 0.45],
-    v: <double>[0.60, 0.50, 0.50, 0.40],
-    rotation: -10,
-    scale: 1.14,
+    shape: BlobShape(
+      h: <double>[0.40, 0.60, 0.55, 0.45],
+      v: <double>[0.60, 0.50, 0.50, 0.40],
+      rotation: -10,
+      scale: 1.14,
+    ),
   ),
-  _MorphFrame(
+  MorphKey(
     at: 1,
-    h: <double>[0.55, 0.45, 0.40, 0.60],
-    v: <double>[0.50, 0.45, 0.55, 0.50],
-    rotation: 0,
-    scale: 1.08,
+    shape: BlobShape(
+      h: <double>[0.55, 0.45, 0.40, 0.60],
+      v: <double>[0.50, 0.45, 0.55, 0.50],
+      scale: 1.08,
+    ),
   ),
 ];
 
-/// A filled gradient blob whose corner radii, rotation and scale follow a CSS
-/// keyframe list. `ease-in-out` is applied between each pair of stops, exactly
-/// like `animation-timing-function` does.
+/// The shape at a point in the timeline, with `ease-in-out` between keys -
+/// exactly what `animation-timing-function` does between two CSS keyframes.
+BlobShape morphAt(List<MorphKey> frames, double t) {
+  final double clamped = t.clamp(0.0, 1.0);
+  int index = 0;
+  for (int i = 0; i < frames.length - 1; i++) {
+    if (clamped >= frames[i].at) index = i;
+  }
+  final MorphKey from = frames[index];
+  final MorphKey to = frames[math.min(index + 1, frames.length - 1)];
+  final double span = (to.at - from.at).abs();
+  final double local = span == 0 ? 0 : ((clamped - from.at) / span).clamp(0.0, 1.0);
+  return BlobShape.lerp(
+    from.shape,
+    to.shape,
+    Curves.easeInOut.transform(local),
+  );
+}
+
+/// A filled gradient blob whose outline, rotation and scale follow a CSS
+/// keyframe list.
 class _MorphBlob extends StatelessWidget {
   const _MorphBlob({
     required this.size,
@@ -386,55 +419,19 @@ class _MorphBlob extends StatelessWidget {
 
   /// 0..1 through the keyframe list.
   final double t;
-  final List<_MorphFrame> frames;
+  final List<MorphKey> frames;
   final LinearGradient gradient;
   final double opacity;
   final double blur;
 
   @override
   Widget build(BuildContext context) {
-    final double clamped = t.clamp(0.0, 1.0);
-    int index = 0;
-    for (int i = 0; i < frames.length - 1; i++) {
-      if (clamped >= frames[i].at) index = i;
-    }
-    final _MorphFrame from = frames[index];
-    final _MorphFrame to = frames[math.min(index + 1, frames.length - 1)];
-    final double span = (to.at - from.at).abs();
-    final double local =
-        span == 0 ? 0 : ((clamped - from.at) / span).clamp(0.0, 1.0);
-    final double eased = Curves.easeInOut.transform(local);
-
-    double radius(int corner, bool horizontal) {
-      final double a = horizontal ? from.h[corner] : from.v[corner];
-      final double b = horizontal ? to.h[corner] : to.v[corner];
-      return ui.lerpDouble(a, b, eased)! * size;
-    }
-
-    Widget blob = Opacity(
-      opacity: opacity.clamp(0.0, 1.0),
-      child: Transform.rotate(
-        angle: ui.lerpDouble(from.rotation, to.rotation, eased)! *
-            math.pi /
-            180,
-        child: Transform.scale(
-          scale: ui.lerpDouble(from.scale, to.scale, eased)!,
-          child: Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              gradient: gradient,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.elliptical(radius(0, true), radius(0, false)),
-                topRight: Radius.elliptical(radius(1, true), radius(1, false)),
-                bottomRight:
-                    Radius.elliptical(radius(2, true), radius(2, false)),
-                bottomLeft:
-                    Radius.elliptical(radius(3, true), radius(3, false)),
-              ),
-            ),
-          ),
-        ),
+    Widget blob = CustomPaint(
+      size: Size(size, size),
+      painter: _BlobPainter(
+        shape: morphAt(frames, t),
+        gradient: gradient,
+        opacity: opacity.clamp(0.0, 1.0),
       ),
     );
 
@@ -444,27 +441,96 @@ class _MorphBlob extends StatelessWidget {
         child: blob,
       );
     }
-    return blob;
+    return SizedBox(width: size, height: size, child: blob);
   }
 }
 
-/// The power symbol. While a tunnel is being set up or torn down a hairline
-/// sweep runs just inside the sphere's edge, so a slow handshake never looks
-/// frozen - one thin arc, no spinner furniture.
+/// Draws one blob.
+///
+/// The outline comes from [blobPath], which normalises the eight radii the way
+/// CSS does before drawing arcs, so neighbouring segments always meet
+/// tangentially. Rotation and scale are canvas transforms about the centre,
+/// which keeps the path itself untouched - there is nothing left that can
+/// pinch, spike or flash mid-morph.
+class _BlobPainter extends CustomPainter {
+  const _BlobPainter({
+    required this.shape,
+    required this.gradient,
+    required this.opacity,
+  });
+
+  final BlobShape shape;
+  final LinearGradient gradient;
+  final double opacity;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty || opacity <= 0) return;
+
+    canvas.save();
+    canvas.translate(size.width / 2, size.height / 2);
+    canvas.rotate(shape.rotation * math.pi / 180);
+    canvas.scale(shape.scale);
+    canvas.translate(-size.width / 2, -size.height / 2);
+
+    final Rect box = Offset.zero & size;
+    // Opacity is folded into the gradient stops rather than applied with a
+    // saved layer: one draw call, and no chance of a seam where two layers
+    // composite.
+    final LinearGradient faded = LinearGradient(
+      begin: gradient.begin,
+      end: gradient.end,
+      colors: gradient.colors
+          .map((Color c) => c.withOpacity(c.opacity * opacity))
+          .toList(growable: false),
+      stops: gradient.stops,
+    );
+
+    canvas.drawPath(
+      blobPath(size: size, h: shape.h, v: shape.v),
+      Paint()
+        ..isAntiAlias = true
+        ..shader = faded.createShader(box),
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_BlobPainter old) =>
+      old.opacity != opacity ||
+      old.shape.rotation != shape.rotation ||
+      old.shape.scale != shape.scale ||
+      !_sameRadii(old.shape.h, shape.h) ||
+      !_sameRadii(old.shape.v, shape.v) ||
+      old.gradient != gradient;
+
+  static bool _sameRadii(List<double> a, List<double> b) {
+    for (int i = 0; i < 4; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+}
+
+/// The power symbol, with a spinner around it while a tunnel is being set up or
+/// torn down.
+///
+/// This one loop ignores the reduced-motion setting. Everything decorative in
+/// the app holds still on battery saver, but a handshake can take a few
+/// seconds, and a frozen arc there does not read as "saving power" - it reads
+/// as a hung app. Progress feedback is information, not decoration.
 class _Glyph extends StatelessWidget {
   const _Glyph({
     required this.size,
     required this.colour,
     required this.accent,
     required this.busy,
-    required this.reduceMotion,
   });
 
   final double size;
   final Color colour;
   final Color accent;
   final bool busy;
-  final bool reduceMotion;
 
   @override
   Widget build(BuildContext context) {
@@ -483,9 +549,7 @@ class _Glyph extends StatelessWidget {
         alignment: Alignment.center,
         children: <Widget>[
           LoopingBuilder(
-            duration: const Duration(milliseconds: 1600),
-            reduceMotion: reduceMotion,
-            frozenValue: 0.25,
+            duration: const Duration(milliseconds: 1100),
             builder: (BuildContext context, double t) => Transform.rotate(
               angle: t * 2 * math.pi,
               child: CustomPaint(
@@ -511,13 +575,13 @@ class _SweepPainter extends CustomPainter {
     final Rect rect = Offset.zero & size;
     final Paint paint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4
+      ..strokeWidth = 1.6
       ..strokeCap = StrokeCap.round
       ..isAntiAlias = true
       ..shader = SweepGradient(
-        colors: <Color>[colour.withOpacity(0), colour.withOpacity(0.55)],
+        colors: <Color>[colour.withOpacity(0), colour.withOpacity(0.6)],
       ).createShader(rect);
-    canvas.drawArc(rect.deflate(1), -math.pi / 2, math.pi * 1.25, false, paint);
+    canvas.drawArc(rect.deflate(1), -math.pi / 2, math.pi * 1.45, false, paint);
   }
 
   @override

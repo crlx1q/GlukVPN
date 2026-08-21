@@ -1,30 +1,26 @@
 #!/usr/bin/env bash
-# ============================================================================
-# RESTART BETA
+# GlukVPN - restart the BETA channel by running the verified stop, then the
+# verified start. PROD is never touched.
 #
-# Stop, then start. Kept as its own action so the audit log records "restart"
-# rather than two unrelated jobs, and so a half-finished restart cannot be
-# mistaken for a deliberate Beta OFF.
-#
-# PROD IS NOT TOUCHED.
-#
-# Takes no arguments. Run by the deploy worker, or by hand:
-#   sudo /opt/glukvpn-deploy/bin/beta-restart.sh
-# ============================================================================
+# It deliberately does NOT reimplement either half: a restart that stops
+# differently from stop is how "restart succeeded but :8082 is still the old
+# process" happens. If the stop cannot prove the port is closed, the restart
+# fails here and the start is never attempted.
+set -euo pipefail
 
-set -Eeuo pipefail
-# shellcheck source=/opt/glukvpn-deploy/bin/common.sh
-SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SELF_DIR}/common.sh"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ -f /etc/glukvpn-deploy/beta.env ]; then
+  # shellcheck source=/dev/null
+  . /etc/glukvpn-deploy/beta.env
+fi
+
+# shellcheck source=beta-lib.sh
+. "$HERE/beta-lib.sh"
 
 log "=== RESTART BETA ==="
 
-"${SELF_DIR}/beta-stop.sh"
+"$HERE/beta-stop.sh"
+"$HERE/beta-start.sh"
 
-# Give systemd a moment to release the port and tear down the interface before
-# the start script asserts they are back.
-sleep 2
-
-"${SELF_DIR}/beta-start.sh"
-
-log "=== RESTART BETA OK ==="
+log "=== BETA RESTARTED ==="

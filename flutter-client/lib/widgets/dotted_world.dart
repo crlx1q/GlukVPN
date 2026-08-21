@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../data/world_map_data.dart';
 import '../theme/tokens.dart';
 import '../utils/geo.dart';
+import '../utils/showcase.dart';
 
 /// The dotted world from the mockup, drawn as points rather than an SVG.
 ///
@@ -39,6 +40,8 @@ class DottedWorld extends StatelessWidget {
 		this.arcProgress = 0,
 		this.arcPhase = 0,
 		this.orbitalPhase = 0,
+		this.showcase = 0,
+		this.showcaseSeconds = 0,
 		this.pulse = 0,
 		this.connected = false,
 	});
@@ -104,6 +107,18 @@ class DottedWorld extends StatelessWidget {
 	/// 0..1 - travel of the light along the orbital threads.
 	final double orbitalPhase;
 
+	/// 0..1 - how strongly the showcase scene is drawn: people scattered over the
+	/// world, exit nodes, and threads that come up and drop again.
+	///
+	/// Onboarding and sign-in run it; the home screen leaves it at 0, because
+	/// there the map is about *your* connection and inventing traffic on it would
+	/// be a lie.
+	final double showcase;
+
+	/// Seconds into that scene. It only ever moves forward, which is what keeps
+	/// the world from jumping back to a starting pose.
+	final double showcaseSeconds;
+
 	/// 0..1 - shared phase for the expanding rings under the two markers.
 	final double pulse;
 
@@ -132,6 +147,8 @@ class DottedWorld extends StatelessWidget {
 					arcProgress: arcProgress.clamp(0.0, 1.0),
 					arcPhase: arcPhase,
 					orbitalPhase: orbitalPhase,
+					showcase: showcase.clamp(0.0, 1.0),
+					showcaseSeconds: showcaseSeconds,
 					pulse: pulse,
 					connected: connected,
 				),
@@ -160,6 +177,8 @@ class _DottedWorldPainter extends CustomPainter {
 		required this.arcProgress,
 		required this.arcPhase,
 		required this.orbitalPhase,
+		required this.showcase,
+		required this.showcaseSeconds,
 		required this.pulse,
 		required this.connected,
 	});
@@ -181,6 +200,8 @@ class _DottedWorldPainter extends CustomPainter {
 	final double arcProgress;
 	final double arcPhase;
 	final double orbitalPhase;
+	final double showcase;
+	final double showcaseSeconds;
 	final double pulse;
 	final bool connected;
 
@@ -253,6 +274,20 @@ class _DottedWorldPainter extends CustomPainter {
 		// and no glow stack: subtle, not busy.
 		if (orbitalPhase > 0) {
 			_paintOrbitals(canvas, size, globeCentre, globeRadius);
+		}
+
+		// The showcase scene: a dozen people, five exit nodes, and threads that
+		// come up and drop again. Drawn under the user's own markers, so their
+		// route stays the subject of the picture rather than one line in a crowd.
+		if (showcase > 0.01) {
+			_paintShowcase(
+				canvas,
+				size,
+				flatScale: flatScale,
+				flatCentre: centre,
+				globeRadius: globeRadius,
+				globeCentre: globeCentre,
+			);
 		}
 
 		// The live fleet: one green point per online node, linked by hair-thin
@@ -452,9 +487,14 @@ class _DottedWorldPainter extends CustomPainter {
 		)?.offset;
 		if (control == null) return;
 
+		// Both ends and the bend are pulled onto the same side of the map's seam,
+		// so a route never gets drawn the long way round on the scrolling map.
+		final target = _alignFlat(from, to, flatScale);
+		final bend = _alignFlat(from, control, flatScale);
+
 		final path = Path()
 			..moveTo(from.dx, from.dy)
-			..quadraticBezierTo(control.dx, control.dy, to.dx, to.dy);
+			..quadraticBezierTo(bend.dx, bend.dy, target.dx, target.dy);
 
 		final strokeWidth = math.max(1.2, 0.55 * flatScale);
 		final dash = math.max(3.0, 1.6 * flatScale);
@@ -467,7 +507,7 @@ class _DottedWorldPainter extends CustomPainter {
 			..isAntiAlias = true
 			..shader = ui.Gradient.linear(
 				from,
-				to,
+				target,
 				[
 					accent.withOpacity(0.95 * opacity),
 					(connected ? GlukColors.connected : GlukColors.blue)
@@ -531,6 +571,13 @@ class _DottedWorldPainter extends CustomPainter {
 	}
 
 	/// Two tilted ellipses with a light running along them.
+	///
+	/// The radius is the *planet's*, not the screen's. It used to be
+	/// `max(shortestSide * 0.36, radius * 1.18)`, which meant the rings were
+	/// sized by the viewport whenever the globe was small: they swamped the
+	/// planet on the first onboarding frame and looked like a tiny bracelet by
+	/// the third. Tying them to the globe keeps the same relationship at every
+	/// camera distance, which is the whole point of orbits.
 	void _paintOrbitals(Canvas canvas, Size size, Offset globeCentre, double radius) {
 		// On the flat map there is no sphere to orbit, so the threads are anchored
 		// to the upper third of the scene, where the composition's mass is.
@@ -539,7 +586,13 @@ class _DottedWorldPainter extends CustomPainter {
 			globeCentre,
 			globeness,
 		)!;
-		final base = math.max(size.shortestSide * 0.36, radius * 1.18);
+		final base = ui.lerpDouble(size.shortestSide * 0.36, radius * 1.16, globeness)!;
+
+		// Once the planet is wider than the screen its orbits are off-canvas, and
+		// all that is left on screen are two arcs cutting across the corners. Fade
+		// them out instead.
+		final fade = ((size.shortestSide * 0.62) / math.max(base, 1.0)).clamp(0.0, 1.0);
+		if (fade <= 0.02) return;
 
 		for (var i = 0; i < 2; i++) {
 			final rx = base * (i == 0 ? 1.0 : 0.74);
@@ -561,7 +614,7 @@ class _DottedWorldPainter extends CustomPainter {
 					..style = PaintingStyle.stroke
 					..strokeWidth = 0.9
 					..isAntiAlias = true
-					..color = GlukColors.violetLight.withOpacity(0.09),
+					..color = GlukColors.violetLight.withOpacity(0.09 * fade),
 			);
 
 			final metric = path.computeMetrics().first;
@@ -573,7 +626,7 @@ class _DottedWorldPainter extends CustomPainter {
 				..strokeWidth = 1.5
 				..strokeCap = StrokeCap.round
 				..isAntiAlias = true
-				..color = GlukColors.violetLight.withOpacity(0.38);
+				..color = GlukColors.violetLight.withOpacity(0.38 * fade);
 			// Wrap around the seam instead of blinking out at the top of the loop.
 			if (tail < 0) {
 				canvas.drawPath(metric.extractPath(0, head), glow);
@@ -582,6 +635,180 @@ class _DottedWorldPainter extends CustomPainter {
 				canvas.drawPath(metric.extractPath(tail, head), glow);
 			}
 			canvas.restore();
+		}
+	}
+
+	/// The flat map repeats every 360 degrees, so two places can be projected a
+	/// whole world apart inside the same picture - and a route from Astana to
+	/// Frankfurt would then be drawn the long way round, straight across the
+	/// screen. This nudges [point] by whole map widths until it sits on the same
+	/// side of the seam as [anchor], which is what lets the map scroll for ever
+	/// without any line noticing.
+	Offset _alignFlat(Offset anchor, Offset point, double flatScale) {
+		if (globeness >= 0.5) return point;
+		final period = mapWidth * flatScale;
+		if (period <= 0) return point;
+		final raw = point.dx - anchor.dx;
+		final dx = raw - period * (raw / period).roundToDouble();
+		return Offset(anchor.dx + dx, point.dy);
+	}
+
+	/// The showcase scene.
+	///
+	/// Deliberately not a copy of the mock-up's single dot-and-thread: that is a
+	/// still picture, and this screen is watched for half a minute. Several links
+	/// are always in flight, each at a different point in its own life, so the
+	/// map reads as a network with traffic on it - and because every link's
+	/// timing comes from a fixed table, nothing ever resets to a starting pose.
+	void _paintShowcase(
+		Canvas canvas,
+		Size size, {
+		required double flatScale,
+		required Offset flatCentre,
+		required double globeRadius,
+		required Offset globeCentre,
+	}) {
+		final master = showcase.clamp(0.0, 1.0);
+		final world = ShowcaseWorld.standard;
+
+		({Offset offset, double visibility})? place(MapPoint point) => _project(
+			point,
+			flatScale: flatScale,
+			flatCentre: flatCentre,
+			globeRadius: globeRadius,
+			globeCentre: globeCentre,
+			size: size,
+			cull: false,
+		);
+
+		final peers = world.peers
+				.map<({Offset offset, double visibility})?>(place)
+				.toList(growable: false);
+		final hubs = world.hubs
+				.map<({Offset offset, double visibility})?>(place)
+				.toList(growable: false);
+
+		double facing(({Offset offset, double visibility})? projected) {
+			if (projected == null) return 0;
+			return ui.lerpDouble(1, projected.visibility.clamp(0.0, 1.0), globeness)!;
+		}
+
+		final livePeers = <int>{};
+		final liveHubs = <int>{};
+
+		for (final thread in world.threadsAt(showcaseSeconds)) {
+			final peer = peers[thread.peer];
+			final hub = hubs[thread.hub];
+			if (peer == null || hub == null) continue;
+			final fade =
+					math.min(facing(peer), facing(hub)) * thread.opacity * master;
+			if (fade <= 0.03) continue;
+
+			livePeers.add(thread.peer);
+			liveHubs.add(thread.hub);
+
+			final from = peer.offset;
+			final to = _alignFlat(from, hub.offset, flatScale);
+			final span = to - from;
+			final length = span.distance;
+			if (length < 0.5) continue;
+
+			// A perpendicular lift, computed in canvas space so the bow is right on
+			// the sphere as well as on the flat map, and always away from the
+			// surface rather than through it.
+			final unit = Offset(span.dy, -span.dx) / length;
+			final normal = unit.dy <= 0 ? unit : -unit;
+			final control = (from + to) / 2 + normal * (length * 0.16);
+
+			final path = Path()
+				..moveTo(from.dx, from.dy)
+				..quadraticBezierTo(control.dx, control.dy, to.dx, to.dy);
+			final metric = path.computeMetrics().first;
+			final drawn = metric.length * thread.progress.clamp(0.0, 1.0);
+			if (drawn <= 0.5) continue;
+
+			canvas.drawPath(
+				metric.extractPath(0, drawn),
+				Paint()
+					..style = PaintingStyle.stroke
+					..strokeWidth = math.max(0.7, 0.20 * flatScale)
+					..strokeCap = StrokeCap.round
+					..isAntiAlias = true
+					..color = GlukColors.violetLight.withOpacity(0.26 * fade),
+			);
+
+			// A light travelling towards the node, but only while the link is up:
+			// traffic on an established tunnel, not on one still being set up.
+			if (thread.settled) {
+				final head = (thread.phase % 1.0) * drawn;
+				final tail = math.max(0.0, head - drawn * 0.22);
+				if (head - tail > 0.5) {
+					canvas.drawPath(
+						metric.extractPath(tail, head),
+						Paint()
+							..style = PaintingStyle.stroke
+							..strokeWidth = math.max(1.0, 0.28 * flatScale)
+							..strokeCap = StrokeCap.round
+							..isAntiAlias = true
+							..color = GlukColors.blue.withOpacity(0.50 * fade),
+					);
+				}
+			}
+		}
+
+		// People: small violet points, brighter while they hold a link.
+		final peerRadius = math.max(1.3, 0.40 * flatScale);
+		for (var i = 0; i < peers.length; i++) {
+			final peer = peers[i];
+			if (peer == null) continue;
+			final fade =
+					facing(peer) * master * (livePeers.contains(i) ? 1.0 : 0.45);
+			if (fade <= 0.03) continue;
+			canvas.drawCircle(
+				peer.offset,
+				peerRadius * 2.4,
+				Paint()
+					..color = GlukColors.violetLight.withOpacity(0.10 * fade)
+					..maskFilter = MaskFilter.blur(BlurStyle.normal, peerRadius * 1.2),
+			);
+			canvas.drawCircle(
+				peer.offset,
+				peerRadius,
+				Paint()..color = GlukColors.violetLight.withOpacity(0.70 * fade),
+			);
+		}
+
+		// Exit nodes: green, a size up, with a ring while they are serving.
+		final hubRadius = math.max(1.9, 0.58 * flatScale);
+		for (var i = 0; i < hubs.length; i++) {
+			final hub = hubs[i];
+			if (hub == null) continue;
+			final live = liveHubs.contains(i);
+			final fade = facing(hub) * master * (live ? 1.0 : 0.55);
+			if (fade <= 0.03) continue;
+			canvas.drawCircle(
+				hub.offset,
+				hubRadius * 2.8,
+				Paint()
+					..color = GlukColors.connected.withOpacity(0.16 * fade)
+					..maskFilter = MaskFilter.blur(BlurStyle.normal, hubRadius * 1.4),
+			);
+			canvas.drawCircle(
+				hub.offset,
+				hubRadius,
+				Paint()..color = GlukColors.connected.withOpacity(0.92 * fade),
+			);
+			if (live && pulse > 0) {
+				canvas.drawCircle(
+					hub.offset,
+					hubRadius * ui.lerpDouble(1.2, 3.0, pulse)!,
+					Paint()
+						..style = PaintingStyle.stroke
+						..strokeWidth = math.max(0.8, 0.16 * flatScale)
+						..color =
+								GlukColors.connected.withOpacity((1 - pulse) * 0.40 * fade),
+				);
+			}
 		}
 	}
 
@@ -716,6 +943,8 @@ class _DottedWorldPainter extends CustomPainter {
 			old.arcProgress != arcProgress ||
 			old.arcPhase != arcPhase ||
 			old.orbitalPhase != orbitalPhase ||
+			old.showcase != showcase ||
+			old.showcaseSeconds != showcaseSeconds ||
 			old.pulse != pulse ||
 			!_sameFleet(old.nodePoints, nodePoints) ||
 			old.connected != connected;

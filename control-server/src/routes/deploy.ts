@@ -26,6 +26,12 @@ type ChannelState = {
 	migration: string | null
 	database: string | null
 	releasedAt: string | null
+	/**
+	 * The release directory that answered, e.g. "20260821-174500". A promote
+	 * copies code, so `version` (from package.json) can stay the same on both
+	 * channels while the running code differs. This is the field that moves.
+	 */
+	release: string | null
 }
 
 /** Ask a channel what it is running. Loopback only, 3 s budget. */
@@ -41,6 +47,7 @@ async function probeChannel(
 		migration: null,
 		database: null,
 		releasedAt: null,
+		release: null,
 	}
 	try {
 		const response = await fetch(`${origin}/api/version`, {
@@ -56,6 +63,7 @@ async function probeChannel(
 			migration: typeof body.migration === "string" ? body.migration : null,
 			database: typeof body.database === "string" ? body.database : null,
 			releasedAt: typeof body.releasedAt === "string" ? body.releasedAt : null,
+			release: typeof body.release === "string" ? body.release : null,
 		}
 	} catch {
 		// Beta being switched off is a normal, expected state.
@@ -267,7 +275,15 @@ export async function deployRoutes(app: FastifyInstance): Promise<void> {
 			{
 				id: "versions_differ",
 				label: "Beta differs from prod",
-				ok: Boolean(beta.version && prod.version && beta.version !== prod.version),
+				// A promote copies code, not version numbers: package.json can read
+				// 1.0.0 on both channels while the release directories differ. Either
+				// difference means there is something to promote.
+				ok: Boolean(
+					beta.reachable &&
+						prod.reachable &&
+						((beta.version && prod.version && beta.version !== prod.version) ||
+							(beta.release && prod.release && beta.release !== prod.release)),
+				),
 				detail:
 					beta.version && prod.version && beta.version === prod.version
 						? "identical versions, nothing to promote"

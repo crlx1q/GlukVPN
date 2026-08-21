@@ -15,6 +15,7 @@ import 'theme/tokens.dart';
 import 'widgets/glass.dart';
 import 'widgets/logo.dart';
 import 'widgets/nav_bar.dart';
+import 'widgets/page_background.dart';
 
 class GlukVpnApp extends StatefulWidget {
   const GlukVpnApp({
@@ -370,7 +371,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       child: Scaffold(
         backgroundColor: GlukColors.bg,
         extendBody: true,
-        body: IndexedStack(
+        // One backdrop for all three tabs: the waves sit under the map, the
+        // map under the glass, and switching tabs never re-draws any of it.
+        body: PageBackground(child: IndexedStack(
           index: _index,
           children: <Widget>[
             HomeScreen(
@@ -380,7 +383,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             ServersScreen(onDone: () => _select(0)),
             const SettingsScreen(),
           ],
-        ),
+        )),
         bottomNavigationBar: GlukNavBar(
           index: _index,
           onChanged: _select,

@@ -217,6 +217,7 @@ class ChannelVersion {
     required this.version,
     this.commit = '',
     this.migration = '',
+    this.release = '',
     this.releasedAt,
     this.databaseUp = true,
   });
@@ -226,6 +227,7 @@ class ChannelVersion {
         version: _asString(json['version'], '0.0.0'),
         commit: _asString(json['commit']),
         migration: _asString(json['migration']),
+        release: _asString(json['release']),
         releasedAt: _asDate(json['releasedAt']),
         databaseUp: _asString(json['database'], 'up') == 'up',
       );
@@ -233,6 +235,14 @@ class ChannelVersion {
   final String channel;
   final String version;
   final String commit;
+
+  /// Which deployed release actually answered (`20260821-174500`).
+  ///
+  /// `version` comes from package.json, so a promote that copies beta's code
+  /// into prod leaves it unchanged - which is exactly why "the prod version
+  /// never changes after a promote" looked like a bug. This field is the
+  /// release directory the process is running from, so it changes every time.
+  final String release;
 
   /// Last applied Prisma migration, so a promote can be checked for a schema
   /// mismatch before it is started.
@@ -245,6 +255,9 @@ class ChannelVersion {
   String get channelLabel => channel.toUpperCase();
 
   String get label => '$channelLabel $version';
+
+  /// What Settings shows for the running deployment.
+  String get releaseLabel => release.isEmpty ? '\u2014' : release;
 
   String get commitShort =>
       commit.length <= 7 ? commit : commit.substring(0, 7);
