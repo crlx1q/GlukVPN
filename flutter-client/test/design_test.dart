@@ -149,7 +149,8 @@ void main() {
       expect(self.countryCode, 'KG');
       // UTC+1 = lon 15°; AT (lon ≈ 16.4°) is closer than DE (lon ≈ 8.5°).
       expect(countryForUtcOffset(const Duration(hours: 1)), 'AT');
-      expect(countryForUtcOffset(const Duration(hours: -5)), 'US');
+      // UTC-5 = lon -75°; CA/Ottawa (lon ≈ -75.7°) is closer than US (lon ≈ -77°).
+      expect(countryForUtcOffset(const Duration(hours: -5)), 'CA');
     });
 
     test('longitudes wrap the short way round', () {
