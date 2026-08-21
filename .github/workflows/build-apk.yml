@@ -1,4 +1,4 @@
-﻿name: build-apk
+name: build-apk
 
 on:
   workflow_dispatch:
@@ -31,7 +31,8 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     env:
-      API_BASE_URL: ${{ github.event.inputs.api_base_url || 'https://api.gluk.tech' }}
+      API_BASE_URL: ${{ github.ref == 'refs/heads/beta' && 'https://beta-api.gluk.tech' || (github.event.inputs.api_base_url || 'https://api.gluk.tech') }}
+      ALLOW_BETA_CHANNEL: ${{ github.ref == 'refs/heads/beta' && 'true' || 'false' }}
       HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
 
     steps:
@@ -83,7 +84,7 @@ jobs:
       - name: Build release APK
         run: |
           set -euo pipefail
-          flutter build apk --release --dart-define=API_BASE_URL="$API_BASE_URL"
+          flutter build apk --release --dart-define=API_BASE_URL="$API_BASE_URL" --dart-define=ALLOW_BETA_CHANNEL="$ALLOW_BETA_CHANNEL"
 
       - name: Sign with the release keystore
         if: env.HAS_KEYSTORE == 'true'
