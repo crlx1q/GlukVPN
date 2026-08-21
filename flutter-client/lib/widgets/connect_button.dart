@@ -550,6 +550,7 @@ class _Glyph extends StatelessWidget {
         children: <Widget>[
           LoopingBuilder(
             duration: const Duration(milliseconds: 1100),
+            reduceMotion: false,
             builder: (BuildContext context, double t) => Transform.rotate(
               angle: t * 2 * math.pi,
               child: CustomPaint(
