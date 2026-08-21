@@ -129,16 +129,29 @@ jobs:
           path: flutter-client/glukvpn-release.apk
           if-no-files-found: error
 
+      - name: Parse Version
+        id: version
+        run: |
+          VERSION=$(grep '^version:' flutter-client/pubspec.yaml | sed 's/version: //')
+          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+          if [ "${{ github.ref }}" = "refs/heads/beta" ]; then
+            echo "CHANNEL=beta" >> $GITHUB_ENV
+          else
+            echo "CHANNEL=stable" >> $GITHUB_ENV
+          fi
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: apk-${{ github.run_number }}
-          name: GlukVPN APK build ${{ github.run_number }}
-          prerelease: true
+          tag_name: v${{ env.APP_VERSION }}-${{ env.CHANNEL }}.build${{ github.run_number }}
+          name: GlukVPN v${{ env.APP_VERSION }} (${{ env.CHANNEL }}) - Build ${{ github.run_number }}
+          prerelease: ${{ env.CHANNEL == 'beta' }}
           files: flutter-client/glukvpn-release.apk
           body: |
-            Prototype build of the GlukVPN Android client.
+            GlukVPN Android Client - v${{ env.APP_VERSION }} (${{ env.CHANNEL }})
 
             * API base URL: `${{ env.API_BASE_URL }}`
             * Commit: ${{ github.sha }}
             * Signed with a release keystore: `${{ env.HAS_KEYSTORE }}`
+
+          overwrite_files: true
