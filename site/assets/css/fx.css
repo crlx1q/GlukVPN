@@ -88,3 +88,26 @@
 
 /* Шрифт выбирается переключателем (fonts.js выставляет --font-sans) */
 :root{--font:var(--font-sans,"Inter","Manrope",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif)}
+
+/* ==========================================================================
+   Шрифт заголовков — отдельная переменная, чтобы работали пары
+   «дисплейный + текстовой». По умолчанию равна основному шрифту.
+   ========================================================================== */
+:root {
+  --font-display: var(--font-sans, var(--font));
+}
+h1,
+h2,
+h3,
+.display,
+.h2,
+.h3,
+.eyebrow,
+.metric__value,
+.plan__price,
+.hero__title,
+.page-hero__title,
+.faq__q,
+.step__title {
+  font-family: var(--font-display, var(--font));
+}
