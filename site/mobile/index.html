@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="ru" data-base="..">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Приложение — GlukVPN</title>
+  <meta name="description" content="Как выглядит приложение GlukVPN для Android: главный экран, выбор сервера, статусы соединения и первое подключение.">
+  <link rel="canonical" href="https://vpn.gluk.tech/mobile/">
+  <meta name="theme-color" content="#0a0714">
+  <meta name="color-scheme" content="dark">
+  <meta name="format-detection" content="telephone=no">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="GlukVPN">
+  <meta property="og:locale" content="ru_RU">
+  <meta property="og:title" content="Приложение — GlukVPN">
+  <meta property="og:description" content="Как выглядит приложение GlukVPN для Android: главный экран, выбор сервера, статусы соединения и первое подключение.">
+  <meta property="og:url" content="https://vpn.gluk.tech/mobile/">
+  <meta property="og:image" content="https://vpn.gluk.tech/assets/img/og-cover.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="GlukVPN — быстрый, приватный VPN">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Приложение — GlukVPN">
+  <meta name="twitter:description" content="Как выглядит приложение GlukVPN для Android: главный экран, выбор сервера, статусы соединения и первое подключение.">
+  <meta name="twitter:image" content="https://vpn.gluk.tech/assets/img/og-cover.png">
+  <link rel="icon" href="../favicon.ico" sizes="32x32">
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="../assets/img/favicon-16.png">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="manifest" href="../site.webmanifest">
+  <link rel="stylesheet" href="../assets/css/fonts.css">
+  <link rel="stylesheet" href="../assets/css/tokens.css">
+  <link rel="stylesheet" href="../assets/css/base.css">
+  <link rel="stylesheet" href="../assets/css/components.css">
+  <link rel="stylesheet" href="../assets/css/sections.css">
+  <link rel="stylesheet" href="../assets/css/app-ui.css">
+  <link rel="stylesheet" href="../assets/css/utilities.css">
+  <link rel="stylesheet" href="../assets/css/fx.css">
+  <link rel="stylesheet" href="../assets/css/auth.css">
+  <script src="../assets/js/config.js" defer></script>
+  <script src="../assets/js/world-dots.js" defer></script>
+  <script src="../assets/js/globe.js" defer></script>
+  <script src="../assets/js/network-map.js" defer></script>
+  <script src="../assets/js/sections.js" defer></script>
+  <script src="../assets/js/ui.js" defer></script>
+  <script src="../assets/js/fx.js" defer></script>
+  <script src="../assets/js/auth.js" defer></script>
+  <script src="../assets/js/fonts.js" defer></script>
+
+</head>
+<body>
+  <a class="skip-link" href="#main">К основному содержимому</a>
+  <div class="scene" aria-hidden="true">
+  <svg class="scene__waves" viewBox="0 0 1440 900" preserveAspectRatio="none" focusable="false">
+    <defs>
+      <linearGradient id="gW1" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#1a1230"/><stop offset="1" stop-color="#08060f"/>
+      </linearGradient>
+      <linearGradient id="gW2" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#140e24"/><stop offset="1" stop-color="#050409"/>
+      </linearGradient>
+    </defs>
+    <path d="M0,430 C240,330 420,520 700,450 C960,385 1180,470 1440,395 L1440,900 L0,900 Z" fill="url(#gW1)" opacity=".9"/>
+    <path d="M0,430 C240,330 420,520 700,450 C960,385 1180,470 1440,395" fill="none" stroke="#241a3a" stroke-width="1"/>
+    <path d="M0,585 C260,505 500,665 760,595 C1020,525 1230,625 1440,555 L1440,900 L0,900 Z" fill="url(#gW2)"/>
+  </svg>
+  <span class="scene__glow scene__glow--a"></span>
+  <span class="scene__glow scene__glow--b"></span>
+  <span class="scene__grain"></span>
+</div>
+  <div class="page">
+  <header class="header">
+    <div class="wrap header__inner">
+      <a class="brand" href="../" aria-label="GlukVPN — на главную">
+        <img src="../assets/img/logo-96.png" width="96" height="96" alt="" decoding="async">
+        <span>GlukVPN</span>
+      </a>
+      <span class="chan-badge" data-channel-badge title="Сайт работает с бета-каналом">BETA</span>
+      <nav class="nav" aria-label="Основное меню"><a class="nav__link" href="../features/">Возможности</a><a class="nav__link" href="../mobile/" aria-current="page">Приложение</a><a class="nav__link" href="../pricing/">Тарифы</a><a class="nav__link" href="../download/">Загрузки</a><a class="nav__link" href="../support/">Поддержка</a></nav>
+      <div class="header__actions">
+        <div class="acct" data-acct><span class="acct__skel" aria-hidden="true"></span></div>
+        <a class="btn btn--primary btn--sm header__dl" href="../download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать</a>
+        <button class="burger" type="button" aria-expanded="false" aria-controls="drawer" aria-label="Меню"><svg class="burger__open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg><svg class="burger__close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <div class="drawer" id="drawer" aria-hidden="true">
+      <a class="drawer__link" href="../features/">Возможности <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="../mobile/" aria-current="page">Приложение <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="../pricing/">Тарифы <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="../download/">Загрузки <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="../support/">Поддержка <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <div class="acct acct--drawer" data-acct><span class="acct__skel" aria-hidden="true"></span></div>
+      <a class="btn btn--primary btn--lg drawer__cta" href="../download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать GlukVPN</a>
+  </div>
+
+  <main id="main">
+  <section class="section page-hero">
+    <div class="wrap">
+      <span class="eyebrow reveal"><i class="eyebrow__dot"></i>Приложение</span>
+      <h1 class="display page-hero__title reveal" data-delay="1">Одно нажатие — и <span class="gradient-text">вы защищены</span></h1>
+      <p class="lead page-hero__sub reveal" data-delay="2">Интерфейс GlukVPN собран вокруг одного действия. Ниже — экраны Android-версии: приветствие, главный экран и выбор сервера.</p>
+    </div>
+  </section>
+
+  <section class="section section--tight">
+    <div class="wrap">
+      <div class="preview__phones reveal" data-scale-share="3">
+        <div class="phone-scale" data-scale-max="0.58">
+      <div class="phone" role="img" aria-label="Экран приветствия GlukVPN с анимированной планетой">
+        <svg class="phone__waves" viewBox="0 0 390 844" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        <path d="M0,470 C90,410 170,530 250,470 C310,425 350,455 390,435 L390,844 L0,844 Z" fill="url(#gW1)" opacity=".95"/>
+        <path d="M0,470 C90,410 170,530 250,470 C310,425 350,455 390,435" fill="none" stroke="#241a3a" stroke-width="1"/>
+        <path d="M0,600 C100,545 190,660 280,600 C330,565 360,585 390,570 L390,844 L0,844 Z" fill="url(#gW2)"/>
+      </svg>
+        <div class="phone__screen">
+          <div class="app-screen">
+            <div class="statusbar">
+          <span>9:41</span>
+          <span class="statusbar__icons" aria-hidden="true">
+            <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="1" fill="currentColor"/><rect x="4.4" y="5" width="3" height="6" rx="1" fill="currentColor"/><rect x="8.8" y="2.6" width="3" height="8.4" rx="1" fill="currentColor"/><rect x="13.2" y="0" width="3" height="11" rx="1" fill="currentColor" opacity=".45"/></svg>
+            <svg width="22" height="11" viewBox="0 0 22 11" fill="none"><rect x="0.6" y="0.6" width="18" height="9.8" rx="2.6" stroke="currentColor" stroke-opacity=".5"/><rect x="2.2" y="2.2" width="13" height="6.6" rx="1.6" fill="currentColor"/><path d="M20.4 4v3" stroke="currentColor" stroke-opacity=".5" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </span>
+        </div>
+            <div class="onb-head">
+              <div class="onb-brand"><img src="../assets/img/logo-96.png" width="96" height="96" alt="" loading="lazy" decoding="async">GlukVPN</div>
+              <span class="onb-skip">Skip</span>
+            </div>
+            <div class="onb-camera">
+              <span class="onb-halo"></span>
+              <span class="onb-ring onb-ring--1"></span>
+              <span class="onb-ring onb-ring--2"></span>
+              <div class="onb-globe"><canvas data-onb-globe width="300" height="300"></canvas></div>
+            </div>
+            <div class="onb-copy">
+              <span class="onb-badge">Global network</span>
+              <h4>One tap to a private connection</h4>
+              <p>Pick a region or let GlukVPN choose the best server for you.</p>
+            </div>
+            <div class="onb-dots"><i class="is-active"></i><i></i><i></i></div>
+            <div class="onb-cta">
+              <span>Get started</span>
+              <span class="arrow"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="#0a0714" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+        <div class="phone-scale" data-scale-max="0.66">
+      <div class="phone" role="img" aria-label="Главный экран GlukVPN: активное соединение с регионом Германия">
+        <svg class="phone__waves" viewBox="0 0 390 844" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        <path d="M0,470 C90,410 170,530 250,470 C310,425 350,455 390,435 L390,844 L0,844 Z" fill="url(#gW1)" opacity=".95"/>
+        <path d="M0,470 C90,410 170,530 250,470 C310,425 350,455 390,435" fill="none" stroke="#241a3a" stroke-width="1"/>
+        <path d="M0,600 C100,545 190,660 280,600 C330,565 360,585 390,570 L390,844 L0,844 Z" fill="url(#gW2)"/>
+      </svg>
+        <div class="phone__screen">
+          <div class="app-screen">
+            <div class="statusbar">
+          <span>9:41</span>
+          <span class="statusbar__icons" aria-hidden="true">
+            <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="1" fill="currentColor"/><rect x="4.4" y="5" width="3" height="6" rx="1" fill="currentColor"/><rect x="8.8" y="2.6" width="3" height="8.4" rx="1" fill="currentColor"/><rect x="13.2" y="0" width="3" height="11" rx="1" fill="currentColor" opacity=".45"/></svg>
+            <svg width="22" height="11" viewBox="0 0 22 11" fill="none"><rect x="0.6" y="0.6" width="18" height="9.8" rx="2.6" stroke="currentColor" stroke-opacity=".5"/><rect x="2.2" y="2.2" width="13" height="6.6" rx="1.6" fill="currentColor"/><path d="M20.4 4v3" stroke="currentColor" stroke-opacity=".5" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </span>
+        </div>
+            <div class="app-map" aria-hidden="true"><canvas data-phone-map="de" width="390" height="400"></canvas></div>
+            <div class="app-body">
+              <div class="app-top">
+                <div class="app-brand"><img src="../assets/img/logo-96.png" width="96" height="96" alt="" loading="lazy" decoding="async">GlukVPN</div>
+                <div class="app-badge"><i class="dot"></i>Connected</div>
+              </div>
+
+              <div class="blob-zone">
+                <span class="blob-glow"></span>
+                <span class="blob-outer"></span>
+                <span class="blob-inner"></span>
+                <span class="power-btn"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3.4v8.2" stroke="#4fd88c" stroke-width="2.2" stroke-linecap="round"/><path d="M17.8 6.6a8.2 8.2 0 1 1-11.6 0" stroke="#4fd88c" stroke-width="2.2" stroke-linecap="round"/></svg></span>
+              </div>
+
+              <div class="app-loc">
+                <span class="flag">🇩🇪</span>
+                <span class="name">Germany</span>
+                <span class="sub">· Best Server</span>
+                <svg viewBox="0 0 24 24" fill="none"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+
+              <div class="app-grid">
+                <div class="app-cell">
+                  <div class="app-cell__label"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5.2c0 4.3-2.9 8.2-7 9.8-4.1-1.6-7-5.5-7-9.8V6l7-3Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>Status</div>
+                  <div class="app-cell__value" style="color:var(--green)">Protected</div>
+                </div>
+                <div class="app-cell">
+                  <div class="app-cell__label"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>Ping</div>
+                  <div class="app-cell__value"><span data-demo-ping>24</span><span class="unit">ms</span></div>
+                </div>
+                <div class="app-cell">
+                  <div class="app-cell__label"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.4" stroke="currentColor" stroke-width="1.8"/><path d="M12 7.6V12l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Session</div>
+                  <div class="app-cell__value"><span data-demo-timer>00:05:42</span></div>
+                </div>
+                <div class="app-cell">
+                  <div class="app-cell__label"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.4" stroke="currentColor" stroke-width="1.8"/><path d="M3.6 12h16.8M12 3.6c2.4 2.3 3.6 5.1 3.6 8.4S14.4 18.1 12 20.4c-2.4-2.3-3.6-5.1-3.6-8.4S9.6 5.9 12 3.6Z" stroke="currentColor" stroke-width="1.6"/></svg>IP</div>
+                  <div class="app-cell__value">203.0.113.24</div>
+                </div>
+              </div>
+
+              <div class="app-traffic">
+                <div class="app-traffic__head"><svg viewBox="0 0 24 24" fill="none"><path d="M4 16.5l4.5-5 3.5 3.4 3.4-5.4L20 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Traffic</div>
+                <div class="app-traffic__row">
+                  <span class="app-traffic__name down"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4.5v13m0 0l4.5-4.5M12 17.5L7.5 13" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>Downloaded</span>
+                  <span class="app-traffic__val"><span data-demo-down>1.24 GB</span></span>
+                </div>
+                <div class="app-traffic__row">
+                  <span class="app-traffic__name up"><svg viewBox="0 0 24 24" fill="none"><path d="M12 19.5v-13m0 0L7.5 11M12 6.5L16.5 11" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>Uploaded</span>
+                  <span class="app-traffic__val"><span data-demo-up>0.36 GB</span></span>
+                </div>
+              </div>
+
+              <div style="flex:1"></div>
+
+              <div class="app-nav">
+                <span class="app-nav__item is-active"><span class="app-nav__ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 10.5L12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19v-8.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></span>Home</span>
+                <span class="app-nav__item"><span class="app-nav__ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.4" stroke="currentColor" stroke-width="1.7"/><path d="M3.6 12h16.8M12 3.6c2.4 2.3 3.6 5.1 3.6 8.4S14.4 18.1 12 20.4" stroke="currentColor" stroke-width="1.5"/></svg></span>Servers</span>
+                <span class="app-nav__item"><span class="app-nav__ic"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="12" height="9" rx="1.8" stroke="currentColor" stroke-width="1.7"/><rect x="16" y="9" width="5" height="10" rx="1.6" stroke="currentColor" stroke-width="1.7"/></svg></span>Devices</span>
+                <span class="app-nav__item"><span class="app-nav__ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 14.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1v.3a2 2 0 1 1-4 0v-.2a1.6 1.6 0 0 0-2.8-1.1l-.1.1A2 2 0 1 1 4.4 16.4l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.2a1.6 1.6 0 0 0 1.1-2.8l-.1-.1A2 2 0 1 1 7 3.9l.1.1a1.6 1.6 0 0 0 1.8.3h.1a1.6 1.6 0 0 0 1-1.5V2.5a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1h.3a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.3.9Z" stroke="currentColor" stroke-width="1.3"/></svg></span>Settings</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+        <div class="phone-scale" data-scale-max="0.58">
+      <div class="phone" role="img" aria-label="Экран выбора сервера в приложении GlukVPN">
+        <svg class="phone__waves" viewBox="0 0 390 844" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        <path d="M0,470 C90,410 170,530 250,470 C310,425 350,455 390,435 L390,844 L0,844 Z" fill="url(#gW1)" opacity=".95"/>
+        <path d="M0,470 C90,410 170,530 250,470 C310,425 350,455 390,435" fill="none" stroke="#241a3a" stroke-width="1"/>
+        <path d="M0,600 C100,545 190,660 280,600 C330,565 360,585 390,570 L390,844 L0,844 Z" fill="url(#gW2)"/>
+      </svg>
+        <div class="phone__screen">
+          <div class="app-screen">
+            <div class="statusbar">
+          <span>9:41</span>
+          <span class="statusbar__icons" aria-hidden="true">
+            <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="1" fill="currentColor"/><rect x="4.4" y="5" width="3" height="6" rx="1" fill="currentColor"/><rect x="8.8" y="2.6" width="3" height="8.4" rx="1" fill="currentColor"/><rect x="13.2" y="0" width="3" height="11" rx="1" fill="currentColor" opacity=".45"/></svg>
+            <svg width="22" height="11" viewBox="0 0 22 11" fill="none"><rect x="0.6" y="0.6" width="18" height="9.8" rx="2.6" stroke="currentColor" stroke-opacity=".5"/><rect x="2.2" y="2.2" width="13" height="6.6" rx="1.6" fill="currentColor"/><path d="M20.4 4v3" stroke="currentColor" stroke-opacity=".5" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </span>
+        </div>
+            <div class="srv-top">
+              <span class="srv-back"><svg viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <h3>Servers</h3>
+            </div>
+            <div class="srv-label">Recommended</div>
+            <div class="srv-list">
+              <div class="srv-row">
+                <span class="srv-row__left">
+                  <span class="srv-flag">⚡</span>
+                  <span><span class="srv-row__name">Best Server</span><span class="srv-row__speed"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>auto · 24 ms</span></span>
+                </span>
+                <span class="srv-radio is-checked"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.2 4.2L19 7" stroke="#0a0714" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              </div>
+            </div>
+            <div class="srv-label">All regions</div>
+            <div class="srv-list">
+              <div class="srv-row">
+                <span class="srv-row__left">
+                  <span class="srv-flag">🇩🇪</span>
+                  <span><span class="srv-row__name">Germany</span><span class="srv-row__speed"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>24 ms · load 32%</span></span>
+                </span>
+                <span class="srv-radio"></span>
+              </div>
+              <div class="srv-row">
+                <span class="srv-row__left">
+                  <span class="srv-flag">🇫🇷</span>
+                  <span><span class="srv-row__name">France</span><span class="srv-row__speed"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>29 ms · load 27%</span></span>
+                </span>
+                <span class="srv-radio"></span>
+              </div>
+              <div class="srv-row">
+                <span class="srv-row__left">
+                  <span class="srv-flag">🇺🇸</span>
+                  <span><span class="srv-row__name">United States</span><span class="srv-row__speed"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>96 ms · load 41%</span></span>
+                </span>
+                <span class="srv-radio"></span>
+              </div>
+              <div class="srv-row srv-row--soon">
+                <span class="srv-row__left">
+                  <span class="srv-flag">🇳🇱</span>
+                  <span><span class="srv-row__name">Netherlands</span><span class="srv-row__speed">coming soon</span></span>
+                </span>
+                <span class="srv-radio"></span>
+              </div>
+              <div class="srv-row srv-row--soon">
+                <span class="srv-row__left">
+                  <span class="srv-flag">🇹🇷</span>
+                  <span><span class="srv-row__name">Türkiye</span><span class="srv-row__speed">coming soon</span></span>
+                </span>
+                <span class="srv-radio"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="section__head reveal">
+        <span class="eyebrow">Экраны</span>
+        <h2 class="h2">Что видно в приложении</h2>
+        <p class="lead">Три экрана закрывают весь сценарий: знакомство, подключение и выбор региона.</p>
+      </div>
+      <div class="cards">
+        <article class="card glass glass--hover reveal" data-delay="1"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 11V5.5a1.8 1.8 0 1 1 3.6 0V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M12.6 11V9.4a1.7 1.7 0 0 1 3.4 0V11m0 0V10a1.7 1.7 0 0 1 3.4 0v4.6c0 3.2-2.2 5.9-5.6 5.9h-1.2c-2 0-3.3-.8-4.3-2.3l-2.5-4a1.6 1.6 0 0 1 2.5-2L9.6 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><h3 class="card__title">Главный экран</h3><p class="card__text">Кнопка подключения, текущий регион, статус, отклик, время сессии и объём трафика — всё на одном экране.</p></article>
+        <article class="card glass glass--hover reveal" data-delay="2"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="3.8" width="17" height="7" rx="2" stroke="currentColor" stroke-width="1.6"/><rect x="3.5" y="13.2" width="17" height="7" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M7 7.3h.01M7 16.7h.01" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span><h3 class="card__title">Серверы</h3><p class="card__text">Список регионов с откликом и загрузкой, вариант Best Server и честные пометки «coming soon».</p></article>
+        <article class="card glass glass--hover reveal" data-delay="3"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="13" height="9.5" rx="1.8" stroke="currentColor" stroke-width="1.6"/><rect x="16" y="9" width="5.5" height="10.5" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M6 17.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><h3 class="card__title">Устройства и настройки</h3><p class="card__text">Активные устройства, kill switch, DNS-защита и автоподключение — без технического жаргона.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="section__head reveal">
+        <span class="eyebrow">Шаг за шагом</span>
+        <h2 class="h2">Первое подключение</h2>
+      </div>
+      <div class="steps">
+        <article class="step glass reveal" data-delay="1"><span class="step__num">1</span><h3 class="step__title">Установите приложение</h3><p class="step__text">Скачайте версию для Android со страницы загрузок.</p><span class="step__line"></span></article>
+        <article class="step glass reveal" data-delay="2"><span class="step__num">2</span><h3 class="step__title">Разрешите VPN-профиль</h3><p class="step__text">Android один раз спросит разрешение на создание VPN-подключения.</p><span class="step__line"></span></article>
+        <article class="step glass reveal" data-delay="3"><span class="step__num">3</span><h3 class="step__title">Выберите регион</h3><p class="step__text">Любой из доступных или Best Server, если не хотите выбирать вручную.</p><span class="step__line"></span></article>
+        <article class="step glass reveal" data-delay="4"><span class="step__num">4</span><h3 class="step__title">Подключитесь</h3><p class="step__text">Статус станет зелёным, появятся отклик и таймер сессии.</p></article>
+      </div>
+    </div>
+  </section>
+
+<section class="section section--tight">
+    <div class="wrap">
+      <div class="cta-strip glass glass--edge reveal">
+        <h2 class="h2">Попробуйте GlukVPN прямо сейчас</h2>
+        <p class="lead center-x mt-3">Бесплатный тариф доступен сразу после установки — без карты и подписки.</p>
+        <div class="cta-strip__actions">
+          <a class="btn btn--primary btn--lg" data-magnetic href="../download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать для Android</a>
+          <a class="btn btn--ghost btn--lg" href="../pricing/">Смотреть тарифы</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <div class="footer__grid">
+        <div class="footer__about">
+          <a class="brand" href="../">
+            <img src="../assets/img/logo-96.png" width="96" height="96" alt="" loading="lazy" decoding="async">
+            <span>GlukVPN</span>
+          </a>
+          <p>Быстрый и приватный VPN с понятным приложением: одно нажатие до защищённого соединения.</p>
+        </div>
+        <div>
+          <div class="footer__title">Продукт</div>
+          <div class="footer__list">
+            <a href="../features/">Возможности</a>
+            <a href="../mobile/">Приложение</a>
+            <a href="../pricing/">Тарифы</a>
+            <a href="../download/">Загрузки</a>
+          </div>
+        </div>
+        <div>
+          <div class="footer__title">Помощь</div>
+          <div class="footer__list">
+            <a href="../support/">Поддержка</a>
+            <a href="../#faq">Частые вопросы</a>
+            <a href="https://t.me/glukvpn" data-telegram rel="noopener" target="_blank">Telegram</a>
+            <a href="mailto:support@gluk.tech" data-support-email data-fill-text>support@gluk.tech</a>
+          </div>
+        </div>
+        <div>
+          <div class="footer__title">Правовое</div>
+          <div class="footer__list">
+            <a href="../privacy/">Конфиденциальность</a>
+            <a href="../terms/">Условия использования</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer__bottom">
+        <span>© <span data-year>2026</span> GlukVPN · <span data-site-domain>vpn.gluk.tech</span></span>
+        <a class="madeby" href="https://crlx1q.com" target="_blank" rel="noopener">made by <b>crlx1q</b></a>
+      </div>
+    </div>
+  </footer>
+  </div>
+</body>
+</html>

@@ -1,0 +1,691 @@
+/* ==========================================================================
+   GlukVPN - components: glass surfaces, buttons, header, footer, chips, phone
+   Every surface mirrors the app: rgba(20,15,30,.55) fill + 1px white stroke
+   + backdrop blur, radii 14-18px, pill actions.
+   ========================================================================== */
+
+/* -------------------------------------------------------------- glass card */
+
+.glass {
+  position: relative;
+  background: var(--glass-2);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-md);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.glass--soft {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: var(--stroke-soft);
+}
+
+.glass--raised {
+  box-shadow: var(--glow-soft);
+}
+
+.glass--hover {
+  transition: transform var(--t-med) var(--ease-soft),
+    border-color var(--t-med) ease, background var(--t-med) ease;
+}
+
+.glass--hover:hover {
+  transform: translateY(-3px);
+  border-color: rgba(196, 181, 253, 0.34);
+  background: rgba(28, 21, 44, 0.62);
+}
+
+/* Thin violet energy line that runs along the top edge of key surfaces */
+.glass--edge::before {
+  content: "";
+  position: absolute;
+  inset: 0 12% auto 12%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(196, 181, 253, 0.55),
+    transparent
+  );
+  opacity: 0.7;
+}
+
+/* ----------------------------------------------------------------- buttons */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 12px 24px;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform var(--t-fast) var(--ease-soft),
+    box-shadow var(--t-med) ease, background var(--t-med) ease,
+    border-color var(--t-med) ease, opacity var(--t-med) ease;
+}
+
+.btn:active {
+  transform: scale(0.975);
+}
+
+.btn svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.btn--primary {
+  background: var(--grad-cta);
+  color: #0a0714;
+  box-shadow: var(--glow-violet);
+}
+
+.btn--primary:hover {
+  box-shadow: 0 22px 70px rgba(124, 92, 246, 0.5);
+}
+
+.btn--ghost {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--stroke);
+  color: var(--text-0);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.btn--ghost:hover {
+  border-color: rgba(196, 181, 253, 0.45);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.btn--sm {
+  min-height: 40px;
+  padding: 8px 18px;
+  font-size: 0.85rem;
+}
+
+.btn--lg {
+  min-height: 56px;
+  padding: 14px 30px;
+  font-size: 1rem;
+}
+
+.btn--block {
+  width: 100%;
+}
+
+.btn[aria-disabled="true"],
+.btn--muted {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--stroke-soft);
+  color: var(--text-2);
+  cursor: default;
+  box-shadow: none;
+}
+
+/* Pill "arrow" action, straight from the app onboarding CTA */
+.btn-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 6px 6px 6px 26px;
+  min-height: 58px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--stroke);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-weight: 600;
+  transition: border-color var(--t-med) ease, background var(--t-med) ease;
+}
+
+.btn-arrow:hover {
+  border-color: rgba(196, 181, 253, 0.45);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.btn-arrow__icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--grad-cta);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.btn-arrow__icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ------------------------------------------------------------------- chips */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 13px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.chip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.chip--live {
+  color: var(--green);
+  border-color: rgba(79, 216, 140, 0.35);
+  background: rgba(79, 216, 140, 0.1);
+}
+
+.chip--live .chip__dot {
+  box-shadow: 0 0 8px currentColor;
+  animation: blink 2.2s ease-in-out infinite;
+}
+
+.chip--violet {
+  color: var(--violet-light);
+  border-color: var(--stroke-violet);
+  background: rgba(124, 92, 246, 0.12);
+}
+
+.chip--soon {
+  color: var(--text-2);
+  border-style: dashed;
+}
+
+/* ------------------------------------------------------------------ header */
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  padding-block: 12px;
+  transition: background var(--t-med) ease, border-color var(--t-med) ease,
+    backdrop-filter var(--t-med) ease;
+  border-bottom: 1px solid transparent;
+}
+
+.header.is-stuck {
+  background: rgba(8, 6, 15, 0.72);
+  border-bottom-color: var(--stroke-soft);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.header__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  min-height: 52px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  flex: none;
+}
+
+.brand img {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(124, 92, 246, 0.45);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline: auto;
+}
+
+.nav__link {
+  padding: 9px 14px;
+  border-radius: var(--r-pill);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-1);
+  transition: color var(--t-fast) ease, background var(--t-fast) ease;
+}
+
+.nav__link:hover {
+  color: var(--text-0);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.nav__link[aria-current="page"] {
+  color: var(--violet-light);
+  background: rgba(124, 92, 246, 0.14);
+}
+
+.header__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+.burger {
+  display: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.04);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.burger span {
+  position: relative;
+  display: block;
+  width: 17px;
+  height: 1.6px;
+  border-radius: 2px;
+  background: var(--text-0);
+  transition: transform var(--t-med) var(--ease-soft), opacity var(--t-fast) ease;
+}
+
+.burger span::before,
+.burger span::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 17px;
+  height: 1.6px;
+  border-radius: 2px;
+  background: var(--text-0);
+  transition: transform var(--t-med) var(--ease-soft);
+}
+
+.burger span::before {
+  top: -5.5px;
+}
+
+.burger span::after {
+  top: 5.5px;
+}
+
+.burger[aria-expanded="true"] span {
+  background: transparent;
+}
+
+.burger[aria-expanded="true"] span::before {
+  transform: translateY(5.5px) rotate(45deg);
+}
+
+.burger[aria-expanded="true"] span::after {
+  transform: translateY(-5.5px) rotate(-45deg);
+}
+
+.drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  padding: calc(var(--header-h) + 22px) var(--gutter) var(--s-6);
+  background: rgba(5, 4, 10, 0.86);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-10px);
+  transition: opacity var(--t-med) ease, transform var(--t-med) var(--ease-soft),
+    visibility var(--t-med);
+}
+
+.drawer.is-open {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+
+.drawer__link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px 18px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--stroke-soft);
+  background: rgba(255, 255, 255, 0.03);
+  font-weight: 600;
+}
+
+.drawer__link[aria-current="page"] {
+  color: var(--violet-light);
+  border-color: var(--stroke-violet);
+}
+
+.drawer__link svg {
+  width: 16px;
+  height: 16px;
+  opacity: 0.5;
+}
+
+.drawer__cta {
+  margin-top: 10px;
+}
+
+@media (max-width: 940px) {
+  .nav,
+  .header__actions .btn {
+    display: none;
+  }
+  .burger {
+    display: flex;
+  }
+  .header__inner {
+    justify-content: space-between;
+  }
+}
+
+/* ------------------------------------------------------------------ footer */
+
+.footer {
+  position: relative;
+  margin-top: clamp(40px, 6vw, 80px);
+  border-top: 1px solid var(--stroke-soft);
+  background: linear-gradient(180deg, rgba(10, 7, 20, 0) 0%, rgba(10, 7, 20, 0.65) 45%);
+  padding-block: clamp(40px, 5vw, 64px) 28px;
+}
+
+.footer__grid {
+  display: grid;
+  grid-template-columns: 1.6fr repeat(3, 1fr);
+  gap: var(--s-6) var(--s-5);
+}
+
+.footer__about {
+  max-width: 320px;
+}
+
+.footer__about p {
+  margin-top: 14px;
+  font-size: 0.85rem;
+  color: var(--text-1);
+  line-height: 1.6;
+}
+
+.footer__title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin-bottom: 14px;
+}
+
+.footer__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.footer__list a {
+  font-size: 0.9rem;
+  color: var(--text-1);
+  transition: color var(--t-fast) ease;
+  width: fit-content;
+}
+
+.footer__list a:hover {
+  color: var(--violet-light);
+}
+
+.footer__bottom {
+  margin-top: var(--s-7);
+  padding-top: 20px;
+  border-top: 1px solid var(--stroke-soft);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-2);
+}
+
+@media (max-width: 860px) {
+  .footer__grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .footer__about {
+    grid-column: 1 / -1;
+    max-width: none;
+  }
+}
+
+/* ------------------------------------------------------- feature list item */
+
+.icon-badge {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(124, 92, 246, 0.14);
+  border: 1px solid var(--stroke-violet);
+  color: var(--violet-light);
+  flex: none;
+}
+
+.icon-badge svg {
+  width: 20px;
+  height: 20px;
+}
+
+.icon-badge--green {
+  background: rgba(79, 216, 140, 0.12);
+  border-color: rgba(79, 216, 140, 0.34);
+  color: var(--green);
+}
+
+/* --------------------------------------------------------------- FAQ (a11y) */
+
+.faq {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.faq__item {
+  border-radius: var(--r-sm);
+  border: 1px solid var(--stroke-soft);
+  background: rgba(20, 15, 30, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  overflow: hidden;
+  transition: border-color var(--t-med) ease;
+}
+
+.faq__item[open] {
+  border-color: var(--stroke-violet);
+}
+
+.faq__q {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 17px 20px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.98rem;
+  list-style: none;
+  min-height: 56px;
+}
+
+.faq__q::-webkit-details-marker {
+  display: none;
+}
+
+.faq__q::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-right: 1.8px solid var(--violet-light);
+  border-bottom: 1.8px solid var(--violet-light);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform var(--t-med) var(--ease-soft);
+}
+
+.faq__item[open] .faq__q::after {
+  transform: rotate(-135deg) translate(-2px, -2px);
+}
+
+.faq__a {
+  padding: 0 20px 18px;
+  color: var(--text-1);
+  font-size: 0.92rem;
+  line-height: 1.65;
+  max-width: 70ch;
+}
+
+/* ------------------------------------------------------------- phone frame */
+/* 1:1 port of the app device shell (390x844, r48) from the mockup */
+
+.phone {
+  --phone-w: 390px;
+  --phone-h: 844px;
+  position: relative;
+  width: var(--phone-w);
+  height: var(--phone-h);
+  flex: none;
+  border-radius: 48px;
+  background: var(--bg);
+  overflow: hidden;
+  box-shadow: 0 0 0 9px #0a0a0a, 0 0 0 10px #211d29, 0 50px 120px rgba(0, 0, 0, 0.85);
+  color: var(--text-0);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.phone__waves {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.phone__screen {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.phone-scale {
+  /* wrapper keeps layout height correct while the device is scaled down */
+  position: relative;
+  width: calc(var(--phone-w, 390px) * var(--scale, 1));
+  height: calc(var(--phone-h, 844px) * var(--scale, 1));
+}
+
+.phone-scale > .phone {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: scale(var(--scale, 1));
+  transform-origin: top left;
+}
+
+.statusbar {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 26px 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.statusbar__icons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.9;
+}
+
+/* --------------------------------------------------------------- tooltip */
+
+.tip {
+  position: absolute;
+  z-index: 20;
+  min-width: 148px;
+  padding: 11px 13px;
+  border-radius: var(--r-sm);
+  background: rgba(12, 9, 22, 0.9);
+  border: 1px solid var(--stroke);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -118%) scale(0.96);
+  transition: opacity var(--t-fast) ease, transform var(--t-med) var(--ease-soft);
+}
+
+.tip.is-on {
+  opacity: 1;
+  transform: translate(-50%, -128%) scale(1);
+}
+
+.tip__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.tip__rows {
+  margin-top: 8px;
+  display: grid;
+  gap: 5px;
+  font-size: 0.72rem;
+  color: var(--text-1);
+}
+
+.tip__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.tip__row b {
+  color: var(--text-0);
+  font-variant-numeric: tabular-nums;
+}

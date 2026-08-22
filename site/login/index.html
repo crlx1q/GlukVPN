@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ru" data-base="..">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Вход в аккаунт — GlukVPN</title>
+  <meta name="description" content="Вход в аккаунт GlukVPN: те же логин и пароль, что и в приложении. Подписка, устройства и статус аккаунта.">
+  <link rel="canonical" href="https://vpn.gluk.tech/login/">
+  <meta name="theme-color" content="#0a0714">
+  <meta name="color-scheme" content="dark">
+  <meta name="format-detection" content="telephone=no">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="GlukVPN">
+  <meta property="og:locale" content="ru_RU">
+  <meta property="og:title" content="Вход в аккаунт — GlukVPN">
+  <meta property="og:description" content="Вход в аккаунт GlukVPN: те же логин и пароль, что и в приложении. Подписка, устройства и статус аккаунта.">
+  <meta property="og:url" content="https://vpn.gluk.tech/login/">
+  <meta property="og:image" content="https://vpn.gluk.tech/assets/img/og-cover.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="GlukVPN — быстрый, приватный VPN">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Вход в аккаунт — GlukVPN">
+  <meta name="twitter:description" content="Вход в аккаунт GlukVPN: те же логин и пароль, что и в приложении. Подписка, устройства и статус аккаунта.">
+  <meta name="twitter:image" content="https://vpn.gluk.tech/assets/img/og-cover.png">
+  <link rel="icon" href="../favicon.ico" sizes="32x32">
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="../assets/img/favicon-16.png">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="manifest" href="../site.webmanifest">
+  <link rel="stylesheet" href="../assets/css/fonts.css">
+  <link rel="stylesheet" href="../assets/css/tokens.css">
+  <link rel="stylesheet" href="../assets/css/base.css">
+  <link rel="stylesheet" href="../assets/css/components.css">
+  <link rel="stylesheet" href="../assets/css/sections.css">
+  <link rel="stylesheet" href="../assets/css/app-ui.css">
+  <link rel="stylesheet" href="../assets/css/utilities.css">
+  <link rel="stylesheet" href="../assets/css/fx.css">
+  <link rel="stylesheet" href="../assets/css/auth.css">
+  <script src="../assets/js/config.js" defer></script>
+  <script src="../assets/js/ui.js" defer></script>
+  <script src="../assets/js/fx.js" defer></script>
+  <script src="../assets/js/auth.js" defer></script>
+  <script src="../assets/js/fonts.js" defer></script>
+
+</head>
+<body>
+  <a class="skip-link" href="#main">К основному содержимому</a>
+  <div class="scene" aria-hidden="true">
+  <svg class="scene__waves" viewBox="0 0 1440 900" preserveAspectRatio="none" focusable="false">
+    <defs>
+      <linearGradient id="gW1" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#1a1230"/><stop offset="1" stop-color="#08060f"/>
+      </linearGradient>
+      <linearGradient id="gW2" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#140e24"/><stop offset="1" stop-color="#050409"/>
+      </linearGradient>
+    </defs>
+    <path d="M0,430 C240,330 420,520 700,450 C960,385 1180,470 1440,395 L1440,900 L0,900 Z" fill="url(#gW1)" opacity=".9"/>
+    <path d="M0,430 C240,330 420,520 700,450 C960,385 1180,470 1440,395" fill="none" stroke="#241a3a" stroke-width="1"/>
+    <path d="M0,585 C260,505 500,665 760,595 C1020,525 1230,625 1440,555 L1440,900 L0,900 Z" fill="url(#gW2)"/>
+  </svg>
+  <span class="scene__glow scene__glow--a"></span>
+  <span class="scene__glow scene__glow--b"></span>
+  <span class="scene__grain"></span>
+</div>
+  <div class="page">
+  <header class="header">
+    <div class="wrap header__inner">
+      <a class="brand" href="../" aria-label="GlukVPN — на главную">
+        <img src="../assets/img/logo-96.png" width="96" height="96" alt="" decoding="async">
+        <span>GlukVPN</span>
+      </a>
+      <span class="chan-badge" data-channel-badge title="Сайт работает с бета-каналом">BETA</span>
+      <nav class="nav" aria-label="Основное меню"><a class="nav__link" href="../features/">Возможности</a><a class="nav__link" href="../mobile/">Приложение</a><a class="nav__link" href="../pricing/">Тарифы</a><a class="nav__link" href="../download/">Загрузки</a><a class="nav__link" href="../support/">Поддержка</a></nav>
+      <div class="header__actions">
+        <div class="acct" data-acct><span class="acct__skel" aria-hidden="true"></span></div>
+        <a class="btn btn--primary btn--sm header__dl" href="../download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать</a>
+        <button class="burger" type="button" aria-expanded="false" aria-controls="drawer" aria-label="Меню"><svg class="burger__open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg><svg class="burger__close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <div class="drawer" id="drawer" aria-hidden="true">
+      <a class="drawer__link" href="../features/">Возможности <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="../mobile/">Приложение <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="../pricing/">Тарифы <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="../download/">Загрузки <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="../support/">Поддержка <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <div class="acct acct--drawer" data-acct><span class="acct__skel" aria-hidden="true"></span></div>
+      <a class="btn btn--primary btn--lg drawer__cta" href="../download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать GlukVPN</a>
+  </div>
+
+  <main id="main">
+  <section class="section page-hero">
+    <div class="wrap">
+      <span class="eyebrow reveal"><i class="eyebrow__dot"></i>Аккаунт</span>
+      <h1 class="display page-hero__title reveal" data-delay="1">Вход в <span class="gradient-text">GlukVPN</span></h1>
+      <p class="lead page-hero__sub reveal" data-delay="2">Аккаунт общий с приложением: подписка, устройства и сессии везде одни и те же.</p>
+    </div>
+  </section>
+
+  <section class="section section--tight">
+    <div class="wrap auth-grid">
+      <div class="auth-card glass glass--raised reveal" data-spotlight>
+        <div class="auth-tabs" role="tablist">
+          <button class="auth-tab is-active" type="button" role="tab" data-auth-tab="login">Вход</button>
+          <button class="auth-tab" type="button" role="tab" data-auth-tab="register">Регистрация</button>
+        </div>
+
+        <div data-auth-pane="login">
+          <h1 class="auth-card__title">Вход в аккаунт</h1>
+          <p class="auth-card__sub">Те же логин и пароль, что и в приложении.</p>
+          <form class="form" data-login-form novalidate>
+            <label class="field">
+              <span class="field__label">Логин или email</span>
+              <span class="field__wrap">
+                <input class="input" name="identifier" type="text" autocomplete="username" inputmode="email" placeholder="username" required>
+              </span>
+            </label>
+            <label class="field">
+              <span class="field__label">Пароль</span>
+              <span class="field__wrap">
+                <input class="input" name="password" type="password" autocomplete="current-password" placeholder="Минимум 8 символов" required>
+                <button class="pw-toggle" type="button" data-pw-toggle aria-label="Показать пароль"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 3l18 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.6 6.3A9.6 9.6 0 0 1 12 6.2c4.6 0 8 3.3 9.3 5.8-.6 1.2-1.7 2.7-3.3 3.9M6.5 7.9C4.6 9.1 3.3 10.8 2.7 12c1.3 2.5 4.7 5.8 9.3 5.8 1.2 0 2.3-.2 3.3-.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+              </span>
+            </label>
+            <p class="auth-msg" data-login-msg role="status" aria-live="polite"></p>
+            <button class="btn btn--primary btn--lg btn--block" type="submit">Войти</button>
+          </form>
+          <div class="auth-alt">
+            <span>Забыли пароль?</span>
+            <a class="auth-alt__btn" href="https://t.me/glukvpn" data-telegram target="_blank" rel="noopener"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg> Напишите в поддержку</a>
+          </div>
+        </div>
+
+        <div data-auth-pane="register" hidden>
+          <h2 class="auth-card__title">Регистрация по приглашению</h2>
+          <p class="auth-card__sub">Самостоятельная регистрация пока закрыта — сначала доделываем подтверждение через Telegram. Без него открытая форма быстро превратится в тысячи мёртвых аккаунтов.</p>
+          <div class="auth-steps">
+            <div class="auth-step"><b>1</b><span>Напишите в Telegram — пришлём доступ к бете.</span></div>
+            <div class="auth-step"><b>2</b><span>Получите логин и временный пароль.</span></div>
+            <div class="auth-step"><b>3</b><span>Войдите здесь или в приложении — аккаунт один.</span></div>
+          </div>
+          <a class="btn btn--primary btn--lg btn--block" href="https://t.me/glukvpn" data-telegram target="_blank" rel="noopener"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg> Запросить доступ</a>
+        </div>
+
+        <div class="acct-panel" data-acct-panel hidden></div>
+      </div>
+
+      <aside class="auth-side reveal" data-delay="2">
+        <div class="eyebrow">Зачем аккаунт</div>
+        <h2 class="h3">Один профиль для сайта и приложения</h2>
+        <div class="auth-fact"><span class="auth-fact__ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="13" height="9.5" rx="1.8" stroke="currentColor" stroke-width="1.6"/><rect x="16" y="9" width="5.5" height="10.5" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M6 17.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><div><b>Устройства в одном месте</b><p>Видно, сколько устройств активно и какое из них текущее.</p></div></div>
+        <div class="auth-fact"><span class="auth-fact__ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l7 3v5.2c0 4.3-2.9 8.2-7 9.8-4.1-1.6-7-5.5-7-9.8V6l7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.2 12.2l2 2 3.6-3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><b>Пароль не хранится в браузере</b><p>В памяти живёт только короткий токен доступа, он регулярно обновляется.</p></div></div>
+        <div class="auth-fact"><span class="auth-fact__ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.5" y="10" width="15" height="10.5" rx="2.4" stroke="currentColor" stroke-width="1.6"/><path d="M8 10V7.5a4 4 0 0 1 8 0V10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><div><b>Защита от подбора</b><p>После нескольких неудачных попыток вход временно блокируется.</p></div></div>
+        <div class="auth-fact"><span class="auth-fact__ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="6" cy="18" r="2.6" stroke="currentColor" stroke-width="1.6"/><circle cx="18" cy="6" r="2.6" stroke="currentColor" stroke-width="1.6"/><path d="M8.6 18h4.6a3.4 3.4 0 0 0 0-6.8h-2.4a3.4 3.4 0 0 1 0-6.8h4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="2.6 2.4"/></svg></span><div><b>Один аккаунт на всё</b><p>Сайт и приложение работают с одним и тем же профилем.</p></div></div>
+        <p class="muted auth-side__note">Сайт сейчас работает с бета-каналом. Если аккаунт создан только в продакшене, вход здесь не сработает — это ожидаемое поведение, а не ошибка.</p>
+      </aside>
+    </div>
+  </section>
+
+  <script src="../assets/js/login.js" defer></script>
+
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <div class="footer__grid">
+        <div class="footer__about">
+          <a class="brand" href="../">
+            <img src="../assets/img/logo-96.png" width="96" height="96" alt="" loading="lazy" decoding="async">
+            <span>GlukVPN</span>
+          </a>
+          <p>Быстрый и приватный VPN с понятным приложением: одно нажатие до защищённого соединения.</p>
+        </div>
+        <div>
+          <div class="footer__title">Продукт</div>
+          <div class="footer__list">
+            <a href="../features/">Возможности</a>
+            <a href="../mobile/">Приложение</a>
+            <a href="../pricing/">Тарифы</a>
+            <a href="../download/">Загрузки</a>
+          </div>
+        </div>
+        <div>
+          <div class="footer__title">Помощь</div>
+          <div class="footer__list">
+            <a href="../support/">Поддержка</a>
+            <a href="../#faq">Частые вопросы</a>
+            <a href="https://t.me/glukvpn" data-telegram rel="noopener" target="_blank">Telegram</a>
+            <a href="mailto:support@gluk.tech" data-support-email data-fill-text>support@gluk.tech</a>
+          </div>
+        </div>
+        <div>
+          <div class="footer__title">Правовое</div>
+          <div class="footer__list">
+            <a href="../privacy/">Конфиденциальность</a>
+            <a href="../terms/">Условия использования</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer__bottom">
+        <span>© <span data-year>2026</span> GlukVPN · <span data-site-domain>vpn.gluk.tech</span></span>
+        <a class="madeby" href="https://crlx1q.com" target="_blank" rel="noopener">made by <b>crlx1q</b></a>
+      </div>
+    </div>
+  </footer>
+  </div>
+</body>
+</html>

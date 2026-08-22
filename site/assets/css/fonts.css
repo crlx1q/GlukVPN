@@ -1,0 +1,40 @@
+/* ==========================================================================
+   GlukVPN - типографика
+
+   В приложении и в мокапах используется Poppins. Сайт собран без внешних
+   зависимостей и без запросов к Google Fonts, поэтому:
+
+   1. если Poppins уже есть в системе — берём её через local();
+   2. если положить файлы в assets/fonts/ — браузер подхватит их автоматически
+      (см. assets/fonts/README.txt);
+   3. иначе аккуратно падаем на системный гротеск — вёрстка не ломается.
+
+   font-display: swap — текст виден сразу, без пустого экрана и без штрафа в Lighthouse.
+   ========================================================================== */
+
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: local("Poppins Medium"), local("Poppins-Medium"),
+    url("../fonts/Poppins-Medium.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: local("Poppins SemiBold"), local("Poppins-SemiBold"),
+    url("../fonts/Poppins-SemiBold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local("Poppins Bold"), local("Poppins-Bold"),
+    url("../fonts/Poppins-Bold.woff2") format("woff2");
+}

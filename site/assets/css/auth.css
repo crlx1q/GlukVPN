@@ -1,0 +1,87 @@
+/* Auth UI: слот аккаунта в шапке, меню, форма входа */
+
+.acct{position:relative;display:flex;align-items:center;gap:10px;min-height:40px}
+.acct__skel{width:150px;height:38px;border-radius:999px;border:1px solid var(--stroke-soft);background:linear-gradient(90deg,rgba(255,255,255,.03) 0%,rgba(255,255,255,.09) 40%,rgba(255,255,255,.03) 80%);background-size:220% 100%;animation:acct-shimmer 1.35s linear infinite}
+@keyframes acct-shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
+
+.acct__chip{display:inline-flex;align-items:center;gap:10px;padding:5px 14px 5px 5px;border-radius:999px;border:1px solid var(--stroke);background:var(--glass-2);color:var(--text-0);font:inherit;font-size:14px;font-weight:600;cursor:pointer;transition:border-color var(--t-fast),background var(--t-fast),transform var(--t-fast)}
+.acct__chip:hover{border-color:var(--stroke-violet);background:rgba(124,92,246,.12)}
+.acct__chip:active{transform:scale(.98)}
+.acct__chip[aria-expanded="true"]{border-color:var(--stroke-violet)}
+.acct__name{max-width:118px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acct__caret{width:14px;height:14px;opacity:.55;transition:transform var(--t-fast)}
+.acct__chip[aria-expanded="true"] .acct__caret{transform:rotate(180deg)}
+
+.avatar{position:relative;width:28px;height:28px;border-radius:999px;display:grid;place-items:center;font-size:12px;font-weight:700;color:#0a0714;background:var(--grad-cta);box-shadow:0 0 0 1px rgba(255,255,255,.16) inset}
+.avatar--lg{width:44px;height:44px;font-size:16px}
+.avatar--online::after{content:"";position:absolute;right:-1px;bottom:-1px;width:9px;height:9px;border-radius:999px;background:var(--green);box-shadow:0 0 0 2px var(--bg)}
+
+.acct__menu{position:absolute;right:0;top:calc(100% + 12px);width:274px;padding:14px;border-radius:18px;border:1px solid var(--stroke);background:var(--glass-3);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);box-shadow:0 24px 70px rgba(0,0,0,.55);opacity:0;visibility:hidden;transform:translateY(-8px) scale(.98);transition:opacity var(--t-fast),transform var(--t-fast),visibility var(--t-fast);z-index:60}
+.acct__menu.is-open{opacity:1;visibility:visible;transform:none}
+.acct__head{display:flex;align-items:center;gap:12px;padding-bottom:12px;margin-bottom:10px;border-bottom:1px solid var(--stroke-soft)}
+.acct__id{min-width:0}
+.acct__id b{display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acct__id span{display:block;font-size:12px;color:var(--text-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acct__rows{display:grid;gap:7px;margin-bottom:12px}
+.acct__row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--text-1)}
+.acct__row b{color:var(--text-0);font-weight:600;font-variant-numeric:tabular-nums}
+.acct__row b.ok{color:var(--green)}
+.acct__links{display:grid;gap:3px}
+.acct__link{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:12px;color:var(--text-0);font-size:13.5px;text-decoration:none;background:none;border:0;width:100%;text-align:left;font-family:inherit;cursor:pointer;transition:background var(--t-fast)}
+.acct__link:hover{background:rgba(255,255,255,.06)}
+.acct__link svg{width:16px;height:16px;opacity:.6;flex:none}
+.acct__link--danger{color:#ff9a9a}
+.acct__guest{display:flex;align-items:center;gap:8px}
+
+/* Страница входа */
+.auth-grid{display:grid;grid-template-columns:minmax(0,430px) minmax(0,1fr);gap:44px;align-items:start}
+@media (max-width:900px){.auth-grid{grid-template-columns:1fr;gap:26px}}
+.auth-card{padding:28px;border-radius:24px}
+.auth-tabs{display:flex;gap:4px;padding:4px;border-radius:999px;border:1px solid var(--stroke-soft);background:rgba(10,7,20,.5);margin-bottom:20px}
+.auth-tab{flex:1;padding:9px 12px;border:0;border-radius:999px;background:transparent;color:var(--text-1);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:color var(--t-fast),background var(--t-fast)}
+.auth-tab.is-active{color:var(--text-0);background:rgba(124,92,246,.18);box-shadow:0 0 0 1px var(--stroke-violet) inset}
+.auth-card__title{font-size:23px;font-weight:650;letter-spacing:-.01em;margin:0 0 6px}
+.auth-card__sub{color:var(--text-1);font-size:14px;line-height:1.55;margin:0 0 22px}
+.form{display:grid;gap:16px}
+.field{display:grid;gap:7px}
+.field__label{font-size:12.5px;color:var(--text-1);font-weight:500}
+.field__wrap{position:relative;display:flex;align-items:center}
+.input{width:100%;padding:13px 15px;border-radius:14px;border:1px solid var(--stroke);background:rgba(10,7,20,.6);color:var(--text-0);font:inherit;font-size:14.5px;transition:border-color var(--t-fast),box-shadow var(--t-fast),background var(--t-fast)}
+.input::placeholder{color:var(--text-2)}
+.input:hover{border-color:rgba(255,255,255,.22)}
+.input:focus{outline:none;border-color:var(--violet);box-shadow:0 0 0 4px rgba(124,92,246,.16);background:rgba(10,7,20,.85)}
+.input[aria-invalid="true"]{border-color:rgba(255,120,120,.6)}
+.field__wrap .input{padding-right:46px}
+.pw-toggle{position:absolute;right:6px;width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:10px;background:transparent;color:var(--text-1);cursor:pointer;transition:color var(--t-fast),background var(--t-fast)}
+.pw-toggle:hover{color:var(--text-0);background:rgba(255,255,255,.06)}
+.pw-toggle svg{width:17px;height:17px}
+
+.auth-msg{display:none;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:14px;font-size:13.5px;line-height:1.45}
+.auth-msg.is-on{display:flex}
+.auth-msg--err{border:1px solid rgba(255,120,120,.32);background:rgba(255,90,90,.09);color:#ffc9c9}
+.auth-msg--ok{border:1px solid rgba(79,216,140,.3);background:rgba(79,216,140,.09);color:#a9f0c8}
+.auth-msg svg{width:17px;height:17px;flex:none;margin-top:1px}
+
+.spinner{width:16px;height:16px;border-radius:999px;border:2px solid rgba(255,255,255,.28);border-top-color:#fff;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.btn[data-busy="1"]{pointer-events:none;opacity:.75}
+
+.auth-alt{display:grid;gap:9px;margin-top:18px;padding-top:18px;border-top:1px solid var(--stroke-soft)}
+.auth-alt__btn{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;border:1px solid var(--stroke-soft);background:rgba(255,255,255,.02);color:var(--text-1);font-size:13.5px;text-align:left}
+.auth-alt__btn svg{width:17px;height:17px;opacity:.75;flex:none}
+.auth-alt__btn .chip{margin-left:auto}
+
+.auth-side{display:grid;gap:14px}
+.auth-fact{display:flex;gap:14px;padding:16px 18px;border-radius:18px}
+.auth-fact__ic{width:38px;height:38px;flex:none;border-radius:12px;display:grid;place-items:center;background:rgba(124,92,246,.14);border:1px solid var(--stroke-violet);color:var(--violet-light)}
+.auth-fact__ic svg{width:18px;height:18px}
+.auth-fact b{display:block;font-size:14.5px;margin-bottom:3px}
+.auth-fact p{margin:0;font-size:13px;color:var(--text-1);line-height:1.5}
+
+/* Мини-кабинет после входа */
+.acct-panel{display:grid;gap:16px}
+.acct-panel__grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.acct-stat{padding:16px;border-radius:16px}
+.acct-stat__label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-2);margin-bottom:6px}
+.acct-stat__value{font-size:19px;font-weight:650;font-variant-numeric:tabular-nums}
+.acct-stat__value--ok{color:var(--green)}
