@@ -86,7 +86,7 @@
       return (
         '<button class="fontpick__item" type="button" data-font-id="' + f.id + '" style="font-family:' + stack + '">' +
         '<span class="fontpick__name">' + f.name + " <em>" + f.note + "</em></span>" +
-        '<span class="fontpick__demo">Привет, GlukVPN — 24 мс · Aa Бб</span></button>"
+        '<span class="fontpick__demo">Привет, GlukVPN — 24 мс · Aa Бб</span></button>'
       );
     }).join("");
     wrap.innerHTML =
