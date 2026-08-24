@@ -144,7 +144,7 @@
 }
 
 .blob-inner {
-  background: linear-gradient(320deg, var(--blue), var(--violet));
+  background: linear-gradient(320deg, var(--violet-deep), var(--violet));
   opacity: 0.4;
   filter: blur(2px);
   animation: morph2 7s ease-in-out infinite;

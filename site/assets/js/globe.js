@@ -298,9 +298,9 @@
     });
 
     /* сетка city ↔ city: трафик идёт не только к нашим узлам, но и по всему шару */
-    var HOPS = [7, 13, 23, 31];
-    for (var m = 0; m < CITIES.length; m++) {
-      var hop = HOPS[m % HOPS.length];
+    var HOPS = [11, 19];
+    for (var m = 0; m < CITIES.length; m += 3) {
+      var hop = HOPS[(m / 3) % HOPS.length];
       var pair = CITIES[(m + hop) % CITIES.length];
       list.push({
         a: unit(CITIES[m][0], CITIES[m][1]),
@@ -321,6 +321,20 @@
     var routes = this.ambientRoutes();
     ctx.save();
     ctx.lineCap = "round";
+
+    /* точки городов по всему шару: жизнь и в центре, и внизу, а не только вверху */
+    for (var c = 0; c < CITIES.length; c++) {
+      var cp = self.project(unit(CITIES[c][0], CITIES[c][1]));
+      if (cp[2] < 0.04) continue;
+      var tw = reduced ? 0.65 : 0.5 + 0.5 * Math.sin(now / 1400 + c * 0.7);
+      ctx.beginPath();
+      ctx.fillStyle =
+        (c % 6 === 0 ? "rgba(120,235,175," : "rgba(178,152,255,") +
+        (0.2 + 0.26 * tw).toFixed(3) + ")";
+      ctx.arc(cx + cp[0] * R, cy - cp[1] * R, cp[2] > 0.55 ? 1.5 : 1.05, 0, 6.28318530718);
+      ctx.fill();
+    }
+
     for (var i = 0; i < routes.length; i++) {
       var r = routes[i];
       var ph = reduced ? 0.6 : ((now + r.off) % r.dur) / r.dur;

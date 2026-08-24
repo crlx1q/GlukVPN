@@ -1,6 +1,6 @@
 
 /* Подложка мобильного меню */
-.drawer-backdrop{position:fixed;inset:0;z-index:70;background:rgba(5,4,10,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);opacity:0;visibility:hidden;transition:opacity .28s var(--ease-soft),visibility .28s var(--ease-soft)}
+.drawer-backdrop{position:fixed;inset:0;z-index:50;background:rgba(5,4,10,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);opacity:0;visibility:hidden;transition:opacity .28s var(--ease-soft),visibility .28s var(--ease-soft)}
 .drawer-backdrop.is-on{opacity:1;visibility:visible}
 @media (min-width:901px){.drawer-backdrop{display:none}}
 
@@ -57,7 +57,7 @@
 .metric{position:relative;overflow:hidden;padding:20px 20px 22px;border-radius:20px;border:1px solid var(--stroke-soft);background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015));backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);transition:border-color .3s var(--ease-soft),transform .3s var(--ease-soft)}
 .metric:hover{border-color:var(--stroke-violet);transform:translateY(-2px)}
 .metric__value{display:flex;align-items:baseline;gap:5px;font-variant-numeric:tabular-nums}
-.metric__value b{font-size:clamp(30px,3.3vw,42px);line-height:1;font-weight:700;letter-spacing:-.02em;background:linear-gradient(120deg,#fff 10%,var(--violet-light) 60%,var(--blue) 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.metric__value b{font-size:clamp(30px,3.3vw,42px);line-height:1;font-weight:700;letter-spacing:-.02em;background:linear-gradient(120deg,#fff 10%,var(--violet-light) 60%,var(--violet-deep) 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
 .metric__unit{font-size:14px;color:var(--text-1);font-weight:600}
 .metric__label{margin-top:10px;font-size:12.8px;line-height:1.5;color:var(--text-1);max-width:22ch}
 .metric__spark{position:absolute;left:0;right:0;bottom:0;height:1px;background:linear-gradient(90deg,transparent,var(--violet),transparent);opacity:.5;transform:translateX(-100%);animation:spark 5.5s var(--ease-soft) infinite}
@@ -78,7 +78,7 @@
 .fx-spot:hover::after{opacity:1}
 
 /* Прогресс чтения */
-.read-progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:120;transform:scaleX(0);transform-origin:0 50%;background:linear-gradient(90deg,var(--violet),var(--blue));box-shadow:0 0 12px rgba(124,92,246,.7)}
+.read-progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:120;transform:scaleX(0);transform-origin:0 50%;background:linear-gradient(90deg,var(--violet),var(--violet-deep));box-shadow:0 0 12px rgba(124,92,246,.7)}
 
 @media (prefers-reduced-motion:reduce){
   .marquee__track{animation:none}
@@ -204,18 +204,18 @@ b, strong {
 /* ===================== v4: язык, иконка-кнопка, фиксы размытия ===================== */
 
 /* переключатель языка */
-.lang{display:inline-flex;align-items:center;gap:2px;padding:3px;border-radius:999px;border:1px solid var(--stroke-soft);background:rgba(255,255,255,.04)}
+.lang{position:relative;display:inline-flex;align-items:center;gap:0;padding:3px;border-radius:999px;border:1px solid rgba(255,255,255,.10);background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.02));box-shadow:inset 0 1px 0 rgba(255,255,255,.07)}
 .lang__opt{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:28px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--text-1);text-decoration:none;transition:color var(--t-fast),background var(--t-fast)}
 .lang__opt:hover{color:var(--text-0);background:rgba(255,255,255,.06)}
-.lang__opt.is-on{color:#fff;background:linear-gradient(135deg,rgba(139,92,246,.9),rgba(79,63,214,.9));box-shadow:0 4px 16px rgba(109,77,224,.35)}
+.lang__opt.is-on{color:#fff;background:radial-gradient(130% 150% at 28% 0%,rgba(183,155,255,.98),rgba(76,31,181,.96));box-shadow:0 6px 18px rgba(76,31,181,.48),inset 0 1px 0 rgba(255,255,255,.24)}
 .lang--drawer{width:100%;margin:8px 0 4px;justify-content:stretch}
 .lang--drawer .lang__opt{flex:1;height:44px;font-size:14px}
 @media (max-width:940px){.header__actions .lang{display:none}}
 
 /* квадратная кнопка только с иконкой (Скачать в шапке) */
-.btn--icon{width:40px;height:40px;padding:0;justify-content:center;border-radius:13px;flex:none}
+.btn--icon{width:42px;height:42px;padding:0;justify-content:center;border-radius:999px;flex:none}
 .btn--icon svg{width:19px;height:19px}
-.header__dl.btn--icon{box-shadow:0 8px 26px rgba(109,77,224,.34)}
+.header__dl.btn--icon{box-shadow:0 10px 28px rgba(76,31,181,.44)}
 @media (max-width:940px){.header__actions .btn--icon{display:none}}
 
 /* --- баг 1: у меню аккаунта иногда пропадало размытие ---

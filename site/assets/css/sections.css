@@ -1131,3 +1131,21 @@
   .acs-dot{animation:none}
   .acs-gauge__val{transition-duration:.3s}
 }
+
+/* ===================== v6: плитки сервисов — брендовые иконки ===================== */
+.acs-grid{gap:12px}
+.acs-tile{gap:12px;padding:14px;border-radius:18px;border:1px solid rgba(255,255,255,.09);background:linear-gradient(160deg,rgba(28,20,46,.72),rgba(14,10,26,.72));isolation:isolate}
+.acs-tile::after{background:radial-gradient(150px 90px at 84% -10%,color-mix(in srgb,var(--brand,#a78bfa) 30%,transparent),transparent 72%)}
+.acs-tile:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--brand,#a78bfa) 42%,transparent);box-shadow:0 18px 40px rgba(6,4,14,.55)}
+.acs-tile__glow{position:absolute;left:-18px;top:-26px;width:120px;height:120px;border-radius:50%;pointer-events:none;z-index:-1;opacity:.5;background:radial-gradient(circle,color-mix(in srgb,var(--brand,#a78bfa) 40%,transparent),transparent 68%);filter:blur(16px);transition:opacity var(--t-med)}
+.acs-tile:hover .acs-tile__glow{opacity:.9}
+.acs-tile__ic{width:40px;height:40px;border-radius:13px;border:1px solid color-mix(in srgb,var(--brand,#a78bfa) 34%,transparent);background:linear-gradient(160deg,color-mix(in srgb,var(--brand,#a78bfa) 20%,transparent),rgba(255,255,255,.03));color:var(--brand,#a78bfa);box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+.acs-tile__ic svg{width:22px;height:22px}
+.acs-tile__name{font-size:14px;letter-spacing:-.01em}
+.acs-tile__sub{font-size:11.5px;margin-top:1px}
+.acs-tile__ping{padding:4px 8px;border-radius:999px;border:1px solid rgba(79,216,140,.24);background:rgba(79,216,140,.08);font-size:11px;font-weight:var(--fw-medium)}
+@supports not (color: color-mix(in srgb, red 50%, transparent)){
+  .acs-tile__ic{border-color:var(--stroke-violet);background:rgba(255,255,255,.05)}
+  .acs-tile__glow{background:radial-gradient(circle,rgba(139,92,246,.34),transparent 68%)}
+  .acs-tile:hover{border-color:var(--stroke-violet)}
+}

@@ -249,7 +249,7 @@ h4 {
 }
 
 .gradient-text {
-  background: linear-gradient(100deg, #ffffff 6%, var(--violet-light) 52%, var(--blue) 96%);
+  background: linear-gradient(100deg, #ffffff 6%, var(--violet-light) 52%, var(--violet-deep) 96%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

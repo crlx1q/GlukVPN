@@ -112,16 +112,15 @@
   <main id="main">
   <section class="auth-screen">
     <div class="auth-screen__bg" aria-hidden="true">
-      <canvas class="auth-screen__map" data-network-map width="960" height="500"></canvas>
       <span class="auth-screen__veil"></span>
       <span class="auth-screen__glow auth-screen__glow--a"></span>
       <span class="auth-screen__glow auth-screen__glow--b"></span>
     </div>
 
-    <div class="auth-screen__inner">
+    <div class="auth-screen__inner auth-split">
       <div class="auth-card glass glass--raised" data-spotlight>
         <div class="auth-card__head">
-          <span class="auth-card__logo"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l7 3v5.2c0 4.3-2.9 8.2-7 9.8-4.1-1.6-7-5.5-7-9.8V6l7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.2 12.2l2 2 3.6-3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <span class="auth-card__logo"><img src="/assets/img/logo-96.png" width="96" height="96" alt="" decoding="async"></span>
           <h1 class="auth-card__title" data-auth-title>Sign in</h1>
           <p class="auth-card__sub" data-auth-sub>The same login and password as in the GlukVPN app.</p>
         </div>
@@ -173,15 +172,31 @@
 
         <div class="auth-card__foot">
           <a class="auth-link" href="/en/download/"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Download the app</a>
-          <a class="auth-link" href="/en/account/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Dashboard</a>
+          <a class="auth-link" href="/en/app/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Dashboard</a>
         </div>
       </div>
 
-      <ul class="auth-marks">
-        <li class="auth-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.5" y="10" width="15" height="10.5" rx="2.4" stroke="currentColor" stroke-width="1.6"/><path d="M8 10V7.5a4 4 0 0 1 8 0V10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>Passwords are never stored in plain text</span></li>
-        <li class="auth-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="13" height="9.5" rx="1.8" stroke="currentColor" stroke-width="1.6"/><rect x="16" y="9" width="5.5" height="10.5" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M6 17.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>One account for the site and the app</span></li>
-        <li class="auth-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l7 3v5.2c0 4.3-2.9 8.2-7 9.8-4.1-1.6-7-5.5-7-9.8V6l7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.2 12.2l2 2 3.6-3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>A session can be revoked at any time</span></li>
-      </ul>
+      <aside class="auth-aside">
+        <div class="auth-aside__card">
+          <div class="auth-aside__head">
+            <span class="auth-aside__title">Карта подключений</span>
+            <span class="auth-aside__badge"><i class="acs-dot"></i>Сеть онлайн</span>
+          </div>
+          <div class="auth-aside__stage">
+            <canvas class="auth-aside__map" data-network-map width="960" height="540"></canvas>
+          </div>
+          <ul class="auth-aside__stats">
+            <li><b data-count="3">3</b><span>региона онлайн</span></li>
+            <li><b data-count="24" data-count-suffix=" ms">24 ms</b><span>лучший latency</span></li>
+            <li><b data-count="99" data-count-suffix=",9 %">99,9 %</b><span>доступность</span></li>
+          </ul>
+        </div>
+        <ul class="auth-marks">
+          <li class="auth-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.5" y="10" width="15" height="10.5" rx="2.4" stroke="currentColor" stroke-width="1.6"/><path d="M8 10V7.5a4 4 0 0 1 8 0V10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>Passwords are never stored in plain text</span></li>
+          <li class="auth-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="13" height="9.5" rx="1.8" stroke="currentColor" stroke-width="1.6"/><rect x="16" y="9" width="5.5" height="10.5" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M6 17.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>One account for the site and the app</span></li>
+          <li class="auth-mark"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l7 3v5.2c0 4.3-2.9 8.2-7 9.8-4.1-1.6-7-5.5-7-9.8V6l7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.2 12.2l2 2 3.6-3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>A session can be revoked at any time</span></li>
+        </ul>
+      </aside>
     </div>
   </section>
 
