@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru" data-base=".">
+<html lang="ru" data-base="/" data-lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -12,6 +12,9 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="GlukVPN">
   <meta property="og:locale" content="ru_RU">
+  <link rel="alternate" hreflang="ru" href="https://vpn.gluk.tech/404.html">
+  <link rel="alternate" hreflang="en" href="https://vpn.gluk.tech/en/404.html">
+  <link rel="alternate" hreflang="x-default" href="https://vpn.gluk.tech/404.html">
   <meta property="og:title" content="Страница не найдена — GlukVPN">
   <meta property="og:description" content="Такой страницы нет. Вернитесь на главную GlukVPN или перейдите к загрузкам.">
   <meta property="og:url" content="https://vpn.gluk.tech/404.html">
@@ -23,25 +26,29 @@
   <meta name="twitter:title" content="Страница не найдена — GlukVPN">
   <meta name="twitter:description" content="Такой страницы нет. Вернитесь на главную GlukVPN или перейдите к загрузкам.">
   <meta name="twitter:image" content="https://vpn.gluk.tech/assets/img/og-cover.png">
-  <link rel="icon" href="favicon.ico" sizes="32x32">
-  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="assets/img/favicon-16.png">
-  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
-  <link rel="manifest" href="site.webmanifest">
-  <link rel="stylesheet" href="assets/css/fonts.css">
-  <link rel="stylesheet" href="assets/css/tokens.css">
-  <link rel="stylesheet" href="assets/css/base.css">
-  <link rel="stylesheet" href="assets/css/components.css">
-  <link rel="stylesheet" href="assets/css/sections.css">
-  <link rel="stylesheet" href="assets/css/app-ui.css">
-  <link rel="stylesheet" href="assets/css/utilities.css">
-  <link rel="stylesheet" href="assets/css/fx.css">
-  <link rel="stylesheet" href="assets/css/auth.css">
-  <script src="assets/js/config.js" defer></script>
-  <script src="assets/js/ui.js" defer></script>
-  <script src="assets/js/fx.js" defer></script>
-  <script src="assets/js/auth.js" defer></script>
-  <script src="assets/js/fonts.js" defer></script>
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/img/favicon-16.png">
+  <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&amp;display=swap">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/base.css">
+  <link rel="stylesheet" href="/assets/css/components.css">
+  <link rel="stylesheet" href="/assets/css/sections.css">
+  <link rel="stylesheet" href="/assets/css/app-ui.css">
+  <link rel="stylesheet" href="/assets/css/utilities.css">
+  <link rel="stylesheet" href="/assets/css/fx.css">
+  <link rel="stylesheet" href="/assets/css/auth.css">
+  <script src="/assets/js/config.js" defer></script>
+  <script src="/assets/js/i18n.js" defer></script>
+  <script src="/assets/js/ui.js" defer></script>
+  <script src="/assets/js/fx.js" defer></script>
+  <script src="/assets/js/auth.js" defer></script>
+  <script src="/assets/js/fonts.js" defer></script>
 
 </head>
 <body>
@@ -67,28 +74,35 @@
   <div class="page">
   <header class="header">
     <div class="wrap header__inner">
-      <a class="brand" href="./" aria-label="GlukVPN — на главную">
-        <img src="assets/img/logo-96.png" width="96" height="96" alt="" decoding="async">
+      <a class="brand" href="/" aria-label="GlukVPN — на главную">
+        <img src="/assets/img/logo-96.png" width="96" height="96" alt="" decoding="async">
         <span>GlukVPN</span>
       </a>
-      <span class="chan-badge" data-channel-badge title="Сайт работает с бета-каналом">BETA</span>
-      <nav class="nav" aria-label="Основное меню"><a class="nav__link" href="features/">Возможности</a><a class="nav__link" href="mobile/">Приложение</a><a class="nav__link" href="pricing/">Тарифы</a><a class="nav__link" href="download/">Загрузки</a><a class="nav__link" href="support/">Поддержка</a></nav>
+      <nav class="nav" aria-label="Основное меню"><a class="nav__link" href="/features/">Возможности</a><a class="nav__link" href="/mobile/">Приложение</a><a class="nav__link" href="/pricing/">Тарифы</a><a class="nav__link" href="/download/">Загрузки</a><a class="nav__link" href="/support/">Поддержка</a></nav>
       <div class="header__actions">
+        <div class="lang" role="group" aria-label="Язык сайта">
+          <a class="lang__opt is-on" href="/404.html" hreflang="ru" data-lang-set="ru">RU</a>
+          <a class="lang__opt" href="/en/404.html" hreflang="en" data-lang-set="en">EN</a>
+        </div>
+        <a class="btn btn--primary btn--icon header__dl" href="/download/" data-download-android aria-label="Скачать GlukVPN" title="Скачать GlukVPN"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></a>
         <div class="acct" data-acct><span class="acct__skel" aria-hidden="true"></span></div>
-        <a class="btn btn--primary btn--sm header__dl" href="download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать</a>
         <button class="burger" type="button" aria-expanded="false" aria-controls="drawer" aria-label="Меню"><svg class="burger__open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg><svg class="burger__close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
       </div>
     </div>
   </header>
 
   <div class="drawer" id="drawer" aria-hidden="true">
-      <a class="drawer__link" href="features/">Возможности <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-      <a class="drawer__link" href="mobile/">Приложение <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-      <a class="drawer__link" href="pricing/">Тарифы <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-      <a class="drawer__link" href="download/">Загрузки <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-      <a class="drawer__link" href="support/">Поддержка <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/features/">Возможности <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/mobile/">Приложение <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/pricing/">Тарифы <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/download/">Загрузки <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/support/">Поддержка <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <div class="lang lang--drawer" role="group" aria-label="Язык сайта">
+        <a class="lang__opt is-on" href="/404.html" hreflang="ru" data-lang-set="ru">Русский</a>
+        <a class="lang__opt" href="/en/404.html" hreflang="en" data-lang-set="en">English</a>
+      </div>
       <div class="acct acct--drawer" data-acct><span class="acct__skel" aria-hidden="true"></span></div>
-      <a class="btn btn--primary btn--lg drawer__cta" href="download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать GlukVPN</a>
+      <a class="btn btn--primary btn--lg drawer__cta" href="/download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать GlukVPN</a>
   </div>
 
   <main id="main">
@@ -98,8 +112,8 @@
       <h1 class="display page-hero__title reveal" data-delay="1">Страница <span class="gradient-text">не найдена</span></h1>
       <p class="lead page-hero__sub reveal" data-delay="2">Возможно, адрес устарел или в нём опечатка. Можно вернуться на главную или сразу перейти к загрузкам.</p>
       <div class="flex-row flex-row--center mt-5 reveal" data-delay="3">
-        <a class="btn btn--primary btn--lg" href="./">На главную</a>
-        <a class="btn btn--ghost btn--lg" href="download/"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать приложение</a>
+        <a class="btn btn--primary btn--lg" href="/">На главную</a>
+        <a class="btn btn--ghost btn--lg" href="/download/"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать приложение</a>
       </div>
     </div>
   </section>
@@ -108,10 +122,11 @@
 
   <footer class="footer">
     <div class="wrap">
+      <div class="footer__mark" aria-hidden="true">GlukVPN</div>
       <div class="footer__grid">
         <div class="footer__about">
-          <a class="brand" href="./">
-            <img src="assets/img/logo-96.png" width="96" height="96" alt="" loading="lazy" decoding="async">
+          <a class="brand" href="/">
+            <img src="/assets/img/logo-96.png" width="96" height="96" alt="" loading="lazy" decoding="async">
             <span>GlukVPN</span>
           </a>
           <p>Быстрый и приватный VPN с понятным приложением: одно нажатие до защищённого соединения.</p>
@@ -119,17 +134,17 @@
         <div>
           <div class="footer__title">Продукт</div>
           <div class="footer__list">
-            <a href="features/">Возможности</a>
-            <a href="mobile/">Приложение</a>
-            <a href="pricing/">Тарифы</a>
-            <a href="download/">Загрузки</a>
+            <a href="/features/">Возможности</a>
+            <a href="/mobile/">Приложение</a>
+            <a href="/pricing/">Тарифы</a>
+            <a href="/download/">Загрузки</a>
           </div>
         </div>
         <div>
           <div class="footer__title">Помощь</div>
           <div class="footer__list">
-            <a href="support/">Поддержка</a>
-            <a href="./#faq">Частые вопросы</a>
+            <a href="/support/">Поддержка</a>
+            <a href="/#faq">Частые вопросы</a>
             <a href="https://t.me/glukvpn" data-telegram rel="noopener" target="_blank">Telegram</a>
             <a href="mailto:support@gluk.tech" data-support-email data-fill-text>support@gluk.tech</a>
           </div>
@@ -137,8 +152,8 @@
         <div>
           <div class="footer__title">Правовое</div>
           <div class="footer__list">
-            <a href="privacy/">Конфиденциальность</a>
-            <a href="terms/">Условия использования</a>
+            <a href="/privacy/">Конфиденциальность</a>
+            <a href="/terms/">Условия использования</a>
           </div>
         </div>
       </div>

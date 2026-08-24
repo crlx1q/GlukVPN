@@ -84,3 +84,14 @@
     --gutter: 18px;
   }
 }
+
+/* ============================ v3: Nunito как основной шрифт ============================ */
+:root {
+  --font: "Nunito", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Nunito", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Nunito", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+  --fw-body: 500;
+  --fw-medium: 600;
+  --fw-strong: 700;
+  --fw-display: 800;
+}

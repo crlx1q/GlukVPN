@@ -111,3 +111,155 @@ h3,
 .step__title {
   font-family: var(--font-display, var(--font));
 }
+
+/* ============================ v3: типографика Nunito ============================ */
+body {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  letter-spacing: -0.002em;
+}
+h1, h2, h3, h4,
+.display, .h2, .h3,
+.plan__price, .metric__value, .acc-stat__value {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.018em;
+}
+.lead {
+  font-weight: 500;
+}
+.btn,
+.nav__link,
+.eyebrow,
+.chip,
+.field__label,
+.plan__name {
+  font-weight: 700;
+}
+b, strong {
+  font-weight: 800;
+}
+.muted, .doc p, .doc li {
+  font-weight: 500;
+}
+
+/* ================== v3: «нитки» в блоке безопасности — рисуются сверху вниз ================== */
+.flow__row {
+  --i: 0;
+  opacity: 0.3;
+  transform: translateY(9px);
+  transition: opacity 0.46s var(--ease-soft), transform 0.46s var(--ease-soft);
+  transition-delay: calc(var(--i) * 0.09s);
+}
+.flow.is-live .flow__row {
+  opacity: 1;
+  transform: none;
+}
+.flow__pipe {
+  --i: 0;
+  position: relative;
+  transform: scaleY(0);
+  transform-origin: top center;
+  transition: transform 0.44s var(--ease-soft);
+  transition-delay: calc(var(--i) * 0.09s);
+}
+.flow.is-live .flow__pipe {
+  transform: scaleY(1);
+}
+.flow__pipe::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: var(--violet-light);
+  box-shadow: 0 0 10px 3px rgba(139, 92, 246, 0.45);
+  opacity: 0;
+}
+.flow.is-live .flow__pipe::after {
+  animation: flowSpark 2.6s var(--ease-soft) infinite;
+  animation-delay: calc(var(--i) * 0.16s + 0.55s);
+}
+@keyframes flowSpark {
+  0% { opacity: 0; transform: translateY(-6px); }
+  14% { opacity: 1; }
+  70% { opacity: 1; transform: translateY(15px); }
+  100% { opacity: 0; transform: translateY(21px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flow__row,
+  .flow__pipe {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .flow.is-live .flow__pipe::after {
+    animation: none;
+  }
+}
+
+/* ===================== v4: язык, иконка-кнопка, фиксы размытия ===================== */
+
+/* переключатель языка */
+.lang{display:inline-flex;align-items:center;gap:2px;padding:3px;border-radius:999px;border:1px solid var(--stroke-soft);background:rgba(255,255,255,.04)}
+.lang__opt{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:28px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--text-1);text-decoration:none;transition:color var(--t-fast),background var(--t-fast)}
+.lang__opt:hover{color:var(--text-0);background:rgba(255,255,255,.06)}
+.lang__opt.is-on{color:#fff;background:linear-gradient(135deg,rgba(139,92,246,.9),rgba(79,63,214,.9));box-shadow:0 4px 16px rgba(109,77,224,.35)}
+.lang--drawer{width:100%;margin:8px 0 4px;justify-content:stretch}
+.lang--drawer .lang__opt{flex:1;height:44px;font-size:14px}
+@media (max-width:940px){.header__actions .lang{display:none}}
+
+/* квадратная кнопка только с иконкой (Скачать в шапке) */
+.btn--icon{width:40px;height:40px;padding:0;justify-content:center;border-radius:13px;flex:none}
+.btn--icon svg{width:19px;height:19px}
+.header__dl.btn--icon{box-shadow:0 8px 26px rgba(109,77,224,.34)}
+@media (max-width:940px){.header__actions .btn--icon{display:none}}
+
+/* --- баг 1: у меню аккаунта иногда пропадало размытие ---
+   Причина: backdrop-filter срывался на слое с scale() и прозрачный фон обнажал страницу.
+   Решение: плотный фон + без scale + свой слой композитинга. */
+.header__actions{isolation:isolate}
+.acct__menu{background:rgba(15,11,26,.94);transform:translateY(-8px);will-change:opacity,transform;contain:paint}
+.acct__menu.is-open{transform:translateY(0)}
+@supports not ((backdrop-filter:blur(4px)) or (-webkit-backdrop-filter:blur(4px))){
+  .acct__menu{background:rgba(13,10,22,.985)}
+}
+
+/* --- баг 2: на телефоне бургер-меню выглядело замыленным ---
+   Причина: translateY на слое с backdrop-filter давал растровый текст.
+   Решение: сама панель без transform и почти непрозрачная, ездит только содержимое. */
+.drawer{background:rgba(7,5,14,.975);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transform:none;will-change:opacity;transition:opacity var(--t-med) ease,visibility var(--t-med)}
+.drawer.is-open{transform:none}
+.drawer>*{opacity:0;transform:translateY(-8px);transition:opacity .26s var(--ease-soft),transform .26s var(--ease-soft)}
+.drawer.is-open>*{opacity:1;transform:none}
+.drawer>*:nth-child(1){transition-delay:.02s}
+.drawer>*:nth-child(2){transition-delay:.05s}
+.drawer>*:nth-child(3){transition-delay:.08s}
+.drawer>*:nth-child(4){transition-delay:.11s}
+.drawer>*:nth-child(5){transition-delay:.14s}
+.drawer>*:nth-child(6){transition-delay:.17s}
+.drawer>*:nth-child(7){transition-delay:.2s}
+@supports not ((backdrop-filter:blur(4px)) or (-webkit-backdrop-filter:blur(4px))){
+  .drawer{background:rgba(6,4,12,.995)}
+}
+
+/* --- Windows / macOS "уменьшить анимацию": не вырубаем всё, а сбавляем --- */
+@media (prefers-reduced-motion: reduce){
+  :root{--t-fast:.1s;--t-med:.16s;--t-slow:.22s}
+  *,*::before,*::after{
+    animation-duration:1ms !important;
+    animation-iteration-count:1 !important;
+    animation-delay:0s !important;
+    transition-duration:.16s !important;
+    transition-delay:0s !important;
+  }
+  html{scroll-behavior:auto}
+  .reveal,.reveal.is-in{opacity:1 !important;transform:none !important}
+  .drawer>*{opacity:1 !important;transform:none !important}
+  .marquee__track{animation:none !important;transform:none !important}
+  .flow__row{opacity:1 !important;transform:none !important}
+  .flow__pipe{transform:scaleY(1) !important}
+}

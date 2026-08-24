@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="en" data-base="/en/" data-lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>GlukVPN — fast, private VPN</title>
+  <meta name="description" content="Fast and private VPN: nodes in Germany, France and the US, kill switch, DNS protection and one-tap connect. Android app.">
+  <link rel="canonical" href="https://vpn.gluk.tech/en/">
+  <meta name="theme-color" content="#0a0714">
+  <meta name="color-scheme" content="dark">
+  <meta name="format-detection" content="telephone=no">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="GlukVPN">
+  <meta property="og:locale" content="en_US">
+  <link rel="alternate" hreflang="ru" href="https://vpn.gluk.tech/">
+  <link rel="alternate" hreflang="en" href="https://vpn.gluk.tech/en/">
+  <link rel="alternate" hreflang="x-default" href="https://vpn.gluk.tech/">
+  <meta property="og:title" content="GlukVPN — fast, private VPN">
+  <meta property="og:description" content="Fast and private VPN: nodes in Germany, France and the US, kill switch, DNS protection and one-tap connect. Android app.">
+  <meta property="og:url" content="https://vpn.gluk.tech/en/">
+  <meta property="og:image" content="https://vpn.gluk.tech/assets/img/og-cover.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="GlukVPN — fast, private VPN">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="GlukVPN — fast, private VPN">
+  <meta name="twitter:description" content="Fast and private VPN: nodes in Germany, France and the US, kill switch, DNS protection and one-tap connect. Android app.">
+  <meta name="twitter:image" content="https://vpn.gluk.tech/assets/img/og-cover.png">
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/img/favicon-16.png">
+  <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&amp;display=swap">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/base.css">
+  <link rel="stylesheet" href="/assets/css/components.css">
+  <link rel="stylesheet" href="/assets/css/sections.css">
+  <link rel="stylesheet" href="/assets/css/app-ui.css">
+  <link rel="stylesheet" href="/assets/css/utilities.css">
+  <link rel="stylesheet" href="/assets/css/fx.css">
+  <link rel="stylesheet" href="/assets/css/auth.css">
+  <script src="/assets/js/config.js" defer></script>
+  <script src="/assets/js/i18n.js" defer></script>
+  <script src="/assets/js/world-dots.js" defer></script>
+  <script src="/assets/js/globe.js" defer></script>
+  <script src="/assets/js/network-map.js" defer></script>
+  <script src="/assets/js/sections.js" defer></script>
+  <script src="/assets/js/ui.js" defer></script>
+  <script src="/assets/js/fx.js" defer></script>
+  <script src="/assets/js/auth.js" defer></script>
+  <script src="/assets/js/fonts.js" defer></script>
+  <script type="application/ld+json">{"@context": "https://schema.org", "@graph": [{"@type": "Organization", "@id": "https://vpn.gluk.tech/#org", "name": "GlukVPN", "url": "https://vpn.gluk.tech/", "logo": "https://vpn.gluk.tech/assets/img/logo-256.png"}, {"@type": "WebSite", "@id": "https://vpn.gluk.tech/#website", "name": "GlukVPN", "url": "https://vpn.gluk.tech/", "inLanguage": "ru", "publisher": {"@id": "https://vpn.gluk.tech/#org"}}, {"@type": "SoftwareApplication", "name": "GlukVPN", "operatingSystem": "Android", "applicationCategory": "SecurityApplication", "url": "https://vpn.gluk.tech/mobile/", "downloadUrl": "https://vpn.gluk.tech/download/", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "KZT", "description": "Бесплатный тариф Free"}, "publisher": {"@id": "https://vpn.gluk.tech/#org"}}]}</script>
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Что такое GlukVPN?", "acceptedAnswer": {"@type": "Answer", "text": "GlukVPN — это VPN-приложение с одним экраном и одной кнопкой. Оно шифрует трафик до выбранного региона и показывает понятный статус соединения: регион, отклик и время сессии."}}, {"@type": "Question", "name": "Какие регионы доступны сейчас?", "acceptedAnswer": {"@type": "Answer", "text": "Сейчас работают Германия, Франция и США. Остальные регионы отмечены на карте как «Скоро» и появятся только после того, как реально заработают."}}, {"@type": "Question", "name": "Есть ли бесплатный тариф?", "acceptedAnswer": {"@type": "Answer", "text": "Да. Тариф Free даёт один регион и одно устройство с ограниченной скоростью. Карта для начала не нужна."}}, {"@type": "Question", "name": "На каких устройствах работает приложение?", "acceptedAnswer": {"@type": "Answer", "text": "Сейчас доступна версия для Android. Версии для Windows, iOS и macOS в разработке — мы не публикуем ссылки на то, чего ещё нет."}}, {"@type": "Question", "name": "Ведёте ли вы логи посещённых сайтов?", "acceptedAnswer": {"@type": "Answer", "text": "Нет. Историю сайтов и содержимое трафика мы не храним. Для работы аккаунта и лимитов нужны технические данные — что именно, подробно описано в политике конфиденциальности."}}, {"@type": "Question", "name": "Что такое kill switch?", "acceptedAnswer": {"@type": "Answer", "text": "Это защита от случайной утечки: если туннель обрывается, приложение блокирует трафик до восстановления соединения, вместо того чтобы пустить его напрямую."}}, {"@type": "Question", "name": "Как оплатить платный тариф?", "acceptedAnswer": {"@type": "Answer", "text": "Цены на сайте предварительные. Оплата внутри приложения появится вместе с запуском биллинга; до этого момента можно пользоваться тарифом Free."}}]}</script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="scene" aria-hidden="true">
+  <svg class="scene__waves" viewBox="0 0 1440 900" preserveAspectRatio="none" focusable="false">
+    <defs>
+      <linearGradient id="gW1" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#1a1230"/><stop offset="1" stop-color="#08060f"/>
+      </linearGradient>
+      <linearGradient id="gW2" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#140e24"/><stop offset="1" stop-color="#050409"/>
+      </linearGradient>
+    </defs>
+    <path d="M0,430 C240,330 420,520 700,450 C960,385 1180,470 1440,395 L1440,900 L0,900 Z" fill="url(#gW1)" opacity=".9"/>
+    <path d="M0,430 C240,330 420,520 700,450 C960,385 1180,470 1440,395" fill="none" stroke="#241a3a" stroke-width="1"/>
+    <path d="M0,585 C260,505 500,665 760,595 C1020,525 1230,625 1440,555 L1440,900 L0,900 Z" fill="url(#gW2)"/>
+  </svg>
+  <span class="scene__glow scene__glow--a"></span>
+  <span class="scene__glow scene__glow--b"></span>
+  <span class="scene__grain"></span>
+</div>
+  <div class="page">
+  <header class="header">
+    <div class="wrap header__inner">
+      <a class="brand" href="/en/" aria-label="GlukVPN — home">
+        <img src="/assets/img/logo-96.png" width="96" height="96" alt="" decoding="async">
+        <span>GlukVPN</span>
+      </a>
+      <nav class="nav" aria-label="Main menu"><a class="nav__link" href="/en/features/">Features</a><a class="nav__link" href="/en/mobile/">App</a><a class="nav__link" href="/en/pricing/">Pricing</a><a class="nav__link" href="/en/download/">Downloads</a><a class="nav__link" href="/en/support/">Support</a></nav>
+      <div class="header__actions">
+        <div class="lang" role="group" aria-label="Site language">
+          <a class="lang__opt" href="/" hreflang="ru" data-lang-set="ru">RU</a>
+          <a class="lang__opt is-on" href="/en/" hreflang="en" data-lang-set="en">EN</a>
+        </div>
+        <a class="btn btn--primary btn--icon header__dl" href="/en/download/" data-download-android aria-label="Download GlukVPN" title="Download GlukVPN"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></a>
+        <div class="acct" data-acct><span class="acct__skel" aria-hidden="true"></span></div>
+        <button class="burger" type="button" aria-expanded="false" aria-controls="drawer" aria-label="Menu"><svg class="burger__open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg><svg class="burger__close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <div class="drawer" id="drawer" aria-hidden="true">
+      <a class="drawer__link" href="/en/features/">Features <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/en/mobile/">App <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/en/pricing/">Pricing <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/en/download/">Downloads <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/en/support/">Support <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <div class="lang lang--drawer" role="group" aria-label="Site language">
+        <a class="lang__opt" href="/" hreflang="ru" data-lang-set="ru">Russian</a>
+        <a class="lang__opt is-on" href="/en/" hreflang="en" data-lang-set="en">English</a>
+      </div>
+      <div class="acct acct--drawer" data-acct><span class="acct__skel" aria-hidden="true"></span></div>
+      <a class="btn btn--primary btn--lg drawer__cta" href="/en/download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Download GlukVPN</a>
+  </div>
+
+  <main id="main">
+  <section class="hero section" aria-labelledby="hero-title">
+    <div class="wrap hero__grid">
+      <div class="hero__copy">
+        <span class="eyebrow reveal"><i class="eyebrow__dot"></i>Germany · France · USA</span>
+        <h1 class="display hero__title reveal" data-delay="1" id="hero-title">GlukVPN — <span class="gradient-text">fast, private</span> VPN</h1>
+        <p class="lead hero__sub reveal" data-delay="2">One tap and your traffic runs through an encrypted tunnel to the region you picked. No settings, no extra screens, no marketing promises.</p>
+        <div class="hero__actions reveal" data-delay="3">
+          <a class="btn btn--primary btn--lg" href="/download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Download for Android</a>
+          <a class="btn btn--ghost btn--lg" href="/pricing/">See plans</a>
+        </div>
+        <ul class="hero__meta reveal" data-delay="4">
+          <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Free plan, no card</li>
+          <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Kill switch and DNS protection</li>
+          <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b data-live-count>3</b> regions live now</span></li>
+        </ul>
+      </div>
+
+      <div class="globe reveal" data-delay="2">
+        <span class="globe__halo"></span>
+        <span class="globe__ring globe__ring--1"></span>
+        <span class="globe__ring globe__ring--2"></span>
+        <canvas class="globe__canvas" data-globe width="560" height="560" role="img" aria-label="Live GlukVPN globe: server nodes and the connection route animation"></canvas>
+        <div class="globe__caption"><i class="chip__dot"></i>Route: <b data-caption-region>Germany</b><span class="dim" data-caption-ping>~24 ms</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section--tight" id="pulse" aria-label="Key network metrics">
+    <div class="wrap">
+      <div class="marquee glass glass--soft reveal" data-marquee aria-hidden="true">
+        <div class="marquee__track">
+          <span class="marquee__chip">WireGuard</span>
+          <span class="marquee__chip">ChaCha20-Poly1305</span>
+          <span class="marquee__chip">Kill switch</span>
+          <span class="marquee__chip">DNS inside the tunnel</span>
+          <span class="marquee__chip">Auto-connect</span>
+          <span class="marquee__chip">Sessions per device</span>
+          <span class="marquee__chip">Frankfurt</span>
+          <span class="marquee__chip">Paris</span>
+          <span class="marquee__chip">New York</span>
+          <span class="marquee__chip">No browsing logs</span>
+        </div>
+      </div>
+
+      <div class="metrics reveal" data-delay="1">
+        <div class="metric">
+          <div class="metric__value"><b data-count-to="24" data-dur="1200">0</b><span class="metric__unit">ms</span></div>
+          <div class="metric__label">Latency to Frankfurt on the nearest node</div>
+          <span class="metric__spark"></span>
+        </div>
+        <div class="metric">
+          <div class="metric__value"><b data-count-to="3" data-dur="900">0</b></div>
+          <div class="metric__label">Live regions: DE, FR, US</div>
+          <span class="metric__spark"></span>
+        </div>
+        <div class="metric">
+          <div class="metric__value"><b data-count-to="4" data-dur="1000">0</b></div>
+          <div class="metric__label">Planned regions: NL, TR, SG, JP</div>
+          <span class="metric__spark"></span>
+        </div>
+        <div class="metric">
+          <div class="metric__value"><b data-count-to="1" data-dur="700">0</b></div>
+          <div class="metric__label">One tap from launch to a protected connection</div>
+          <span class="metric__spark"></span>
+        </div>
+      </div>
+
+      <div class="ticker glass glass--soft reveal" data-ticker data-delay="2">
+        <span class="pulse-dot" aria-hidden="true"></span>
+        <span class="ticker__wrap">
+          <span class="ticker__item">Frankfurt — 24 ms, load 32 %</span>
+          <span class="ticker__item">Paris — 29 ms, load 27 %</span>
+          <span class="ticker__item">New York — 96 ms, load 41 %</span>
+          <span class="ticker__item">Device keys never leave the device</span>
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="why" aria-labelledby="why-title">
+    <div class="wrap">
+      <div class="section__head reveal">
+        <span class="eyebrow">Why GlukVPN</span>
+        <h2 class="h2" id="why-title">Everything important on one screen</h2>
+        <p class="lead">We kept only what you really need every day: a fast connection, clear statuses and careful handling of data.</p>
+      </div>
+      <div class="cards">
+        <article class="card glass glass--hover reveal" data-delay="1"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l7 3v5.2c0 4.3-2.9 8.2-7 9.8-4.1-1.6-7-5.5-7-9.8V6l7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.2 12.2l2 2 3.6-3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><h3 class="card__title">Privacy</h3><p class="card__text">We do not trade data and we do not collect a history of visited sites. What is processed is described without legal fog.</p></article>
+        <article class="card glass glass--hover reveal" data-delay="2"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span><h3 class="card__title">Fast connect</h3><p class="card__text">The connection comes up in seconds: one tap on the home screen and a clear state indicator.</p></article>
+        <article class="card glass glass--hover reveal" data-delay="3"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 9h17M3.5 15h17" stroke="currentColor" stroke-width="1.6"/><path d="M12 3c2.6 2.5 3.9 5.5 3.9 9s-1.3 6.5-3.9 9c-2.6-2.5-3.9-5.5-3.9-9S9.4 5.5 12 3Z" stroke="currentColor" stroke-width="1.6"/></svg></span><h3 class="card__title">Several regions</h3><p class="card__text">Germany, France and the US already work. New regions are added as they become ready, with no promises up front.</p></article>
+        <article class="card glass glass--hover reveal" data-delay="1"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 11V5.5a1.8 1.8 0 1 1 3.6 0V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M12.6 11V9.4a1.7 1.7 0 0 1 3.4 0V11m0 0V10a1.7 1.7 0 0 1 3.4 0v4.6c0 3.2-2.2 5.9-5.6 5.9h-1.2c-2 0-3.3-.8-4.3-2.3l-2.5-4a1.6 1.6 0 0 1 2.5-2L9.6 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><h3 class="card__title">Simple connection</h3><p class="card__text">No configs and no files: pick a region or Best Server and press the button.</p></article>
+        <article class="card glass glass--hover reveal" data-delay="2"><span class="icon-badge icon-badge--green"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M18 6.6a8.4 8.4 0 1 1-12 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span><h3 class="card__title">Kill switch</h3><p class="card__text">If the tunnel drops, traffic will not leak to the open network: the connection is blocked until it recovers.</p></article>
+        <article class="card glass glass--hover reveal" data-delay="3"><span class="icon-badge icon-badge--green"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.2" y="4.5" width="17.6" height="6" rx="2" stroke="currentColor" stroke-width="1.6"/><rect x="3.2" y="13.5" width="17.6" height="6" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M6.8 7.5h.01M6.8 16.5h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span><h3 class="card__title">DNS protection</h3><p class="card__text">DNS queries stay inside the tunnel instead of going through your ISP or public Wi-Fi.</p></article>
+        <article class="card glass glass--hover reveal" data-delay="4"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="13" height="9.5" rx="1.8" stroke="currentColor" stroke-width="1.6"/><rect x="16" y="9" width="5.5" height="10.5" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M6 17.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><h3 class="card__title">Device management</h3><p class="card__text">The app shows your devices and active sessions — extra ones can be disconnected in one tap.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="network" aria-labelledby="network-title">
+    <div class="wrap">
+      <div class="section__head reveal">
+        <span class="eyebrow">Global network</span>
+        <h2 class="h2" id="network-title">The regions your traffic travels through</h2>
+        <p class="lead">The map speaks the same language as the app: a violet route, a green active node, latency and region load.</p>
+      </div>
+      <div class="network">
+        <div class="map-card glass reveal">
+        <div class="map-card__stage">
+          <canvas class="map-card__canvas" data-network-map width="960" height="500" role="img" aria-label="GlukVPN network map: live regions in Germany, France and the US plus planned regions"></canvas>
+          <div class="tip" data-map-tip aria-hidden="true">
+            <div class="tip__name"><span data-tip-flag><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#111'/><rect y='5.33' width='24' height='5.34' fill='#D00'/><rect y='10.67' width='24' height='5.33' fill='#FFCE00'/></svg></span><span data-tip-name>Germany</span></div>
+            <div class="tip__rows" data-tip-rows></div>
+          </div>
+        </div>
+        <div class="map-card__legend">
+          <span><i class="legend-dot legend-dot--live"></i>Live regions</span>
+          <span><i class="legend-dot legend-dot--soon"></i>Planned</span>
+          <span><i class="legend-dot legend-dot--route"></i>Active route</span>
+          <span class="hide-sm">Hover a node or pick a region on the right</span>
+        </div>
+      </div>
+        <div class="reveal" data-delay="2">
+          <div class="regions" data-regions="live">
+            <button class="region" type="button" data-region="de">
+          <span class="region__flag" aria-hidden="true"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#111'/><rect y='5.33' width='24' height='5.34' fill='#D00'/><rect y='10.67' width='24' height='5.33' fill='#FFCE00'/></svg></span>
+          <span class="region__info"><span class="region__name">Germany</span>
+            <span class="region__meta"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span>~24 ms</span><span class="load-bar" aria-hidden="true"><span style="width:32%"></span></span><span>load 32%</span></span>
+          </span>
+          <span class="chip chip--live"><i class="chip__dot"></i>Online</span>
+        </button>
+        <button class="region" type="button" data-region="fr">
+          <span class="region__flag" aria-hidden="true"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#F4F5F7'/><rect width='8' height='16' fill='#0B3E9C'/><rect x='16' width='8' height='16' fill='#E1273B'/></svg></span>
+          <span class="region__info"><span class="region__name">France</span>
+            <span class="region__meta"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span>~29 ms</span><span class="load-bar" aria-hidden="true"><span style="width:27%"></span></span><span>load 27%</span></span>
+          </span>
+          <span class="chip chip--live"><i class="chip__dot"></i>Online</span>
+        </button>
+        <button class="region" type="button" data-region="us">
+          <span class="region__flag" aria-hidden="true"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#F4F5F7'/><g fill='#D02F44'><rect y='0' width='24' height='1.23'/><rect y='2.46' width='24' height='1.23'/><rect y='4.92' width='24' height='1.23'/><rect y='7.38' width='24' height='1.23'/><rect y='9.85' width='24' height='1.23'/><rect y='12.31' width='24' height='1.23'/><rect y='14.77' width='24' height='1.23'/></g><rect width='10.4' height='8.6' fill='#2A3560'/><g fill='#fff'><circle cx='1.9' cy='1.7' r='.62'/><circle cx='4.6' cy='1.7' r='.62'/><circle cx='7.3' cy='1.7' r='.62'/><circle cx='3.2' cy='3.6' r='.62'/><circle cx='5.9' cy='3.6' r='.62'/><circle cx='8.6' cy='3.6' r='.62'/><circle cx='1.9' cy='5.5' r='.62'/><circle cx='4.6' cy='5.5' r='.62'/><circle cx='7.3' cy='5.5' r='.62'/><circle cx='3.2' cy='7.3' r='.62'/><circle cx='5.9' cy='7.3' r='.62'/><circle cx='8.6' cy='7.3' r='.62'/></g></svg></span>
+          <span class="region__info"><span class="region__name">USA</span>
+            <span class="region__meta"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span>~96 ms</span><span class="load-bar" aria-hidden="true"><span style="width:41%"></span></span><span>load 41%</span></span>
+          </span>
+          <span class="chip chip--live"><i class="chip__dot"></i>Online</span>
+        </button>
+          </div>
+          <div class="regions mt-2" data-regions="soon">
+            <div class="region region--soon" data-region="nl">
+          <span class="region__flag" aria-hidden="true"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#F4F5F7'/><rect width='24' height='5.33' fill='#C8102E'/><rect y='10.67' width='24' height='5.33' fill='#1E4785'/></svg></span>
+          <span class="region__info"><span class="region__name">Netherlands</span><span class="region__meta"><span>Amsterdam</span></span></span>
+          <span class="chip chip--soon">Soon</span>
+        </div>
+        <div class="region region--soon" data-region="tr">
+          <span class="region__flag" aria-hidden="true"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#E30A17'/><circle cx='9.4' cy='8' r='4' fill='#fff'/><circle cx='10.9' cy='8' r='3.2' fill='#E30A17'/><path d='M15.1 8l-1.7.55 1.05-1.45v1.8L15.1 8l1.05 1.45-1.7-.55' fill='#fff'/><path d='M14.6 6.2l.62 1.62 1.73.08-1.35 1.08.45 1.68-1.45-.95-1.45.95.45-1.68-1.35-1.08 1.73-.08z' fill='#fff'/></svg></span>
+          <span class="region__info"><span class="region__name">Turkey</span><span class="region__meta"><span>Istanbul</span></span></span>
+          <span class="chip chip--soon">Soon</span>
+        </div>
+        <div class="region region--soon" data-region="sg">
+          <span class="region__flag" aria-hidden="true"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#F4F5F7'/><rect width='24' height='8' fill='#EF3340'/><circle cx='6.2' cy='4' r='2.9' fill='#fff'/><circle cx='7.7' cy='4' r='2.6' fill='#EF3340'/><g fill='#fff'><circle cx='9.9' cy='2.1' r='.52'/><circle cx='12.1' cy='2.1' r='.52'/><circle cx='11' cy='3.6' r='.52'/><circle cx='9.3' cy='4.6' r='.52'/><circle cx='12.7' cy='4.6' r='.52'/></g></svg></span>
+          <span class="region__info"><span class="region__name">Singapore</span><span class="region__meta"><span>Singapore</span></span></span>
+          <span class="chip chip--soon">Soon</span>
+        </div>
+        <div class="region region--soon" data-region="jp">
+          <span class="region__flag" aria-hidden="true"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#F4F5F7'/><circle cx='12' cy='8' r='4.6' fill='#BC002D'/></svg></span>
+          <span class="region__info"><span class="region__name">Japan</span><span class="region__meta"><span>Tokyo</span></span></span>
+          <span class="chip chip--soon">Soon</span>
+        </div>
+          </div>
+          <p class="regions__note">Latency and load values are indicative and shown to give a sense of scale. Real numbers appear in the app after you connect.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="how" aria-labelledby="how-title">
+    <div class="wrap">
+      <div class="section__head reveal">
+        <span class="eyebrow">How it works</span>
+        <h2 class="h2" id="how-title">Four steps to a protected connection</h2>
+      </div>
+      <div class="steps">
+        <article class="step glass reveal" data-delay="1"><span class="step__num">1</span><h3 class="step__title">Open the app</h3><p class="step__text">Nothing to configure on first launch: the map, the region and the connect button are right there.</p><span class="step__line"></span></article>
+        <article class="step glass reveal" data-delay="2"><span class="step__num">2</span><h3 class="step__title">Pick a server</h3><p class="step__text">Any available region, or Best Server — the app picks the lowest-latency option.</p><span class="step__line"></span></article>
+        <article class="step glass reveal" data-delay="3"><span class="step__num">3</span><h3 class="step__title">Press “Connect”</h3><p class="step__text">The button changes state, the route on the map turns green, latency and a session timer appear.</p><span class="step__line"></span></article>
+        <article class="step glass reveal" data-delay="4"><span class="step__num">4</span><h3 class="step__title">Traffic protected</h3><p class="step__text">Data and DNS travel inside the tunnel. Sites see the address of the region you picked.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="access" aria-labelledby="access-title">
+    <div class="wrap">
+      <div class="section__head reveal">
+        <span class="eyebrow">What opens up</span>
+        <h2 class="h2" id="access-title">Services behave as if the blocks were not there</h2>
+        <p class="lead">On a 150 Mbps line GlukVPN still leaves headroom for 4K series, streams and games at the same time — no manual tweaks and no DNS swapping.</p>
+      </div>
+
+      <div class="acs">
+        <article class="acs-speed glass reveal" data-access-speed>
+          <header class="acs-speed__head">
+            <span class="acs-speed__ic"><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M4.5 17a8.5 8.5 0 1 1 15 0'/><path d='M12 13.5l3.6-3.9'/><circle cx='12' cy='14.6' r='1.5' fill='currentColor' stroke='none'/></svg></span>
+            <span>
+              <b>Measured on the beta channel</b>
+              <span class="acs-speed__sub">Frankfurt → Kazakhstan, WireGuard</span>
+            </span>
+          </header>
+
+          <div class="acs-gauge">
+            <svg viewBox="0 0 220 128" role="img" aria-label="150 Mbps line speed">
+              <defs>
+                <linearGradient id="acsG" x1="0" y1="1" x2="1" y2="0">
+                  <stop offset="0" stop-color="#6d4de0"/>
+                  <stop offset=".55" stop-color="#8b5cf6"/>
+                  <stop offset="1" stop-color="#4fd88c"/>
+                </linearGradient>
+              </defs>
+              <path class="acs-gauge__bg" d="M18 116a92 92 0 0 1 184 0"/>
+              <path class="acs-gauge__val" d="M18 116a92 92 0 0 1 184 0" data-gauge="0.84"/>
+              <g class="acs-gauge__ticks">
+                <path d="M18 116h10"/><path d="M110 24v10"/><path d="M192 116h10"/>
+              </g>
+            </svg>
+            <div class="acs-gauge__read">
+              <b data-count="150" data-count-suffix="">150</b>
+              <span>Mbps down</span>
+            </div>
+          </div>
+
+          <ul class="acs-metrics">
+            <li><b data-count="24" data-count-suffix=" ms">24 ms</b><span>ping to the node</span></li>
+            <li><b data-count="0" data-count-suffix=" %">0 %</b><span>packet loss</span></li>
+            <li><b data-count="6" data-count-suffix="×">6×</b><span>headroom for 4K</span></li>
+          </ul>
+
+          <ul class="acs-ladder" data-access-ladder><li class='acs-row'><span class='acs-row__top'><span class='acs-row__label'>4K series and films</span><span class='acs-row__need'>25 Mbps</span></span><span class='acs-row__bar'><i class='acs-row__fill' style='--w:100%;--d:0ms'></i></span><span class='acs-row__spare'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='m20 6-11 11-5-5'/></svg> ×6 headroom</span></li><li class='acs-row'><span class='acs-row__top'><span class='acs-row__label'>2K / 1440p</span><span class='acs-row__need'>14 Mbps</span></span><span class='acs-row__bar'><i class='acs-row__fill' style='--w:56%;--d:120ms'></i></span><span class='acs-row__spare'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='m20 6-11 11-5-5'/></svg> ×10 headroom</span></li><li class='acs-row'><span class='acs-row__top'><span class='acs-row__label'>Full HD 1080p</span><span class='acs-row__need'>8 Mbps</span></span><span class='acs-row__bar'><i class='acs-row__fill' style='--w:32%;--d:240ms'></i></span><span class='acs-row__spare'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='m20 6-11 11-5-5'/></svg> ×18 headroom</span></li><li class='acs-row'><span class='acs-row__top'><span class='acs-row__label'>Calls and streams</span><span class='acs-row__need'>4 Mbps</span></span><span class='acs-row__bar'><i class='acs-row__fill' style='--w:16%;--d:360ms'></i></span><span class='acs-row__spare'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='m20 6-11 11-5-5'/></svg> ×37 headroom</span></li></ul>
+          <p class="acs-note">The numbers are real measurements on a 150 Mbps line. Your result depends on your ISP plan and the time of day.</p>
+        </article>
+
+        <div class="acs-right">
+          <div class="acs-grid"><article class='acs-tile reveal' data-delay='1'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='2' y='5' width='20' height='14' rx='4.5'/><path d='M10.4 9.2l5 2.8-5 2.8z' fill='currentColor' stroke='none'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>YouTube</b><span class='acs-tile__sub'>4K without buffering</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='28' data-count-suffix=' мс'>28 ms</span></span></article><article class='acs-tile reveal' data-delay='2'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M21 4.6L2.9 11.3l5.4 1.7 1.2 5.6 2.6-3.3 4.3 3.1z'/><path d='M8.3 13l9.4-6.6-5.6 8.9'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>Telegram</b><span class='acs-tile__sub'>calls and channels</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='24' data-count-suffix=' мс'>24 ms</span></span></article><article class='acs-tile reveal' data-delay='3'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M7.5 3.5v17'/><path d='M16.5 3.5v17'/><path d='M7.5 3.5l9 17'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>Netflix</b><span class='acs-tile__sub'>4K series</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='31' data-count-suffix=' мс'>31 ms</span></span></article><article class='acs-tile reveal' data-delay='4'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M4 3.6h16v10.1l-4.2 4.2h-3.3L9.8 20.4V17.9H4z'/><path d='M11.4 8v4'/><path d='M15.4 8v4'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>Twitch</b><span class='acs-tile__sub'>1080p60 streams</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='33' data-count-suffix=' мс'>33 ms</span></span></article><article class='acs-tile reveal' data-delay='5'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M8.6 5.4A13 13 0 0 1 12 5c1.2 0 2.3.14 3.4.4l1.2-1.5c2.4.7 4.2 2 4.2 2 .8 3.2 1.2 6.4 1.1 9.7-1.7 1.9-4 3-4 3l-1.1-1.9'/><path d='M7.2 16.7L6.1 18.6s-2.3-1.1-4-3c-.1-3.3.3-6.5 1.1-9.7 0 0 1.8-1.3 4.2-2z'/><circle cx='9.4' cy='12.4' r='1.3' fill='currentColor' stroke='none'/><circle cx='14.6' cy='12.4' r='1.3' fill='currentColor' stroke='none'/><path d='M8.4 16.4c2.4 1.1 4.8 1.1 7.2 0'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>Discord</b><span class='acs-tile__sub'>voice and streams</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='26' data-count-suffix=' мс'>26 ms</span></span></article><article class='acs-tile reveal' data-delay='6'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><circle cx='12' cy='12' r='9'/><path d='M7.6 9.4c2.9-.8 5.9-.5 8.6.9'/><path d='M8.3 12.4c2.4-.6 4.9-.3 7.1.8'/><path d='M9 15.3c1.9-.5 3.8-.3 5.5.6'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>Spotify</b><span class='acs-tile__sub'>no drops</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='22' data-count-suffix=' мс'>22 ms</span></span></article><article class='acs-tile reveal' data-delay='1'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='3.5' y='3.5' width='17' height='17' rx='5'/><circle cx='12' cy='12' r='3.9'/><circle cx='17' cy='7' r='1' fill='currentColor' stroke='none'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>Instagram</b><span class='acs-tile__sub'>reels and stories</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='29' data-count-suffix=' мс'>29 ms</span></span></article><article class='acs-tile reveal' data-delay='2'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M20.5 11.6a8.5 8.5 0 0 1-12.4 7.6L3.6 20.4l1.3-4.4A8.5 8.5 0 1 1 20.5 11.6z'/><path d='M9 9.2c0 3 2.3 5.4 5.3 5.6.6 0 1-.4 1.1-1l-1.9-.9-.9.8c-1-.5-1.8-1.3-2.3-2.3l.8-.9-.9-1.9c-.6.1-1.1.5-1.2 1.1z' fill='currentColor' stroke='none'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>WhatsApp</b><span class='acs-tile__sub'>video calls</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='27' data-count-suffix=' мс'>27 ms</span></span></article><article class='acs-tile reveal' data-delay='3'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M14.4 3.5v9.7a3.6 3.6 0 1 1-3.6-3.6'/><path d='M14.4 5.6c.8 1.7 2.4 2.8 4.3 2.9'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>TikTok</b><span class='acs-tile__sub'>a feed without lag</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='30' data-count-suffix=' мс'>30 ms</span></span></article><article class='acs-tile reveal' data-delay='4'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M5 5l14 14'/><path d='M19 5L5 19'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>X</b><span class='acs-tile__sub'>feed and video</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='25' data-count-suffix=' мс'>25 ms</span></span></article><article class='acs-tile reveal' data-delay='5'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><circle cx='12' cy='12' r='8.6'/><path d='M12 3.4v6.1l5.3 3.1'/><path d='M12 20.6v-6.1L6.7 11.4'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>AI services</b><span class='acs-tile__sub'>no region blocks</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='35' data-count-suffix=' мс'>35 ms</span></span></article><article class='acs-tile reveal' data-delay='6'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><circle cx='12' cy='12' r='9'/><circle cx='15.2' cy='9.4' r='2.3'/><path d='M13.2 11.3L7.3 14.2'/><circle cx='7' cy='15.2' r='1.9'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>Steam</b><span class='acs-tile__sub'>loads at full speed</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='34' data-count-suffix=' мс'>34 ms</span></span></article></div>
+
+          <article class="acs-games glass reveal">
+            <header class="acs-games__head">
+              <b>Games without ping spikes</b>
+              <span>the nearest node is picked automatically</span>
+            </header>
+            <ul class="acs-games__list"><li class='acs-game reveal' data-delay='1'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M7.5 8.5h9a4.5 4.5 0 0 1 4.4 5.4l-.5 2.6a2.6 2.6 0 0 1-4.7 1l-1-1.6H9.3l-1 1.6a2.6 2.6 0 0 1-4.7-1l-.5-2.6A4.5 4.5 0 0 1 7.5 8.5z'/><path d='M8 12.5h2'/><path d='M9 11.5v2'/><circle cx='15.4' cy='12' r='.9' fill='currentColor' stroke='none'/><circle cx='17.2' cy='13.6' r='.9' fill='currentColor' stroke='none'/></svg><span class='acs-game__name'>CS2</span><span class='acs-game__ping'><b data-count='29' data-count-suffix=' мс'>29 ms</b><span class='acs-game__reg'>Europe</span></span></li><li class='acs-game reveal' data-delay='2'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M7.5 8.5h9a4.5 4.5 0 0 1 4.4 5.4l-.5 2.6a2.6 2.6 0 0 1-4.7 1l-1-1.6H9.3l-1 1.6a2.6 2.6 0 0 1-4.7-1l-.5-2.6A4.5 4.5 0 0 1 7.5 8.5z'/><path d='M8 12.5h2'/><path d='M9 11.5v2'/><circle cx='15.4' cy='12' r='.9' fill='currentColor' stroke='none'/><circle cx='17.2' cy='13.6' r='.9' fill='currentColor' stroke='none'/></svg><span class='acs-game__name'>Dota 2</span><span class='acs-game__ping'><b data-count='31' data-count-suffix=' мс'>31 ms</b><span class='acs-game__reg'>EU West</span></span></li><li class='acs-game reveal' data-delay='3'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M7.5 8.5h9a4.5 4.5 0 0 1 4.4 5.4l-.5 2.6a2.6 2.6 0 0 1-4.7 1l-1-1.6H9.3l-1 1.6a2.6 2.6 0 0 1-4.7-1l-.5-2.6A4.5 4.5 0 0 1 7.5 8.5z'/><path d='M8 12.5h2'/><path d='M9 11.5v2'/><circle cx='15.4' cy='12' r='.9' fill='currentColor' stroke='none'/><circle cx='17.2' cy='13.6' r='.9' fill='currentColor' stroke='none'/></svg><span class='acs-game__name'>Valorant</span><span class='acs-game__ping'><b data-count='34' data-count-suffix=' мс'>34 ms</b><span class='acs-game__reg'>Frankfurt</span></span></li><li class='acs-game reveal' data-delay='4'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M7.5 8.5h9a4.5 4.5 0 0 1 4.4 5.4l-.5 2.6a2.6 2.6 0 0 1-4.7 1l-1-1.6H9.3l-1 1.6a2.6 2.6 0 0 1-4.7-1l-.5-2.6A4.5 4.5 0 0 1 7.5 8.5z'/><path d='M8 12.5h2'/><path d='M9 11.5v2'/><circle cx='15.4' cy='12' r='.9' fill='currentColor' stroke='none'/><circle cx='17.2' cy='13.6' r='.9' fill='currentColor' stroke='none'/></svg><span class='acs-game__name'>PUBG</span><span class='acs-game__ping'><b data-count='38' data-count-suffix=' мс'>38 ms</b><span class='acs-game__reg'>EU</span></span></li><li class='acs-game reveal' data-delay='5'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M7.5 8.5h9a4.5 4.5 0 0 1 4.4 5.4l-.5 2.6a2.6 2.6 0 0 1-4.7 1l-1-1.6H9.3l-1 1.6a2.6 2.6 0 0 1-4.7-1l-.5-2.6A4.5 4.5 0 0 1 7.5 8.5z'/><path d='M8 12.5h2'/><path d='M9 11.5v2'/><circle cx='15.4' cy='12' r='.9' fill='currentColor' stroke='none'/><circle cx='17.2' cy='13.6' r='.9' fill='currentColor' stroke='none'/></svg><span class='acs-game__name'>Fortnite</span><span class='acs-game__ping'><b data-count='36' data-count-suffix=' мс'>36 ms</b><span class='acs-game__reg'>EU</span></span></li><li class='acs-game reveal' data-delay='6'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M7.5 8.5h9a4.5 4.5 0 0 1 4.4 5.4l-.5 2.6a2.6 2.6 0 0 1-4.7 1l-1-1.6H9.3l-1 1.6a2.6 2.6 0 0 1-4.7-1l-.5-2.6A4.5 4.5 0 0 1 7.5 8.5z'/><path d='M8 12.5h2'/><path d='M9 11.5v2'/><circle cx='15.4' cy='12' r='.9' fill='currentColor' stroke='none'/><circle cx='17.2' cy='13.6' r='.9' fill='currentColor' stroke='none'/></svg><span class='acs-game__name'>Genshin</span><span class='acs-game__ping'><b data-count='41' data-count-suffix=' мс'>41 ms</b><span class='acs-game__reg'>Europe</span></span></li></ul>
+          </article>
+
+          <article class="acs-strip glass reveal">
+            <span class="acs-strip__ic"><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='3' y='5' width='18' height='14' rx='2.4'/><path d='M8 5v14'/><path d='M16 5v14'/><path d='M3 12h18'/></svg></span>
+            <p>Streaming, social networks, AI services and game stores — it all runs in one tunnel, with nothing to switch.</p>
+            <div class='acs-marq' aria-hidden='true'><div class='acs-marq__track'><span class='acs-chip'>youtube.com</span><span class='acs-chip'>t.me</span><span class='acs-chip'>instagram.com</span><span class='acs-chip'>discord.com</span><span class='acs-chip'>twitch.tv</span><span class='acs-chip'>netflix.com</span><span class='acs-chip'>spotify.com</span><span class='acs-chip'>x.com</span><span class='acs-chip'>tiktok.com</span><span class='acs-chip'>reddit.com</span><span class='acs-chip'>steampowered.com</span><span class='acs-chip'>chatgpt.com</span><span class='acs-chip'>figma.com</span><span class='acs-chip'>github.com</span><span class='acs-chip'>medium.com</span><span class='acs-chip'>soundcloud.com</span><span class='acs-chip'>pinterest.com</span><span class='acs-chip'>vimeo.com</span><span class='acs-chip'>youtube.com</span><span class='acs-chip'>t.me</span><span class='acs-chip'>instagram.com</span><span class='acs-chip'>discord.com</span><span class='acs-chip'>twitch.tv</span><span class='acs-chip'>netflix.com</span><span class='acs-chip'>spotify.com</span><span class='acs-chip'>x.com</span><span class='acs-chip'>tiktok.com</span><span class='acs-chip'>reddit.com</span><span class='acs-chip'>steampowered.com</span><span class='acs-chip'>chatgpt.com</span><span class='acs-chip'>figma.com</span><span class='acs-chip'>github.com</span><span class='acs-chip'>medium.com</span><span class='acs-chip'>soundcloud.com</span><span class='acs-chip'>pinterest.com</span><span class='acs-chip'>vimeo.com</span></div></div>
+          </article>
+        </div>
+      </div>
+
+      <div class="acs-cta reveal">
+        <a class="btn btn--primary btn--lg" href="/en/download/" data-download-android>Test it on your own internet</a>
+        <a class="btn btn--ghost btn--lg" href="/en/pricing/">Compare plans</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="app" aria-labelledby="app-title">
+    <div class="wrap preview">
+      <div class="preview__stage reveal">
+        <div class="preview__phones">
+          <div class="phone-scale" data-scale-max="0.66">
+      <div class="phone" role="img" aria-label="GlukVPN home screen: an active connection to the Germany region">
+        <svg class="phone__waves" viewBox="0 0 390 844" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        <path d="M0,470 C90,410 170,530 250,470 C310,425 350,455 390,435 L390,844 L0,844 Z" fill="url(#gW1)" opacity=".95"/>
+        <path d="M0,470 C90,410 170,530 250,470 C310,425 350,455 390,435" fill="none" stroke="#241a3a" stroke-width="1"/>
+        <path d="M0,600 C100,545 190,660 280,600 C330,565 360,585 390,570 L390,844 L0,844 Z" fill="url(#gW2)"/>
+      </svg>
+        <div class="phone__screen">
+          <div class="app-screen">
+            <div class="statusbar">
+          <span>9:41</span>
+          <span class="statusbar__icons" aria-hidden="true">
+            <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="1" fill="currentColor"/><rect x="4.4" y="5" width="3" height="6" rx="1" fill="currentColor"/><rect x="8.8" y="2.6" width="3" height="8.4" rx="1" fill="currentColor"/><rect x="13.2" y="0" width="3" height="11" rx="1" fill="currentColor" opacity=".45"/></svg>
+            <svg width="22" height="11" viewBox="0 0 22 11" fill="none"><rect x="0.6" y="0.6" width="18" height="9.8" rx="2.6" stroke="currentColor" stroke-opacity=".5"/><rect x="2.2" y="2.2" width="13" height="6.6" rx="1.6" fill="currentColor"/><path d="M20.4 4v3" stroke="currentColor" stroke-opacity=".5" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </span>
+        </div>
+            <div class="app-map" aria-hidden="true"><canvas data-phone-map="de" width="390" height="400"></canvas></div>
+            <div class="app-body">
+              <div class="app-top">
+                <div class="app-brand"><img src="/assets/img/logo-96.png" width="96" height="96" alt="" loading="lazy" decoding="async">GlukVPN</div>
+                <div class="app-badge"><i class="dot"></i>Connected</div>
+              </div>
+
+              <div class="blob-zone">
+                <span class="blob-glow"></span>
+                <span class="blob-outer"></span>
+                <span class="blob-inner"></span>
+                <span class="power-btn"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3.4v8.2" stroke="#4fd88c" stroke-width="2.2" stroke-linecap="round"/><path d="M17.8 6.6a8.2 8.2 0 1 1-11.6 0" stroke="#4fd88c" stroke-width="2.2" stroke-linecap="round"/></svg></span>
+              </div>
+
+              <div class="app-loc">
+                <span class="flag"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#111'/><rect y='5.33' width='24' height='5.34' fill='#D00'/><rect y='10.67' width='24' height='5.33' fill='#FFCE00'/></svg></span>
+                <span class="name">Germany</span>
+                <span class="sub">· Best Server</span>
+                <svg viewBox="0 0 24 24" fill="none"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+
+              <div class="app-grid">
+                <div class="app-cell">
+                  <div class="app-cell__label"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5.2c0 4.3-2.9 8.2-7 9.8-4.1-1.6-7-5.5-7-9.8V6l7-3Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>Status</div>
+                  <div class="app-cell__value" style="color:var(--green)">Protected</div>
+                </div>
+                <div class="app-cell">
+                  <div class="app-cell__label"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>Ping</div>
+                  <div class="app-cell__value"><span data-demo-ping>24</span><span class="unit">ms</span></div>
+                </div>
+                <div class="app-cell">
+                  <div class="app-cell__label"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.4" stroke="currentColor" stroke-width="1.8"/><path d="M12 7.6V12l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Session</div>
+                  <div class="app-cell__value"><span data-demo-timer>00:05:42</span></div>
+                </div>
+                <div class="app-cell">
+                  <div class="app-cell__label"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.4" stroke="currentColor" stroke-width="1.8"/><path d="M3.6 12h16.8M12 3.6c2.4 2.3 3.6 5.1 3.6 8.4S14.4 18.1 12 20.4c-2.4-2.3-3.6-5.1-3.6-8.4S9.6 5.9 12 3.6Z" stroke="currentColor" stroke-width="1.6"/></svg>IP</div>
+                  <div class="app-cell__value">203.0.113.24</div>
+                </div>
+              </div>
+
+              <div class="app-traffic">
+                <div class="app-traffic__head"><svg viewBox="0 0 24 24" fill="none"><path d="M4 16.5l4.5-5 3.5 3.4 3.4-5.4L20 13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Traffic</div>
+                <div class="app-traffic__row">
+                  <span class="app-traffic__name down"><svg viewBox="0 0 24 24" fill="none"><path d="M12 4.5v13m0 0l4.5-4.5M12 17.5L7.5 13" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>Downloaded</span>
+                  <span class="app-traffic__val"><span data-demo-down>1.24 GB</span></span>
+                </div>
+                <div class="app-traffic__row">
+                  <span class="app-traffic__name up"><svg viewBox="0 0 24 24" fill="none"><path d="M12 19.5v-13m0 0L7.5 11M12 6.5L16.5 11" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>Uploaded</span>
+                  <span class="app-traffic__val"><span data-demo-up>0.36 GB</span></span>
+                </div>
+              </div>
+
+              <div style="flex:1"></div>
+
+              <div class="app-nav">
+                <span class="app-nav__item is-active"><span class="app-nav__ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 10.5L12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19v-8.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></span>Home</span>
+                <span class="app-nav__item"><span class="app-nav__ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.4" stroke="currentColor" stroke-width="1.7"/><path d="M3.6 12h16.8M12 3.6c2.4 2.3 3.6 5.1 3.6 8.4S14.4 18.1 12 20.4" stroke="currentColor" stroke-width="1.5"/></svg></span>Servers</span>
+                <span class="app-nav__item"><span class="app-nav__ic"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="12" height="9" rx="1.8" stroke="currentColor" stroke-width="1.7"/><rect x="16" y="9" width="5" height="10" rx="1.6" stroke="currentColor" stroke-width="1.7"/></svg></span>Devices</span>
+                <span class="app-nav__item"><span class="app-nav__ic"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 14.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1v.3a2 2 0 1 1-4 0v-.2a1.6 1.6 0 0 0-2.8-1.1l-.1.1A2 2 0 1 1 4.4 16.4l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.2a1.6 1.6 0 0 0 1.1-2.8l-.1-.1A2 2 0 1 1 7 3.9l.1.1a1.6 1.6 0 0 0 1.8.3h.1a1.6 1.6 0 0 0 1-1.5V2.5a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v.1a1.6 1.6 0 0 0 1.5 1h.3a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.3.9Z" stroke="currentColor" stroke-width="1.3"/></svg></span>Settings</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+          <div class="phone-scale" data-scale-max="0.56">
+      <div class="phone" role="img" aria-label="The server picker screen in the GlukVPN app">
+        <svg class="phone__waves" viewBox="0 0 390 844" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        <path d="M0,470 C90,410 170,530 250,470 C310,425 350,455 390,435 L390,844 L0,844 Z" fill="url(#gW1)" opacity=".95"/>
+        <path d="M0,470 C90,410 170,530 250,470 C310,425 350,455 390,435" fill="none" stroke="#241a3a" stroke-width="1"/>
+        <path d="M0,600 C100,545 190,660 280,600 C330,565 360,585 390,570 L390,844 L0,844 Z" fill="url(#gW2)"/>
+      </svg>
+        <div class="phone__screen">
+          <div class="app-screen">
+            <div class="statusbar">
+          <span>9:41</span>
+          <span class="statusbar__icons" aria-hidden="true">
+            <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="7" width="3" height="4" rx="1" fill="currentColor"/><rect x="4.4" y="5" width="3" height="6" rx="1" fill="currentColor"/><rect x="8.8" y="2.6" width="3" height="8.4" rx="1" fill="currentColor"/><rect x="13.2" y="0" width="3" height="11" rx="1" fill="currentColor" opacity=".45"/></svg>
+            <svg width="22" height="11" viewBox="0 0 22 11" fill="none"><rect x="0.6" y="0.6" width="18" height="9.8" rx="2.6" stroke="currentColor" stroke-opacity=".5"/><rect x="2.2" y="2.2" width="13" height="6.6" rx="1.6" fill="currentColor"/><path d="M20.4 4v3" stroke="currentColor" stroke-opacity=".5" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </span>
+        </div>
+            <div class="srv-top">
+              <span class="srv-back"><svg viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <h3>Servers</h3>
+            </div>
+            <div class="srv-label">Recommended</div>
+            <div class="srv-list">
+              <div class="srv-row">
+                <span class="srv-row__left">
+                  <span class="srv-flag">⚡</span>
+                  <span><span class="srv-row__name">Best Server</span><span class="srv-row__speed"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>auto · 24 ms</span></span>
+                </span>
+                <span class="srv-radio is-checked"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.2 4.2L19 7" stroke="#0a0714" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              </div>
+            </div>
+            <div class="srv-label">All regions</div>
+            <div class="srv-list">
+              <div class="srv-row">
+                <span class="srv-row__left">
+                  <span class="srv-flag"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#111'/><rect y='5.33' width='24' height='5.34' fill='#D00'/><rect y='10.67' width='24' height='5.33' fill='#FFCE00'/></svg></span>
+                  <span><span class="srv-row__name">Germany</span><span class="srv-row__speed"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>24 ms · load 32%</span></span>
+                </span>
+                <span class="srv-radio"></span>
+              </div>
+              <div class="srv-row">
+                <span class="srv-row__left">
+                  <span class="srv-flag"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#F4F5F7'/><rect width='8' height='16' fill='#0B3E9C'/><rect x='16' width='8' height='16' fill='#E1273B'/></svg></span>
+                  <span><span class="srv-row__name">France</span><span class="srv-row__speed"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>29 ms · load 27%</span></span>
+                </span>
+                <span class="srv-radio"></span>
+              </div>
+              <div class="srv-row">
+                <span class="srv-row__left">
+                  <span class="srv-flag"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#F4F5F7'/><g fill='#D02F44'><rect y='0' width='24' height='1.23'/><rect y='2.46' width='24' height='1.23'/><rect y='4.92' width='24' height='1.23'/><rect y='7.38' width='24' height='1.23'/><rect y='9.85' width='24' height='1.23'/><rect y='12.31' width='24' height='1.23'/><rect y='14.77' width='24' height='1.23'/></g><rect width='10.4' height='8.6' fill='#2A3560'/><g fill='#fff'><circle cx='1.9' cy='1.7' r='.62'/><circle cx='4.6' cy='1.7' r='.62'/><circle cx='7.3' cy='1.7' r='.62'/><circle cx='3.2' cy='3.6' r='.62'/><circle cx='5.9' cy='3.6' r='.62'/><circle cx='8.6' cy='3.6' r='.62'/><circle cx='1.9' cy='5.5' r='.62'/><circle cx='4.6' cy='5.5' r='.62'/><circle cx='7.3' cy='5.5' r='.62'/><circle cx='3.2' cy='7.3' r='.62'/><circle cx='5.9' cy='7.3' r='.62'/><circle cx='8.6' cy='7.3' r='.62'/></g></svg></span>
+                  <span><span class="srv-row__name">United States</span><span class="srv-row__speed"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>96 ms · load 41%</span></span>
+                </span>
+                <span class="srv-radio"></span>
+              </div>
+              <div class="srv-row srv-row--soon">
+                <span class="srv-row__left">
+                  <span class="srv-flag"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#F4F5F7'/><rect width='24' height='5.33' fill='#C8102E'/><rect y='10.67' width='24' height='5.33' fill='#1E4785'/></svg></span>
+                  <span><span class="srv-row__name">Netherlands</span><span class="srv-row__speed">coming soon</span></span>
+                </span>
+                <span class="srv-radio"></span>
+              </div>
+              <div class="srv-row srv-row--soon">
+                <span class="srv-row__left">
+                  <span class="srv-flag"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#E30A17'/><circle cx='9.4' cy='8' r='4' fill='#fff'/><circle cx='10.9' cy='8' r='3.2' fill='#E30A17'/><path d='M15.1 8l-1.7.55 1.05-1.45v1.8L15.1 8l1.05 1.45-1.7-.55' fill='#fff'/><path d='M14.6 6.2l.62 1.62 1.73.08-1.35 1.08.45 1.68-1.45-.95-1.45.95.45-1.68-1.35-1.08 1.73-.08z' fill='#fff'/></svg></span>
+                  <span><span class="srv-row__name">Türkiye</span><span class="srv-row__speed">coming soon</span></span>
+                </span>
+                <span class="srv-radio"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+        </div>
+      </div>
+      <div>
+        <div class="section__head reveal" data-delay="1">
+          <span class="eyebrow">App</span>
+          <h2 class="h2" id="app-title">The same interface as on the phone</h2>
+          <p class="lead">These are not stock images: the screens are built from the same components and tokens as the GlukVPN Android app.</p>
+        </div>
+        <div class="preview__list">
+          <div class="preview__item reveal" data-delay="2"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 11V5.5a1.8 1.8 0 1 1 3.6 0V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M12.6 11V9.4a1.7 1.7 0 0 1 3.4 0V11m0 0V10a1.7 1.7 0 0 1 3.4 0v4.6c0 3.2-2.2 5.9-5.6 5.9h-1.2c-2 0-3.3-.8-4.3-2.3l-2.5-4a1.6 1.6 0 0 1 2.5-2L9.6 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div><h3>One screen for everything</h3><p>Connect button, region, latency, session time and traffic — no menu digging.</p></div></div>
+          <div class="preview__item reveal" data-delay="3"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="6" cy="18" r="2.6" stroke="currentColor" stroke-width="1.6"/><circle cx="18" cy="6" r="2.6" stroke="currentColor" stroke-width="1.6"/><path d="M8.6 18h4.6a3.4 3.4 0 0 0 0-6.8h-2.4a3.4 3.4 0 0 1 0-6.8h4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="2.6 2.4"/></svg></span><div><h3>Live route map</h3><p>You can see where the connection goes. The same animation runs on this site.</p></div></div>
+          <div class="preview__item reveal" data-delay="4"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="3.8" width="17" height="7" rx="2" stroke="currentColor" stroke-width="1.6"/><rect x="3.5" y="13.2" width="17" height="7" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M7 7.3h.01M7 16.7h.01" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span><div><h3>A server list without technical noise</h3><p>Only country, latency and load. No internal names or addresses.</p></div></div>
+        </div>
+        <div class="flex-row mt-5 reveal" data-delay="4">
+          <a class="btn btn--ghost" href="/mobile/">More about the app</a>
+          <a class="btn btn--primary" href="/download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Download</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="pricing" aria-labelledby="pricing-title">
+    <div class="wrap">
+      <div class="section__head section__head--center reveal">
+        <span class="eyebrow">Pricing</span>
+        <h2 class="h2" id="pricing-title">Simple plans with no hidden terms</h2>
+        <p class="lead">Start with Free and move to a paid plan when you need every region and several devices.</p>
+      </div>
+      <div class="plans reveal" data-delay="1" data-plans>
+        <article class="plan glass"><div class="plan__head"><h3 class="plan__name">Free</h3></div><div class="plan__price"><span class="plan__amount">0</span><span class="plan__period">/ mo</span></div><p class="plan__note">Try it without paying</p><ul class="plan__features"><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>1 region picked by the app</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>1 device</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Limited speed</span></li><li data-off><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Kill switch</span></li><li data-off><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Priority support</span></li></ul><a class="btn btn--ghost btn--block plan__cta" href="/en/download/">Start for free</a></article>
+        <article class="plan glass plan--featured"><div class="plan__head"><h3 class="plan__name">Basic</h3><span class="chip chip--violet">Popular</span></div><div class="plan__price"><span class="plan__amount">1 490 ₸</span><span class="plan__period">/ mo</span></div><p class="plan__note">For everyday use</p><ul class="plan__features"><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>All available regions</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Up to 3 devices</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Full line speed</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Kill switch and DNS protection</span></li><li data-off><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Priority support</span></li></ul><a class="btn btn--primary btn--block plan__cta" href="/en/pricing/">Choose Basic</a></article>
+        <article class="plan glass"><div class="plan__head"><h3 class="plan__name">Pro</h3></div><div class="plan__price"><span class="plan__amount">2 490 ₸</span><span class="plan__period">/ mo</span></div><p class="plan__note">For the family and every device</p><ul class="plan__features"><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>All regions + early access to new ones</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Up to 10 devices</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Full line speed</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Kill switch and DNS protection</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Priority support</span></li></ul><a class="btn btn--ghost btn--block plan__cta" href="/en/pricing/">Choose Pro</a></article>
+      </div>
+      <p class="pricing-note" data-pricing-note>Prices are preliminary and may change before the public launch.</p>
+      <div class="flex-row flex-row--center mt-4 reveal">
+        <a class="btn btn--ghost" href="/pricing/">Compare plans</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="security" aria-labelledby="security-title">
+    <div class="wrap security">
+      <div>
+        <div class="section__head reveal">
+          <span class="eyebrow">Security</span>
+          <h2 class="h2" id="security-title">How the connection works</h2>
+          <p class="lead">No loud claims about “complete anonymity”. Here is what actually happens when you press connect.</p>
+        </div>
+        <ul class="stack reveal" data-delay="2">
+          <li class="card__text">Sites and services see the server address of the region you picked, not your home IP.</li>
+          <li class="card__text">Your ISP and the owner of a public hotspot only see that an encrypted connection exists.</li>
+          <li class="card__text">A VPN is not an antivirus, and it does not hide you from sites where you are signed in.</li>
+        </ul>
+        <div class="flex-row mt-5 reveal" data-delay="3">
+          <a class="btn btn--ghost btn--sm" href="/privacy/">Privacy Policy</a>
+          <a class="btn btn--ghost btn--sm" href="/features/">More about protection</a>
+        </div>
+      </div>
+      <div class="flow glass reveal" data-delay="2">
+        <div class="flow__row"><span class="flow__icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="13" height="9.5" rx="1.8" stroke="currentColor" stroke-width="1.6"/><rect x="16" y="9" width="5.5" height="10.5" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M6 17.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><div><div class="flow__label">Your device</div><div class="flow__desc">The app brings up an encrypted tunnel</div></div></div>
+        <span class="flow__pipe"></span>
+        <div class="flow__row"><span class="flow__icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.5" y="10" width="15" height="10.5" rx="2.4" stroke="currentColor" stroke-width="1.6"/><path d="M8 10V7.5a4 4 0 0 1 8 0V10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><div><div class="flow__label">Encrypted tunnel</div><div class="flow__desc">Traffic and DNS queries travel inside it</div></div></div>
+        <span class="flow__pipe"></span>
+        <div class="flow__row"><span class="flow__icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="3.8" width="17" height="7" rx="2" stroke="currentColor" stroke-width="1.6"/><rect x="3.5" y="13.2" width="17" height="7" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M7 7.3h.01M7 16.7h.01" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span><div><div class="flow__label">Region server</div><div class="flow__desc">Traffic reaches the internet from its address</div></div></div>
+        <span class="flow__pipe"></span>
+        <div class="flow__row"><span class="flow__icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 9h17M3.5 15h17" stroke="currentColor" stroke-width="1.6"/><path d="M12 3c2.6 2.5 3.9 5.5 3.9 9s-1.3 6.5-3.9 9c-2.6-2.5-3.9-5.5-3.9-9S9.4 5.5 12 3Z" stroke="currentColor" stroke-width="1.6"/></svg></span><div><div class="flow__label">Internet</div><div class="flow__desc">Sites see the region, not you</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="download" aria-labelledby="download-title">
+    <div class="wrap">
+      <div class="section__head reveal">
+        <span class="eyebrow">Downloads</span>
+        <h2 class="h2" id="download-title">Android is available now</h2>
+        <p class="lead">Other platforms are marked Coming soon — we do not publish buttons for apps that do not exist yet.</p>
+      </div>
+      <div class="platforms">
+        <article class="platform glass reveal" data-delay="1"><span class="platform__icon"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993.0001.5511-.4482.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4482.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.2439 13.8533 7.8508 12 7.8508s-3.5902.3931-5.1367 1.0989L4.841 5.4467a.4161.4161 0 00-.5677-.1521.4157.4157 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3435-4.1021-2.6892-7.5743-6.1185-9.4396"/></svg></span><h3 class="platform__name">Android</h3><p class="platform__meta"><span data-android-note>Android 8.0 and newer</span></p><a class="btn btn--primary btn--block platform__cta" href="/download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Download</a></article>
+        <article class="platform glass platform--soon reveal" data-delay="2"><span class="platform__icon"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-13.051-1.801"/></svg></span><h3 class="platform__name">Windows</h3><p class="platform__meta">Desktop app in development</p><span class="btn btn--muted btn--block platform__cta" aria-disabled="true">Coming soon</span></article>
+        <article class="platform glass platform--soon reveal" data-delay="3"><span class="platform__icon"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.035 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.088-4.61 1.088zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg></span><h3 class="platform__name">iOS</h3><p class="platform__meta">iPhone and iPad version in progress</p><span class="btn btn--muted btn--block platform__cta" aria-disabled="true">Coming soon</span></article>
+        <article class="platform glass platform--soon reveal" data-delay="4"><span class="platform__icon"><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='4' y='2.5' width='16' height='19' rx='2.4'/><rect x='6.6' y='5' width='10.8' height='8.4' rx='1.2'/><circle cx='10' cy='8.6' r='.85' fill='currentColor' stroke='none'/><circle cx='14' cy='8.6' r='.85' fill='currentColor' stroke='none'/><path d='M10 10.9c.55.6 1.2.9 2 .9s1.45-.3 2-.9'/><path d='M7 16.4h5.2M7 18.7h3.2'/><circle cx='16.6' cy='17.6' r='1.5'/></svg></span><h3 class="platform__name">macOS</h3><p class="platform__meta">Coming after the iOS version</p><span class="btn btn--muted btn--block platform__cta" aria-disabled="true">Coming soon</span></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="faq" aria-labelledby="faq-title">
+    <div class="wrap wrap--narrow">
+      <div class="section__head section__head--center reveal">
+        <span class="eyebrow">FAQ</span>
+        <h2 class="h2" id="faq-title">FAQ</h2>
+      </div>
+      <div class="faq reveal" data-delay="1">
+        <details class="faq__item"><summary class="faq__q">What is GlukVPN?</summary><div class="faq__a"><div class="faq__inner">GlukVPN is a VPN app with one screen and one button. It encrypts traffic to the region you pick and shows a clear connection status: region, latency and session time.</div></div></details>
+        <details class="faq__item"><summary class="faq__q">Which regions are available now?</summary><div class="faq__a"><div class="faq__inner">Germany, France and the US are live now. Other regions are marked “Soon” on the map and will appear only once they actually work.</div></div></details>
+        <details class="faq__item"><summary class="faq__q">Is there a free plan?</summary><div class="faq__a"><div class="faq__inner">Yes. The Free plan gives one region and one device at limited speed. No card needed to start.</div></div></details>
+        <details class="faq__item"><summary class="faq__q">Which devices does the app run on?</summary><div class="faq__a"><div class="faq__inner">The Android version is available now. Windows, iOS and macOS builds are in development — we do not publish links to things that do not exist yet.</div></div></details>
+        <details class="faq__item"><summary class="faq__q">Do you keep logs of visited sites?</summary><div class="faq__a"><div class="faq__inner">No. We do not store browsing history or traffic contents. Accounts and limits do need some technical data — exactly which is described in the privacy policy.</div></div></details>
+        <details class="faq__item"><summary class="faq__q">What is a kill switch?</summary><div class="faq__a"><div class="faq__inner">It guards against accidental leaks: if the tunnel drops, the app blocks traffic until the connection is restored instead of letting it out directly.</div></div></details>
+        <details class="faq__item"><summary class="faq__q">How do I pay for a paid plan?</summary><div class="faq__a"><div class="faq__inner">Prices on the site are preliminary. In-app payment arrives together with billing; until then you can use the Free plan.</div></div></details>
+      </div>
+    </div>
+  </section>
+
+<section class="section section--tight">
+    <div class="wrap">
+      <div class="cta-strip glass glass--edge reveal">
+        <h2 class="h2">Try GlukVPN right now</h2>
+        <p class="lead center-x mt-3">The free plan works right after install — no card, no subscription.</p>
+        <div class="cta-strip__actions">
+          <a class="btn btn--primary btn--lg" data-magnetic href="/en/download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Download for Android</a>
+          <a class="btn btn--ghost btn--lg" href="/en/pricing/">See plans</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <div class="footer__mark" aria-hidden="true">GlukVPN</div>
+      <div class="footer__grid">
+        <div class="footer__about">
+          <a class="brand" href="/en/">
+            <img src="/assets/img/logo-96.png" width="96" height="96" alt="" loading="lazy" decoding="async">
+            <span>GlukVPN</span>
+          </a>
+          <p>A fast, private VPN with a clear app: one tap to a protected connection.</p>
+        </div>
+        <div>
+          <div class="footer__title">Product</div>
+          <div class="footer__list">
+            <a href="/en/features/">Features</a>
+            <a href="/en/mobile/">App</a>
+            <a href="/en/pricing/">Pricing</a>
+            <a href="/en/download/">Downloads</a>
+          </div>
+        </div>
+        <div>
+          <div class="footer__title">Help</div>
+          <div class="footer__list">
+            <a href="/en/support/">Support</a>
+            <a href="/en/#faq">FAQ</a>
+            <a href="https://t.me/glukvpn" data-telegram rel="noopener" target="_blank">Telegram</a>
+            <a href="mailto:support@gluk.tech" data-support-email data-fill-text>support@gluk.tech</a>
+          </div>
+        </div>
+        <div>
+          <div class="footer__title">Legal</div>
+          <div class="footer__list">
+            <a href="/en/privacy/">Privacy</a>
+            <a href="/en/terms/">Terms of Use</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer__bottom">
+        <span>© <span data-year>2026</span> GlukVPN · <span data-site-domain>vpn.gluk.tech</span></span>
+        <a class="madeby" href="https://crlx1q.com" target="_blank" rel="noopener">made by <b>crlx1q</b></a>
+      </div>
+    </div>
+  </footer>
+  </div>
+</body>
+</html>

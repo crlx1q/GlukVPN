@@ -128,7 +128,9 @@
   try { saved = localStorage.getItem(KEY); } catch (e) {}
   var q = (location.search.match(/[?&]font=([a-z]+)/) || [])[1];
   if (q && byId(q)) saved = q;
-  var initial = saved && byId(saved) ? saved : "onest";
+  var UICFG = (window.GLUK_CONFIG && window.GLUK_CONFIG.ui) || {};
+  if (UICFG.fontPicker === false && !q) saved = null;
+  var initial = saved && byId(saved) ? saved : "nunito";
   apply(initial, false);
 
   var UI = (window.GLUK_CONFIG && window.GLUK_CONFIG.ui) || {};

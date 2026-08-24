@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru" data-base=".">
+<html lang="ru" data-base="/" data-lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -12,6 +12,9 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="GlukVPN">
   <meta property="og:locale" content="ru_RU">
+  <link rel="alternate" hreflang="ru" href="https://vpn.gluk.tech/">
+  <link rel="alternate" hreflang="en" href="https://vpn.gluk.tech/en/">
+  <link rel="alternate" hreflang="x-default" href="https://vpn.gluk.tech/">
   <meta property="og:title" content="GlukVPN — быстрый и приватный VPN">
   <meta property="og:description" content="Быстрый и приватный VPN GlukVPN: регионы в Германии, Франции и США, kill switch, DNS-защита и подключение в одно нажатие. Приложение для Android.">
   <meta property="og:url" content="https://vpn.gluk.tech/">
@@ -23,29 +26,33 @@
   <meta name="twitter:title" content="GlukVPN — быстрый и приватный VPN">
   <meta name="twitter:description" content="Быстрый и приватный VPN GlukVPN: регионы в Германии, Франции и США, kill switch, DNS-защита и подключение в одно нажатие. Приложение для Android.">
   <meta name="twitter:image" content="https://vpn.gluk.tech/assets/img/og-cover.png">
-  <link rel="icon" href="favicon.ico" sizes="32x32">
-  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="assets/img/favicon-16.png">
-  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
-  <link rel="manifest" href="site.webmanifest">
-  <link rel="stylesheet" href="assets/css/fonts.css">
-  <link rel="stylesheet" href="assets/css/tokens.css">
-  <link rel="stylesheet" href="assets/css/base.css">
-  <link rel="stylesheet" href="assets/css/components.css">
-  <link rel="stylesheet" href="assets/css/sections.css">
-  <link rel="stylesheet" href="assets/css/app-ui.css">
-  <link rel="stylesheet" href="assets/css/utilities.css">
-  <link rel="stylesheet" href="assets/css/fx.css">
-  <link rel="stylesheet" href="assets/css/auth.css">
-  <script src="assets/js/config.js" defer></script>
-  <script src="assets/js/world-dots.js" defer></script>
-  <script src="assets/js/globe.js" defer></script>
-  <script src="assets/js/network-map.js" defer></script>
-  <script src="assets/js/sections.js" defer></script>
-  <script src="assets/js/ui.js" defer></script>
-  <script src="assets/js/fx.js" defer></script>
-  <script src="assets/js/auth.js" defer></script>
-  <script src="assets/js/fonts.js" defer></script>
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/img/favicon-16.png">
+  <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&amp;display=swap">
+  <link rel="stylesheet" href="/assets/css/fonts.css">
+  <link rel="stylesheet" href="/assets/css/tokens.css">
+  <link rel="stylesheet" href="/assets/css/base.css">
+  <link rel="stylesheet" href="/assets/css/components.css">
+  <link rel="stylesheet" href="/assets/css/sections.css">
+  <link rel="stylesheet" href="/assets/css/app-ui.css">
+  <link rel="stylesheet" href="/assets/css/utilities.css">
+  <link rel="stylesheet" href="/assets/css/fx.css">
+  <link rel="stylesheet" href="/assets/css/auth.css">
+  <script src="/assets/js/config.js" defer></script>
+  <script src="/assets/js/i18n.js" defer></script>
+  <script src="/assets/js/world-dots.js" defer></script>
+  <script src="/assets/js/globe.js" defer></script>
+  <script src="/assets/js/network-map.js" defer></script>
+  <script src="/assets/js/sections.js" defer></script>
+  <script src="/assets/js/ui.js" defer></script>
+  <script src="/assets/js/fx.js" defer></script>
+  <script src="/assets/js/auth.js" defer></script>
+  <script src="/assets/js/fonts.js" defer></script>
   <script type="application/ld+json">{"@context": "https://schema.org", "@graph": [{"@type": "Organization", "@id": "https://vpn.gluk.tech/#org", "name": "GlukVPN", "url": "https://vpn.gluk.tech/", "logo": "https://vpn.gluk.tech/assets/img/logo-256.png"}, {"@type": "WebSite", "@id": "https://vpn.gluk.tech/#website", "name": "GlukVPN", "url": "https://vpn.gluk.tech/", "inLanguage": "ru", "publisher": {"@id": "https://vpn.gluk.tech/#org"}}, {"@type": "SoftwareApplication", "name": "GlukVPN", "operatingSystem": "Android", "applicationCategory": "SecurityApplication", "url": "https://vpn.gluk.tech/mobile/", "downloadUrl": "https://vpn.gluk.tech/download/", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "KZT", "description": "Бесплатный тариф Free"}, "publisher": {"@id": "https://vpn.gluk.tech/#org"}}]}</script>
   <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Что такое GlukVPN?", "acceptedAnswer": {"@type": "Answer", "text": "GlukVPN — это VPN-приложение с одним экраном и одной кнопкой. Оно шифрует трафик до выбранного региона и показывает понятный статус соединения: регион, отклик и время сессии."}}, {"@type": "Question", "name": "Какие регионы доступны сейчас?", "acceptedAnswer": {"@type": "Answer", "text": "Сейчас работают Германия, Франция и США. Остальные регионы отмечены на карте как «Скоро» и появятся только после того, как реально заработают."}}, {"@type": "Question", "name": "Есть ли бесплатный тариф?", "acceptedAnswer": {"@type": "Answer", "text": "Да. Тариф Free даёт один регион и одно устройство с ограниченной скоростью. Карта для начала не нужна."}}, {"@type": "Question", "name": "На каких устройствах работает приложение?", "acceptedAnswer": {"@type": "Answer", "text": "Сейчас доступна версия для Android. Версии для Windows, iOS и macOS в разработке — мы не публикуем ссылки на то, чего ещё нет."}}, {"@type": "Question", "name": "Ведёте ли вы логи посещённых сайтов?", "acceptedAnswer": {"@type": "Answer", "text": "Нет. Историю сайтов и содержимое трафика мы не храним. Для работы аккаунта и лимитов нужны технические данные — что именно, подробно описано в политике конфиденциальности."}}, {"@type": "Question", "name": "Что такое kill switch?", "acceptedAnswer": {"@type": "Answer", "text": "Это защита от случайной утечки: если туннель обрывается, приложение блокирует трафик до восстановления соединения, вместо того чтобы пустить его напрямую."}}, {"@type": "Question", "name": "Как оплатить платный тариф?", "acceptedAnswer": {"@type": "Answer", "text": "Цены на сайте предварительные. Оплата внутри приложения появится вместе с запуском биллинга; до этого момента можно пользоваться тарифом Free."}}]}</script>
 </head>
@@ -72,28 +79,35 @@
   <div class="page">
   <header class="header">
     <div class="wrap header__inner">
-      <a class="brand" href="./" aria-label="GlukVPN — на главную">
-        <img src="assets/img/logo-96.png" width="96" height="96" alt="" decoding="async">
+      <a class="brand" href="/" aria-label="GlukVPN — на главную">
+        <img src="/assets/img/logo-96.png" width="96" height="96" alt="" decoding="async">
         <span>GlukVPN</span>
       </a>
-      <span class="chan-badge" data-channel-badge title="Сайт работает с бета-каналом">BETA</span>
-      <nav class="nav" aria-label="Основное меню"><a class="nav__link" href="features/">Возможности</a><a class="nav__link" href="mobile/">Приложение</a><a class="nav__link" href="pricing/">Тарифы</a><a class="nav__link" href="download/">Загрузки</a><a class="nav__link" href="support/">Поддержка</a></nav>
+      <nav class="nav" aria-label="Основное меню"><a class="nav__link" href="/features/">Возможности</a><a class="nav__link" href="/mobile/">Приложение</a><a class="nav__link" href="/pricing/">Тарифы</a><a class="nav__link" href="/download/">Загрузки</a><a class="nav__link" href="/support/">Поддержка</a></nav>
       <div class="header__actions">
+        <div class="lang" role="group" aria-label="Язык сайта">
+          <a class="lang__opt is-on" href="/" hreflang="ru" data-lang-set="ru">RU</a>
+          <a class="lang__opt" href="/en/" hreflang="en" data-lang-set="en">EN</a>
+        </div>
+        <a class="btn btn--primary btn--icon header__dl" href="/download/" data-download-android aria-label="Скачать GlukVPN" title="Скачать GlukVPN"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></a>
         <div class="acct" data-acct><span class="acct__skel" aria-hidden="true"></span></div>
-        <a class="btn btn--primary btn--sm header__dl" href="download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать</a>
         <button class="burger" type="button" aria-expanded="false" aria-controls="drawer" aria-label="Меню"><svg class="burger__open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg><svg class="burger__close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
       </div>
     </div>
   </header>
 
   <div class="drawer" id="drawer" aria-hidden="true">
-      <a class="drawer__link" href="features/">Возможности <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-      <a class="drawer__link" href="mobile/">Приложение <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-      <a class="drawer__link" href="pricing/">Тарифы <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-      <a class="drawer__link" href="download/">Загрузки <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-      <a class="drawer__link" href="support/">Поддержка <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/features/">Возможности <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/mobile/">Приложение <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/pricing/">Тарифы <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/download/">Загрузки <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/support/">Поддержка <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <div class="lang lang--drawer" role="group" aria-label="Язык сайта">
+        <a class="lang__opt is-on" href="/" hreflang="ru" data-lang-set="ru">Русский</a>
+        <a class="lang__opt" href="/en/" hreflang="en" data-lang-set="en">English</a>
+      </div>
       <div class="acct acct--drawer" data-acct><span class="acct__skel" aria-hidden="true"></span></div>
-      <a class="btn btn--primary btn--lg drawer__cta" href="download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать GlukVPN</a>
+      <a class="btn btn--primary btn--lg drawer__cta" href="/download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать GlukVPN</a>
   </div>
 
   <main id="main">
@@ -104,8 +118,8 @@
         <h1 class="display hero__title reveal" data-delay="1" id="hero-title">GlukVPN — <span class="gradient-text">быстрый, приватный</span> VPN</h1>
         <p class="lead hero__sub reveal" data-delay="2">Одно нажатие — и трафик идёт по зашифрованному туннелю до выбранного региона. Без настроек, без лишних экранов и без рекламных обещаний.</p>
         <div class="hero__actions reveal" data-delay="3">
-          <a class="btn btn--primary btn--lg" href="download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать для Android</a>
-          <a class="btn btn--ghost btn--lg" href="pricing/">Смотреть тарифы</a>
+          <a class="btn btn--primary btn--lg" href="/download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать для Android</a>
+          <a class="btn btn--ghost btn--lg" href="/pricing/">Смотреть тарифы</a>
         </div>
         <ul class="hero__meta reveal" data-delay="4">
           <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Бесплатный тариф без карты</li>
@@ -207,7 +221,7 @@
         <div class="map-card__stage">
           <canvas class="map-card__canvas" data-network-map width="960" height="500" role="img" aria-label="Карта сети GlukVPN: активные регионы Германия, Франция и США, а также регионы в планах"></canvas>
           <div class="tip" data-map-tip aria-hidden="true">
-            <div class="tip__name"><span data-tip-flag>🇩🇪</span><span data-tip-name>Германия</span></div>
+            <div class="tip__name"><span data-tip-flag><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#111'/><rect y='5.33' width='24' height='5.34' fill='#D00'/><rect y='10.67' width='24' height='5.33' fill='#FFCE00'/></svg></span><span data-tip-name>Германия</span></div>
             <div class="tip__rows" data-tip-rows></div>
           </div>
         </div>
@@ -221,21 +235,21 @@
         <div class="reveal" data-delay="2">
           <div class="regions" data-regions="live">
             <button class="region" type="button" data-region="de">
-          <span class="region__flag" aria-hidden="true">🇩🇪</span>
+          <span class="region__flag" aria-hidden="true"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#111'/><rect y='5.33' width='24' height='5.34' fill='#D00'/><rect y='10.67' width='24' height='5.33' fill='#FFCE00'/></svg></span>
           <span class="region__info"><span class="region__name">Германия</span>
             <span class="region__meta"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span>~24 мс</span><span class="load-bar" aria-hidden="true"><span style="width:32%"></span></span><span>загрузка 32%</span></span>
           </span>
           <span class="chip chip--live"><i class="chip__dot"></i>Онлайн</span>
         </button>
         <button class="region" type="button" data-region="fr">
-          <span class="region__flag" aria-hidden="true">🇫🇷</span>
+          <span class="region__flag" aria-hidden="true"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#F4F5F7'/><rect width='8' height='16' fill='#0B3E9C'/><rect x='16' width='8' height='16' fill='#E1273B'/></svg></span>
           <span class="region__info"><span class="region__name">Франция</span>
             <span class="region__meta"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span>~29 мс</span><span class="load-bar" aria-hidden="true"><span style="width:27%"></span></span><span>загрузка 27%</span></span>
           </span>
           <span class="chip chip--live"><i class="chip__dot"></i>Онлайн</span>
         </button>
         <button class="region" type="button" data-region="us">
-          <span class="region__flag" aria-hidden="true">🇺🇸</span>
+          <span class="region__flag" aria-hidden="true"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#F4F5F7'/><g fill='#D02F44'><rect y='0' width='24' height='1.23'/><rect y='2.46' width='24' height='1.23'/><rect y='4.92' width='24' height='1.23'/><rect y='7.38' width='24' height='1.23'/><rect y='9.85' width='24' height='1.23'/><rect y='12.31' width='24' height='1.23'/><rect y='14.77' width='24' height='1.23'/></g><rect width='10.4' height='8.6' fill='#2A3560'/><g fill='#fff'><circle cx='1.9' cy='1.7' r='.62'/><circle cx='4.6' cy='1.7' r='.62'/><circle cx='7.3' cy='1.7' r='.62'/><circle cx='3.2' cy='3.6' r='.62'/><circle cx='5.9' cy='3.6' r='.62'/><circle cx='8.6' cy='3.6' r='.62'/><circle cx='1.9' cy='5.5' r='.62'/><circle cx='4.6' cy='5.5' r='.62'/><circle cx='7.3' cy='5.5' r='.62'/><circle cx='3.2' cy='7.3' r='.62'/><circle cx='5.9' cy='7.3' r='.62'/><circle cx='8.6' cy='7.3' r='.62'/></g></svg></span>
           <span class="region__info"><span class="region__name">США</span>
             <span class="region__meta"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span>~96 мс</span><span class="load-bar" aria-hidden="true"><span style="width:41%"></span></span><span>загрузка 41%</span></span>
           </span>
@@ -244,22 +258,22 @@
           </div>
           <div class="regions mt-2" data-regions="soon">
             <div class="region region--soon" data-region="nl">
-          <span class="region__flag" aria-hidden="true">🇳🇱</span>
+          <span class="region__flag" aria-hidden="true"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#F4F5F7'/><rect width='24' height='5.33' fill='#C8102E'/><rect y='10.67' width='24' height='5.33' fill='#1E4785'/></svg></span>
           <span class="region__info"><span class="region__name">Нидерланды</span><span class="region__meta"><span>Амстердам</span></span></span>
           <span class="chip chip--soon">Скоро</span>
         </div>
         <div class="region region--soon" data-region="tr">
-          <span class="region__flag" aria-hidden="true">🇹🇷</span>
+          <span class="region__flag" aria-hidden="true"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#E30A17'/><circle cx='9.4' cy='8' r='4' fill='#fff'/><circle cx='10.9' cy='8' r='3.2' fill='#E30A17'/><path d='M15.1 8l-1.7.55 1.05-1.45v1.8L15.1 8l1.05 1.45-1.7-.55' fill='#fff'/><path d='M14.6 6.2l.62 1.62 1.73.08-1.35 1.08.45 1.68-1.45-.95-1.45.95.45-1.68-1.35-1.08 1.73-.08z' fill='#fff'/></svg></span>
           <span class="region__info"><span class="region__name">Турция</span><span class="region__meta"><span>Стамбул</span></span></span>
           <span class="chip chip--soon">Скоро</span>
         </div>
         <div class="region region--soon" data-region="sg">
-          <span class="region__flag" aria-hidden="true">🇸🇬</span>
+          <span class="region__flag" aria-hidden="true"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#F4F5F7'/><rect width='24' height='8' fill='#EF3340'/><circle cx='6.2' cy='4' r='2.9' fill='#fff'/><circle cx='7.7' cy='4' r='2.6' fill='#EF3340'/><g fill='#fff'><circle cx='9.9' cy='2.1' r='.52'/><circle cx='12.1' cy='2.1' r='.52'/><circle cx='11' cy='3.6' r='.52'/><circle cx='9.3' cy='4.6' r='.52'/><circle cx='12.7' cy='4.6' r='.52'/></g></svg></span>
           <span class="region__info"><span class="region__name">Сингапур</span><span class="region__meta"><span>Сингапур</span></span></span>
           <span class="chip chip--soon">Скоро</span>
         </div>
         <div class="region region--soon" data-region="jp">
-          <span class="region__flag" aria-hidden="true">🇯🇵</span>
+          <span class="region__flag" aria-hidden="true"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#F4F5F7'/><circle cx='12' cy='8' r='4.6' fill='#BC002D'/></svg></span>
           <span class="region__info"><span class="region__name">Япония</span><span class="region__meta"><span>Токио</span></span></span>
           <span class="chip chip--soon">Скоро</span>
         </div>
@@ -281,6 +295,81 @@
         <article class="step glass reveal" data-delay="2"><span class="step__num">2</span><h3 class="step__title">Выберите сервер</h3><p class="step__text">Любой доступный регион или Best Server — приложение подберёт вариант с лучшим откликом.</p><span class="step__line"></span></article>
         <article class="step glass reveal" data-delay="3"><span class="step__num">3</span><h3 class="step__title">Нажмите «Подключить»</h3><p class="step__text">Кнопка меняет состояние, маршрут на карте становится зелёным, появляются отклик и таймер сессии.</p><span class="step__line"></span></article>
         <article class="step glass reveal" data-delay="4"><span class="step__num">4</span><h3 class="step__title">Трафик защищён</h3><p class="step__text">Данные и DNS идут внутри туннеля. Сайты видят адрес выбранного региона.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="access" aria-labelledby="access-title">
+    <div class="wrap">
+      <div class="section__head reveal">
+        <span class="eyebrow">Что открывается</span>
+        <h2 class="h2" id="access-title">Сервисы работают так, как если бы блокировок не было</h2>
+        <p class="lead">На канале 150 Мбит/с через GlukVPN остаётся запас для 4K-сериалов, стримов и игр одновременно — без ручных настроек и без смены DNS.</p>
+      </div>
+
+      <div class="acs">
+        <article class="acs-speed glass reveal" data-access-speed>
+          <header class="acs-speed__head">
+            <span class="acs-speed__ic"><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M4.5 17a8.5 8.5 0 1 1 15 0'/><path d='M12 13.5l3.6-3.9'/><circle cx='12' cy='14.6' r='1.5' fill='currentColor' stroke='none'/></svg></span>
+            <span>
+              <b>Замер на бета-канале</b>
+              <span class="acs-speed__sub">Франкфурт → Казахстан, WireGuard</span>
+            </span>
+          </header>
+
+          <div class="acs-gauge">
+            <svg viewBox="0 0 220 128" role="img" aria-label="Скорость 150 Мбит в секунду">
+              <defs>
+                <linearGradient id="acsG" x1="0" y1="1" x2="1" y2="0">
+                  <stop offset="0" stop-color="#6d4de0"/>
+                  <stop offset=".55" stop-color="#8b5cf6"/>
+                  <stop offset="1" stop-color="#4fd88c"/>
+                </linearGradient>
+              </defs>
+              <path class="acs-gauge__bg" d="M18 116a92 92 0 0 1 184 0"/>
+              <path class="acs-gauge__val" d="M18 116a92 92 0 0 1 184 0" data-gauge="0.84"/>
+              <g class="acs-gauge__ticks">
+                <path d="M18 116h10"/><path d="M110 24v10"/><path d="M192 116h10"/>
+              </g>
+            </svg>
+            <div class="acs-gauge__read">
+              <b data-count="150" data-count-suffix="">150</b>
+              <span>Мбит/с на приём</span>
+            </div>
+          </div>
+
+          <ul class="acs-metrics">
+            <li><b data-count="24" data-count-suffix=" мс">24 мс</b><span>пинг до узла</span></li>
+            <li><b data-count="0" data-count-suffix=" %">0 %</b><span>потерь пакетов</span></li>
+            <li><b data-count="6" data-count-suffix="×">6×</b><span>запас для 4K</span></li>
+          </ul>
+
+          <ul class="acs-ladder" data-access-ladder><li class='acs-row'><span class='acs-row__top'><span class='acs-row__label'>4K сериалы и фильмы</span><span class='acs-row__need'>25 Мбит/с</span></span><span class='acs-row__bar'><i class='acs-row__fill' style='--w:100%;--d:0ms'></i></span><span class='acs-row__spare'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='m20 6-11 11-5-5'/></svg> запас ×6</span></li><li class='acs-row'><span class='acs-row__top'><span class='acs-row__label'>2K / 1440p</span><span class='acs-row__need'>14 Мбит/с</span></span><span class='acs-row__bar'><i class='acs-row__fill' style='--w:56%;--d:120ms'></i></span><span class='acs-row__spare'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='m20 6-11 11-5-5'/></svg> запас ×10</span></li><li class='acs-row'><span class='acs-row__top'><span class='acs-row__label'>Full HD 1080p</span><span class='acs-row__need'>8 Мбит/с</span></span><span class='acs-row__bar'><i class='acs-row__fill' style='--w:32%;--d:240ms'></i></span><span class='acs-row__spare'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='m20 6-11 11-5-5'/></svg> запас ×18</span></li><li class='acs-row'><span class='acs-row__top'><span class='acs-row__label'>Звонки и стримы</span><span class='acs-row__need'>4 Мбит/с</span></span><span class='acs-row__bar'><i class='acs-row__fill' style='--w:16%;--d:360ms'></i></span><span class='acs-row__spare'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='m20 6-11 11-5-5'/></svg> запас ×37</span></li></ul>
+          <p class="acs-note">Цифры — реальные замеры на канале 150 Мбит/с. Ваш результат зависит от тарифа провайдера и времени суток.</p>
+        </article>
+
+        <div class="acs-right">
+          <div class="acs-grid"><article class='acs-tile reveal' data-delay='1'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='2' y='5' width='20' height='14' rx='4.5'/><path d='M10.4 9.2l5 2.8-5 2.8z' fill='currentColor' stroke='none'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>YouTube</b><span class='acs-tile__sub'>4K без буфера</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='28' data-count-suffix=' мс'>28 мс</span></span></article><article class='acs-tile reveal' data-delay='2'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M21 4.6L2.9 11.3l5.4 1.7 1.2 5.6 2.6-3.3 4.3 3.1z'/><path d='M8.3 13l9.4-6.6-5.6 8.9'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>Telegram</b><span class='acs-tile__sub'>звонки и каналы</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='24' data-count-suffix=' мс'>24 мс</span></span></article><article class='acs-tile reveal' data-delay='3'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M7.5 3.5v17'/><path d='M16.5 3.5v17'/><path d='M7.5 3.5l9 17'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>Netflix</b><span class='acs-tile__sub'>сериалы 4K</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='31' data-count-suffix=' мс'>31 мс</span></span></article><article class='acs-tile reveal' data-delay='4'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M4 3.6h16v10.1l-4.2 4.2h-3.3L9.8 20.4V17.9H4z'/><path d='M11.4 8v4'/><path d='M15.4 8v4'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>Twitch</b><span class='acs-tile__sub'>стримы 1080p60</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='33' data-count-suffix=' мс'>33 мс</span></span></article><article class='acs-tile reveal' data-delay='5'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M8.6 5.4A13 13 0 0 1 12 5c1.2 0 2.3.14 3.4.4l1.2-1.5c2.4.7 4.2 2 4.2 2 .8 3.2 1.2 6.4 1.1 9.7-1.7 1.9-4 3-4 3l-1.1-1.9'/><path d='M7.2 16.7L6.1 18.6s-2.3-1.1-4-3c-.1-3.3.3-6.5 1.1-9.7 0 0 1.8-1.3 4.2-2z'/><circle cx='9.4' cy='12.4' r='1.3' fill='currentColor' stroke='none'/><circle cx='14.6' cy='12.4' r='1.3' fill='currentColor' stroke='none'/><path d='M8.4 16.4c2.4 1.1 4.8 1.1 7.2 0'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>Discord</b><span class='acs-tile__sub'>голос и стримы</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='26' data-count-suffix=' мс'>26 мс</span></span></article><article class='acs-tile reveal' data-delay='6'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><circle cx='12' cy='12' r='9'/><path d='M7.6 9.4c2.9-.8 5.9-.5 8.6.9'/><path d='M8.3 12.4c2.4-.6 4.9-.3 7.1.8'/><path d='M9 15.3c1.9-.5 3.8-.3 5.5.6'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>Spotify</b><span class='acs-tile__sub'>без обрывов</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='22' data-count-suffix=' мс'>22 мс</span></span></article><article class='acs-tile reveal' data-delay='1'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='3.5' y='3.5' width='17' height='17' rx='5'/><circle cx='12' cy='12' r='3.9'/><circle cx='17' cy='7' r='1' fill='currentColor' stroke='none'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>Instagram</b><span class='acs-tile__sub'>reels и сторис</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='29' data-count-suffix=' мс'>29 мс</span></span></article><article class='acs-tile reveal' data-delay='2'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M20.5 11.6a8.5 8.5 0 0 1-12.4 7.6L3.6 20.4l1.3-4.4A8.5 8.5 0 1 1 20.5 11.6z'/><path d='M9 9.2c0 3 2.3 5.4 5.3 5.6.6 0 1-.4 1.1-1l-1.9-.9-.9.8c-1-.5-1.8-1.3-2.3-2.3l.8-.9-.9-1.9c-.6.1-1.1.5-1.2 1.1z' fill='currentColor' stroke='none'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>WhatsApp</b><span class='acs-tile__sub'>видеозвонки</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='27' data-count-suffix=' мс'>27 мс</span></span></article><article class='acs-tile reveal' data-delay='3'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M14.4 3.5v9.7a3.6 3.6 0 1 1-3.6-3.6'/><path d='M14.4 5.6c.8 1.7 2.4 2.8 4.3 2.9'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>TikTok</b><span class='acs-tile__sub'>лента без лагов</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='30' data-count-suffix=' мс'>30 мс</span></span></article><article class='acs-tile reveal' data-delay='4'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M5 5l14 14'/><path d='M19 5L5 19'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>X</b><span class='acs-tile__sub'>лента и видео</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='25' data-count-suffix=' мс'>25 мс</span></span></article><article class='acs-tile reveal' data-delay='5'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><circle cx='12' cy='12' r='8.6'/><path d='M12 3.4v6.1l5.3 3.1'/><path d='M12 20.6v-6.1L6.7 11.4'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>AI-сервисы</b><span class='acs-tile__sub'>без блокировки региона</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='35' data-count-suffix=' мс'>35 мс</span></span></article><article class='acs-tile reveal' data-delay='6'><span class='acs-tile__ic'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><circle cx='12' cy='12' r='9'/><circle cx='15.2' cy='9.4' r='2.3'/><path d='M13.2 11.3L7.3 14.2'/><circle cx='7' cy='15.2' r='1.9'/></svg></span><span class='acs-tile__body'><b class='acs-tile__name'>Steam</b><span class='acs-tile__sub'>загрузка на полной</span></span><span class='acs-tile__ping'><i class='acs-dot'></i><span data-count='34' data-count-suffix=' мс'>34 мс</span></span></article></div>
+
+          <article class="acs-games glass reveal">
+            <header class="acs-games__head">
+              <b>Игры без скачков пинга</b>
+              <span>ближайший узел выбирается автоматически</span>
+            </header>
+            <ul class="acs-games__list"><li class='acs-game reveal' data-delay='1'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M7.5 8.5h9a4.5 4.5 0 0 1 4.4 5.4l-.5 2.6a2.6 2.6 0 0 1-4.7 1l-1-1.6H9.3l-1 1.6a2.6 2.6 0 0 1-4.7-1l-.5-2.6A4.5 4.5 0 0 1 7.5 8.5z'/><path d='M8 12.5h2'/><path d='M9 11.5v2'/><circle cx='15.4' cy='12' r='.9' fill='currentColor' stroke='none'/><circle cx='17.2' cy='13.6' r='.9' fill='currentColor' stroke='none'/></svg><span class='acs-game__name'>CS2</span><span class='acs-game__ping'><b data-count='29' data-count-suffix=' мс'>29 мс</b><span class='acs-game__reg'>Европа</span></span></li><li class='acs-game reveal' data-delay='2'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M7.5 8.5h9a4.5 4.5 0 0 1 4.4 5.4l-.5 2.6a2.6 2.6 0 0 1-4.7 1l-1-1.6H9.3l-1 1.6a2.6 2.6 0 0 1-4.7-1l-.5-2.6A4.5 4.5 0 0 1 7.5 8.5z'/><path d='M8 12.5h2'/><path d='M9 11.5v2'/><circle cx='15.4' cy='12' r='.9' fill='currentColor' stroke='none'/><circle cx='17.2' cy='13.6' r='.9' fill='currentColor' stroke='none'/></svg><span class='acs-game__name'>Dota 2</span><span class='acs-game__ping'><b data-count='31' data-count-suffix=' мс'>31 мс</b><span class='acs-game__reg'>EU West</span></span></li><li class='acs-game reveal' data-delay='3'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M7.5 8.5h9a4.5 4.5 0 0 1 4.4 5.4l-.5 2.6a2.6 2.6 0 0 1-4.7 1l-1-1.6H9.3l-1 1.6a2.6 2.6 0 0 1-4.7-1l-.5-2.6A4.5 4.5 0 0 1 7.5 8.5z'/><path d='M8 12.5h2'/><path d='M9 11.5v2'/><circle cx='15.4' cy='12' r='.9' fill='currentColor' stroke='none'/><circle cx='17.2' cy='13.6' r='.9' fill='currentColor' stroke='none'/></svg><span class='acs-game__name'>Valorant</span><span class='acs-game__ping'><b data-count='34' data-count-suffix=' мс'>34 мс</b><span class='acs-game__reg'>Frankfurt</span></span></li><li class='acs-game reveal' data-delay='4'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M7.5 8.5h9a4.5 4.5 0 0 1 4.4 5.4l-.5 2.6a2.6 2.6 0 0 1-4.7 1l-1-1.6H9.3l-1 1.6a2.6 2.6 0 0 1-4.7-1l-.5-2.6A4.5 4.5 0 0 1 7.5 8.5z'/><path d='M8 12.5h2'/><path d='M9 11.5v2'/><circle cx='15.4' cy='12' r='.9' fill='currentColor' stroke='none'/><circle cx='17.2' cy='13.6' r='.9' fill='currentColor' stroke='none'/></svg><span class='acs-game__name'>PUBG</span><span class='acs-game__ping'><b data-count='38' data-count-suffix=' мс'>38 мс</b><span class='acs-game__reg'>EU</span></span></li><li class='acs-game reveal' data-delay='5'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M7.5 8.5h9a4.5 4.5 0 0 1 4.4 5.4l-.5 2.6a2.6 2.6 0 0 1-4.7 1l-1-1.6H9.3l-1 1.6a2.6 2.6 0 0 1-4.7-1l-.5-2.6A4.5 4.5 0 0 1 7.5 8.5z'/><path d='M8 12.5h2'/><path d='M9 11.5v2'/><circle cx='15.4' cy='12' r='.9' fill='currentColor' stroke='none'/><circle cx='17.2' cy='13.6' r='.9' fill='currentColor' stroke='none'/></svg><span class='acs-game__name'>Fortnite</span><span class='acs-game__ping'><b data-count='36' data-count-suffix=' мс'>36 мс</b><span class='acs-game__reg'>EU</span></span></li><li class='acs-game reveal' data-delay='6'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M7.5 8.5h9a4.5 4.5 0 0 1 4.4 5.4l-.5 2.6a2.6 2.6 0 0 1-4.7 1l-1-1.6H9.3l-1 1.6a2.6 2.6 0 0 1-4.7-1l-.5-2.6A4.5 4.5 0 0 1 7.5 8.5z'/><path d='M8 12.5h2'/><path d='M9 11.5v2'/><circle cx='15.4' cy='12' r='.9' fill='currentColor' stroke='none'/><circle cx='17.2' cy='13.6' r='.9' fill='currentColor' stroke='none'/></svg><span class='acs-game__name'>Genshin</span><span class='acs-game__ping'><b data-count='41' data-count-suffix=' мс'>41 мс</b><span class='acs-game__reg'>Europe</span></span></li></ul>
+          </article>
+
+          <article class="acs-strip glass reveal">
+            <span class="acs-strip__ic"><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='3' y='5' width='18' height='14' rx='2.4'/><path d='M8 5v14'/><path d='M16 5v14'/><path d='M3 12h18'/></svg></span>
+            <p>Стриминг, соцсети, AI-сервисы и магазины игр — трафик идёт в одном туннеле, переключать ничего не нужно.</p>
+            <div class='acs-marq' aria-hidden='true'><div class='acs-marq__track'><span class='acs-chip'>youtube.com</span><span class='acs-chip'>t.me</span><span class='acs-chip'>instagram.com</span><span class='acs-chip'>discord.com</span><span class='acs-chip'>twitch.tv</span><span class='acs-chip'>netflix.com</span><span class='acs-chip'>spotify.com</span><span class='acs-chip'>x.com</span><span class='acs-chip'>tiktok.com</span><span class='acs-chip'>reddit.com</span><span class='acs-chip'>steampowered.com</span><span class='acs-chip'>chatgpt.com</span><span class='acs-chip'>figma.com</span><span class='acs-chip'>github.com</span><span class='acs-chip'>medium.com</span><span class='acs-chip'>soundcloud.com</span><span class='acs-chip'>pinterest.com</span><span class='acs-chip'>vimeo.com</span><span class='acs-chip'>youtube.com</span><span class='acs-chip'>t.me</span><span class='acs-chip'>instagram.com</span><span class='acs-chip'>discord.com</span><span class='acs-chip'>twitch.tv</span><span class='acs-chip'>netflix.com</span><span class='acs-chip'>spotify.com</span><span class='acs-chip'>x.com</span><span class='acs-chip'>tiktok.com</span><span class='acs-chip'>reddit.com</span><span class='acs-chip'>steampowered.com</span><span class='acs-chip'>chatgpt.com</span><span class='acs-chip'>figma.com</span><span class='acs-chip'>github.com</span><span class='acs-chip'>medium.com</span><span class='acs-chip'>soundcloud.com</span><span class='acs-chip'>pinterest.com</span><span class='acs-chip'>vimeo.com</span></div></div>
+          </article>
+        </div>
+      </div>
+
+      <div class="acs-cta reveal">
+        <a class="btn btn--primary btn--lg" href="/download/" data-download-android>Проверить на своём интернете</a>
+        <a class="btn btn--ghost btn--lg" href="/pricing/">Сравнить тарифы</a>
       </div>
     </div>
   </section>
@@ -308,7 +397,7 @@
             <div class="app-map" aria-hidden="true"><canvas data-phone-map="de" width="390" height="400"></canvas></div>
             <div class="app-body">
               <div class="app-top">
-                <div class="app-brand"><img src="assets/img/logo-96.png" width="96" height="96" alt="" loading="lazy" decoding="async">GlukVPN</div>
+                <div class="app-brand"><img src="/assets/img/logo-96.png" width="96" height="96" alt="" loading="lazy" decoding="async">GlukVPN</div>
                 <div class="app-badge"><i class="dot"></i>Connected</div>
               </div>
 
@@ -320,7 +409,7 @@
               </div>
 
               <div class="app-loc">
-                <span class="flag">🇩🇪</span>
+                <span class="flag"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#111'/><rect y='5.33' width='24' height='5.34' fill='#D00'/><rect y='10.67' width='24' height='5.33' fill='#FFCE00'/></svg></span>
                 <span class="name">Germany</span>
                 <span class="sub">· Best Server</span>
                 <svg viewBox="0 0 24 24" fill="none"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -404,35 +493,35 @@
             <div class="srv-list">
               <div class="srv-row">
                 <span class="srv-row__left">
-                  <span class="srv-flag">🇩🇪</span>
+                  <span class="srv-flag"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#111'/><rect y='5.33' width='24' height='5.34' fill='#D00'/><rect y='10.67' width='24' height='5.33' fill='#FFCE00'/></svg></span>
                   <span><span class="srv-row__name">Germany</span><span class="srv-row__speed"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>24 ms · load 32%</span></span>
                 </span>
                 <span class="srv-radio"></span>
               </div>
               <div class="srv-row">
                 <span class="srv-row__left">
-                  <span class="srv-flag">🇫🇷</span>
+                  <span class="srv-flag"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#F4F5F7'/><rect width='8' height='16' fill='#0B3E9C'/><rect x='16' width='8' height='16' fill='#E1273B'/></svg></span>
                   <span><span class="srv-row__name">France</span><span class="srv-row__speed"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>29 ms · load 27%</span></span>
                 </span>
                 <span class="srv-radio"></span>
               </div>
               <div class="srv-row">
                 <span class="srv-row__left">
-                  <span class="srv-flag">🇺🇸</span>
+                  <span class="srv-flag"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#F4F5F7'/><g fill='#D02F44'><rect y='0' width='24' height='1.23'/><rect y='2.46' width='24' height='1.23'/><rect y='4.92' width='24' height='1.23'/><rect y='7.38' width='24' height='1.23'/><rect y='9.85' width='24' height='1.23'/><rect y='12.31' width='24' height='1.23'/><rect y='14.77' width='24' height='1.23'/></g><rect width='10.4' height='8.6' fill='#2A3560'/><g fill='#fff'><circle cx='1.9' cy='1.7' r='.62'/><circle cx='4.6' cy='1.7' r='.62'/><circle cx='7.3' cy='1.7' r='.62'/><circle cx='3.2' cy='3.6' r='.62'/><circle cx='5.9' cy='3.6' r='.62'/><circle cx='8.6' cy='3.6' r='.62'/><circle cx='1.9' cy='5.5' r='.62'/><circle cx='4.6' cy='5.5' r='.62'/><circle cx='7.3' cy='5.5' r='.62'/><circle cx='3.2' cy='7.3' r='.62'/><circle cx='5.9' cy='7.3' r='.62'/><circle cx='8.6' cy='7.3' r='.62'/></g></svg></span>
                   <span><span class="srv-row__name">United States</span><span class="srv-row__speed"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>96 ms · load 41%</span></span>
                 </span>
                 <span class="srv-radio"></span>
               </div>
               <div class="srv-row srv-row--soon">
                 <span class="srv-row__left">
-                  <span class="srv-flag">🇳🇱</span>
+                  <span class="srv-flag"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#F4F5F7'/><rect width='24' height='5.33' fill='#C8102E'/><rect y='10.67' width='24' height='5.33' fill='#1E4785'/></svg></span>
                   <span><span class="srv-row__name">Netherlands</span><span class="srv-row__speed">coming soon</span></span>
                 </span>
                 <span class="srv-radio"></span>
               </div>
               <div class="srv-row srv-row--soon">
                 <span class="srv-row__left">
-                  <span class="srv-flag">🇹🇷</span>
+                  <span class="srv-flag"><svg class='flag-ic' viewBox='0 0 24 16' role='img' aria-hidden='true' focusable='false'><rect width='24' height='16' fill='#E30A17'/><circle cx='9.4' cy='8' r='4' fill='#fff'/><circle cx='10.9' cy='8' r='3.2' fill='#E30A17'/><path d='M15.1 8l-1.7.55 1.05-1.45v1.8L15.1 8l1.05 1.45-1.7-.55' fill='#fff'/><path d='M14.6 6.2l.62 1.62 1.73.08-1.35 1.08.45 1.68-1.45-.95-1.45.95.45-1.68-1.35-1.08 1.73-.08z' fill='#fff'/></svg></span>
                   <span><span class="srv-row__name">Türkiye</span><span class="srv-row__speed">coming soon</span></span>
                 </span>
                 <span class="srv-radio"></span>
@@ -456,8 +545,8 @@
           <div class="preview__item reveal" data-delay="4"><span class="icon-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="3.8" width="17" height="7" rx="2" stroke="currentColor" stroke-width="1.6"/><rect x="3.5" y="13.2" width="17" height="7" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M7 7.3h.01M7 16.7h.01" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span><div><h3>Список серверов без технического шума</h3><p>Только страна, отклик и загрузка. Никаких внутренних имён и адресов.</p></div></div>
         </div>
         <div class="flex-row mt-5 reveal" data-delay="4">
-          <a class="btn btn--ghost" href="mobile/">Подробнее о приложении</a>
-          <a class="btn btn--primary" href="download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать</a>
+          <a class="btn btn--ghost" href="/mobile/">Подробнее о приложении</a>
+          <a class="btn btn--primary" href="/download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать</a>
         </div>
       </div>
     </div>
@@ -471,13 +560,13 @@
         <p class="lead">Начните с Free и перейдите на платный тариф, когда понадобятся все регионы и несколько устройств.</p>
       </div>
       <div class="plans reveal" data-delay="1" data-plans>
-        <article class="plan glass"><div class="plan__head"><h3 class="plan__name">Free</h3></div><div class="plan__price"><span class="plan__amount">0</span><span class="plan__period">/ мес</span></div><p class="plan__note">Попробовать без оплаты</p><ul class="plan__features"><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>1 регион на выбор системы</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>1 устройство</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Ограниченная скорость</span></li><li data-off><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Kill switch</span></li><li data-off><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Приоритетная поддержка</span></li></ul><a class="btn btn--ghost btn--block plan__cta" href="download/">Начать бесплатно</a></article>
-        <article class="plan glass plan--featured"><div class="plan__head"><h3 class="plan__name">Basic</h3><span class="chip chip--violet">Популярный</span></div><div class="plan__price"><span class="plan__amount">1 490 ₸</span><span class="plan__period">/ мес</span></div><p class="plan__note">Для повседневного использования</p><ul class="plan__features"><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Все доступные регионы</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>До 3 устройств</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Полная скорость канала</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Kill switch и DNS-защита</span></li><li data-off><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Приоритетная поддержка</span></li></ul><a class="btn btn--primary btn--block plan__cta" href="pricing/">Выбрать Basic</a></article>
-        <article class="plan glass"><div class="plan__head"><h3 class="plan__name">Pro</h3></div><div class="plan__price"><span class="plan__amount">2 490 ₸</span><span class="plan__period">/ мес</span></div><p class="plan__note">Для семьи и всех устройств</p><ul class="plan__features"><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Все регионы + ранний доступ к новым</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>До 10 устройств</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Полная скорость канала</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Kill switch и DNS-защита</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Приоритетная поддержка</span></li></ul><a class="btn btn--ghost btn--block plan__cta" href="pricing/">Выбрать Pro</a></article>
+        <article class="plan glass"><div class="plan__head"><h3 class="plan__name">Free</h3></div><div class="plan__price"><span class="plan__amount">0</span><span class="plan__period">/ мес</span></div><p class="plan__note">Попробовать без оплаты</p><ul class="plan__features"><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>1 регион на выбор системы</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>1 устройство</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Ограниченная скорость</span></li><li data-off><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Kill switch</span></li><li data-off><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Приоритетная поддержка</span></li></ul><a class="btn btn--ghost btn--block plan__cta" href="/download/">Начать бесплатно</a></article>
+        <article class="plan glass plan--featured"><div class="plan__head"><h3 class="plan__name">Basic</h3><span class="chip chip--violet">Популярный</span></div><div class="plan__price"><span class="plan__amount">1 490 ₸</span><span class="plan__period">/ мес</span></div><p class="plan__note">Для повседневного использования</p><ul class="plan__features"><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Все доступные регионы</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>До 3 устройств</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Полная скорость канала</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Kill switch и DNS-защита</span></li><li data-off><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Приоритетная поддержка</span></li></ul><a class="btn btn--primary btn--block plan__cta" href="/pricing/">Выбрать Basic</a></article>
+        <article class="plan glass"><div class="plan__head"><h3 class="plan__name">Pro</h3></div><div class="plan__price"><span class="plan__amount">2 490 ₸</span><span class="plan__period">/ мес</span></div><p class="plan__note">Для семьи и всех устройств</p><ul class="plan__features"><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Все регионы + ранний доступ к новым</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>До 10 устройств</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Полная скорость канала</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Kill switch и DNS-защита</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Приоритетная поддержка</span></li></ul><a class="btn btn--ghost btn--block plan__cta" href="/pricing/">Выбрать Pro</a></article>
       </div>
       <p class="pricing-note" data-pricing-note>Цены предварительные и могут измениться до публичного запуска.</p>
       <div class="flex-row flex-row--center mt-4 reveal">
-        <a class="btn btn--ghost" href="pricing/">Сравнить тарифы</a>
+        <a class="btn btn--ghost" href="/pricing/">Сравнить тарифы</a>
       </div>
     </div>
   </section>
@@ -496,8 +585,8 @@
           <li class="card__text">VPN не заменяет антивирус и не скрывает вас от сайтов, где вы вошли в свой аккаунт.</li>
         </ul>
         <div class="flex-row mt-5 reveal" data-delay="3">
-          <a class="btn btn--ghost btn--sm" href="privacy/">Политика конфиденциальности</a>
-          <a class="btn btn--ghost btn--sm" href="features/">Подробнее о защите</a>
+          <a class="btn btn--ghost btn--sm" href="/privacy/">Политика конфиденциальности</a>
+          <a class="btn btn--ghost btn--sm" href="/features/">Подробнее о защите</a>
         </div>
       </div>
       <div class="flow glass reveal" data-delay="2">
@@ -520,10 +609,10 @@
         <p class="lead">Остальные платформы помечены как Coming soon — мы не выкладываем кнопки на приложения, которых пока нет.</p>
       </div>
       <div class="platforms">
-        <article class="platform glass reveal" data-delay="1"><span class="platform__icon"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993.0001.5511-.4482.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4482.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.2439 13.8533 7.8508 12 7.8508s-3.5902.3931-5.1367 1.0989L4.841 5.4467a.4161.4161 0 00-.5677-.1521.4157.4157 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3435-4.1021-2.6892-7.5743-6.1185-9.4396"/></svg></span><h3 class="platform__name">Android</h3><p class="platform__meta"><span data-android-note>Android 8.0 и новее</span></p><a class="btn btn--primary btn--block platform__cta" href="download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать</a></article>
+        <article class="platform glass reveal" data-delay="1"><span class="platform__icon"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993.0001.5511-.4482.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4482.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.2439 13.8533 7.8508 12 7.8508s-3.5902.3931-5.1367 1.0989L4.841 5.4467a.4161.4161 0 00-.5677-.1521.4157.4157 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3435-4.1021-2.6892-7.5743-6.1185-9.4396"/></svg></span><h3 class="platform__name">Android</h3><p class="platform__meta"><span data-android-note>Android 8.0 и новее</span></p><a class="btn btn--primary btn--block platform__cta" href="/download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать</a></article>
         <article class="platform glass platform--soon reveal" data-delay="2"><span class="platform__icon"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-13.051-1.801"/></svg></span><h3 class="platform__name">Windows</h3><p class="platform__meta">Настольное приложение в разработке</p><span class="btn btn--muted btn--block platform__cta" aria-disabled="true">Coming soon</span></article>
         <article class="platform glass platform--soon reveal" data-delay="3"><span class="platform__icon"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.035 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.088-4.61 1.088zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg></span><h3 class="platform__name">iOS</h3><p class="platform__meta">Версия для iPhone и iPad в работе</p><span class="btn btn--muted btn--block platform__cta" aria-disabled="true">Coming soon</span></article>
-        <article class="platform glass platform--soon reveal" data-delay="4"><span class="platform__icon"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.035 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.088-4.61 1.088zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg></span><h3 class="platform__name">macOS</h3><p class="platform__meta">Появится после версии для iOS</p><span class="btn btn--muted btn--block platform__cta" aria-disabled="true">Coming soon</span></article>
+        <article class="platform glass platform--soon reveal" data-delay="4"><span class="platform__icon"><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='4' y='2.5' width='16' height='19' rx='2.4'/><rect x='6.6' y='5' width='10.8' height='8.4' rx='1.2'/><circle cx='10' cy='8.6' r='.85' fill='currentColor' stroke='none'/><circle cx='14' cy='8.6' r='.85' fill='currentColor' stroke='none'/><path d='M10 10.9c.55.6 1.2.9 2 .9s1.45-.3 2-.9'/><path d='M7 16.4h5.2M7 18.7h3.2'/><circle cx='16.6' cy='17.6' r='1.5'/></svg></span><h3 class="platform__name">macOS</h3><p class="platform__meta">Появится после версии для iOS</p><span class="btn btn--muted btn--block platform__cta" aria-disabled="true">Coming soon</span></article>
       </div>
     </div>
   </section>
@@ -535,13 +624,13 @@
         <h2 class="h2" id="faq-title">Частые вопросы</h2>
       </div>
       <div class="faq reveal" data-delay="1">
-        <details class="faq__item"><summary class="faq__q">Что такое GlukVPN?</summary><div class="faq__a">GlukVPN — это VPN-приложение с одним экраном и одной кнопкой. Оно шифрует трафик до выбранного региона и показывает понятный статус соединения: регион, отклик и время сессии.</div></details>
-        <details class="faq__item"><summary class="faq__q">Какие регионы доступны сейчас?</summary><div class="faq__a">Сейчас работают Германия, Франция и США. Остальные регионы отмечены на карте как «Скоро» и появятся только после того, как реально заработают.</div></details>
-        <details class="faq__item"><summary class="faq__q">Есть ли бесплатный тариф?</summary><div class="faq__a">Да. Тариф Free даёт один регион и одно устройство с ограниченной скоростью. Карта для начала не нужна.</div></details>
-        <details class="faq__item"><summary class="faq__q">На каких устройствах работает приложение?</summary><div class="faq__a">Сейчас доступна версия для Android. Версии для Windows, iOS и macOS в разработке — мы не публикуем ссылки на то, чего ещё нет.</div></details>
-        <details class="faq__item"><summary class="faq__q">Ведёте ли вы логи посещённых сайтов?</summary><div class="faq__a">Нет. Историю сайтов и содержимое трафика мы не храним. Для работы аккаунта и лимитов нужны технические данные — что именно, подробно описано в политике конфиденциальности.</div></details>
-        <details class="faq__item"><summary class="faq__q">Что такое kill switch?</summary><div class="faq__a">Это защита от случайной утечки: если туннель обрывается, приложение блокирует трафик до восстановления соединения, вместо того чтобы пустить его напрямую.</div></details>
-        <details class="faq__item"><summary class="faq__q">Как оплатить платный тариф?</summary><div class="faq__a">Цены на сайте предварительные. Оплата внутри приложения появится вместе с запуском биллинга; до этого момента можно пользоваться тарифом Free.</div></details>
+        <details class="faq__item"><summary class="faq__q">Что такое GlukVPN?</summary><div class="faq__a"><div class="faq__inner">GlukVPN — это VPN-приложение с одним экраном и одной кнопкой. Оно шифрует трафик до выбранного региона и показывает понятный статус соединения: регион, отклик и время сессии.</div></div></details>
+        <details class="faq__item"><summary class="faq__q">Какие регионы доступны сейчас?</summary><div class="faq__a"><div class="faq__inner">Сейчас работают Германия, Франция и США. Остальные регионы отмечены на карте как «Скоро» и появятся только после того, как реально заработают.</div></div></details>
+        <details class="faq__item"><summary class="faq__q">Есть ли бесплатный тариф?</summary><div class="faq__a"><div class="faq__inner">Да. Тариф Free даёт один регион и одно устройство с ограниченной скоростью. Карта для начала не нужна.</div></div></details>
+        <details class="faq__item"><summary class="faq__q">На каких устройствах работает приложение?</summary><div class="faq__a"><div class="faq__inner">Сейчас доступна версия для Android. Версии для Windows, iOS и macOS в разработке — мы не публикуем ссылки на то, чего ещё нет.</div></div></details>
+        <details class="faq__item"><summary class="faq__q">Ведёте ли вы логи посещённых сайтов?</summary><div class="faq__a"><div class="faq__inner">Нет. Историю сайтов и содержимое трафика мы не храним. Для работы аккаунта и лимитов нужны технические данные — что именно, подробно описано в политике конфиденциальности.</div></div></details>
+        <details class="faq__item"><summary class="faq__q">Что такое kill switch?</summary><div class="faq__a"><div class="faq__inner">Это защита от случайной утечки: если туннель обрывается, приложение блокирует трафик до восстановления соединения, вместо того чтобы пустить его напрямую.</div></div></details>
+        <details class="faq__item"><summary class="faq__q">Как оплатить платный тариф?</summary><div class="faq__a"><div class="faq__inner">Цены на сайте предварительные. Оплата внутри приложения появится вместе с запуском биллинга; до этого момента можно пользоваться тарифом Free.</div></div></details>
       </div>
     </div>
   </section>
@@ -552,8 +641,8 @@
         <h2 class="h2">Попробуйте GlukVPN прямо сейчас</h2>
         <p class="lead center-x mt-3">Бесплатный тариф доступен сразу после установки — без карты и подписки.</p>
         <div class="cta-strip__actions">
-          <a class="btn btn--primary btn--lg" data-magnetic href="download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать для Android</a>
-          <a class="btn btn--ghost btn--lg" href="pricing/">Смотреть тарифы</a>
+          <a class="btn btn--primary btn--lg" data-magnetic href="/download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать для Android</a>
+          <a class="btn btn--ghost btn--lg" href="/pricing/">Смотреть тарифы</a>
         </div>
       </div>
     </div>
@@ -563,10 +652,11 @@
 
   <footer class="footer">
     <div class="wrap">
+      <div class="footer__mark" aria-hidden="true">GlukVPN</div>
       <div class="footer__grid">
         <div class="footer__about">
-          <a class="brand" href="./">
-            <img src="assets/img/logo-96.png" width="96" height="96" alt="" loading="lazy" decoding="async">
+          <a class="brand" href="/">
+            <img src="/assets/img/logo-96.png" width="96" height="96" alt="" loading="lazy" decoding="async">
             <span>GlukVPN</span>
           </a>
           <p>Быстрый и приватный VPN с понятным приложением: одно нажатие до защищённого соединения.</p>
@@ -574,17 +664,17 @@
         <div>
           <div class="footer__title">Продукт</div>
           <div class="footer__list">
-            <a href="features/">Возможности</a>
-            <a href="mobile/">Приложение</a>
-            <a href="pricing/">Тарифы</a>
-            <a href="download/">Загрузки</a>
+            <a href="/features/">Возможности</a>
+            <a href="/mobile/">Приложение</a>
+            <a href="/pricing/">Тарифы</a>
+            <a href="/download/">Загрузки</a>
           </div>
         </div>
         <div>
           <div class="footer__title">Помощь</div>
           <div class="footer__list">
-            <a href="support/">Поддержка</a>
-            <a href="./#faq">Частые вопросы</a>
+            <a href="/support/">Поддержка</a>
+            <a href="/#faq">Частые вопросы</a>
             <a href="https://t.me/glukvpn" data-telegram rel="noopener" target="_blank">Telegram</a>
             <a href="mailto:support@gluk.tech" data-support-email data-fill-text>support@gluk.tech</a>
           </div>
@@ -592,8 +682,8 @@
         <div>
           <div class="footer__title">Правовое</div>
           <div class="footer__list">
-            <a href="privacy/">Конфиденциальность</a>
-            <a href="terms/">Условия использования</a>
+            <a href="/privacy/">Конфиденциальность</a>
+            <a href="/terms/">Условия использования</a>
           </div>
         </div>
       </div>

@@ -102,6 +102,7 @@
       '<span class="acct-stat__value' + (ok ? " acct-stat__value--ok" : "") + '">' + value + "</span></div>"
     );
   }
+  var hop = null;
   function paint(st) {
     if (!panel) return;
     var signedIn = st && st.status === "in" && st.user;
@@ -119,24 +120,102 @@
     var until = "—";
     if (active && sub.expiresAt) {
       var d = new Date(sub.expiresAt);
-      if (!isNaN(d)) until = d.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
+      var loc = document.documentElement.getAttribute("data-lang") === "en" ? "en-GB" : "ru-RU";
+      if (!isNaN(d)) until = d.toLocaleDateString(loc, { day: "2-digit", month: "long", year: "numeric" });
     }
+    var T = window.GlukT || function (s) { return s; };
+    var root = document.documentElement.getAttribute("data-base") || "/";
     panel.innerHTML =
-      '<h2 class="auth-card__title">Привет, ' + esc(u.username || "") + "</h2>" +
-      '<p class="auth-card__sub">Вы вошли в аккаунт. Данные берутся из того же сервиса, что и в приложении.</p>' +
+      '<h2 class="auth-card__title">' + T("Вы уже вошли") + ", " + esc(u.username || "") + "</h2>" +
+      '<p class="auth-card__sub">' + T("Открываем личный кабинет: устройства, карта подключений, подписка и оплата.") + "</p>" +
       '<div class="acct-panel__grid">' +
-      stat("Подписка", active ? "Активна" : "Нет", active) +
-      stat("Действует до", esc(until), false) +
-      stat("Устройства", (st.devices || 0) + " / " + (u.maxDevices || 3), false) +
-      stat("Номер аккаунта", esc(u.publicId || "—"), false) +
-      stat("Email", esc(u.email || "не указан"), false) +
-      stat("Статус", esc(u.status || "ACTIVE"), String(u.status || "ACTIVE").toUpperCase() === "ACTIVE") +
+      stat(T("Подписка"), active ? T("Активна") : T("Нет"), active) +
+      stat(T("Действует до"), esc(until), false) +
+      stat(T("Устройства"), (st.devices || 0) + " / " + (u.maxDevices || 3), false) +
+      stat(T("Номер аккаунта"), esc(u.publicId || "—"), false) +
       "</div>" +
       '<div class="acct-panel__actions">' +
-      '<button class="btn btn--ghost" type="button" data-acct-logout>Выйти</button>' +
+      '<a class="btn btn--primary" href="' + root + 'app/">' + T("Открыть кабинет") + "</a>" +
+      '<button class="btn btn--ghost" type="button" data-acct-logout>' + T("Выйти") + "</button>" +
       "</div>";
+    if (!/[?&]stay=1/.test(location.search)) {
+      if (hop) clearTimeout(hop);
+      hop = setTimeout(function () { location.replace(root + "app/"); }, 1100);
+    }
   }
 
   document.addEventListener("gluk:auth", function (e) { paint(e.detail); });
   if (window.GlukAuth) paint(window.GlukAuth.state);
+})();
+
+/* =============== v3: плавное переключение Вход / Регистрация =============== */
+(function () {
+  var tabs = [].slice.call(document.querySelectorAll("[data-auth-tab]"));
+  if (!tabs.length) return;
+  var ind = document.querySelector("[data-auth-ind]");
+  var title = document.querySelector("[data-auth-title]");
+  var sub = document.querySelector("[data-auth-sub]");
+  var panes = [].slice.call(document.querySelectorAll("[data-auth-pane]"));
+  var COPY = {
+    login: {
+      t: "Вход в аккаунт",
+      s: "Те же логин и пароль, что и в приложении GlukVPN.",
+    },
+    register: {
+      t: "Создание аккаунта",
+      s: "На время беты доступ выдаётся вручную — напишите нам, это быстро.",
+    },
+  };
+  var timer = null;
+
+  function place(name) {
+    var i = name === "register" ? 1 : 0;
+    if (ind) ind.style.transform = "translateX(" + i * 100 + "%)";
+    if (title && COPY[name]) title.textContent = COPY[name].t;
+    if (sub && COPY[name]) sub.textContent = COPY[name].s;
+
+    tabs.forEach(function (t) {
+      var on = t.getAttribute("data-auth-tab") === name;
+      t.classList.toggle("is-active", on);
+      t.setAttribute("aria-selected", on ? "true" : "false");
+    });
+
+    if (timer) window.clearTimeout(timer);
+    panes.forEach(function (p) {
+      var on = p.getAttribute("data-auth-pane") === name;
+      if (on) {
+        p.hidden = false;
+        requestAnimationFrame(function () {
+          p.classList.add("is-in");
+        });
+      } else {
+        p.hidden = false;
+        p.classList.remove("is-in");
+      }
+    });
+    timer = window.setTimeout(function () {
+      panes.forEach(function (p) {
+        if (p.getAttribute("data-auth-pane") !== name) p.hidden = true;
+      });
+    }, 320);
+  }
+
+  tabs.forEach(function (t) {
+    t.addEventListener("click", function () {
+      place(t.getAttribute("data-auth-tab"));
+    });
+  });
+
+  place(/[?&]mode=register/.test(window.location.search) ? "register" : "login");
+
+  /* глаз: меняем иконку и подпись */
+  var pw = document.querySelector("[data-pw-toggle]");
+  if (pw) {
+    pw.addEventListener("click", function () {
+      var input = pw.parentNode ? pw.parentNode.querySelector("input") : null;
+      var shown = !!input && input.type === "text";
+      pw.classList.toggle("is-on", shown);
+      pw.setAttribute("aria-label", shown ? "Скрыть пароль" : "Показать пароль");
+    });
+  }
 })();

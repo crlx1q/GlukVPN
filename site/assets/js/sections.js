@@ -71,7 +71,7 @@
           tip.classList.remove("is-on");
           return;
         }
-        if (tipFlag) tipFlag.textContent = node.flag || "";
+        if (tipFlag) tipFlag.innerHTML = node.flag || "";
         if (tipName) tipName.textContent = node.name + " · " + (node.city || "");
         if (tipRows) {
           tipRows.innerHTML =

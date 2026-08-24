@@ -324,3 +324,60 @@
     init();
   }
 })();
+
+/* ===================== v3: плавное раскрытие FAQ ===================== */
+(function () {
+  var items = [].slice.call(document.querySelectorAll(".faq__item"));
+  if (!items.length) return;
+  var reduce =
+    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  items.forEach(function (item) {
+    var head = item.querySelector(".faq__q");
+    var body = item.querySelector(".faq__a");
+    if (!head || !body) return;
+
+    var inner = body.querySelector(".faq__inner");
+    if (!inner) {
+      inner = document.createElement("div");
+      inner.className = "faq__inner";
+      while (body.firstChild) inner.appendChild(body.firstChild);
+      body.appendChild(inner);
+    }
+
+    var busy = false;
+    head.addEventListener("click", function (e) {
+      if (reduce || busy) return;
+      e.preventDefault();
+      busy = true;
+
+      if (item.open) {
+        body.style.height = inner.offsetHeight + "px";
+        body.style.opacity = "1";
+        requestAnimationFrame(function () {
+          body.style.height = "0px";
+          body.style.opacity = "0";
+        });
+        window.setTimeout(function () {
+          item.open = false;
+          body.style.height = "";
+          body.style.opacity = "";
+          busy = false;
+        }, 340);
+      } else {
+        item.open = true;
+        body.style.height = "0px";
+        body.style.opacity = "0";
+        requestAnimationFrame(function () {
+          body.style.height = inner.offsetHeight + "px";
+          body.style.opacity = "1";
+        });
+        window.setTimeout(function () {
+          body.style.height = "";
+          body.style.opacity = "";
+          busy = false;
+        }, 360);
+      }
+    });
+  });
+})();

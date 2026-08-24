@@ -17,7 +17,9 @@
   var BASE = String((API.base || {})[CHANNEL] || "").replace(/\/+$/, "");
   var TIMEOUT = API.timeoutMs || 12000;
   var KEY = "gluk." + CHANNEL + ".refresh";
-  var root = document.documentElement.getAttribute("data-base") || "";
+  var root = document.documentElement.getAttribute("data-base") || "/";
+  var T = window.GlukT || function (s) { return s; };
+  var I18N = window.GlukI18n || null;
 
   var IC = {
     caret: '<svg class="acct__caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
@@ -148,13 +150,18 @@
 
   function subLabel() {
     var s = state.subscription;
-    if (!s || !s.status) return { text: "Нет подписки", ok: false };
+    if (!s || !s.status) return { text: T("Нет подписки"), ok: false };
     if (String(s.status).toUpperCase() === "ACTIVE") {
       var d = s.expiresAt ? new Date(s.expiresAt) : null;
-      var until = d && !isNaN(d) ? " до " + d.toLocaleDateString("ru-RU", { day: "2-digit", month: "short" }) : "";
-      return { text: "Активна" + until, ok: true };
+      /* год обязателен: "до 20 авг." без года читался неоднозначно */
+      var fmt = d && !isNaN(d)
+        ? (I18N ? I18N.dateShort(d)
+                : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" }))
+        : "";
+      var until = fmt ? " " + T("до") + " " + fmt : "";
+      return { text: T("Активна") + until, ok: true };
     }
-    return { text: "Неактивна", ok: false };
+    return { text: T("Неактивна"), ok: false };
   }
 
   function render() {
@@ -166,7 +173,6 @@
     } else if (state.status === "out") {
       html =
         '<div class="acct__guest">' +
-        '<a class="btn btn--ghost btn--sm" href="' + root + 'login/">Войти</a>' +
         '<a class="btn btn--primary btn--sm" href="' + root + 'login/?mode=register">Регистрация</a>' +
         "</div>";
     } else {
@@ -187,7 +193,7 @@
         (u.publicId ? '<div class="acct__row"><span>Номер аккаунта</span><b>' + esc(u.publicId) + "</b></div>" : "") +
         "</div>" +
         '<div class="acct__links">' +
-        '<a class="acct__link" href="' + esc(AC.accountUrl || "/account/") + '">' + IC.user + "Личный кабинет</a>" +
+        '<a class="acct__link" href="' + esc(AC.accountUrl || "/app/") + '">' + IC.user + "Личный кабинет</a>" +
         (AC.webAppUrl ? '<a class="acct__link" href="' + esc(AC.webAppUrl) + '">' + IC.grid + "Веб-приложение</a>" : "") +
         '<a class="acct__link" href="' + root + 'download/">' + IC.down + "Скачать приложение</a>" +
         '<button class="acct__link acct__link--danger" type="button" data-acct-logout>' + IC.out + "Выйти</button>" +
@@ -250,7 +256,20 @@
       request("/api/auth/logout", { method: "POST", auth: true, body: rt ? { refreshToken: rt } : {} })
         .then(done, done);
     },
-    refresh: boot
+    refresh: boot,
+    /* Авторизованный запрос к control plane — нужен личному кабинету /app/:
+       если access протух — один раз крутим refresh и повторяем. */
+    call: function (path, opts) {
+      opts = opts || {};
+      opts.auth = true;
+      var run = function () { return request(path, opts); };
+      if (!access) return rotate().then(run);
+      return run().catch(function (e) {
+        if (e && (e.status === 401 || e.status === 403)) return rotate().then(run);
+        throw e;
+      });
+    },
+    isAuthed: function () { return state.status === "in"; }
   };
   window.GlukAuth = api;
 
