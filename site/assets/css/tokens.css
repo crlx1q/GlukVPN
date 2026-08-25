@@ -6,18 +6,18 @@
 
 :root {
   /* --- brand palette (app parity) --- */
-  --bg: #0a0714;
-  --bg-deep: #05040a;
+  --bg: #07040f;
+  --bg-deep: #04020a;
   --violet: #8b5cf6;
-  --violet-2: #6d4de0;
-  --indigo: #4f3fd6;
-  --blue: #4f7cff;
-  --violet-light: #c4b5fd;
-  --violet-bright: #a78bfa;
-  --violet-deep: #4c1fb5;
-  --violet-ink: #2a0b63;
+  --violet-2: #7c3aed;
+  --indigo: #5b21b6;
+  --blue: #7c3aed;
+  --violet-light: #d7c9ff;
+  --violet-bright: #a855f7;
+  --violet-deep: #4c1d95;
+  --violet-ink: #2e1065;
   --amber: #f0b567;
-  --green: #4fd88c;
+  --green: #5ee7a3;
 
   /* --- glass surfaces --- */
   --glass: rgba(255, 255, 255, 0.05);
@@ -33,8 +33,8 @@
   --text-2: #5c5770;
 
   /* --- gradients / energy --- */
-  --grad-cta: linear-gradient(140deg, #b79bff 0%, #7c4dea 48%, #4c1fb5 100%);
-  --grad-line: linear-gradient(90deg, #c4b5fd, #7c4dea 62%, #4c1fb5);
+  --grad-cta: linear-gradient(140deg, #c9a9ff 0%, #7c4dea 48%, #4c1d95 100%);
+  --grad-line: linear-gradient(90deg, #d7c9ff, #7c4dea 62%, #4c1d95);
   --grad-route: linear-gradient(90deg, var(--violet-light), var(--green));
   --glow-violet: 0 16px 48px rgba(96, 45, 220, 0.45);
   --glow-soft: 0 24px 80px rgba(0, 0, 0, 0.55);

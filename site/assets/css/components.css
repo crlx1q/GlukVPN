@@ -83,7 +83,7 @@
 
 .btn--primary {
   background: var(--grad-cta);
-  color: #0a0714;
+  color: #07040f;
   box-shadow: var(--glow-violet);
 }
 
@@ -193,8 +193,8 @@
 
 .chip--live {
   color: var(--green);
-  border-color: rgba(79, 216, 140, 0.35);
-  background: rgba(79, 216, 140, 0.1);
+  border-color: rgba(94, 231, 163, 0.35);
+  background: rgba(94, 231, 163, 0.1);
 }
 
 .chip--live .chip__dot {
@@ -503,8 +503,8 @@
 }
 
 .icon-badge--green {
-  background: rgba(79, 216, 140, 0.12);
-  border-color: rgba(79, 216, 140, 0.34);
+  background: rgba(94, 231, 163, 0.12);
+  border-color: rgba(94, 231, 163, 0.34);
   color: var(--green);
 }
 

@@ -68,8 +68,8 @@
 
 /* Строка со сменой фактов */
 .ticker{display:flex;align-items:center;gap:12px;margin-top:14px;padding:13px 18px;border-radius:14px;font-size:13.5px;color:var(--text-1)}
-.pulse-dot{position:relative;flex:none;width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 10px rgba(79,216,140,.8)}
-.pulse-dot::after{content:"";position:absolute;inset:-6px;border-radius:999px;border:1px solid rgba(79,216,140,.5);animation:pulse 2.4s var(--ease-soft) infinite}
+.pulse-dot{position:relative;flex:none;width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 10px rgba(94,231,163,.8)}
+.pulse-dot::after{content:"";position:absolute;inset:-6px;border-radius:999px;border:1px solid rgba(94,231,163,.5);animation:pulse 2.4s var(--ease-soft) infinite}
 @keyframes pulse{0%{transform:scale(.55);opacity:.9}70%,100%{transform:scale(1.25);opacity:0}}
 
 /* Блик под курсором */
@@ -263,3 +263,77 @@ b, strong {
   .flow__row{opacity:1 !important;transform:none !important}
   .flow__pipe{transform:scaleY(1) !important}
 }
+
+/* ===== v7 refresh ===== */
+/* Глубокая фиолетовая гамма без белых обводок и без синевы. */
+:root{
+  --stroke:rgba(167,139,250,.17);
+  --stroke-soft:rgba(167,139,250,.11);
+  --stroke-violet:rgba(168,85,247,.34);
+  --glow-violet:0 18px 58px rgba(109,40,217,.42);
+}
+body{background:radial-gradient(1200px 760px at 18% -8%,rgba(109,40,217,.30),transparent 62%),radial-gradient(980px 720px at 88% 6%,rgba(76,29,149,.26),transparent 60%),var(--bg-deep,#04020a)}
+
+/* Шапка: тёмное стекло, волосяная фиолетовая граница */
+.header.is-stuck{background:linear-gradient(180deg,rgba(12,7,24,.94),rgba(7,4,15,.8));border-bottom-color:rgba(167,139,250,.14);box-shadow:0 16px 40px rgba(4,2,10,.6)}
+
+/* RU/EN — аккуратный segmented control вместо белых кусков */
+.lang{display:inline-flex;align-items:center;gap:2px;height:40px;padding:3px;border-radius:13px;border:1px solid rgba(167,139,250,.16);background:rgba(18,11,34,.72);box-shadow:none;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.lang__opt{height:34px;min-width:42px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:var(--text-2);font:inherit;font-size:12.5px;font-weight:700;letter-spacing:.05em;line-height:1;cursor:pointer;display:inline-grid;place-items:center;transition:color .18s var(--ease-soft),background .18s var(--ease-soft)}
+.lang__opt:hover{color:var(--text-0);background:rgba(139,92,246,.12)}
+.lang__opt.is-on{color:#fff;background:linear-gradient(180deg,rgba(168,85,247,.5),rgba(93,32,197,.46));box-shadow:0 6px 18px rgba(93,32,197,.4);border:0}
+.lang--drawer{width:100%;height:46px;border-radius:15px}
+.lang--drawer .lang__opt{flex:1;height:40px}
+
+/* Квадратная (не овальная) иконочная кнопка */
+.btn--icon{width:44px;height:44px;min-height:44px;max-height:44px;padding:0;flex:0 0 44px;aspect-ratio:1/1;border-radius:14px;display:inline-grid;place-items:center;gap:0}
+.btn--icon svg{width:20px;height:20px}
+.header__dl.btn--icon{background:linear-gradient(155deg,#a855f7 0%,#6d28d9 56%,#4c1d95 100%);color:#fff;border:1px solid rgba(196,181,253,.2);box-shadow:0 12px 30px rgba(93,32,197,.5)}
+.header__dl.btn--icon:hover{box-shadow:0 16px 40px rgba(139,92,246,.58);transform:translateY(-1px)}
+.burger{width:44px;height:44px;border-radius:14px;border:1px solid rgba(167,139,250,.16);background:rgba(18,11,34,.7);color:var(--text-0);display:grid;place-items:center}
+.burger:hover{border-color:rgba(168,85,247,.34);background:rgba(28,17,52,.8)}
+
+/* Кнопки: белый текст на насыщенном фиолете, без светлых бликов */
+.btn--primary{background:linear-gradient(150deg,#a855f7 0%,#7c3aed 46%,#5b21b6 100%);color:#fff;border:1px solid rgba(196,181,253,.2);box-shadow:0 14px 38px rgba(93,32,197,.44);text-shadow:none}
+.btn--primary:hover{box-shadow:0 18px 50px rgba(139,92,246,.55)}
+.btn--ghost{background:rgba(22,13,42,.6);border-color:rgba(167,139,250,.18);color:var(--text-0)}
+.btn--ghost:hover{background:rgba(32,20,58,.72);border-color:rgba(168,85,247,.36)}
+.header__actions .btn--sm{min-height:40px;padding:0 16px}
+
+/* Стеклянные панели: тёмно-фиолетовые вместо белого тумана */
+.glass,.metric,.card,.plan{border-color:rgba(167,139,250,.13)}
+.glass{background:linear-gradient(180deg,rgba(30,19,54,.66),rgba(11,6,22,.58))}
+.metric{background:linear-gradient(180deg,rgba(28,18,50,.6),rgba(11,6,22,.5))}
+.marquee__chip{border-color:rgba(167,139,250,.14);background:rgba(24,15,44,.55)}
+
+/* Световые пятна сцены — глубже и мягче */
+.scene__glow--a{background:radial-gradient(closest-side,rgba(139,92,246,.5),rgba(139,92,246,0) 72%)}
+.scene__glow--b{background:radial-gradient(closest-side,rgba(76,29,149,.46),rgba(76,29,149,0) 74%)}
+.globe__halo{background:radial-gradient(closest-side,rgba(139,92,246,.34),rgba(139,92,246,0) 70%)}
+.globe__ring--1,.globe__ring--2{border-color:rgba(167,139,250,.14)}
+
+/* Плитки сервисов под реальные бренд-глифы */
+.acs-tile{background:linear-gradient(180deg,rgba(27,17,49,.7),rgba(10,6,20,.6));border:1px solid rgba(167,139,250,.12);box-shadow:none}
+.acs-tile:hover{border-color:color-mix(in srgb,var(--brand,#a855f7) 42%,transparent);transform:translateY(-2px)}
+.acs-tile__ic{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;flex:none;background:color-mix(in srgb,var(--brand,#a855f7) 15%,rgba(9,5,18,.7));border:1px solid color-mix(in srgb,var(--brand,#a855f7) 28%,transparent);box-shadow:none}
+.acs-tile__ic svg{width:21px;height:21px;display:block;fill:var(--brand,#d7c9ff)}
+.acs-tile__glow{background:radial-gradient(closest-side,color-mix(in srgb,var(--brand,#a855f7) 26%,transparent),transparent)}
+.acs-game__ic svg,.acs-game svg{fill:var(--brand,#d7c9ff)}
+.acs-tile__ic svg[stroke],.acs-game svg[stroke]{fill:none;stroke:var(--brand,#d7c9ff)}
+
+
+/* ===== v7.1 tiles+brand ===== */
+/* Две колонки вместо трёх: названия сервисов перестают обрезаться. */
+.acs-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (max-width:520px){.acs-grid{grid-template-columns:1fr}}
+.acs-tile{padding:13px 14px;gap:11px}
+.acs-tile__ic{width:38px;height:38px;border-radius:12px}
+.acs-tile__ic svg{width:20px;height:20px}
+.acs-tile__name{font-size:13.5px}
+.acs-tile__ping{white-space:nowrap}
+.acs-game__ic{flex:none}
+.acs-game svg{width:19px;height:19px}
+
+/* Знак в шапке был глухим на тёмном фоне */
+.brand img{filter:brightness(1.14) saturate(1.06) drop-shadow(0 6px 18px rgba(139,92,246,.4))}
+

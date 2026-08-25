@@ -72,8 +72,8 @@
   font-weight: 700;
   padding: 6px 12px 6px 9px;
   border-radius: var(--r-pill);
-  background: rgba(79, 216, 140, 0.14);
-  border: 1px solid rgba(79, 216, 140, 0.4);
+  background: rgba(94, 231, 163, 0.14);
+  border: 1px solid rgba(94, 231, 163, 0.4);
   color: var(--green);
 }
 
@@ -568,7 +568,7 @@
   background: radial-gradient(
     circle,
     rgba(124, 92, 246, 0.3) 0%,
-    rgba(79, 124, 255, 0.1) 45%,
+    rgba(124, 58, 237, 0.1) 45%,
     transparent 70%
   );
   filter: blur(8px);

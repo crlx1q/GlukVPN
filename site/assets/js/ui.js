@@ -60,7 +60,8 @@
     if (!backdrop) {
       backdrop = document.createElement("div");
       backdrop.className = "drawer-backdrop";
-      document.body.appendChild(backdrop);
+      /* в .page, а не в body: у .page свой z-index, иначе подложка ложится поверх меню */
+      (document.querySelector(".page") || document.body).appendChild(backdrop);
     }
     var pushed = false;
     var setOpen = function (open) {

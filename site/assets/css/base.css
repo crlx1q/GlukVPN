@@ -105,7 +105,7 @@ ol {
   background: radial-gradient(
     circle,
     rgba(124, 92, 246, 0.28) 0%,
-    rgba(79, 124, 255, 0.1) 42%,
+    rgba(124, 58, 237, 0.1) 42%,
     transparent 68%
   );
   animation: sceneDrift 22s ease-in-out infinite;
@@ -192,7 +192,7 @@ ol {
   padding: 10px 18px;
   border-radius: var(--r-pill);
   background: var(--violet-light);
-  color: #0a0714;
+  color: #07040f;
   font-weight: 700;
 }
 

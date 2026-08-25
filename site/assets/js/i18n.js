@@ -190,7 +190,20 @@
     "ru", "be", "uk", "kk", "ky", "uz", "tg", "tk", "hy", "az", "ka", "mo", "ro-md", "ab", "os"
   ];
 
+  /* регион по часовому поясу: СНГ -> ru, всё остальное -> en */
+  var CIS_TZ = /^(Europe\/(Moscow|Minsk|Kyiv|Kiev|Kaliningrad|Samara|Volgograd|Saratov|Astrakhan|Ulyanovsk|Kirov|Chisinau|Simferopol|Uzhgorod|Zaporozhye|Tiraspol)|Asia\/(Almaty|Aqtau|Aqtobe|Atyrau|Oral|Qostanay|Qyzylorda|Tashkent|Samarkand|Bishkek|Dushanbe|Ashgabat|Baku|Yerevan|Tbilisi|Yekaterinburg|Omsk|Novosibirsk|Barnaul|Tomsk|Novokuznetsk|Krasnoyarsk|Irkutsk|Chita|Yakutsk|Khandyga|Ust-Nera|Vladivostok|Magadan|Sakhalin|Srednekolymsk|Kamchatka|Anadyr))$/;
+
+  function tzIsCis() {
+    try {
+      var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+      return CIS_TZ.test(tz);
+    } catch (e) {
+      return false;
+    }
+  }
+
   function guess() {
+    if (tzIsCis()) return "ru";
     var list = navigator.languages && navigator.languages.length
       ? navigator.languages
       : [navigator.language || "en"];
@@ -273,3 +286,140 @@
   };
   window.GlukT = T;
 })();
+
+/* ===== v7.1 en-sweep ===== */
+/* Часть строк рисует JS с зашитым русским текстом, поэтому на английских
+   страницах просачивался русский. Сводим такие строки после рендера. */
+(function () {
+  "use strict";
+  var html = document.documentElement;
+  var lang = (html.getAttribute("data-lang") || html.lang || "ru").toLowerCase();
+  if (lang !== "en") return;
+
+  var DICT = {
+    "Регистрация": "Sign up",
+    "Войти": "Sign in",
+    "Выйти": "Sign out",
+    "Аккаунт": "Account",
+    "Личный кабинет": "Dashboard",
+    "Вход в аккаунт": "Sign in",
+    "Создание аккаунта": "Create account",
+    "Те же логин и пароль, что и в приложении GlukVPN.":
+      "The same login and password as in the GlukVPN app.",
+    "Карта подключений": "Connection map",
+    "Сеть онлайн": "Network online",
+    "региона онлайн": "regions online",
+    "регионов онлайн": "regions online",
+    "лучший latency": "best latency",
+    "доступность": "availability",
+    "Германия": "Germany",
+    "Франция": "France",
+    "США": "USA",
+    "Нидерланды": "Netherlands",
+    "Турция": "Turkey",
+    "Сингапур": "Singapore",
+    "Япония": "Japan",
+    "Вы": "You",
+    "Показать пароль": "Show password",
+    "Скрыть пароль": "Hide password",
+    "Скачать приложение": "Get the app",
+    "Веб-приложение": "Web app",
+    "Загрузка аккаунта": "Loading account",
+    "Маршрут": "Route",
+    "бессрочно": "no expiry",
+    "Сегодня": "Today",
+    "Вчера": "Yesterday"
+  };
+  var UNITS = [
+    [/(\d)\s*мс\b/g, "$1 ms"],
+    [/Мбит\/с/g, "Mbps"],
+    [/Гбит\/с/g, "Gbps"],
+    [/\bдн\./g, "d"]
+  ];
+  var CYR = /[А-Яа-яЁё]/;
+
+  function fix(s) {
+    var key = s.trim();
+    if (DICT[key]) return s.replace(key, DICT[key]);
+    var out = s;
+    for (var i = 0; i < UNITS.length; i++) out = out.replace(UNITS[i][0], UNITS[i][1]);
+    return out;
+  }
+
+  function sweep() {
+    var body = document.body;
+    if (!body) return;
+    var walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, null);
+    var nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      var v = n.nodeValue;
+      if (!v || !CYR.test(v)) continue;
+      var p = n.parentNode;
+      if (p && (p.tagName === "SCRIPT" || p.tagName === "STYLE")) continue;
+      var next = fix(v);
+      if (next !== v) n.nodeValue = next;
+    }
+    var els = body.querySelectorAll("[title],[aria-label],[placeholder]");
+    var attrs = ["title", "aria-label", "placeholder"];
+    for (var j = 0; j < els.length; j++) {
+      for (var k = 0; k < attrs.length; k++) {
+        var av = els[j].getAttribute(attrs[k]);
+        if (av && CYR.test(av)) {
+          var na = fix(av);
+          if (na !== av) els[j].setAttribute(attrs[k], na);
+        }
+      }
+    }
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", sweep);
+  else sweep();
+
+  if (window.MutationObserver) {
+    var queued = false;
+    new MutationObserver(function () {
+      if (queued) return;
+      queued = true;
+      (window.requestAnimationFrame || setTimeout)(function () {
+        queued = false;
+        sweep();
+      });
+    }).observe(html, { childList: true, subtree: true, characterData: true });
+  }
+})();
+
+
+/* ===== v7.2 langpop ===== */
+/* пилюля языка в подвале */
+(function () {
+  "use strict";
+  function closeAll(except) {
+    var list = document.querySelectorAll(".langpop.is-open");
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] === except) continue;
+      list[i].classList.remove("is-open");
+      var b = list[i].querySelector(".langpop__btn");
+      if (b) b.setAttribute("aria-expanded", "false");
+    }
+  }
+  document.addEventListener("click", function (e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var btn = t.closest(".langpop__btn");
+    if (btn) {
+      var pop = btn.closest(".langpop");
+      e.preventDefault();
+      closeAll(pop);
+      var on = pop.classList.toggle("is-open");
+      btn.setAttribute("aria-expanded", on ? "true" : "false");
+      return;
+    }
+    if (!t.closest(".langpop")) closeAll(null);
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" || e.keyCode === 27) closeAll(null);
+  });
+})();
+

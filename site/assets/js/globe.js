@@ -1,12 +1,12 @@
 /* ==========================================================================
-   GlukVPN - живой глобус (canvas, без внешних библиотек)
+   GlukVPN — живой глобус (canvas, без внешних библиотек)
 
-   Точки берутся из того же dotted-map ассета, что используется в приложении
-   (assets/js/world-dots.js), поэтому планета на сайте и планета в приложении
-   нарисованы одними и теми же данными.
-
-   Движение повторяет идеи приложения: медленный idleSpin, halo, пульсы нод,
-   dashFlow-маршрут и «зелёное» состояние подключения.
+   v0.7: планета читается как карта устройств, а не как клубок линий.
+   - Точки суши берутся из того же dotted-map ассета, что и в приложении.
+   - Поверх суши разложены устройства: они рассыпаны по всей планете
+     (включая южное полушарие), сгущаясь у крупных городов.
+   - Линий мало: одновременно живут максимум 3 тонкие дуги плюс основной
+     маршрут подключения.
    ========================================================================== */
 
 (function () {
@@ -15,14 +15,14 @@
   var TAU = Math.PI * 2;
   var DEG = Math.PI / 180;
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var ARC_SLOTS = reduced ? 2 : 3;
 
-  /* ------------------------------------------------------------ dot data */
   var cache = null;
 
   function worldPoints() {
     if (cache) return cache;
     var data = window.GLUK_WORLD_DOTS;
-    if (!data) return (cache = []);
+    if (!data) return (cache = new Float32Array(0));
     var bin = atob(data.packed);
     var n = bin.length / 2;
     var pts = new Float32Array(n * 3);
@@ -32,9 +32,9 @@
       var lon = ((x2 / 2 / data.vbW) * 360 - 180) * DEG;
       var lat = (90 - ((row * data.yStep) / data.vbH) * 180) * DEG;
       var cl = Math.cos(lat);
-      pts[i * 3] = cl * Math.cos(lon); // x
-      pts[i * 3 + 1] = Math.sin(lat); // y
-      pts[i * 3 + 2] = cl * Math.sin(lon); // z
+      pts[i * 3] = cl * Math.cos(lon);
+      pts[i * 3 + 1] = Math.sin(lat);
+      pts[i * 3 + 2] = cl * Math.sin(lon);
     }
     cache = pts;
     return pts;
@@ -57,22 +57,54 @@
     return [a[0] * k0 + b[0] * k1, a[1] * k0 + b[1] * k1, a[2] * k0 + b[2] * k1];
   }
 
-  /* --------------------------------------------------------------- globe */
+  /* детерминированный генератор: картинка одинаковая при каждой загрузке */
+  function seeded(seed) {
+    var s = seed >>> 0;
+    return function () {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+  }
+
+  /* Крупные города — центры сгущения устройств (весь шар, оба полушария). */
+  var CITIES = [
+    [52.52, 13.4], [48.86, 2.35], [51.51, -0.13], [40.71, -74.01], [37.77, -122.42],
+    [55.75, 37.62], [43.24, 76.89], [25.2, 55.27], [1.35, 103.82], [35.68, 139.69],
+    [-33.87, 151.21], [-23.55, -46.63], [19.08, 72.88], [41.01, 28.98], [50.45, 30.52],
+    [59.33, 18.07], [22.32, 114.17], [-1.29, 36.82], [45.46, 9.19], [39.9, 116.4],
+    [-26.2, 28.04], [34.05, -118.24], [43.65, -79.38], [3.14, 101.69], [-34.6, -58.38],
+    [-33.45, -70.67], [-12.05, -77.04], [4.71, -74.07], [10.5, -66.92], [-15.79, -47.88],
+    [-22.91, -43.17], [-8.05, -34.88], [-25.43, -49.27], [-36.85, 174.77], [-41.29, 174.78],
+    [-37.81, 144.96], [-31.95, 115.86], [-27.47, 153.02], [-6.21, 106.85], [14.6, 120.98],
+    [13.75, 100.5], [21.03, 105.85], [-33.92, 18.42], [6.52, 3.38], [-4.44, 15.27],
+    [30.04, 31.24], [33.57, -7.59], [9.03, 38.74], [-18.14, 178.44], [64.15, -21.94],
+    [60.17, 24.94], [-16.5, -68.15], [19.43, -99.13], [23.13, -82.38], [18.47, -69.9],
+    [61.22, -149.9], [21.31, -157.86], [-20.16, 57.5], [24.86, 67.01], [27.72, 85.32],
+    [37.57, 126.98], [25.03, 121.57], [-9.44, 147.18], [69.65, 18.96], [-54.8, -68.3],
+    [11.55, 104.92], [39.04, 125.76], [-33.02, 27.91], [47.5, 19.05], [52.23, 21.01],
+    [41.9, 12.5], [40.42, -3.7], [38.72, -9.14], [53.35, -6.26], [55.68, 12.57],
+    [59.91, 10.75], [50.08, 14.44], [44.43, 26.1], [42.7, 23.32], [37.98, 23.73],
+    [41.72, 44.79], [40.18, 44.51], [41.31, 69.28], [42.87, 74.59], [38.56, 68.79],
+    [37.95, 58.38], [35.69, 51.39], [33.31, 44.36], [24.71, 46.68], [29.37, 47.98],
+    [31.95, 35.93], [32.09, 34.78], [36.75, 3.06], [36.8, 10.18], [15.5, 32.56],
+    [14.72, -17.47], [5.56, -0.2], [-1.94, 30.06], [-6.79, 39.21], [-17.83, 31.05],
+    [-25.97, 32.58], [-22.56, 17.08], [12.65, -8], [30.27, -97.74], [41.88, -87.63],
+    [39.74, -104.99], [47.61, -122.33], [25.76, -80.19], [29.76, -95.37], [45.5, -73.57],
+    [49.28, -123.12], [51.05, -114.07], [20.67, -103.35], [10.96, -74.8], [-2.19, -79.89],
+    [-25.3, -57.64], [-34.9, -56.16], [-31.42, -64.18], [28.61, 77.21], [12.97, 77.59],
+    [22.57, 88.36], [13.08, 80.27], [23.81, 90.41], [6.93, 79.86], [16.87, 96.2],
+    [10.82, 106.63], [3.6, 98.68], [-7.8, 110.37], [31.23, 121.47], [23.13, 113.26],
+    [30.57, 104.07], [45.75, 126.63], [43.83, 87.62], [34.69, 135.5], [43.06, 141.35],
+    [35.18, 129.08], [-8.65, 115.22], [64.54, 40.54], [56.83, 60.6], [55.03, 82.92],
+    [52.29, 104.3], [43.12, 131.89], [46.35, 48.04], [51.16, 71.43], [42.34, 69.6],
+    [47.1, 51.92], [53.2, 63.62]
+  ];
 
   function Globe(canvas, opts) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.o = Object.assign(
-      {
-        tilt: 16,
-        spin: 0.014, // rad/s - очень медленно, как idleSpin в приложении
-        dotSize: 1.5,
-        radius: 0.78,
-        home: null,
-        nodes: [],
-        cycle: 6200,
-        onRoute: null,
-      },
+      { tilt: 16, spin: 0.014, dotSize: 1.5, radius: 0.78, home: null, nodes: [], cycle: 6200, onRoute: null },
       opts || {}
     );
     this.spinAngle = -1.1;
@@ -159,9 +191,7 @@
     var y = p[1];
     var ct = Math.cos(this.o.tilt * DEG);
     var st = Math.sin(this.o.tilt * DEG);
-    var y2 = y * ct - z * st;
-    var z2 = y * st + z * ct;
-    return [x, y2, z2];
+    return [x, y * ct - z * st, y * st + z * ct];
   };
 
   Globe.prototype.draw = function (now) {
@@ -171,208 +201,259 @@
     var cy = this.cy;
     ctx.clearRect(0, 0, this.w, this.h);
 
-    /* атмосфера / rim light */
-    var atm = ctx.createRadialGradient(cx, cy, R * 0.86, cx, cy, R * 1.14);
-    atm.addColorStop(0, "rgba(124,92,246,0.16)");
-    atm.addColorStop(0.55, "rgba(79,124,255,0.07)");
-    atm.addColorStop(1, "rgba(124,92,246,0)");
+    /* атмосфера / rim light — только фиолетовый, без синевы */
+    var atm = ctx.createRadialGradient(cx, cy, R * 0.86, cx, cy, R * 1.16);
+    atm.addColorStop(0, "rgba(139,92,246,0.20)");
+    atm.addColorStop(0.55, "rgba(109,40,217,0.09)");
+    atm.addColorStop(1, "rgba(76,29,149,0)");
     ctx.fillStyle = atm;
     ctx.beginPath();
-    ctx.arc(cx, cy, R * 1.14, 0, TAU);
+    ctx.arc(cx, cy, R * 1.16, 0, TAU);
     ctx.fill();
 
     /* тело планеты */
-    var body = ctx.createRadialGradient(
-      cx - R * 0.32,
-      cy - R * 0.36,
-      R * 0.12,
-      cx,
-      cy,
-      R
-    );
-    body.addColorStop(0, "rgba(38,28,64,0.92)");
-    body.addColorStop(0.62, "rgba(15,10,28,0.94)");
-    body.addColorStop(1, "rgba(6,4,12,0.98)");
+    var body = ctx.createRadialGradient(cx - R * 0.32, cy - R * 0.36, R * 0.12, cx, cy, R);
+    body.addColorStop(0, "rgba(42,22,74,0.94)");
+    body.addColorStop(0.62, "rgba(16,9,32,0.95)");
+    body.addColorStop(1, "rgba(5,3,11,0.98)");
     ctx.fillStyle = body;
     ctx.beginPath();
     ctx.arc(cx, cy, R, 0, TAU);
     ctx.fill();
 
-    /* суша: точки того же ассета, что и в приложении */
+    /* суша */
     var pts = worldPoints();
     var size = this.o.dotSize;
     var buckets = [[], [], [], []];
     for (var i = 0; i < pts.length; i += 3) {
       var pr = this.project([pts[i], pts[i + 1], pts[i + 2]]);
       if (pr[2] <= 0.02) continue;
-      var sx = cx + pr[0] * R;
-      var sy = cy - pr[1] * R;
-      var b = pr[2] > 0.78 ? 0 : pr[2] > 0.5 ? 1 : pr[2] > 0.24 ? 2 : 3;
-      buckets[b].push(sx, sy);
+      buckets[pr[2] > 0.78 ? 0 : pr[2] > 0.5 ? 1 : pr[2] > 0.24 ? 2 : 3].push(
+        cx + pr[0] * R,
+        cy - pr[1] * R
+      );
     }
-    var alphas = [0.92, 0.7, 0.46, 0.24];
-    var colors = ["#c9bcff", "#a996f7", "#8b7cf6", "#6f5fd0"];
-    for (var b2 = 0; b2 < 4; b2++) {
-      var arr = buckets[b2];
+    var alphas = [0.6, 0.44, 0.3, 0.16];
+    var colors = ["#8b7ad6", "#7a68c4", "#6353a6", "#4c3f80"];
+    for (var b = 0; b < 4; b++) {
+      var arr = buckets[b];
       if (!arr.length) continue;
-      ctx.globalAlpha = alphas[b2];
-      ctx.fillStyle = colors[b2];
-      var s = size * (b2 === 0 ? 1.08 : b2 === 3 ? 0.82 : 1);
-      for (var j = 0; j < arr.length; j += 2) {
-        ctx.fillRect(arr[j] - s / 2, arr[j + 1] - s / 2, s, s);
-      }
+      ctx.globalAlpha = alphas[b];
+      ctx.fillStyle = colors[b];
+      var s = size * (b === 0 ? 1.05 : b === 3 ? 0.8 : 0.95);
+      for (var j = 0; j < arr.length; j += 2) ctx.fillRect(arr[j] - s / 2, arr[j + 1] - s / 2, s, s);
     }
     ctx.globalAlpha = 1;
 
-    /* терминатор / затемнение края (как inset-shadow планеты в приложении) */
-    var shade = ctx.createRadialGradient(
-      cx - R * 0.28,
-      cy - R * 0.3,
-      R * 0.2,
-      cx,
-      cy,
-      R
-    );
+    /* затемнение края */
+    var shade = ctx.createRadialGradient(cx - R * 0.28, cy - R * 0.3, R * 0.2, cx, cy, R);
     shade.addColorStop(0, "rgba(0,0,0,0)");
-    shade.addColorStop(0.72, "rgba(0,0,0,0.28)");
-    shade.addColorStop(1, "rgba(0,0,0,0.72)");
+    shade.addColorStop(0.72, "rgba(0,0,0,0.26)");
+    shade.addColorStop(1, "rgba(0,0,0,0.7)");
     ctx.fillStyle = shade;
     ctx.beginPath();
     ctx.arc(cx, cy, R, 0, TAU);
     ctx.fill();
 
-    ctx.strokeStyle = "rgba(196,181,253,0.28)";
+    ctx.strokeStyle = "rgba(167,139,250,0.26)";
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(cx, cy, R, 0, TAU);
     ctx.stroke();
 
+    this.drawDevices(now);
     this.drawNetwork(now);
   };
 
-  /* Фоновый трафик: много одновременных соединений со всего мира.
-     Точки без подписей — это визуализация нагрузки, а не реальные узлы. */
-  var CITIES = [
-    [52.52, 13.4], [48.86, 2.35], [51.51, -0.13], [40.71, -74.01], [37.77, -122.42],
-    [55.75, 37.62], [43.24, 76.89], [25.2, 55.27], [1.35, 103.82], [35.68, 139.69],
-    [-33.87, 151.21], [-23.55, -46.63], [19.08, 72.88], [41.01, 28.98], [50.45, 30.52],
-    [59.33, 18.07], [22.32, 114.17], [-1.29, 36.82], [45.46, 9.19], [39.9, 116.4],
-    [-26.2, 28.04], [34.05, -118.24], [43.65, -79.38], [3.14, 101.69],
-    /* южное полушарие и края карты — чтобы глобус жил целиком */
-    [-34.6, -58.38], [-33.45, -70.67], [-12.05, -77.04], [4.71, -74.07], [10.5, -66.92],
-    [-15.79, -47.88], [-22.91, -43.17], [-8.05, -34.88], [-25.43, -49.27],
-    [-36.85, 174.77], [-41.29, 174.78], [-37.81, 144.96], [-31.95, 115.86], [-27.47, 153.02],
-    [-6.21, 106.85], [14.6, 120.98], [13.75, 100.5], [21.03, 105.85], [-33.92, 18.42],
-    [6.52, 3.38], [-4.44, 15.27], [30.04, 31.24], [33.57, -7.59], [9.03, 38.74],
-    [-18.14, 178.44], [64.15, -21.94], [60.17, 24.94], [-16.5, -68.15], [19.43, -99.13],
-    [23.13, -82.38], [18.47, -69.9], [61.22, -149.9], [21.31, -157.86], [-20.16, 57.5],
-    [24.86, 67.01], [27.72, 85.32], [37.57, 126.98], [25.03, 121.57], [-9.44, 147.18],
-    [69.65, 18.96], [-54.8, -68.3], [11.55, 104.92], [39.04, 125.76], [-33.02, 27.91]
-  ];
-
-  Globe.prototype.ambientRoutes = function () {
-    if (this._amb) return this._amb;
-    var o = this.o;
-    var ends = (this.live || []).map(function (n) { return [n.lat, n.lon]; });
-    var home = o.home ? [o.home.lat, o.home.lon] : [48, 68];
-    if (!ends.length) ends = [home];
+  /* Устройства по всей планете: часть рассыпана по всей суше, часть сгущается
+     вокруг крупных городов. Это масштаб сети, а не список узлов. */
+  Globe.prototype.devices = function () {
+    if (this._dev) return this._dev;
+    var rnd = seeded(20260825);
     var list = [];
-    CITIES.forEach(function (c, i) {
-      var tgt = ends[i % ends.length];
-      list.push({
-        a: unit(c[0], c[1]),
-        b: unit(tgt[0], tgt[1]),
-        dur: 4200 + ((i * 977) % 5200),
-        off: (i * 1013) % 7000,
-        green: i % 4 === 0
-      });
-    });
-    ends.forEach(function (e, k) {
-      list.push({
-        a: unit(home[0], home[1]),
-        b: unit(e[0], e[1]),
-        dur: 5400 + k * 800,
-        off: k * 1700,
-        green: true
-      });
-    });
+    var pts = worldPoints();
+    var total = pts.length / 3;
 
-    /* сетка city ↔ city: трафик идёт не только к нашим узлам, но и по всему шару */
-    var HOPS = [11, 19];
-    for (var m = 0; m < CITIES.length; m += 3) {
-      var hop = HOPS[(m / 3) % HOPS.length];
-      var pair = CITIES[(m + hop) % CITIES.length];
+    for (var i = 0; i < total; i += 5) {
+      var v = [
+        pts[i * 3] + (rnd() - 0.5) * 0.012,
+        pts[i * 3 + 1] + (rnd() - 0.5) * 0.012,
+        pts[i * 3 + 2] + (rnd() - 0.5) * 0.012
+      ];
+      var len = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) || 1;
       list.push({
-        a: unit(CITIES[m][0], CITIES[m][1]),
-        b: unit(pair[0], pair[1]),
-        dur: 5200 + ((m * 761) % 6400),
-        off: (m * 587) % 9000,
-        green: m % 7 === 0,
-        faint: true
+        p: [v[0] / len, v[1] / len, v[2] / len],
+        r: 0.85 + rnd() * 0.35,
+        a: 0.3 + rnd() * 0.3,
+        ph: rnd() * TAU,
+        hot: false,
+        live: false
       });
     }
 
-    this._amb = list;
+    for (var c = 0; c < CITIES.length; c++) {
+      var lat = CITIES[c][0];
+      var lon = CITIES[c][1];
+      var count = 4 + Math.floor(rnd() * 5);
+      for (var k = 0; k < count; k++) {
+        var spread = k === 0 ? 0 : 1.2 + rnd() * 6.2;
+        var ang = rnd() * TAU;
+        var dLat = Math.sin(ang) * spread;
+        var dLon = (Math.cos(ang) * spread) / Math.max(0.25, Math.cos(lat * DEG));
+        list.push({
+          p: unit(Math.max(-84, Math.min(84, lat + dLat)), ((lon + dLon + 540) % 360) - 180),
+          r: k === 0 ? 1.7 : 1.05 + rnd() * 0.5,
+          a: k === 0 ? 0.95 : 0.55 + rnd() * 0.3,
+          ph: rnd() * TAU,
+          hot: k === 0,
+          live: rnd() < 0.16
+        });
+      }
+    }
+
+    this._dev = list;
     return list;
   };
 
-  Globe.prototype.drawAmbient = function (now) {
-    var ctx = this.ctx, R = this.R, cx = this.cx, cy = this.cy, self = this;
-    var routes = this.ambientRoutes();
+  Globe.prototype.drawDevices = function (now) {
+    var ctx = this.ctx;
+    var R = this.R;
+    var cx = this.cx;
+    var cy = this.cy;
+    var list = this.devices();
+    var t = now / 1000;
+    ctx.save();
+    for (var i = 0; i < list.length; i++) {
+      var d = list[i];
+      var pr = this.project(d.p);
+      if (pr[2] <= 0.05) continue;
+      var sx = cx + pr[0] * R;
+      var sy = cy - pr[1] * R;
+      var depth = Math.min(1, 0.28 + pr[2] * 0.95);
+      var tw = reduced ? 0.72 : 0.62 + 0.38 * Math.sin(t * 0.9 + d.ph);
+      var alpha = d.a * depth * (0.66 + 0.34 * tw);
+      var rad = Math.max(0.55, d.r * (0.72 + 0.45 * pr[2]) * (R / 210));
+
+      ctx.fillStyle = d.live
+        ? "rgba(94,231,163," + Math.min(1, alpha + 0.12).toFixed(3) + ")"
+        : d.hot
+        ? "rgba(222,211,255," + alpha.toFixed(3) + ")"
+        : "rgba(178,152,255," + alpha.toFixed(3) + ")";
+      ctx.beginPath();
+      ctx.arc(sx, sy, rad, 0, TAU);
+      ctx.fill();
+
+      if (d.live && pr[2] > 0.42) {
+        var pulse = reduced ? 0.5 : (Math.sin(t * 1.6 + d.ph) + 1) / 2;
+        var g = ctx.createRadialGradient(sx, sy, 0, sx, sy, rad * 5.5);
+        g.addColorStop(0, "rgba(94,231,163," + (0.2 * pulse * depth).toFixed(3) + ")");
+        g.addColorStop(1, "rgba(94,231,163,0)");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(sx, sy, rad * 5.5, 0, TAU);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  };
+
+  /* Пул маршрутов большой, но одновременно видно максимум ARC_SLOTS дуг. */
+  Globe.prototype.arcPool = function () {
+    if (this._pool) return this._pool;
+    var rnd = seeded(777001);
+    var ends = (this.live || []).map(function (n) {
+      return unit(n.lat, n.lon);
+    });
+    if (!ends.length && this.o.home) ends = [unit(this.o.home.lat, this.o.home.lon)];
+    var pool = [];
+    for (var i = 0; i < CITIES.length; i++) {
+      pool.push({ a: unit(CITIES[i][0], CITIES[i][1]), b: ends[i % Math.max(1, ends.length)] });
+    }
+    for (var j = pool.length - 1; j > 0; j--) {
+      var k = Math.floor(rnd() * (j + 1));
+      var tmp = pool[j];
+      pool[j] = pool[k];
+      pool[k] = tmp;
+    }
+    this._pool = pool;
+    this._slots = null;
+    return pool;
+  };
+
+  Globe.prototype.arcSlots = function () {
+    if (this._slots) return this._slots;
+    var pool = this.arcPool();
+    var slots = [];
+    for (var s = 0; s < ARC_SLOTS; s++) {
+      slots.push({ idx: (s * 7) % Math.max(1, pool.length), dur: 5200 + s * 1400, off: s * 1900 });
+    }
+    this._slots = slots;
+    return slots;
+  };
+
+  Globe.prototype.drawArcs = function (now) {
+    var ctx = this.ctx;
+    var R = this.R;
+    var cx = this.cx;
+    var cy = this.cy;
+    var pool = this.arcPool();
+    if (!pool.length) return;
+    var slots = this.arcSlots();
     ctx.save();
     ctx.lineCap = "round";
 
-    /* точки городов по всему шару: жизнь и в центре, и внизу, а не только вверху */
-    for (var c = 0; c < CITIES.length; c++) {
-      var cp = self.project(unit(CITIES[c][0], CITIES[c][1]));
-      if (cp[2] < 0.04) continue;
-      var tw = reduced ? 0.65 : 0.5 + 0.5 * Math.sin(now / 1400 + c * 0.7);
-      ctx.beginPath();
-      ctx.fillStyle =
-        (c % 6 === 0 ? "rgba(120,235,175," : "rgba(178,152,255,") +
-        (0.2 + 0.26 * tw).toFixed(3) + ")";
-      ctx.arc(cx + cp[0] * R, cy - cp[1] * R, cp[2] > 0.55 ? 1.5 : 1.05, 0, 6.28318530718);
-      ctx.fill();
-    }
-
-    for (var i = 0; i < routes.length; i++) {
-      var r = routes[i];
-      var ph = reduced ? 0.6 : ((now + r.off) % r.dur) / r.dur;
-      var grow = Math.min(1, ph / 0.45);
-      var fade = ph > 0.82 ? Math.max(0, 1 - (ph - 0.82) / 0.18) : Math.min(1, ph / 0.1);
+    for (var s = 0; s < slots.length; s++) {
+      var slot = slots[s];
+      var raw = (now + slot.off) / slot.dur;
+      var loop = Math.floor(raw);
+      var ph = reduced ? 0.55 : raw - loop;
+      if (slot._loop !== loop) {
+        slot._loop = loop;
+        slot.idx = (slot.idx + slots.length) % pool.length;
+      }
+      var arc = pool[slot.idx];
+      var grow = Math.min(1, ph / 0.4);
+      var fade = ph < 0.12 ? ph / 0.12 : ph > 0.78 ? Math.max(0, 1 - (ph - 0.78) / 0.22) : 1;
       if (fade <= 0.02) continue;
-      var started = false, drawn = 0, steps = 26;
+
+      var started = false;
+      var drawn = 0;
+      var steps = 30;
       ctx.beginPath();
-      for (var s = 0; s <= steps; s++) {
-        var t = (s / steps) * grow;
-        var p = slerp(r.a, r.b, t);
-        var lift = 1 + 0.12 * Math.sin(Math.PI * t);
-        var pr = self.project([p[0] * lift, p[1] * lift, p[2] * lift]);
-        if (pr[2] < 0.02) { started = false; continue; }
-        var sx = cx + pr[0] * R, sy = cy - pr[1] * R;
-        if (!started) { ctx.moveTo(sx, sy); started = true; } else { ctx.lineTo(sx, sy); }
+      for (var i = 0; i <= steps; i++) {
+        var t = (i / steps) * grow;
+        var p = slerp(arc.a, arc.b, t);
+        var lift = 1 + 0.14 * Math.sin(Math.PI * t);
+        var pr = this.project([p[0] * lift, p[1] * lift, p[2] * lift]);
+        if (pr[2] < 0.02) {
+          started = false;
+          continue;
+        }
+        var sx = cx + pr[0] * R;
+        var sy = cy - pr[1] * R;
+        if (!started) {
+          ctx.moveTo(sx, sy);
+          started = true;
+        } else {
+          ctx.lineTo(sx, sy);
+        }
         drawn++;
       }
-      var fa = r.faint ? 0.6 : 1;
       if (drawn > 1) {
-        ctx.lineWidth = r.faint ? 0.6 : 0.9;
-        ctx.strokeStyle = r.green
-          ? "rgba(79,216,140," + (0.16 * fade * fa).toFixed(3) + ")"
-          : "rgba(139,92,246," + (0.24 * fade * fa).toFixed(3) + ")";
+        ctx.lineWidth = 0.85;
+        ctx.strokeStyle = "rgba(167,139,250," + (0.26 * fade).toFixed(3) + ")";
         ctx.stroke();
       }
+
       if (!reduced && grow >= 1) {
-        var tp = Math.min(1, (ph - 0.45) / 0.5);
-        var pp = slerp(r.a, r.b, tp);
-        var lift2 = 1 + 0.12 * Math.sin(Math.PI * tp);
-        var prp = self.project([pp[0] * lift2, pp[1] * lift2, pp[2] * lift2]);
+        var tp = Math.min(1, (ph - 0.4) / 0.42);
+        var pp = slerp(arc.a, arc.b, tp);
+        var lift2 = 1 + 0.14 * Math.sin(Math.PI * tp);
+        var prp = this.project([pp[0] * lift2, pp[1] * lift2, pp[2] * lift2]);
         if (prp[2] > 0.02) {
-          var px = cx + prp[0] * R, py = cy - prp[1] * R;
+          ctx.fillStyle = "rgba(226,214,255," + (0.85 * fade).toFixed(3) + ")";
           ctx.beginPath();
-          ctx.fillStyle = r.green
-            ? "rgba(140,246,190," + (0.75 * fade * fa).toFixed(3) + ")"
-            : "rgba(206,192,255," + (0.8 * fade * fa).toFixed(3) + ")";
-          ctx.arc(px, py, r.faint ? 1.15 : 1.7, 0, TAU);
+          ctx.arc(cx + prp[0] * R, cy - prp[1] * R, 1.5, 0, TAU);
           ctx.fill();
         }
       }
@@ -388,7 +469,6 @@
     var o = this.o;
     if (!o.home || !this.live.length) return;
 
-    /* цикл подключения: маршрут строится, пакет идёт, нода "зеленеет" */
     var cycle = reduced ? 1 : (now - this.routeStart) / o.cycle;
     if (!reduced && cycle >= 1) {
       this.routeStart = now;
@@ -399,13 +479,10 @@
     var active = this.live[this.routeIndex];
     var grow = Math.min(1, cycle / 0.34);
     var fade = cycle > 0.86 ? 1 - (cycle - 0.86) / 0.14 : 1;
-
     var home = unit(o.home.lat, o.home.lon);
 
-    /* сначала фоновые соединения, чтобы основной маршрут оставался главным */
-    this.drawAmbient(now);
+    this.drawArcs(now);
 
-    /* маршрут */
     var target = unit(active.lat, active.lon);
     var steps = 54;
     var visible = 0;
@@ -413,8 +490,8 @@
     ctx.lineWidth = 1.6;
     ctx.lineCap = "round";
     var grad = ctx.createLinearGradient(cx - R, cy, cx + R, cy);
-    grad.addColorStop(0, "rgba(196,181,253," + 0.95 * fade + ")");
-    grad.addColorStop(1, "rgba(79,216,140," + 0.95 * fade + ")");
+    grad.addColorStop(0, "rgba(214,199,255," + 0.95 * fade + ")");
+    grad.addColorStop(1, "rgba(94,231,163," + 0.95 * fade + ")");
     ctx.strokeStyle = grad;
     ctx.setLineDash([5, 5]);
     ctx.lineDashOffset = reduced ? 0 : -(now / 34) % 10;
@@ -426,24 +503,21 @@
       var p = slerp(home, target, t);
       var lift = 1 + 0.19 * Math.sin(Math.PI * t);
       var pr = this.project([p[0] * lift, p[1] * lift, p[2] * lift]);
-      var sx = cx + pr[0] * R;
-      var sy = cy - pr[1] * R;
       if (pr[2] < -0.05) {
         started = false;
         continue;
       }
       visible++;
       if (!started) {
-        ctx.moveTo(sx, sy);
+        ctx.moveTo(cx + pr[0] * R, cy - pr[1] * R);
         started = true;
       } else {
-        ctx.lineTo(sx, sy);
+        ctx.lineTo(cx + pr[0] * R, cy - pr[1] * R);
       }
     }
     if (visible > 1) ctx.stroke();
     ctx.setLineDash([]);
 
-    /* пакет по маршруту */
     if (!reduced && grow >= 1) {
       var tp = ((cycle - 0.34) / 0.66) % 1;
       var pp = slerp(home, target, tp);
@@ -454,8 +528,8 @@
         var py = cy - prp[1] * R;
         var g2 = ctx.createRadialGradient(px, py, 0, px, py, 7);
         g2.addColorStop(0, "rgba(255,255,255,0.95)");
-        g2.addColorStop(0.4, "rgba(196,181,253,0.75)");
-        g2.addColorStop(1, "rgba(196,181,253,0)");
+        g2.addColorStop(0.4, "rgba(214,199,255,0.75)");
+        g2.addColorStop(1, "rgba(214,199,255,0)");
         ctx.fillStyle = g2;
         ctx.beginPath();
         ctx.arc(px, py, 7, 0, TAU);
@@ -464,7 +538,6 @@
     }
     ctx.restore();
 
-    /* ноды */
     var self = this;
     (o.nodes || []).forEach(function (n, idx) {
       var p = self.project(unit(n.lat, n.lon));
@@ -474,15 +547,11 @@
       var soon = n.status === "soon";
       var isActive = !soon && n.id === active.id && grow >= 1;
       var depth = Math.min(1, 0.35 + p[2]);
-      var color = soon
-        ? "rgba(153,148,171,"
-        : isActive
-        ? "rgba(79,216,140,"
-        : "rgba(196,181,253,";
+      var color = soon ? "rgba(153,148,171," : isActive ? "rgba(94,231,163," : "rgba(214,199,255,";
 
       if (!soon && !reduced) {
         var ph = ((now / 1000 + idx * 0.7) % 2.4) / 2.4;
-        ctx.strokeStyle = color + 0.5 * (1 - ph) * depth + ")";
+        ctx.strokeStyle = color + 0.45 * (1 - ph) * depth + ")";
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.arc(sx, sy, 3 + ph * 13, 0, TAU);
@@ -491,8 +560,8 @@
 
       if (isActive) {
         var gl = ctx.createRadialGradient(sx, sy, 0, sx, sy, 12);
-        gl.addColorStop(0, "rgba(79,216,140,0.5)");
-        gl.addColorStop(1, "rgba(79,216,140,0)");
+        gl.addColorStop(0, "rgba(94,231,163,0.5)");
+        gl.addColorStop(1, "rgba(94,231,163,0)");
         ctx.fillStyle = gl;
         ctx.beginPath();
         ctx.arc(sx, sy, 12, 0, TAU);
@@ -501,18 +570,17 @@
 
       ctx.fillStyle = color + (soon ? 0.45 : 0.95) * depth + ")";
       ctx.beginPath();
-      ctx.arc(sx, sy, soon ? 1.8 : 2.6, 0, TAU);
+      ctx.arc(sx, sy, soon ? 1.8 : 2.9, 0, TAU);
       ctx.fill();
     });
 
-    /* точка "вы" */
     var hp = this.project(home);
     if (hp[2] > 0.03) {
       var hx = cx + hp[0] * R;
       var hy = cy - hp[1] * R;
       if (!reduced) {
         var hph = ((now / 1000) % 2.4) / 2.4;
-        ctx.strokeStyle = "rgba(196,181,253," + 0.55 * (1 - hph) + ")";
+        ctx.strokeStyle = "rgba(214,199,255," + 0.55 * (1 - hph) + ")";
         ctx.lineWidth = 1.1;
         ctx.beginPath();
         ctx.arc(hx, hy, 3 + hph * 15, 0, TAU);
@@ -522,7 +590,7 @@
       ctx.beginPath();
       ctx.arc(hx, hy, 3, 0, TAU);
       ctx.fill();
-      ctx.strokeStyle = "rgba(196,181,253,0.9)";
+      ctx.strokeStyle = "rgba(214,199,255,0.9)";
       ctx.lineWidth = 1.4;
       ctx.beginPath();
       ctx.arc(hx, hy, 5.4, 0, TAU);

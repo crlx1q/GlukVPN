@@ -253,7 +253,7 @@
       var ap = this.nodePoint(active.id);
       var grad = ctx.createLinearGradient(hp[0], hp[1], ap[0], ap[1]);
       grad.addColorStop(0, "rgba(196,181,253,0.95)");
-      grad.addColorStop(1, "rgba(79,216,140,0.95)");
+      grad.addColorStop(1, "rgba(94,231,163,0.95)");
       ctx.save();
       ctx.strokeStyle = grad;
       ctx.lineWidth = o.compact ? 1.3 : 1.8;
