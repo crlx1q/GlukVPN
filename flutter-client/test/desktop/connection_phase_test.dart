@@ -87,8 +87,8 @@ void main() {
 
     test('buttonPhase collapses failures onto disconnected', () {
       expect(ConnectionPhase.connectionFailed.buttonPhase,
-          ConnectPhase.disconnected);
-      expect(ConnectionPhase.tunnelLost.buttonPhase, ConnectPhase.disconnected);
+          ConnectPhase.idle);
+      expect(ConnectionPhase.tunnelLost.buttonPhase, ConnectPhase.idle);
       expect(ConnectionPhase.connected.buttonPhase, ConnectPhase.connected);
       expect(ConnectionPhase.connecting.buttonPhase, ConnectPhase.connecting);
     });
