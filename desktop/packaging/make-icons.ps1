@@ -117,8 +117,8 @@ function Save-Icon([System.Drawing.Bitmap[]]$frames, [string]$path) {
             $height = $frames[$i].Height
 
             # ICONDIRENTRY. 0 means 256 in the icon format.
-            $writer.Write([Byte](if ($width  -ge 256) { 0 } else { $width }))
-            $writer.Write([Byte](if ($height -ge 256) { 0 } else { $height }))
+            $writer.Write([Byte]$(if ($width -ge 256) { 0 } else { $width }))
+            $writer.Write([Byte]$(if ($height -ge 256) { 0 } else { $height }))
             $writer.Write([Byte]0)              # palette
             $writer.Write([Byte]0)              # reserved
             $writer.Write([UInt16]1)            # colour planes
