@@ -121,8 +121,8 @@ class _CaptionButtonState extends State<_CaptionButton> {
     final background = !_hovered
         ? Colors.transparent
         : (widget.danger
-            ? GlukColors.danger.withValues(alpha: 0.85)
-            : Colors.white.withValues(alpha: 0.08));
+            ? GlukColors.danger.withOpacity(0.85)
+            : Colors.white.withOpacity(0.08));
 
     return Tooltip(
       message: widget.tooltip,

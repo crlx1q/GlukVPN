@@ -100,13 +100,13 @@ class _NavButtonState extends State<_NavButton> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             color: selected
-                ? GlukColors.violet.withValues(alpha: 0.16)
+                ? GlukColors.violet.withOpacity(0.16)
                 : (_hovered
-                    ? Colors.white.withValues(alpha: 0.04)
+                    ? Colors.white.withOpacity(0.04)
                     : Colors.transparent),
             border: Border.all(
               color: selected
-                  ? GlukColors.violet.withValues(alpha: 0.45)
+                  ? GlukColors.violet.withOpacity(0.45)
                   : Colors.transparent,
             ),
           ),

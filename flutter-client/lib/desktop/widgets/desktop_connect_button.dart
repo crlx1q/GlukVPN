@@ -56,7 +56,7 @@ class DesktopConnectButton extends StatelessWidget {
             fit: BoxFit.contain,
             child: Opacity(
               opacity: enabled ? 1 : 0.55,
-              child: ConnectButton(
+              child: GlukConnectButton(
                 phase: phase.buttonPhase,
                 reduceMotion: reduceMotion,
                 onTap: enabled ? onTap : null,

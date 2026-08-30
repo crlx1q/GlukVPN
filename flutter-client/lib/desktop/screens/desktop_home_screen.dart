@@ -278,6 +278,8 @@ class _ControlPanel extends StatelessWidget {
         return strings.viaApi;
       case PingSource.none:
         return strings.dash;
+      default:
+        return strings.dash;
     }
   }
 }
@@ -391,3 +393,4 @@ class _TrafficLeg extends StatelessWidget {
     );
   }
 }
+

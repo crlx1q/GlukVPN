@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:isolate';
+import 'dart:typed_data';
+import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:win32/win32.dart';
@@ -109,7 +111,7 @@ _PipeOutcome _pipeTransact(_PipeCall call) {
         );
       }
       // All instances busy: wait for one to free up.
-      WaitNamedPipe(namePtr, 250);
+      Sleep(250);
     }
 
     // Switch to message mode; harmless if the server created a byte pipe.

@@ -12,6 +12,7 @@ import '../services/app_inventory.dart';
 import '../services/autostart_service.dart';
 import '../state/desktop_settings.dart';
 import '../state/desktop_vpn_controller.dart';
+import '../logic/connection_phase.dart';
 
 /// Settings (requirement 13).
 ///
@@ -216,7 +217,7 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
             ),
             _InfoTile(
               label: s.plan,
-              value: widget.auth.subscription?.plan ?? s.free,
+              value: widget.auth.subscription?.status ?? s.free,
             ),
             if (widget.auth.subscription?.expiresAt != null)
               _InfoTile(
@@ -532,7 +533,7 @@ class _SwitchTile extends StatelessWidget {
             Switch(
               value: value,
               activeColor: GlukColors.violetLight,
-              activeTrackColor: GlukColors.violet.withValues(alpha: 0.5),
+              activeTrackColor: GlukColors.violet.withOpacity(0.5),
               onChanged: enabled ? onChanged : null,
             ),
           ],
@@ -700,7 +701,7 @@ class _TextTileState extends State<_TextTile> {
               hintStyle:
                   const TextStyle(color: GlukColors.text2, fontSize: 13),
               filled: true,
-              fillColor: Colors.white.withValues(alpha: 0.04),
+              fillColor: Colors.white.withOpacity(0.04),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
                 vertical: 11,

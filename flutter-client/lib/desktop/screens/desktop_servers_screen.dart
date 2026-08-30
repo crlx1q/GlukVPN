@@ -129,7 +129,7 @@ class _DesktopServersScreenState extends State<DesktopServersScreen> {
                     color: GlukColors.text2,
                   ),
                   filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.04),
+                  fillColor: Colors.white.withOpacity(0.04),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 12,
@@ -203,7 +203,7 @@ class _AutoCard extends StatelessWidget {
     return GlassPanel(
       radius: GlukSizes.cellRadius,
       onTap: onTap,
-      color: selected ? GlukColors.violet.withValues(alpha: 0.12) : null,
+      color: selected ? GlukColors.violet.withOpacity(0.12) : null,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       child: Row(
         children: <Widget>[

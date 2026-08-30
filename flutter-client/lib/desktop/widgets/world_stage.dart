@@ -161,8 +161,8 @@ class _WorldStageState extends State<WorldStage>
                         center: Alignment.center,
                         radius: 0.72,
                         colors: <Color>[
-                          tint.withValues(alpha: glow * 0.5),
-                          tint.withValues(alpha: glow * 0.16),
+                          tint.withOpacity(glow * 0.5),
+                          tint.withOpacity(glow * 0.16),
                           Colors.transparent,
                         ],
                         stops: const <double>[0.0, 0.45, 1.0],
@@ -218,7 +218,7 @@ class _WorldStageState extends State<WorldStage>
   }
 
   /// Converts a projected map point back to an approximate longitude.
-  double _longitudeOf(MapPoint point) => (point.dx / mapWidth) * 360 - 180;
+  double _longitudeOf(MapPoint point) => (point.x / mapWidth) * 360 - 180;
 
   double _arcProgress() {
     if (widget.phase.isConnected) return 1;

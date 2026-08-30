@@ -77,7 +77,7 @@ class _DesktopSplashState extends State<DesktopSplash>
                         boxShadow: <BoxShadow>[
                           BoxShadow(
                             color: GlukColors.violet
-                                .withValues(alpha: 0.42 * _glow.value),
+                                .withOpacity(0.42 * _glow.value),
                             blurRadius: 56 * _glow.value,
                             spreadRadius: 6 * _glow.value,
                           ),
@@ -90,7 +90,7 @@ class _DesktopSplashState extends State<DesktopSplash>
                       'GlukVPN',
                       style: TextStyle(
                         color: GlukColors.text0
-                            .withValues(alpha: 0.6 + (_glow.value * 0.4)),
+                            .withOpacity(0.6 + (_glow.value * 0.4)),
                         fontSize: 19,
                         fontWeight: FontWeight.w600,
                         letterSpacing: 3.2,
@@ -106,7 +106,7 @@ class _DesktopSplashState extends State<DesktopSplash>
                           child: LinearProgressIndicator(
                             value: _glow.value,
                             backgroundColor:
-                                Colors.white.withValues(alpha: 0.07),
+                                Colors.white.withOpacity(0.07),
                             valueColor: const AlwaysStoppedAnimation<Color>(
                               GlukColors.violet,
                             ),

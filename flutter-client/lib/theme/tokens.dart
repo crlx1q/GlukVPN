@@ -215,3 +215,10 @@ class GlukMotion {
 	/// `blink 1.8s` on the status badge.
 	static const badgeBlink = Duration(milliseconds: 1800);
 }
+
+class NoticeTone {
+  static const info = GlukColors.violet;
+  static const warning = GlukColors.amber;
+  static const danger = GlukColors.danger;
+}
+

@@ -184,6 +184,9 @@ class _ServerRowState extends State<ServerRow> {
         return GlukColors.amber;
       case PingLevel.low:
         return GlukColors.danger;
+      default:
+        return GlukColors.text2;
     }
   }
 }
+

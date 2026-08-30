@@ -251,7 +251,7 @@ class _Field extends StatelessWidget {
         prefixIcon: Icon(icon, size: 18, color: GlukColors.text2),
         suffixIcon: trailing,
         filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.04),
+        fillColor: Colors.white.withOpacity(0.04),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
         border: OutlineInputBorder(
