@@ -40,7 +40,7 @@ jobs:
         shell: pwsh
 
       - name: Generate Flutter Windows scaffolding
-        run: flutter create . --platforms windows
+        run: flutter create . --platforms windows --project-name glukvpn
         working-directory: flutter-client
         shell: pwsh
 
