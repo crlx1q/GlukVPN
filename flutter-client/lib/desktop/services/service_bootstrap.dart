@@ -82,7 +82,7 @@ class ServiceBootstrap {
           return ServiceInstallState.installedStopped;
         }
         final current = status.ref.dwCurrentState;
-        if (current == SERVICE_RUNNING || current == SERVICE_START_PENDING) {
+        if (current == 4 /* SERVICE_RUNNING */ || current == 2 /* SERVICE_START_PENDING */) {
           return ServiceInstallState.running;
         }
         return ServiceInstallState.installedStopped;

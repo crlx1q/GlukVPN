@@ -18,7 +18,7 @@ class WorldStage extends StatefulWidget {
     this.reduceMotion = false,
     this.selfLocation,
     this.serverPoint,
-    this.allNodes = const <Offset>[],
+    this.allNodes = const <MapPoint>[],
     this.height = 420,
   });
 

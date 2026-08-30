@@ -1,3 +1,4 @@
+import '../../widgets/connect_button.dart';
 import '../../platform/tunnel_backend.dart';
 
 /// Every user-visible state the desktop connect flow can be in.
@@ -18,7 +19,7 @@ enum ConnectionPhase {
 
 /// Reduced phase used by the animated connect button, which only knows four
 /// visual states. Keeps the widget decoupled from error taxonomy.
-import '../../widgets/connect_button.dart';
+
 
 extension ConnectionPhaseX on ConnectionPhase {
   bool get isBusy =>
@@ -307,4 +308,5 @@ ConnectionPhase phaseForApiError({
   // Network-level failure, timeout, DNS, no status code at all.
   return ConnectionPhase.connectionFailed;
 }
+
 

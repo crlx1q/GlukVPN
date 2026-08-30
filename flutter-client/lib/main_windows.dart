@@ -128,7 +128,7 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
 
   Future<void> _boot() async {
     _store = SecureStore();
-    _api = ApiClient(store: _store);
+    _api = ApiClient();
     _auth = AuthController(api: _api, store: _store);
 
     _tunnel = WindowsTunnelClient(
@@ -211,7 +211,7 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
     return MaterialApp(
       title: 'GlukVPN',
       debugShowCheckedModeBanner: false,
-      theme: buildGlukTheme(),
+      theme: GlukTheme.build(),
       home: _buildHome(),
     );
   }

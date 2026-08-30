@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/ping_service.dart';
 
 import '../../models/models.dart';
 import '../../state/auth_controller.dart';
@@ -306,7 +307,7 @@ class _ServerCard extends StatelessWidget {
       child: Row(
         children: <Widget>[
           FlagCircle(
-            flag: node?.flag ?? '🌐',
+            flag: node?.countryCode ?? '🌐',
             size: GlukSizes.flagCircle,
           ),
           const SizedBox(width: 12),

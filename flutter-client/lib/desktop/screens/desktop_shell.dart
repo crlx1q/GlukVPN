@@ -6,6 +6,7 @@ import '../../widgets/page_background.dart';
 import '../i18n/desktop_strings.dart';
 import '../state/desktop_settings.dart';
 import '../state/desktop_vpn_controller.dart';
+import '../logic/connection_phase.dart';
 import '../state/tray_controller.dart';
 import '../state/window_controller.dart';
 import '../widgets/side_nav.dart';

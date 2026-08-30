@@ -98,7 +98,7 @@ class MiniPanel extends StatelessWidget {
               ),
               child: Row(
                 children: <Widget>[
-                  FlagCircle(flag: node?.flag ?? '🌐', size: 22),
+                  FlagCircle(flag: node?.countryCode ?? '🌐', size: 22),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(

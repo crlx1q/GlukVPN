@@ -203,7 +203,7 @@ class _AutoCard extends StatelessWidget {
     return GlassPanel(
       radius: GlukSizes.cellRadius,
       onTap: onTap,
-      color: selected ? GlukColors.violet.withOpacity(0.12) : null,
+      color: selected ? GlukColors.violet.withOpacity(0.12) : Colors.transparent,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       child: Row(
         children: <Widget>[

@@ -85,9 +85,7 @@ class _ServerRowState extends State<ServerRow> {
                 horizontal: 14,
                 vertical: 12,
               ),
-              color: widget.selected
-                  ? GlukColors.violet.withOpacity(0.10)
-                  : null,
+              color: widget.selected ? GlukColors.violet.withOpacity(0.10) : Colors.transparent,
               child: Row(
                 children: <Widget>[
                   FlagCircle(flag: node.countryCode, size: GlukSizes.flagCircle),
@@ -171,7 +169,7 @@ class _ServerRowState extends State<ServerRow> {
     final parts = <String>[node.displaySubtitle];
     final load = node.loadPercent;
     if (load != null) {
-      parts.add('${widget.loadLabel ?? 'Load'} ${formatPercent(load)}');
+      parts.add('${widget.loadLabel ?? 'Load'} ${formatPercent(load.toDouble())}');
     }
     return parts.where((String p) => p.isNotEmpty).join('  ·  ');
   }
@@ -189,4 +187,5 @@ class _ServerRowState extends State<ServerRow> {
     }
   }
 }
+
 

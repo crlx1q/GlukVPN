@@ -15,7 +15,7 @@ import 'package:win32/win32.dart';
 /// Wire format: one UTF-8 JSON object per line, request and response. The
 /// pipe is opened in message mode, but we still delimit with newlines so the
 /// protocol survives byte-mode fallbacks.
-library;
+
 
 /// Bumped whenever the request/response shape changes incompatibly.
 const int kTunnelProtocolVersion = 1;
@@ -267,3 +267,4 @@ class TunnelPipe {
     }
   }
 }
+
