@@ -1,6 +1,7 @@
 #include "wireguard_nt.h"
 
 #include <winsock2.h>
+#include <ifdef.h>
 #include <ws2tcpip.h>
 
 #include <vector>

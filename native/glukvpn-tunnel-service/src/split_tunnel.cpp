@@ -40,7 +40,7 @@ bool FindPhysicalDefaultRoute(NET_LUID& luid, SOCKADDR_INET& nextHop) {
     if (GetIpForwardTable2(AF_INET, &table) != NO_ERROR || !table) return false;
 
     bool found = false;
-    ULONG bestMetric = MAXULONG;
+    ULONG bestMetric = 0xFFFFFFFF;
 
     for (ULONG i = 0; i < table->NumEntries; ++i) {
         const MIB_IPFORWARD_ROW2& row = table->Table[i];
