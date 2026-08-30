@@ -1,3 +1,5 @@
+import 'dart:ui' show Size;
+
 /// Build-time and channel configuration.
 ///
 /// The app can talk to either control plane:
@@ -102,4 +104,72 @@ class AppConfig {
 	/// without it an open endpoint would be an invitation to create thousands of
 	/// accounts. Admin-created accounts still work.
 	static const bool selfRegistrationEnabled = false;
+
+	// -------------------------------------------------------------------------
+	// Build channel
+	// -------------------------------------------------------------------------
+
+	/// Selected at build time on desktop:
+	///   flutter build windows --dart-define=GLUK_CHANNEL=beta
+	/// Android keeps using [ChannelController], which can switch at runtime, so
+	/// this only sets the starting point.
+	static const String _buildChannel =
+			String.fromEnvironment('GLUK_CHANNEL', defaultValue: 'prod');
+
+	/// The channel this build talks to. A build compiled with
+	/// `ALLOW_BETA_CHANNEL=false` can never resolve to beta, even if someone
+	/// passes `GLUK_CHANNEL=beta`.
+	static AppChannel get activeChannel {
+		final AppChannel channel = AppChannel.fromId(_buildChannel);
+		if (channel.isBeta && !betaChannelAvailable) return AppChannel.prod;
+		return channel;
+	}
+
+	static String get activeBaseUrl => baseUrlFor(activeChannel);
+
+	/// Internal builds show diagnostics, internal nodes and the raw MTU field.
+	/// Public builds must never set this.
+	static const bool internalBuild = bool.fromEnvironment('GLUK_INTERNAL');
+
+	// -------------------------------------------------------------------------
+	// Windows desktop
+	// -------------------------------------------------------------------------
+	//
+	// Everything below is desktop-only. The constants live here rather than in
+	// lib/desktop/ so that a single place defines the contract shared with the
+	// native service, and so Android never has to import desktop code.
+
+	/// Named pipe the UI uses to reach GlukVpnTunnelService.
+	/// Must match kPipeName in native/glukvpn-tunnel-service/src/service.h.
+	static const String tunnelPipeName = 'GlukVPN.tunnel';
+
+	/// Windows service name registered with the SCM.
+	static const String tunnelServiceName = 'GlukVpnTunnel';
+
+	/// WireGuard adapter name shown in Network Connections.
+	static const String desktopAdapterName = 'GlukVPN';
+
+	/// Service executable, relative to the install directory.
+	static const String desktopServiceRelativePath =
+			r'service\GlukVpnTunnelService.exe';
+
+	/// How often the UI polls the tunnel service. Faster than the API poll
+	/// because this is a local pipe and it drives the connect animation.
+	static const Duration serviceStatusInterval = Duration(seconds: 2);
+
+	/// A handshake older than this means the tunnel is no longer carrying
+	/// traffic. Matches kHandshakeStaleSeconds in the native service.
+	static const Duration handshakeStaleAfter = Duration(seconds: 180);
+
+	/// Hard ceiling on the connecting phase. Past this the UI reports a failure
+	/// instead of spinning forever.
+	static const Duration connectTimeout = Duration(seconds: 25);
+
+	static const Size desktopMinSize = Size(960, 660);
+	static const Size desktopDefaultSize = Size(1180, 740);
+	static const Size miniPanelSize = Size(340, 420);
+
+	/// Deliberately short. The logo animation must never be the reason the app
+	/// feels slow; session, servers and subscription all load behind it.
+	static const Duration splashDuration = Duration(milliseconds: 620);
 }

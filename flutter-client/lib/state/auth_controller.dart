@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
+import '../platform/platform_target.dart';
 import '../services/api_client.dart';
 import '../services/connectivity_service.dart';
 import '../services/secure_store.dart';
@@ -248,6 +249,10 @@ class AuthController extends ChangeNotifier {
       final DeviceRegistration registration = await _api.registerDevice(
         deviceName: deviceName,
         publicKeyBase64: publicKey,
+        // Lets the control plane tell an Android phone apart from a Windows
+        // PC. registerDevice already defaults to 'android', so the mobile
+        // build keeps sending exactly what it sent before.
+        platform: devicePlatformTag,
       );
       _deviceId = registration.device.id;
       await _store.writeDeviceId(registration.device.id);

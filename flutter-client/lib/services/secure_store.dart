@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../platform/platform_target.dart';
+
 /// Local identity of this device.
 class DeviceIdentity {
   const DeviceIdentity({
@@ -152,8 +154,21 @@ class SecureStore {
       4,
       (_) => random.nextInt(16).toRadixString(16),
     ).join();
-    final String name =
-        _channelId == 'prod' ? 'android-$suffix' : 'android-$_channelId-$suffix';
+    // Android and Windows must never collide in the devices list, so the name
+    // follows the platform. Android keeps its historical 'android-<hex>' form,
+    // which means existing installs are completely unaffected.
+    final String name;
+    if (currentPlatformTarget == PlatformTarget.windows) {
+      // A human label here reads better next to the phone and the browser
+      // extension: "Windows · Desktop", "android-4f2a", "Chrome · Windows".
+      name = _channelId == 'prod'
+          ? 'Windows · Desktop'
+          : 'Windows · Desktop (${_channelId.toUpperCase()})';
+    } else {
+      name = _channelId == 'prod'
+          ? 'android-$suffix'
+          : 'android-$_channelId-$suffix';
+    }
     await _write(_kDeviceName, name);
     return name;
   }
