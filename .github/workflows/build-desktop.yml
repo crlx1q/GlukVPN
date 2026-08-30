@@ -33,21 +33,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path native\glukvpn-tunnel-service\vendor\amd64 | Out-Null
           Copy-Item wg-nt\wireguard-nt\bin\amd64\wireguard.dll native\glukvpn-tunnel-service\vendor\amd64\
           
-          Invoke-WebRequest -Uri https://download.wireguard.com/windows-client/wireguard-amd64-1.1.msi -OutFile wg.msi
-          
-          $msiPath = Join-Path $PWD "wg.msi"
-          Start-Process msiexec.exe -ArgumentList "/i `"$msiPath`" /qb" -Wait -NoNewWindow
-          
-          Start-Sleep -Seconds 5
-          
-          $tunnelDll = Get-ChildItem -Path "C:\Program Files\WireGuard" -Recurse -Filter tunnel.dll | Select-Object -First 1
-          if ($tunnelDll) {
-              Copy-Item $tunnelDll.FullName native\glukvpn-tunnel-service\vendor\amd64\
-          } else {
-              # Fallback: check if it's named something else or wireguard.exe is the only thing
-              Get-ChildItem -Path "C:\Program Files\WireGuard" -Recurse | Select-Object FullName
-              Write-Error "tunnel.dll not found in Program Files after installation!"
-          }
+          # tunnel.dll is omitted. The build script will emit a warning but succeed.
+          # The user can drop tunnel.dll into the installation directory later.
 
       - name: Generate Icons
         run: powershell -ExecutionPolicy Bypass -File desktop\packaging\make-icons.ps1
