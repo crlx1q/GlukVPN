@@ -39,15 +39,26 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
 			if (nodeWithSameKey) throw badRequest("This public key belongs to a VPN node")
 
 			const existing = await prisma.device.findUnique({ where: { publicKey } })
-			if (existing && (existing.userId !== user.id || existing.status !== "ACTIVE")) {
-				// Revoked keys are never reusable, and keys never move between users.
+			// A key still never moves between accounts. But refusing the owner's
+			// *own* revoked key was a dead end: clients keep their keypair for the
+			// life of the install, so once every device had been revoked the account
+			// could never register again - it kept seeing "already registered" while
+			// the UI honestly reported "0 of 3 devices". Re-enrolling your own key is
+			// now an ordinary re-activation, still bounded by the device limit.
+			if (existing && existing.userId !== user.id) {
 				throw conflict("This public key is already registered")
 			}
 
+			const reactivating = existing !== null && existing.status !== "ACTIVE"
 			const maxDevices = Math.min(user.maxDevices, config.MAX_DEVICES_PER_USER)
-			if (!existing) {
+			// A brand-new key and a returning revoked key both take up a slot.
+			if (!existing || reactivating) {
 				const activeDevices = await prisma.device.count({
-					where: { userId: user.id, status: "ACTIVE" },
+					where: {
+						userId: user.id,
+						status: "ACTIVE",
+						...(existing ? { NOT: { id: existing.id } } : {}),
+					},
 				})
 				if (activeDevices >= maxDevices) {
 					throw conflict(
@@ -63,6 +74,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
 							deviceName,
 							platform: platform ?? existing.platform,
 							lastSeen: new Date(),
+							...(reactivating ? { status: "ACTIVE", revokedAt: null } : {}),
 						},
 					})
 				: await prisma.device.create({
@@ -78,7 +90,11 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
 			// Device-scoped tokens: /api/vpn/* accepts only these.
 			const tokens = await issueTokens(app, user, device)
 			await writeAudit({
-				action: existing ? "device.reregister" : "device.register",
+				action: existing
+					? reactivating
+						? "device.reactivate"
+						: "device.reregister"
+					: "device.register",
 				userId: user.id,
 				deviceId: device.id,
 				ip,

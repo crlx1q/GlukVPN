@@ -28,16 +28,16 @@ jobs:
 
       - name: Download WireGuard dependencies
         run: |
-          # 1. wireguard-nt
           Invoke-WebRequest -Uri https://download.wireguard.com/wireguard-nt/wireguard-nt-1.1.zip -OutFile wg-nt.zip
           Expand-Archive -Path wg-nt.zip -DestinationPath wg-nt
           New-Item -ItemType Directory -Force -Path native\glukvpn-tunnel-service\vendor\amd64 | Out-Null
           Copy-Item wg-nt\wireguard-nt\bin\amd64\wireguard.dll native\glukvpn-tunnel-service\vendor\amd64\
           
-          # 2. wireguard-windows MSI
           Invoke-WebRequest -Uri https://download.wireguard.com/windows-client/wireguard-amd64-1.1.msi -OutFile wg.msi
           
-          Start-Process -FilePath "msiexec.exe" -ArgumentList "/a "$PWD\wg.msi" /qb TARGETDIR="$PWD\wg-extracted"" -Wait -NoNewWindow
+          $msiPath = Join-Path $PWD "wg.msi"
+          $extPath = Join-Path $PWD "wg-extracted"
+          Start-Process msiexec.exe -ArgumentList "/a `"$msiPath`" /qb TARGETDIR=`"$extPath`"" -Wait -NoNewWindow
           
           $tunnelDll = Get-ChildItem -Path wg-extracted -Recurse -Filter tunnel.dll | Select-Object -First 1
           if ($tunnelDll) {
