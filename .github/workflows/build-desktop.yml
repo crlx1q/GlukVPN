@@ -22,9 +22,11 @@ jobs:
 
       - name: Configure Flutter for Windows Desktop
         run: flutter config --enable-windows-desktop
+        shell: pwsh
 
       - name: Install Dependencies
         run: choco install innosetup -y
+        shell: pwsh
 
       - name: Download WireGuard dependencies
         run: |
@@ -32,15 +34,15 @@ jobs:
           Expand-Archive -Path wg-nt.zip -DestinationPath wg-nt
           New-Item -ItemType Directory -Force -Path native\glukvpn-tunnel-service\vendor\amd64 | Out-Null
           Copy-Item wg-nt\wireguard-nt\bin\amd64\wireguard.dll native\glukvpn-tunnel-service\vendor\amd64\
-          
-          # tunnel.dll is omitted. The build script will emit a warning but succeed.
-          # The user can drop tunnel.dll into the installation directory later.
+        shell: pwsh
 
       - name: Generate Icons
-        run: powershell -ExecutionPolicy Bypass -File desktop\packaging\make-icons.ps1
+        run: pwsh -ExecutionPolicy Bypass -File desktop\packaging\make-icons.ps1
+        shell: pwsh
 
       - name: Build Desktop App
-        run: powershell -ExecutionPolicy Bypass -File desktop\packaging\build-all.ps1 -Channel prod -Installer
+        run: pwsh -ExecutionPolicy Bypass -File desktop\packaging\build-all.ps1 -Channel prod -Installer
+        shell: pwsh
         
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
