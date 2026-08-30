@@ -24,7 +24,7 @@ jobs:
         run: flutter config --enable-windows-desktop
 
       - name: Install Dependencies
-        run: choco install innosetup lessmsi -y
+        run: choco install innosetup -y
 
       - name: Download WireGuard dependencies
         run: |
@@ -36,11 +36,12 @@ jobs:
           
           # 2. wireguard-windows MSI
           Invoke-WebRequest -Uri https://download.wireguard.com/windows-client/wireguard-amd64-1.1.msi -OutFile wg.msi
-          lessmsicmd x wg.msi wg-extracted\
           
-          \ = Get-ChildItem -Path wg-extracted -Recurse -Filter tunnel.dll | Select-Object -First 1
-          if (\) {
-              Copy-Item \.FullName native\glukvpn-tunnel-service\vendor\amd64\
+          Start-Process -FilePath "msiexec.exe" -ArgumentList "/a "$PWD\wg.msi" /qb TARGETDIR="$PWD\wg-extracted"" -Wait -NoNewWindow
+          
+          $tunnelDll = Get-ChildItem -Path wg-extracted -Recurse -Filter tunnel.dll | Select-Object -First 1
+          if ($tunnelDll) {
+              Copy-Item $tunnelDll.FullName native\glukvpn-tunnel-service\vendor\amd64\
           } else {
               Write-Error "tunnel.dll not found in MSI"
           }
