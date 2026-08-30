@@ -124,7 +124,7 @@ if (-not $SkipNative) {
         }
     }
 
-    & cmake -S $NativeDir -B $NativeBuild -G 'Visual Studio 17 2022' -A x64 `
+    & cmake -S $NativeDir -B $NativeBuild  `
         "-DGLUK_SERVICE_VERSION=$AppVersion"
     if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed.' }
 
