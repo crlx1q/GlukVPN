@@ -39,6 +39,11 @@ jobs:
           Copy-Item wg-nt\wireguard-nt\bin\amd64\wireguard.dll native\glukvpn-tunnel-service\vendor\amd64\
         shell: pwsh
 
+      - name: Generate Flutter Windows scaffolding
+        run: flutter create . --platforms windows
+        working-directory: flutter-client
+        shell: pwsh
+
       - name: Generate Icons
         run: pwsh -ExecutionPolicy Bypass -File desktop\packaging\make-icons.ps1
         shell: pwsh
