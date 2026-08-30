@@ -43,14 +43,14 @@ class DesktopHomeScreen extends StatelessWidget {
 
     final self = approximateSelfLocation(
       originCountryCode: user?.originCountryCode,
-      originCountry: user?.originCountry,
+      originCountryName: user?.originCountry,
       originRegion: user?.originRegion,
     );
 
     final serverPoint =
         node == null ? null : countryPoint(node.countryCode);
 
-    final nodePoints = <Offset>[
+    final nodePoints = <MapPoint>[
       for (final n in vpn.userVisibleNodes)
         if (countryPoint(n.countryCode) != null) countryPoint(n.countryCode)!,
     ];

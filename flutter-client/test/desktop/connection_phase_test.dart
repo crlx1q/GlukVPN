@@ -6,6 +6,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:glukvpn/desktop/logic/connection_phase.dart';
+import 'package:glukvpn/widgets/connect_button.dart';
 
 void main() {
   group('ConnectionPhaseX', () {

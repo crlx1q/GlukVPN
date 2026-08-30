@@ -18,7 +18,7 @@ enum ConnectionPhase {
 
 /// Reduced phase used by the animated connect button, which only knows four
 /// visual states. Keeps the widget decoupled from error taxonomy.
-enum ConnectPhase { disconnected, connecting, connected, disconnecting }
+import '../../widgets/connect_button.dart';
 
 extension ConnectionPhaseX on ConnectionPhase {
   bool get isBusy =>
@@ -130,7 +130,7 @@ extension ConnectionPhaseX on ConnectionPhase {
       case ConnectionPhase.limitReached:
       case ConnectionPhase.accessRevoked:
       case ConnectionPhase.tunnelLost:
-        return ConnectPhase.disconnected;
+        return ConnectPhase.idle;
     }
   }
 }
@@ -307,3 +307,4 @@ ConnectionPhase phaseForApiError({
   // Network-level failure, timeout, DNS, no status code at all.
   return ConnectionPhase.connectionFailed;
 }
+

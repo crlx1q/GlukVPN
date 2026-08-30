@@ -201,8 +201,7 @@ class DesktopVpnController extends ChangeNotifier {
 
       // Make sure this machine is a registered device before asking for a
       // peer. Windows occupies exactly one device slot (requirement 17).
-      final registered = await _auth.ensureDeviceRegistered();
-      if (!registered) {
+      try { await _auth.ensureDeviceRegistered(); } catch (_) {
         _fail(
           ConnectionPhase.limitReached,
           'device_registration_failed',
@@ -224,7 +223,7 @@ class DesktopVpnController extends ChangeNotifier {
 
       ConnectResult result;
       try {
-        result = await _api.vpnConnect(nodeId: target.id);
+        result = await _api.connect(nodeId: target.id);
       } on ApiException catch (e) {
         _fail(
           phaseForApiError(
@@ -394,7 +393,7 @@ class DesktopVpnController extends ChangeNotifier {
   Future<void> refreshServerStatus() async {
     if (_disposed) return;
     try {
-      final status = await _api.vpnStatus();
+      final status = await _api.status();
       _session = status.session;
       _lastServerStatus = ServerTunnelStatus(
         peerReady: status.peerReady,
@@ -488,7 +487,7 @@ class DesktopVpnController extends ChangeNotifier {
 
   Future<void> refreshNodes() async {
     try {
-      final list = await _api.listNodes();
+      final list = await _api.nodes();
       _nodes = list;
 
       final remembered = _settings.value.lastNodeId;
@@ -524,7 +523,7 @@ class DesktopVpnController extends ChangeNotifier {
       final host = node.latencyHost;
       if (host == null) continue;
       final ms = await _ping.probeHost(host);
-      if (ms != null) _pings[node.id] = ms;
+      if (ms != null && ms.ok) _pings[node.id] = ms.milliseconds!;
     }
 
     if (_settings.value.autoNodeSelection) {
@@ -631,7 +630,7 @@ class DesktopVpnController extends ChangeNotifier {
     if (id == null) return;
     _activeSessionId = null;
     try {
-      await _api.vpnDisconnect(sessionId: id);
+      await _api.disconnect(sessionId: id);
     } catch (_) {
       // The server reaps stale sessions on its own; nothing to do here.
     }
@@ -699,3 +698,4 @@ extension _FirstOrNull<T> on Iterable<T> {
     return it.moveNext() ? it.current : null;
   }
 }
+
