@@ -96,7 +96,7 @@ class AutostartService {
         keyPath,
         0,
         nullptr,
-        REG_OPTION_NON_VOLATILE,
+        0,
         KEY_SET_VALUE,
         nullptr,
         handle,

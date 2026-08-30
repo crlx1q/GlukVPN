@@ -4,6 +4,35 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 import 'package:win32/win32.dart';
 
+final _kernel32 = DynamicLibrary.open('kernel32.dll');
+final CreateToolhelp32Snapshot = _kernel32.lookupFunction<IntPtr Function(Uint32, Uint32), int Function(int, int)>('CreateToolhelp32Snapshot');
+final Process32First = _kernel32.lookupFunction<Int32 Function(IntPtr, Pointer<PROCESSENTRY32>), int Function(int, Pointer<PROCESSENTRY32>)>('Process32FirstW');
+final Process32Next = _kernel32.lookupFunction<Int32 Function(IntPtr, Pointer<PROCESSENTRY32>), int Function(int, Pointer<PROCESSENTRY32>)>('Process32NextW');
+const int TH32CS_SNAPPROCESS = 0x00000002;
+
+final class PROCESSENTRY32 extends Struct {
+  @Uint32() external int dwSize;
+  @Uint32() external int cntUsage;
+  @Uint32() external int th32ProcessID;
+  @IntPtr() external int th32DefaultHeapID;
+  @Uint32() external int th32ModuleID;
+  @Uint32() external int cntThreads;
+  @Uint32() external int th32ParentProcessID;
+  @Int32()  external int pcPriClassBase;
+  @Uint32() external int dwFlags;
+  @Array(260) external Array<Uint16> _szExeFile;
+  
+  String get szExeFile {
+    final buffer = StringBuffer();
+    for (var i = 0; i < 260; i++) {
+      final char = _szExeFile[i];
+      if (char == 0) break;
+      buffer.writeCharCode(char);
+    }
+    return buffer.toString();
+  }
+}
+
 /// One selectable application for split tunnelling.
 class InstalledApp {
   const InstalledApp({

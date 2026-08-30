@@ -71,7 +71,7 @@ class _ServerRowState extends State<ServerRow> {
             borderRadius: BorderRadius.circular(GlukSizes.cellRadius),
             border: Border.all(
               color: widget.selected
-                  ? GlukColors.violet.withValues(alpha: 0.55)
+                  ? GlukColors.violet.withOpacity(0.55)
                   : (_hovered && enabled
                       ? GlukColors.stroke
                       : Colors.transparent),
@@ -86,11 +86,11 @@ class _ServerRowState extends State<ServerRow> {
                 vertical: 12,
               ),
               color: widget.selected
-                  ? GlukColors.violet.withValues(alpha: 0.10)
+                  ? GlukColors.violet.withOpacity(0.10)
                   : null,
               child: Row(
                 children: <Widget>[
-                  FlagCircle(flag: node.flag, size: GlukSizes.flagCircle),
+                  FlagCircle(flag: node.countryCode, size: GlukSizes.flagCircle),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -104,7 +104,7 @@ class _ServerRowState extends State<ServerRow> {
                           style: TextStyle(
                             color: widget.selected
                                 ? GlukColors.text0
-                                : GlukColors.text0.withValues(alpha: 0.92),
+                                : GlukColors.text0.withOpacity(0.92),
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                           ),

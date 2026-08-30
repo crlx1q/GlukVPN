@@ -29,10 +29,10 @@ class WorldStage extends StatefulWidget {
   final SelfLocation? selfLocation;
 
   /// Projected position of the selected VPN node.
-  final Offset? serverPoint;
+  final MapPoint? serverPoint;
 
   /// Every visible node, drawn as faint dots.
-  final List<Offset> allNodes;
+  final List<MapPoint> allNodes;
 
   final double height;
 
@@ -210,7 +210,7 @@ class _WorldStageState extends State<WorldStage>
   }
 
   /// Keeps both endpoints of the route on screen.
-  double _centreLongitude(Offset? self, Offset? server) {
+  double _centreLongitude(MapPoint? self, MapPoint? server) {
     if (self == null && server == null) return 20;
     if (self == null) return _longitudeOf(server!);
     if (server == null) return _longitudeOf(self);
@@ -218,7 +218,7 @@ class _WorldStageState extends State<WorldStage>
   }
 
   /// Converts a projected map point back to an approximate longitude.
-  double _longitudeOf(Offset point) => (point.dx / mapWidth) * 360 - 180;
+  double _longitudeOf(MapPoint point) => (point.dx / mapWidth) * 360 - 180;
 
   double _arcProgress() {
     if (widget.phase.isConnected) return 1;
