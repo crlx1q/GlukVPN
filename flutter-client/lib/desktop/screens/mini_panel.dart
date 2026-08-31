@@ -5,6 +5,7 @@ import '../../models/models.dart';
 import '../../theme/tokens.dart';
 import '../../utils/format.dart';
 import '../../widgets/common.dart';
+import '../../widgets/glass.dart';
 import '../../widgets/logo.dart';
 import '../i18n/desktop_strings.dart';
 import '../logic/connection_phase.dart';
