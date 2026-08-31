@@ -57,3 +57,19 @@ Thumbs.db
 logs/
 *.log
 tmp/
+
+# ---- Local reference material / downloads (not part of the product) ----
+# These sit in the repo root on the dev machine only. If any of them is still
+# tracked, drop it from the index without deleting it from disk:
+#   git rm -r --cached wg.msi wg-extracted2 browser-proxy.tar.gz logo.png glukvpn-extension-1.5.0
+wg.msi
+wg-extracted2/
+browser-proxy.tar.gz
+/logo.png
+glukvpn-extension-1.5.0/
+
+# ---- Desktop build output ----
+dist/stage/
+GlukVPN-Setup-*.exe
+*.ico.bak
+pubspec.android.bak
