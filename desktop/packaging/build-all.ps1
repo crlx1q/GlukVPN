@@ -118,9 +118,61 @@ if (-not $SkipNative) {
     Assert-Tool 'cmake' 'Install CMake 3.21+ or Visual Studio with the C++ workload.'
 
     $vendor = Join-Path $NativeDir 'vendor\amd64'
+    New-Item -ItemType Directory -Force -Path $vendor | Out-Null
+
+    # These two DLLs are the reason the client could not connect.
+    #
+    # tunnel.cpp loads wireguard.dll (WireGuardNT, the kernel driver) and
+    # tunnel.dll (WireGuard's embeddable tunnel service) at runtime. When
+    # either is absent it returns driver_unavailable and the UI says
+    # "WireGuard driver files are missing". Nothing in the pipeline ever
+    # fetched tunnel.dll, and a missing file was only a warning, so every
+    # build shipped a client that looked fine and could never bring a tunnel
+    # up. Both are downloaded here, and a missing file is now fatal.
+    $wgTemp = Join-Path $env:TEMP "glukvpn-wg-$PID"
+    New-Item -ItemType Directory -Force -Path $wgTemp | Out-Null
+
+    if (-not (Test-Path (Join-Path $vendor 'wireguard.dll'))) {
+        Write-Note 'Fetching wireguard.dll (WireGuardNT 1.1)'
+        $ntZip = Join-Path $wgTemp 'wireguard-nt.zip'
+        Invoke-WebRequest -Uri 'https://download.wireguard.com/wireguard-nt/wireguard-nt-1.1.zip' -OutFile $ntZip -UseBasicParsing
+        Expand-Archive -Path $ntZip -DestinationPath (Join-Path $wgTemp 'wg-nt') -Force
+        $ntDll = Get-ChildItem -Path (Join-Path $wgTemp 'wg-nt') -Filter 'wireguard.dll' -Recurse |
+            Where-Object { $_.FullName -match 'amd64' } |
+            Select-Object -First 1
+        if (-not $ntDll) { throw 'wireguard.dll (amd64) was not found inside wireguard-nt-1.1.zip.' }
+        Copy-Item $ntDll.FullName $vendor -Force
+    }
+
+    if (-not (Test-Path (Join-Path $vendor 'tunnel.dll'))) {
+        Write-Note 'Fetching tunnel.dll (embeddable WireGuard tunnel service)'
+        $svcIndex = 'https://download.wireguard.com/windows-client/'
+        $svcVersion = '0.5.3'
+        try {
+            $listing = (Invoke-WebRequest -Uri $svcIndex -UseBasicParsing).Content
+            $newest = [regex]::Matches($listing, 'embeddable-dll-service-amd64-([0-9.]+)\.zip') |
+                ForEach-Object { $_.Groups[1].Value } |
+                Sort-Object { [version]$_ } |
+                Select-Object -Last 1
+            if ($newest) { $svcVersion = $newest }
+        } catch {
+            Write-Warning "Could not list $svcIndex, falling back to embeddable-dll-service-amd64-$svcVersion.zip"
+        }
+
+        $svcZip = Join-Path $wgTemp 'embeddable-dll-service.zip'
+        $svcUrl = $svcIndex + 'embeddable-dll-service-amd64-' + $svcVersion + '.zip'
+        Invoke-WebRequest -Uri $svcUrl -OutFile $svcZip -UseBasicParsing
+        Expand-Archive -Path $svcZip -DestinationPath (Join-Path $wgTemp 'wg-svc') -Force
+        $tunnelDll = Get-ChildItem -Path (Join-Path $wgTemp 'wg-svc') -Filter 'tunnel.dll' -Recurse | Select-Object -First 1
+        if (-not $tunnelDll) { throw "tunnel.dll was not found inside $svcUrl" }
+        Copy-Item $tunnelDll.FullName $vendor -Force
+    }
+
+    Remove-Item $wgTemp -Recurse -Force -ErrorAction SilentlyContinue
+
     foreach ($dll in @('tunnel.dll', 'wireguard.dll')) {
         if (-not (Test-Path (Join-Path $vendor $dll))) {
-            Write-Warning "$dll is missing from vendor\amd64. The build will succeed but the VPN will report driver_unavailable. See $vendor\README.md"
+            throw "$dll is missing from vendor\amd64 and could not be downloaded. Without it the client reports driver_unavailable and can never connect. See $vendor\README.md"
         }
     }
 

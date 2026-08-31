@@ -370,6 +370,26 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
               label: ru ? 'Канал' : 'Channel',
               value: AppConfig.activeChannel.label,
             ),
+
+            // The extension's "for developers" disclosure, read-only.
+            //
+            // The extension lets you retype the API host because a browser
+            // extension has no installer to fix a wrong value. Here the same
+            // information is shown but never editable: an editable endpoint on
+            // a desktop VPN client is a phishing vector, and the brief is
+            // explicit that no user-facing API URL field may exist.
+            _InfoTile(
+              label: ru ? 'Сервер управления' : 'Control API',
+              value: AppConfig.activeBaseUrl,
+            ),
+            _InfoTile(
+              label: ru ? 'Личный кабинет' : 'Web dashboard',
+              value: 'vpn.gluk.tech',
+            ),
+            _InfoTile(
+              label: ru ? 'Служба' : 'Service',
+              value: AppConfig.tunnelServiceName,
+            ),
             _ActionTile(
               label: ru ? 'Проверить сервер' : 'Test the server',
               subtitle: ru
@@ -378,6 +398,32 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
               buttonLabel: ru ? 'Проверить' : 'Test',
               busy: _testingGateway,
               onPressed: _testGateway,
+            ),
+
+            // `#btn-reset` in the extension. Only the advanced block is reset:
+            // wiping the account or the language would be a surprise, not a
+            // reset.
+            _ActionTile(
+              label: ru ? 'Сбросить расширенные' : 'Reset advanced',
+              subtitle: ru
+                  ? 'Вернёт «Всегда напрямую», MTU и список приложений к значениям по умолчанию'
+                  : 'Restores always-direct routes, MTU and the app list to defaults',
+              buttonLabel: ru ? 'Сбросить' : 'Reset',
+              onPressed: () async {
+                _patch(
+                  (DesktopSettings x) => x.copyWith(
+                    bypassRoutes: const <String>[],
+                    splitApps: const <String>[],
+                    clearMtu: true,
+                  ),
+                );
+                if (!mounted) return;
+                setState(() {
+                  _notice = ru
+                      ? 'Расширенные настройки сброшены'
+                      : 'Advanced settings restored';
+                });
+              },
             ),
           ],
         ),
@@ -665,6 +711,91 @@ class _MetaLine extends StatelessWidget {
   }
 }
 
+/// The extension treats a revoked device as a first-class state
+/// (`isRevokedDevice`) instead of quietly dropping it, so the user can see that
+/// a device was removed rather than wonder where it went. `isActive` is the
+/// model's own flag for exactly that.
+bool _revoked(DeviceInfo device) => !device.isActive;
+
+/// This device first, then active ones by last-seen, then revoked ones last -
+/// the same order the extension's device list uses.
+List<DeviceInfo> _orderedDevices(List<DeviceInfo> list) {
+  int rank(DeviceInfo device) {
+    if (device.isCurrent) return 0;
+    if (_revoked(device)) return 2;
+    return 1;
+  }
+
+  final List<DeviceInfo> sorted = List<DeviceInfo>.of(list);
+  sorted.sort((DeviceInfo a, DeviceInfo b) {
+    final int byRank = rank(a).compareTo(rank(b));
+    if (byRank != 0) return byRank;
+
+    final DateTime? seenA = a.lastSeen;
+    final DateTime? seenB = b.lastSeen;
+    if (seenA == null && seenB == null) return 0;
+    if (seenA == null) return 1;
+    if (seenB == null) return -1;
+    return seenB.compareTo(seenA);
+  });
+  return sorted;
+}
+
+/// `.dev-badge` - THIS DEVICE / ACTIVE / REVOKED.
+class _DeviceBadge extends StatelessWidget {
+  const _DeviceBadge({required this.label, required this.colour});
+
+  final String label;
+  final Color colour;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: colour.withOpacity(0.13),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: colour.withOpacity(0.32)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: colour,
+          fontSize: 9.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+}
+
+/// `.link-btn` - a text action, not an icon. "Revoke" is destructive and has to
+/// say so in words.
+class _RevokeLink extends StatelessWidget {
+  const _RevokeLink({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        minimumSize: const Size(0, 30),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        foregroundColor: GlukColors.danger,
+        textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(999),
+        ),
+      ),
+      child: Text(label),
+    );
+  }
+}
+
 class _DevicesBlock extends StatelessWidget {
   const _DevicesBlock({
     required this.devices,
@@ -751,11 +882,17 @@ class _DevicesBlock extends StatelessWidget {
             ),
           )
         else
-          ...list.map(
+          ..._orderedDevices(list).map(
             (DeviceInfo device) => _DeviceRow(
               device: device,
               ru: ru,
-              onRevoke: device.isCurrent ? null : () => onRevoke(device),
+              // The API rejects revoking an already revoked device, and
+              // revoking the machine you are sitting at would lock you out of
+              // your own client. The extension hides the control in both
+              // cases, so this does too.
+              onRevoke: device.isCurrent || _revoked(device)
+                  ? null
+                  : () => onRevoke(device),
             ),
           ),
       ],
@@ -792,15 +929,42 @@ class _DeviceRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color accent =
-        device.connected ? GlukColors.connected : GlukColors.text2;
+    final bool revoked = _revoked(device);
 
+    final Color accent = revoked
+        ? GlukColors.danger.withOpacity(0.7)
+        : device.connected
+            ? GlukColors.connected
+            : GlukColors.text2;
+
+    // Same content and separator as the extension's `.d-sub`: platform, then
+    // one status fact - revoked, online (with the node), or last seen.
+    final String? platform = device.platform;
+    final String? node = device.connectedNodeName;
     final List<String> meta = <String>[
-      if (device.isCurrent) ru ? 'это устройство' : 'this device',
-      if (device.connected) ru ? 'подключено' : 'connected',
-      if (device.lastSeen != null)
-        (ru ? 'был(а) ' : 'seen ') + formatDateTime(device.lastSeen!),
+      if (platform != null && platform.isNotEmpty) platform,
+      if (revoked)
+        ru ? 'отозвано' : 'revoked'
+      else if (device.connected)
+        node == null || node.isEmpty
+            ? (ru ? 'в сети' : 'online')
+            : '${ru ? 'в сети' : 'online'} · $node'
+      else if (device.lastSeen != null)
+        (ru ? 'был(а) ' : 'seen ') + formatDateTime(device.lastSeen!)
+      else
+        ru ? 'нет данных' : 'no data',
     ];
+
+    final String badgeLabel = revoked
+        ? (ru ? 'ОТОЗВАНО' : 'REVOKED')
+        : device.isCurrent
+            ? (ru ? 'ЭТО УСТРОЙСТВО' : 'THIS DEVICE')
+            : (ru ? 'АКТИВНО' : 'ACTIVE');
+    final Color badgeColour = revoked
+        ? GlukColors.danger
+        : device.isCurrent
+            ? GlukColors.violetLight
+            : GlukColors.connected;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
@@ -850,13 +1014,14 @@ class _DeviceRow extends StatelessWidget {
               ],
             ),
           ),
-          if (onRevoke != null)
-            CircleIconButton(
-              icon: Icons.link_off_rounded,
-              tooltip: ru ? 'Отключить' : 'Remove',
-              size: 26,
+          _DeviceBadge(label: badgeLabel, colour: badgeColour),
+          if (onRevoke != null) ...<Widget>[
+            const SizedBox(width: 6),
+            _RevokeLink(
+              label: ru ? 'Отозвать' : 'Revoke',
               onTap: onRevoke!,
             ),
+          ],
         ],
       ),
     );

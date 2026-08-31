@@ -32,6 +32,8 @@ class WindowFx {
   static const int _dwmUseImmersiveDarkMode = 20;
   static const int _dwmWindowCornerPreference = 33;
   static const int _dwmBorderColour = 34;
+  static const int _dwmCaptionColour = 35;
+  static const int _dwmTextColour = 36;
 
   // DWM_WINDOW_CORNER_PREFERENCE
   static const int cornerDefault = 0;
@@ -92,22 +94,64 @@ class WindowFx {
     });
   }
 
-  /// Dark title bar + no native border. Safe to call more than once.
-  static void applyWindowChrome({int corner = cornerRound}) {
+  /// Edge of the main window: dark, and above all *not* the system accent.
+  ///
+  /// DWMWA_COLOR_NONE turned out to be the wrong answer. When Windows refuses
+  /// it - older builds, or "show accent colour on title bars and window
+  /// borders" enabled - the frame falls back to the accent colour, which is
+  /// what painted the red strip along the top of the window on a machine with
+  /// a red accent. An explicit dark COLORREF cannot be overridden by the
+  /// personalisation setting, so the frame is now always ours.
+  static const Color windowEdge = Color(0xFF16121F);
+  static const Color windowCaption = Color(0xFF08060F);
+  static const Color panelEdge = Color(0xFF0B0813);
+
+  /// COLORREF is 0x00BBGGRR, the reverse of Flutter's ARGB.
+  static int _colourRef(Color colour) {
+    final int argb = colour.value;
+    final int r = (argb >> 16) & 0xFF;
+    final int g = (argb >> 8) & 0xFF;
+    final int b = argb & 0xFF;
+    return (b << 16) | (g << 8) | r;
+  }
+
+  /// Dark title bar, dark frame, rounded corners. Safe to call more than once.
+  ///
+  /// A fully transparent [border] asks DWM to drop the frame entirely; any
+  /// other colour is applied verbatim.
+  static void applyWindowChrome({
+    int corner = cornerRound,
+    Color border = windowEdge,
+    Color caption = windowCaption,
+  }) {
     final int? handle = hwnd();
     if (handle == null) return;
     try {
       _setAttribute(handle, _dwmUseImmersiveDarkMode, 1);
-      _setAttribute(handle, _dwmBorderColour, _colourNone);
+      _setAttribute(
+        handle,
+        _dwmBorderColour,
+        ((border.value >> 24) & 0xFF) == 0 ? _colourNone : _colourRef(border),
+      );
+      _setAttribute(handle, _dwmCaptionColour, _colourRef(caption));
+      _setAttribute(
+        handle,
+        _dwmTextColour,
+        _colourRef(const Color(0xFFF5F3FB)),
+      );
       _setAttribute(handle, _dwmWindowCornerPreference, corner);
     } catch (e) {
       dlog.warn('windowfx', 'window chrome failed: $e');
     }
   }
 
-  /// Chrome for the compact tray panel: small radius, no border.
-  static void applyPanelChrome() =>
-      applyWindowChrome(corner: cornerRoundSmall);
+  /// Chrome for the compact tray panel: small radius, frame in the panel's own
+  /// fill colour so no edge can read as a glow.
+  static void applyPanelChrome() => applyWindowChrome(
+        corner: cornerRoundSmall,
+        border: panelEdge,
+        caption: panelEdge,
+      );
 
   /// True when Windows is running its dark app theme.
   static bool systemPrefersDark() {

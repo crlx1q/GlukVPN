@@ -56,13 +56,15 @@ class WindowController extends ChangeNotifier with WindowListener {
     await windowManager.setPreventClose(true);
 
     final DesktopSettings saved = _settings.value;
-    final Size size = Size(
-      saved.windowWidth ?? AppConfig.desktopDefaultSize.width,
-      saved.windowHeight ?? AppConfig.desktopDefaultSize.height,
-    );
+
+    // Fixed panel: one size only. The stored width and height are ignored on
+    // purpose, otherwise the old oversized geometry would come straight back.
+    const Size size = AppConfig.desktopDefaultSize;
 
     await windowManager.setMinimumSize(AppConfig.desktopMinSize);
+    await windowManager.setMaximumSize(AppConfig.desktopDefaultSize);
     await windowManager.setSize(size);
+    await windowManager.setResizable(false);
 
     final double? x = saved.windowX;
     final double? y = saved.windowY;
@@ -98,12 +100,12 @@ class WindowController extends ChangeNotifier with WindowListener {
       try {
         await windowManager.setAlwaysOnTop(false);
         await windowManager.setSkipTaskbar(false);
-        await windowManager.setResizable(true);
         await windowManager.setMinimumSize(AppConfig.desktopMinSize);
-        await windowManager.setSize(Size(
-          saved.windowWidth ?? AppConfig.desktopDefaultSize.width,
-          saved.windowHeight ?? AppConfig.desktopDefaultSize.height,
-        ));
+        await windowManager.setMaximumSize(AppConfig.desktopDefaultSize);
+        await windowManager.setSize(AppConfig.desktopDefaultSize);
+        // Stays false: returning from the tray panel must not hand the main
+        // window a resize grip again.
+        await windowManager.setResizable(false);
 
         final double? x = saved.windowX;
         final double? y = saved.windowY;

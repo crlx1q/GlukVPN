@@ -1014,8 +1014,34 @@ class DesktopVpnController extends ChangeNotifier {
     dlog.error('phase', 'failed -> $phase [$detail]', message);
     _phase = phase;
     _statusDetail = detail;
-    _userMessage = message;
+    _userMessage = _humanise(detail, message);
     _notify();
+  }
+
+  /// Rewrites native error codes into something the user can act on.
+  ///
+  /// The tunnel service answers in English with codes such as
+  /// driver_unavailable, and those strings went straight into a Russian UI as
+  /// "WireGuard driver files are missing. Reinstall GlukVPN." The message also
+  /// blamed the user for a packaging bug: the installer simply never shipped
+  /// tunnel.dll. Both the wording and the cause are fixed now.
+  String? _humanise(String detail, String? message) {
+    switch (detail) {
+      case 'driver_unavailable':
+        return _ru
+            ? 'Не хватает драйвера WireGuard. Переустановите GlukVPN — установщик поставит его сам.'
+            : 'The WireGuard driver files are missing. Reinstall GlukVPN.';
+      case 'service_unavailable':
+      case 'service_missing':
+        return _ru
+            ? 'Служба GlukVPN не запущена. Нажмите «Установить службу».'
+            : 'The GlukVPN service is not running. Use "Install service".';
+      case 'not_authenticated':
+        return _ru
+            ? 'Сессия истекла. Войдите заново.'
+            : 'Your session expired. Sign in again.';
+    }
+    return message;
   }
 
   void _notify() {

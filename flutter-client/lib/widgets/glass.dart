@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
+import 'flag_art.dart';
 
 /// The glass panel used throughout the mockup (`.cell`, `.traffic`,
 /// `.navbar`): a very translucent fill, a hairline stroke and a *light*
@@ -157,11 +158,25 @@ class StatusBadge extends StatelessWidget {
 }
 
 /// `.flag-circle` - a country flag on a dark disc.
+///
+/// The flag is real artwork now (see `flag_art.dart`). Windows has no colour
+/// emoji flag glyphs, so the previous `Text(flag)` rendered as the bare letters
+/// "DE" on the desktop client. [flag] still accepts an emoji, a two-letter code
+/// or an English country name, which is why no call site had to change.
 class FlagCircle extends StatelessWidget {
-	const FlagCircle({super.key, required this.flag, this.size = GlukSizes.flagCircle});
+	const FlagCircle({
+		super.key,
+		required this.flag,
+		this.size = GlukSizes.flagCircle,
+		this.city,
+	});
 
-	final String flag;
+	/// Country code, English country name, or a flag emoji.
+	final String? flag;
 	final double size;
+
+	/// Only consulted when [flag] resolves to nothing.
+	final String? city;
 
 	@override
 	Widget build(BuildContext context) {
@@ -173,7 +188,7 @@ class FlagCircle extends StatelessWidget {
 				color: Color(0xFF141020),
 				shape: BoxShape.circle,
 			),
-			child: Text(flag, style: TextStyle(fontSize: size * 0.55)),
+			child: FlagArt(code: flag, city: city, size: size),
 		);
 	}
 }

@@ -236,6 +236,9 @@ class _MapCard extends StatelessWidget {
                     serverPoint: serverPoint,
                     allNodes: nodePoints,
                     height: c.maxHeight,
+                    // Fills the card instead of leaving empty bands above and
+                    // below a thin strip of dots.
+                    zoomBoost: 1.35,
                   );
                 },
               ),
@@ -272,14 +275,19 @@ class _MapCard extends StatelessWidget {
               ),
             ),
 
-            // Connect button, slightly below centre so the arc stays visible.
+            // Dead centre, deliberately.
+            //
+            // The orbital rings, the halo and the radial bloom are all painted
+            // around the middle of the stage. Nudging the button 10% lower is
+            // what left those rings hanging above it, orbiting nothing. One
+            // centre for every layer.
             Align(
-              alignment: const Alignment(0, 0.10),
+              alignment: Alignment.center,
               child: DesktopConnectButton(
                 phase: phase,
                 strings: s,
                 reduceMotion: reduceMotion,
-                size: 232,
+                size: 248,
                 showLabel: false,
                 onTap: () => vpn.toggle(),
               ),

@@ -12,6 +12,7 @@ import 'desktop/services/app_paths.dart';
 import 'desktop/services/desktop_log.dart';
 import 'desktop/services/power_monitor.dart';
 import 'desktop/services/service_bootstrap.dart';
+import 'desktop/services/single_instance.dart';
 import 'desktop/services/tunnel_client.dart';
 import 'desktop/state/desktop_settings.dart';
 import 'desktop/state/desktop_vpn_controller.dart';
@@ -38,21 +39,34 @@ Future<void> main(List<String> args) async {
   // start minimised.
   final bool startHidden = args.contains('--hidden');
 
-  await windowManager.ensureInitialized();
-
   final AppPaths paths = AppPaths();
   paths.ensureCreated();
   dlog.attach(paths);
+
+  // One client per machine. Two copies meant two tray icons, two heartbeats
+  // and two clients fighting over the same pipe and device slot, so the second
+  // one now raises the window of the first and says so instead of starting.
+  // This runs before any window exists, so nothing flashes on screen.
+  if (!SingleInstance.claim()) {
+    final SettingsStore existing = SettingsStore(paths: paths);
+    await existing.load();
+    SingleInstance.surfaceRunningInstance(
+      russian: DesktopStrings.resolve(existing.value.language).isRussian,
+    );
+    exit(0);
+  }
+
+  await windowManager.ensureInitialized();
   dlog.write('boot', 'GlukVPN desktop starting (hidden=$startHidden)');
 
   final SettingsStore settings = SettingsStore(paths: paths);
   await settings.load();
 
   final DesktopSettings saved = settings.value;
-  final Size windowSize = Size(
-    saved.windowWidth ?? AppConfig.desktopDefaultSize.width,
-    saved.windowHeight ?? AppConfig.desktopDefaultSize.height,
-  );
+
+  // The window is a fixed panel now, so a stored width and height would only
+  // resurrect the old oversized geometry. Position is still restored.
+  const Size windowSize = AppConfig.desktopDefaultSize;
 
   await windowManager.waitUntilReadyToShow(
     WindowOptions(
@@ -71,8 +85,17 @@ Future<void> main(List<String> args) async {
           Offset(saved.windowX!, saved.windowY!),
         );
       }
-      // Requirement 11: honour "start minimised" by never showing the window.
-      if (!(startHidden && saved.startMinimized)) {
+      // The window cannot be resized or maximised: the composition is designed
+      // for exactly one size, and stretching it is what left empty bands above
+      // and below the map.
+      await windowManager.setResizable(false);
+
+      // "Start minimised" is a primary feature, not an autostart detail. The
+      // autostart entry passes --hidden, but launching by hand has to obey the
+      // switch as well - that is why the setting looked broken.
+      if (startHidden || saved.startMinimized) {
+        dlog.write('boot', 'starting hidden, tray only');
+      } else {
         await windowManager.show();
         await windowManager.focus();
       }
@@ -83,7 +106,7 @@ Future<void> main(List<String> args) async {
     GlukDesktopApp(
       paths: paths,
       settings: settings,
-      startHidden: startHidden && saved.startMinimized,
+      startHidden: startHidden || saved.startMinimized,
     ),
   );
 }

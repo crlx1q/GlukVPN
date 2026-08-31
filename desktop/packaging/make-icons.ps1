@@ -112,13 +112,33 @@ function New-Frame {
             }
         }
 
-        # Logo, centred, leaving room for the halo and the status dot.
-        $scale = if ($WithGlow) { 0.78 } else { 0.98 }
+        # Logo, centred, with rounded corners.
+        #
+        # Two separate complaints are fixed here. The artwork is a square tile,
+        # so Windows drew a hard square in the tray, on the taskbar and in the
+        # Programs list; it is now clipped to a rounded square like every other
+        # modern Windows app icon. And the tray frame used to nudge the logo up
+        # and left by 4% to clear the status dot, which is exactly what made the
+        # small icon look glued into a corner - the logo is centred now and the
+        # dot simply overlaps it.
+        $scale = if ($WithGlow) { 0.74 } else { 0.94 }
         $side = [int]($Size * $scale)
-        $offset = [int](($Size - $side) / 2)
-        if ($WithGlow) { $offset = [int](($Size - $side) / 2) - [int]($Size * 0.04) }
-        if ($offset -lt 0) { $offset = 0 }
-        $g.DrawImage($Image, $offset, $offset, $side, $side)
+        $offset = [double](($Size - $side) / 2.0)
+        $radius = [double]([Math]::Max(2.0, $side * 0.28))
+        $arc = $radius * 2.0
+
+        $clip = New-Object System.Drawing.Drawing2D.GraphicsPath
+        $clip.AddArc($offset, $offset, $arc, $arc, 180, 90)
+        $clip.AddArc(($offset + $side - $arc), $offset, $arc, $arc, 270, 90)
+        $clip.AddArc(($offset + $side - $arc), ($offset + $side - $arc), $arc, $arc, 0, 90)
+        $clip.AddArc($offset, ($offset + $side - $arc), $arc, $arc, 90, 90)
+        $clip.CloseFigure()
+
+        $gsave = $g.Save()
+        $g.SetClip($clip)
+        $g.DrawImage($Image, $offset, $offset, [double]$side, [double]$side)
+        $g.Restore($gsave)
+        $clip.Dispose()
 
         if ($WithGlow) {
             # Status dot. At 16 px the halo alone is hard to read, this is not.

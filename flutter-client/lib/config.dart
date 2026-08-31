@@ -165,8 +165,12 @@ class AppConfig {
 	/// instead of spinning forever.
 	static const Duration connectTimeout = Duration(seconds: 25);
 
-	static const Size desktopMinSize = Size(1000, 780);
-	static const Size desktopDefaultSize = Size(1160, 1000);
+	/// The main window is a fixed panel, like the reference design: the minimum
+	/// and the default are the same size and WindowController turns resizing
+	/// off, so the composition can never be stretched into empty space again.
+	/// Smaller than the previous 1160x1000, and much closer to square.
+	static const Size desktopMinSize = Size(1080, 880);
+	static const Size desktopDefaultSize = Size(1080, 880);
 	/// Tray quick panel. Small on purpose: it only carries the connect button,
 	/// the current server, ping and the two traffic counters, in the spirit of
 	/// the native Windows utility panels that appear above the tray.

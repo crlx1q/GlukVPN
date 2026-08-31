@@ -35,12 +35,42 @@ jobs:
           & "C:\Program Files\7-Zip\7z.exe" x 7z-extra.7z -o"C:\Program Files\7-Zip" -y
         shell: pwsh
 
+      # Both DLLs, not just one. The tunnel service loads wireguard.dll
+      # (WireGuardNT) *and* tunnel.dll (WireGuard's embeddable tunnel service);
+      # tunnel.dll was never downloaded, so every build reported
+      # driver_unavailable and could not connect. A missing file fails the job.
       - name: Download WireGuard dependencies
         run: |
-          Invoke-WebRequest -Uri https://download.wireguard.com/wireguard-nt/wireguard-nt-1.1.zip -OutFile wg-nt.zip
-          Expand-Archive -Path wg-nt.zip -DestinationPath wg-nt
-          New-Item -ItemType Directory -Force -Path native\glukvpn-tunnel-service\vendor\amd64 | Out-Null
-          Copy-Item wg-nt\wireguard-nt\bin\amd64\wireguard.dll native\glukvpn-tunnel-service\vendor\amd64\
+          $vendor = 'native\glukvpn-tunnel-service\vendor\amd64'
+          New-Item -ItemType Directory -Force -Path $vendor | Out-Null
+
+          Invoke-WebRequest -Uri https://download.wireguard.com/wireguard-nt/wireguard-nt-1.1.zip -OutFile wg-nt.zip -UseBasicParsing
+          Expand-Archive -Path wg-nt.zip -DestinationPath wg-nt -Force
+          Copy-Item wg-nt\wireguard-nt\bin\amd64\wireguard.dll $vendor -Force
+
+          $index = 'https://download.wireguard.com/windows-client/'
+          $version = '0.5.3'
+          try {
+            $listing = (Invoke-WebRequest -Uri $index -UseBasicParsing).Content
+            $newest = [regex]::Matches($listing, 'embeddable-dll-service-amd64-([0-9.]+)\.zip') |
+              ForEach-Object { $_.Groups[1].Value } |
+              Sort-Object { [version]$_ } |
+              Select-Object -Last 1
+            if ($newest) { $version = $newest }
+          } catch {
+            Write-Host "Could not list $index, using $version"
+          }
+
+          Invoke-WebRequest -Uri ($index + 'embeddable-dll-service-amd64-' + $version + '.zip') -OutFile wg-svc.zip -UseBasicParsing
+          Expand-Archive -Path wg-svc.zip -DestinationPath wg-svc -Force
+          $tunnel = Get-ChildItem -Path wg-svc -Filter tunnel.dll -Recurse | Select-Object -First 1
+          if (-not $tunnel) { throw 'tunnel.dll not found in the embeddable service archive' }
+          Copy-Item $tunnel.FullName $vendor -Force
+
+          foreach ($dll in @('tunnel.dll', 'wireguard.dll')) {
+            if (-not (Test-Path (Join-Path $vendor $dll))) { throw "$dll is missing from $vendor" }
+          }
+          Get-ChildItem $vendor | Format-Table Name, Length
         shell: pwsh
 
       - name: Generate Flutter Windows scaffolding

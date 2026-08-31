@@ -20,6 +20,7 @@ class WorldStage extends StatefulWidget {
     this.serverPoint,
     this.allNodes = const <MapPoint>[],
     this.height = 420,
+    this.zoomBoost = 1,
   });
 
   final ConnectionPhase phase;
@@ -35,6 +36,14 @@ class WorldStage extends StatefulWidget {
   final List<MapPoint> allNodes;
 
   final double height;
+
+  /// Extra zoom on top of the fit-to-width default.
+  ///
+  /// The map card is far taller than a 2:1 world map, so at zoom 1 the dots
+  /// only covered the middle third of it and left the empty bands above and
+  /// below that the user pointed out. Values above 1 fill the card without
+  /// changing the projection or the marker positions.
+  final double zoomBoost;
 
   @override
   State<WorldStage> createState() => _WorldStageState();
@@ -189,7 +198,7 @@ class _WorldStageState extends State<WorldStage>
                 centreLongitude: _centreLongitude(self, server),
                 centreLatitude: 12,
                 driftDegrees: widget.reduceMotion ? 0 : (_orbit.value * 8) - 4,
-                zoom: 1.0 + (_morph.value * 0.06),
+                zoom: widget.zoomBoost * (1.0 + (_morph.value * 0.06)),
                 dotOpacity: 0.55 + (_morph.value * 0.15),
                 selfPoint: self,
                 selfOpacity: self == null ? 0 : 1,

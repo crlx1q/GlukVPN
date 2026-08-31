@@ -159,7 +159,8 @@ class DesktopShellState extends State<DesktopShell> {
               Expanded(
                 child: Column(
                   children: <Widget>[
-                    const WindowTitleBar(),
+                    // No maximise button: the window is a fixed panel.
+                  const WindowTitleBar(showMaximize: false),
                     Expanded(
                       child: AnimatedSwitcher(
                         duration: GlukMotion.screen,
