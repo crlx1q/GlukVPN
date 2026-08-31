@@ -26,7 +26,7 @@ jobs:
         shell: pwsh
 
       - name: Install Dependencies
-        run: choco install innosetup -y
+        run: choco install innosetup 7zip -y
         shell: pwsh
 
       - name: Download WireGuard dependencies
@@ -46,12 +46,12 @@ jobs:
         run: pwsh -ExecutionPolicy Bypass -File desktop\packaging\make-icons.ps1
         shell: pwsh
 
-      - name: Build Desktop App
-        run: pwsh -ExecutionPolicy Bypass -File desktop\packaging\build-all.ps1 -Channel prod -Installer
+      - name: Build Desktop App (Installer & Portable)
+        run: pwsh -ExecutionPolicy Bypass -File desktop\packaging\build-all.ps1 -Channel prod -Installer -SingleFile -Portable
         shell: pwsh
         
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GlukVPN-Windows-Setup
-          path: dist\*.exe
+          name: GlukVPN-Windows-Builds
+          path: dist/*

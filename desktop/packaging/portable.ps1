@@ -154,12 +154,11 @@ if ($SingleFile) {
     $config = @"
 ;!@Install@!UTF-8!
 Title="GlukVPN $Version"
-BeginPrompt="Unpack GlukVPN and start it?"
-ExtractDialogText="Unpacking GlukVPN..."
+ExtractDialogText="Starting GlukVPN..."
 ExtractTitle="GlukVPN"
 InstallPath="%LOCALAPPDATA%\\GlukVPN\\app"
 RunProgram="run-portable.cmd"
-GUIMode="1"
+GUIMode="2"
 OverwriteMode="2"
 ;!@InstallEnd@!
 "@
