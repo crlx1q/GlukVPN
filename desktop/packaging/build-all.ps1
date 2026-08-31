@@ -145,27 +145,18 @@ if (-not $SkipNative) {
     }
 
     if (-not (Test-Path (Join-Path $vendor 'tunnel.dll'))) {
-        Write-Note 'Fetching tunnel.dll (embeddable WireGuard tunnel service)'
-        $svcIndex = 'https://download.wireguard.com/windows-client/'
-        $svcVersion = '0.5.3'
-        try {
-            $listing = (Invoke-WebRequest -Uri $svcIndex -UseBasicParsing).Content
-            $newest = [regex]::Matches($listing, 'embeddable-dll-service-amd64-([0-9.]+)\.zip') |
-                ForEach-Object { $_.Groups[1].Value } |
-                Sort-Object { [version]$_ } |
-                Select-Object -Last 1
-            if ($newest) { $svcVersion = $newest }
-        } catch {
-            Write-Warning "Could not list $svcIndex, falling back to embeddable-dll-service-amd64-$svcVersion.zip"
+        Write-Note 'Building tunnel.dll from wireguard-windows'
+        $goCmd = Get-Command 'go' -ErrorAction SilentlyContinue
+        if ($goCmd) {
+            $wgWinDir = Join-Path $wgTemp 'wg-windows'
+            git clone --depth 1 https://git.zx2c4.com/wireguard-windows $wgWinDir
+            Push-Location (Join-Path $wgWinDir 'embeddable-dll-service')
+            $env:CGO_ENABLED = "1"
+            $env:GOOS = "windows"
+            $env:GOARCH = "amd64"
+            go build -buildmode=c-shared -ldflags="-w -s" -trimpath -o (Join-Path $vendor 'tunnel.dll') .
+            Pop-Location
         }
-
-        $svcZip = Join-Path $wgTemp 'embeddable-dll-service.zip'
-        $svcUrl = $svcIndex + 'embeddable-dll-service-amd64-' + $svcVersion + '.zip'
-        Invoke-WebRequest -Uri $svcUrl -OutFile $svcZip -UseBasicParsing
-        Expand-Archive -Path $svcZip -DestinationPath (Join-Path $wgTemp 'wg-svc') -Force
-        $tunnelDll = Get-ChildItem -Path (Join-Path $wgTemp 'wg-svc') -Filter 'tunnel.dll' -Recurse | Select-Object -First 1
-        if (-not $tunnelDll) { throw "tunnel.dll was not found inside $svcUrl" }
-        Copy-Item $tunnelDll.FullName $vendor -Force
     }
 
     Remove-Item $wgTemp -Recurse -Force -ErrorAction SilentlyContinue
