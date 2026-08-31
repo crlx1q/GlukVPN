@@ -1,4 +1,4 @@
-import '../../widgets/connect_button.dart';
+﻿import '../../widgets/connect_button.dart';
 import '../../platform/tunnel_backend.dart';
 
 /// Every user-visible state the desktop connect flow can be in.
@@ -16,10 +16,6 @@ enum ConnectionPhase {
   accessRevoked,
   tunnelLost,
 }
-
-/// Reduced phase used by the animated connect button, which only knows four
-/// visual states. Keeps the widget decoupled from error taxonomy.
-
 
 extension ConnectionPhaseX on ConnectionPhase {
   bool get isBusy =>
@@ -91,30 +87,7 @@ extension ConnectionPhaseX on ConnectionPhase {
   }
 
   /// i18n key for the status line under the connect button.
-  String get labelKey {
-    switch (this) {
-      case ConnectionPhase.disconnected:
-        return 'status.disconnected';
-      case ConnectionPhase.connecting:
-        return 'status.connecting';
-      case ConnectionPhase.connected:
-        return 'status.connected';
-      case ConnectionPhase.disconnecting:
-        return 'status.disconnecting';
-      case ConnectionPhase.serverUnavailable:
-        return 'status.serverUnavailable';
-      case ConnectionPhase.connectionFailed:
-        return 'status.connectionFailed';
-      case ConnectionPhase.sessionExpired:
-        return 'status.sessionExpired';
-      case ConnectionPhase.limitReached:
-        return 'status.limitReached';
-      case ConnectionPhase.accessRevoked:
-        return 'status.accessRevoked';
-      case ConnectionPhase.tunnelLost:
-        return 'status.tunnelLost';
-    }
-  }
+  String get labelKey => 'phase.$name';
 
   ConnectPhase get buttonPhase {
     switch (this) {
@@ -199,13 +172,13 @@ class TunnelVerifier {
         );
       case TunnelState.denied:
         return const TunnelVerdict(
-          ConnectionPhase.connectionFailed,
+          ConnectionPhase.accessRevoked,
           'tunnel_permission_denied',
         );
       case TunnelState.error:
-        return TunnelVerdict(
+        return const TunnelVerdict(
           ConnectionPhase.connectionFailed,
-          snapshot.errorCode ?? 'tunnel_error',
+          'tunnel_error',
         );
       case TunnelState.disconnecting:
         return const TunnelVerdict(
@@ -308,5 +281,3 @@ ConnectionPhase phaseForApiError({
   // Network-level failure, timeout, DNS, no status code at all.
   return ConnectionPhase.connectionFailed;
 }
-
-

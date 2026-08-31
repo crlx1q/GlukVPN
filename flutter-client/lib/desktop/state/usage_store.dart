@@ -244,8 +244,9 @@ class UsageStore extends ChangeNotifier {
     final mKey = monthKey(at);
 
     final keys = _days.keys.toList()..sort();
-    final recent = keys.reversed
-        .take(recentDayCount)
+    final start = keys.length > recentDayCount ? keys.length - recentDayCount : 0;
+    final recent = keys
+        .sublist(start)
         .map((String k) => _days[k]!)
         .toList(growable: false);
 

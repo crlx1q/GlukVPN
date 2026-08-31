@@ -135,7 +135,7 @@ AutoNodeChoice pickBestNode(
     if (prefer != null &&
         prefer.isNotEmpty &&
         node.countryCode?.toUpperCase() == prefer) {
-      score += 0.02;
+      score += 0.06;
     }
 
     if (score > bestScore) {
