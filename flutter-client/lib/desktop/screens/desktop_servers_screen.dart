@@ -49,7 +49,7 @@ class _DesktopServersScreenState extends State<DesktopServersScreen> {
         ? all
         : all.where((VpnNodeInfo n) {
             final needle = _query.toLowerCase();
-            return publicNodeLocation(n, russian: strings.isRussian)
+            return publicNodeLocation(n, russian: s.isRussian)
                     .toLowerCase()
                     .contains(needle) ||
                 publicNodeTitle(n).toLowerCase().contains(needle) ||
