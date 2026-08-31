@@ -151,10 +151,9 @@ void main() {
       // (lon ≈ 74.8°), which is exactly how the marker landed in the wrong
       // country; the curated utcOffsetCountries table ranks Kazakhstan first.
       expect(self.countryCode, 'KZ');
-      // UTC+1 = lon 15°; AT (lon ≈ 16.4°) is closer than DE (lon ≈ 8.5°).
-      expect(countryForUtcOffset(const Duration(hours: 1)), 'AT');
-      // UTC-5 = lon -75°; CA/Ottawa (lon ≈ -75.7°) is closer than US (lon ≈ -77°).
-      expect(countryForUtcOffset(const Duration(hours: -5)), 'CA');
+      // Curated utcOffsetCountries table ranks DE first for UTC+1 and US for UTC-5.
+      expect(countryForUtcOffset(const Duration(hours: 1)), 'DE');
+      expect(countryForUtcOffset(const Duration(hours: -5)), 'US');
     });
 
     test('longitudes wrap the short way round', () {
