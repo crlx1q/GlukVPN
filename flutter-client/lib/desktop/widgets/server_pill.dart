@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/tokens.dart';
 import '../../utils/format.dart';
 import '../../widgets/common.dart';
+import '../../widgets/glass.dart';
 import '../theme/desktop_theme.dart';
 
 /// The wide server selector sitting under the connect button.
