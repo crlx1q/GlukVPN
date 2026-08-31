@@ -115,6 +115,34 @@ class ServiceBootstrap {
     }
   }
 
+  /// Stops the service without elevation.
+  ///
+  /// ROUND 5: the service is registered SERVICE_DEMAND_START and its DACL
+  /// grants the interactive user SERVICE_STOP, so once the tunnel is down we
+  /// can put it back to sleep instead of leaving it in the background for the
+  /// rest of the Windows session.
+  bool stopService() {
+    const int serviceStopRight = 0x0020; // SERVICE_STOP
+    const int controlStop = 0x00000001; // SERVICE_CONTROL_STOP
+
+    final scm = OpenSCManager(nullptr, nullptr, SC_MANAGER_CONNECT);
+    if (scm == NULL) return false;
+
+    final namePtr = serviceName.toNativeUtf16();
+    int service = NULL;
+    final status = calloc<SERVICE_STATUS>();
+    try {
+      service = OpenService(scm, namePtr, serviceStopRight);
+      if (service == NULL) return false;
+      return ControlService(service, controlStop, status) != 0;
+    } finally {
+      calloc.free(status);
+      if (service != NULL) CloseServiceHandle(service);
+      CloseServiceHandle(scm);
+      calloc.free(namePtr);
+    }
+  }
+
   /// Relaunches the service binary elevated with [verbArg].
   ///
   /// Uses ShellExecute with the "runas" verb, which is the documented way to

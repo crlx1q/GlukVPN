@@ -54,6 +54,15 @@ class ChannelController extends ChangeNotifier {
   bool get canSwitch =>
       AppConfig.betaChannelAvailable && !AppConfig.hasBaseUrlOverride;
 
+  /// ROUND 5: the BETA switch belongs to admins only.
+  ///
+  /// A normal account gets PROD and nothing else. The server enforces this
+  /// anyway - a non-admin is refused on the beta control plane and cannot
+  /// register there - so showing the switch only ever produced a confusing
+  /// failure. Hiding it is the honest UI, and hiding it here rather than in one
+  /// screen means the phone, the PC and the diagnostics panel all agree.
+  bool canSwitchAs(AuthUser? user) => canSwitch && (user?.isAdmin ?? false);
+
   /// Version reported by `GET /api/version`, or null if never probed / down.
   ChannelVersion? versionOf(AppChannel channel) => _versions[channel];
 
@@ -102,7 +111,7 @@ class ChannelController extends ChangeNotifier {
     if (_switching) return false;
     if (channel == _active) return true;
     if (channel.isBeta && !canSwitch) {
-      _error = 'The beta channel is disabled in this build.';
+      _error = 'The beta channel is not available for this account.';
       notifyListeners();
       return false;
     }

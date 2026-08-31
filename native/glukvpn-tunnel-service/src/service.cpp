@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <sddl.h>
 #include <shlwapi.h>
 
 #include "appdata.h"
@@ -67,7 +68,13 @@ bool Service::Install(std::wstring& error) {
 
     SC_HANDLE service = CreateServiceW(
         manager, kServiceName, kServiceDisplayName, SERVICE_ALL_ACCESS,
-        SERVICE_WIN32_OWN_PROCESS, SERVICE_AUTO_START, SERVICE_ERROR_NORMAL,
+        // ROUND 5: SERVICE_DEMAND_START, not SERVICE_AUTO_START.
+        //
+        // The service used to start with Windows and then sit in the
+        // background forever: present at boot, still present after the app
+        // was closed. It only has work to do while a tunnel is up, so the app
+        // now starts it on demand and stops it once the tunnel is down.
+        SERVICE_WIN32_OWN_PROCESS, SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL,
         command.c_str(), nullptr, nullptr,
         // BFE hosts the Windows Filtering Platform; without it the kill
         // switch cannot be armed.
@@ -80,7 +87,7 @@ bool Service::Install(std::wstring& error) {
             service = OpenServiceW(manager, kServiceName, SERVICE_ALL_ACCESS);
             if (service) {
                 ChangeServiceConfigW(service, SERVICE_WIN32_OWN_PROCESS,
-                                     SERVICE_AUTO_START, SERVICE_ERROR_NORMAL,
+                                     SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL,
                                      command.c_str(), nullptr, nullptr,
                                      L"BFE\0", nullptr, nullptr,
                                      kServiceDisplayName);
@@ -105,15 +112,37 @@ bool Service::Install(std::wstring& error) {
         actions[0].Delay = 5000;
         actions[1].Type = SC_ACTION_RESTART;
         actions[1].Delay = 10000;
-        actions[2].Type = SC_ACTION_RESTART;
-        actions[2].Delay = 30000;
+        // Third strike: give up instead of respawning forever. Endless
+        // restarts are half the reason the service looked like it "always
+        // hangs in the background".
+        actions[2].Type = SC_ACTION_NONE;
+        actions[2].Delay = 0;
 
         SERVICE_FAILURE_ACTIONSW failure{};
-        failure.dwResetPeriod = 86400;
+        failure.dwResetPeriod = 3600;
         failure.cActions = 3;
         failure.lpsaActions = actions;
         ChangeServiceConfig2W(service, SERVICE_CONFIG_FAILURE_ACTIONS,
                               &failure);
+
+        // Let the signed-in user start, stop and query the service without a
+        // UAC prompt. Without this the app could only ask for elevation, so
+        // leaving the service running forever was cheaper than stopping it.
+        //
+        //   SY LocalSystem     - full control
+        //   BA Administrators  - full control
+        //   IU Interactive     - query config/status, START, STOP, interrogate
+        //   AU Authenticated   - query only
+        PSECURITY_DESCRIPTOR sd = nullptr;
+        if (ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                L"D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)"
+                L"(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)"
+                L"(A;;CCLCSWRPWPLORC;;;IU)"
+                L"(A;;CCLCSWLOCRRC;;;AU)",
+                SDDL_REVISION_1, &sd, nullptr)) {
+            SetServiceObjectSecurity(service, DACL_SECURITY_INFORMATION, sd);
+            LocalFree(sd);
+        }
 
         CloseServiceHandle(service);
     }

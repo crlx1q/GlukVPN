@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/tokens.dart';
+import '../../widgets/flag_art.dart';
 import '../theme/desktop_theme.dart';
 
 /// The floating state capsule above the globe (CONNECTED / CONNECTING / ...).
@@ -116,11 +117,16 @@ class LocationLine extends StatelessWidget {
     required this.youLabel,
     required this.place,
     this.flag,
+    this.countryCode,
   });
 
   final String youLabel;
   final String place;
   final String? flag;
+
+  /// Preferred over [flag]: lets us paint the flag instead of printing an
+  /// emoji Windows cannot render.
+  final String? countryCode;
 
   @override
   Widget build(BuildContext context) {
@@ -143,7 +149,16 @@ class LocationLine extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        if (flag != null && flag!.isNotEmpty) ...<Widget>[
+        // ROUND 5: painted art, not an emoji.
+        //
+        // Windows draws regional-indicator pairs as plain letters, so the
+        // Kyrgyz flag reached the screen as the text "кг" beside the place
+        // name. FlagArt paints the flag itself and falls back to a neutral
+        // globe badge for a country we have no artwork for yet.
+        if (hasFlagArt(countryCode ?? flag)) ...<Widget>[
+          FlagArt(code: countryCode ?? flag, size: 16),
+          const SizedBox(width: 7),
+        ] else if (flag != null && flag!.isNotEmpty) ...<Widget>[
           Text(
             flag!,
             style: const TextStyle(

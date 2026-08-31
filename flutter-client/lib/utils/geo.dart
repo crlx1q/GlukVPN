@@ -1,6 +1,8 @@
 import 'dart:io' show Platform;
 import 'dart:math' as math;
 
+import 'geo_dictionary.dart';
+
 /// Coordinate maths for the dotted world map.
 ///
 /// The map asset is an equirectangular projection with `viewBox="0 0 119 60"`,
@@ -150,7 +152,20 @@ class SelfLocation {
 
 	String get label => countryName ?? 'Your location';
 
-	/// "Frankfurt, Germany" when both halves are known.
+	/// Localised "Кызылорда, Казахстан" / "Kyzylorda, Kazakhstan".
+	///
+	/// Goes through the shared dictionary, so a country reads the same in the
+	/// desktop app, the phone app and the extension instead of showing a bare
+	/// "KG" on one of them.
+	String localizedPlace({bool russian = true}) => formatSelfLocation(
+			city: region,
+			countryCode: countryCode,
+			countryName: countryName,
+			russian: russian,
+		);
+
+	/// "Frankfurt, Germany" when both halves are known. Kept for callers with no
+	/// language context; prefer [localizedPlace].
 	String get placeLabel {
 		final String? city = region;
 		final String? country = countryName;
@@ -174,12 +189,58 @@ double longitudeGap(double a, double b) {
 /// enough for a large country, narrow enough to reject a neighbour.
 const double localeAgreementDegrees = 25;
 
+/// Curated timezone -> most likely country, keyed by UTC offset in minutes.
+///
+/// ROUND 5: the app placed the user in Kyrgyzstan while they were in
+/// Kazakhstan, and pure geometry is why. At UTC+5 the implied meridian is 75E,
+/// and the nearest country centre to it is Kyrgyzstan at 74.8E. Kazakhstan sits
+/// at 68E and lost by seven degrees, despite being the far more likely answer
+/// on that meridian. Longitude cannot break a tie like this; a curated list
+/// can. First entry wins, unless the locale's own region appears in the list.
+const Map<int, List<String>> utcOffsetCountries = <int, List<String>>{
+	-480: <String>['US', 'CA'],
+	-420: <String>['US', 'CA', 'MX'],
+	-360: <String>['US', 'MX', 'CA'],
+	-300: <String>['US', 'CA', 'BR'],
+	-240: <String>['CL', 'CA', 'BR'],
+	-180: <String>['BR', 'AR'],
+	0: <String>['GB', 'IE', 'PT', 'IS', 'MA'],
+	60: <String>[
+		'DE', 'FR', 'NL', 'ES', 'IT', 'PL', 'SE', 'CH',
+		'AT', 'CZ', 'BE', 'DK', 'NO', 'HU', 'RS', 'HR',
+	],
+	120: <String>['FI', 'GR', 'RO', 'BG', 'UA', 'EE', 'LV', 'LT', 'IL', 'EG', 'ZA'],
+	180: <String>['RU', 'TR', 'BY', 'SA', 'KE'],
+	240: <String>['AE', 'AZ', 'GE', 'AM', 'OM'],
+	300: <String>['KZ', 'UZ', 'PK', 'TM', 'TJ', 'KG'],
+	330: <String>['IN', 'LK'],
+	360: <String>['KZ', 'KG', 'BD'],
+	420: <String>['TH', 'VN', 'ID', 'MN'],
+	480: <String>['CN', 'SG', 'HK', 'MY', 'TW', 'PH'],
+	540: <String>['JP', 'KR'],
+	600: <String>['AU'],
+	720: <String>['NZ'],
+};
+
 /// The country in [countryCentres] that best fits a UTC offset.
 ///
-/// 15 degrees of longitude per hour, then the nearest centre by longitude with
-/// a mild preference for the northern mid-latitudes, where the devices are.
+/// [utcOffsetCountries] decides first. Only for an offset missing from that
+/// table do we fall back to geometry: 15 degrees of longitude per hour, then
+/// the nearest centre by longitude with a mild preference for the northern
+/// mid-latitudes, where the devices are.
 /// Null when nothing is close enough to be worth claiming.
-String? countryForUtcOffset(Duration offset) {
+String? countryForUtcOffset(Duration offset, {String? preferRegion}) {
+	final List<String>? curated = utcOffsetCountries[offset.inMinutes];
+	if (curated != null && curated.isNotEmpty) {
+		// A locale region that sits inside the same timezone is better evidence
+		// than a popularity ranking: ru_KZ at UTC+5 really is Kazakhstan.
+		final String? region = preferRegion?.toUpperCase();
+		if (region != null && curated.contains(region)) return region;
+		for (final String code in curated) {
+			if (countryCentres.containsKey(code)) return code;
+		}
+	}
+
 	final double longitude = (offset.inMinutes / 60.0) * 15.0;
 	String? best;
 	double bestScore = double.infinity;
@@ -236,7 +297,7 @@ SelfLocation approximateSelfLocation({
 	}
 
 	// 3. Nearest country for this timezone.
-	final String? nearest = countryForUtcOffset(offset);
+	final String? nearest = countryForUtcOffset(offset, preferRegion: region);
 	final nearestCentre = nearest == null ? null : countryCentres[nearest];
 	if (nearestCentre != null) {
 		return SelfLocation(

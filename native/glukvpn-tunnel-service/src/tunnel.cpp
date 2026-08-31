@@ -194,22 +194,55 @@ void Tunnel::WorkerMain(std::wstring configPath) {
     const auto fn =
         reinterpret_cast<WIREGUARD_TUNNEL_SERVICE_FUNC>(tunnelServiceFn_);
 
-    Log::Info("Tunnel worker starting");
+    const int64_t startedAt = NowUnix();
+    Log::Info("Tunnel worker starting (driver " + DriverDescription() + ")");
     // Blocks for the whole lifetime of the tunnel.
     const BOOL ok = fn(configPath.c_str());
-    Log::Info(std::string("Tunnel worker exited, ok=") + (ok ? "1" : "0"));
+    const int64_t ranFor = NowUnix() - startedAt;
+    Log::Info(std::string("Tunnel worker exited, ok=") + (ok ? "1" : "0") +
+              ", ran " + std::to_string(ranFor) + "s");
+
+    // No worker means no tunnel, and no tunnel must never mean "no internet".
+    // The locks are dropped here and not only in Down(), because a tunnel that
+    // dies on its own never reaches Down() - which is exactly how a failed
+    // connect used to leave the whole machine firewalled off until the service
+    // was restarted.
+    ReleaseNetworkLocks("worker exited");
 
     std::lock_guard<std::mutex> lock(mutex_);
     running_ = false;
     if (status_.state != TunnelState::Down) {
         if (!ok) {
             status_.state = TunnelState::Error;
-            status_.errorCode = "tunnel_error";
-            status_.errorMessage = "WireGuard tunnel terminated unexpectedly";
+            if (ranFor <= 5) {
+                // tunnel.dll never got as far as a working adapter. In
+                // practice this is a wireguard.dll / tunnel.dll pair from two
+                // different WireGuard releases, which is why the build now
+                // takes both files out of the same archive.
+                status_.errorCode = "tunnel_start_failed";
+                status_.errorMessage =
+                    "WireGuard could not start the tunnel (driver " +
+                    DriverDescription() +
+                    "). wireguard.dll and tunnel.dll must come from the same "
+                    "WireGuard release.";
+            } else {
+                status_.errorCode = "tunnel_error";
+                status_.errorMessage =
+                    "WireGuard tunnel terminated unexpectedly";
+            }
         } else {
             status_.state = TunnelState::Down;
         }
     }
+    status_.killSwitchActive = false;
+}
+
+void Tunnel::ReleaseNetworkLocks(const char* why) {
+    // Neither call takes mutex_, so this is safe with or without the lock
+    // held, and both are idempotent.
+    Wfp::Instance().DisableKillSwitch();
+    SplitTunnel::Instance().Clear();
+    Log::Info(std::string("Network locks released (") + why + ")");
 }
 
 bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
@@ -231,6 +264,12 @@ bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
         status_.errorCode = errorCode;
         status_.errorMessage = errorMessage;
         return false;
+    }
+
+    // A previous attempt that died on its own may have left filters behind.
+    if (!running_ && status_.killSwitchActive) {
+        ReleaseNetworkLocks("stale locks from a previous attempt");
+        status_.killSwitchActive = false;
     }
 
     if (!AppData::EnsureDirectories()) {
@@ -386,6 +425,18 @@ TunnelStatus Tunnel::Status() {
     std::lock_guard<std::mutex> lock(mutex_);
     RefreshFromDriver(status_);
     status_.splitEngine = SplitTunnel::Instance().EngineName();
+
+    // Safety net. Filters may exist only while a tunnel does; every other
+    // combination is a bug that takes the machine's internet with it, so it is
+    // repaired here rather than merely reported.
+    const bool alive = running_ && (status_.state == TunnelState::Starting ||
+                                    status_.state == TunnelState::Connected ||
+                                    status_.state == TunnelState::Lost);
+    if (!alive && status_.killSwitchActive) {
+        ReleaseNetworkLocks("status: no live tunnel");
+        status_.killSwitchActive = false;
+    }
+
     return status_;
 }
 

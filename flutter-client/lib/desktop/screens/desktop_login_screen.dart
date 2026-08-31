@@ -198,8 +198,8 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
 
                 return Row(
                   children: <Widget>[
-                    Expanded(flex: 55, child: _form()),
-                    Expanded(flex: 45, child: _brandPanel()),
+                    Expanded(flex: 52, child: _form()),
+                    Expanded(flex: 48, child: _brandPanel()),
                   ],
                 );
               },
@@ -427,8 +427,14 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
                         globeness: 1,
                         rotationDegrees: _spin.value * 360,
                         centreLatitude: 14,
-                        globeAnchor: const Offset(0.5, 0.58),
-                        zoom: 1.02,
+                        // ROUND 5: significantly bigger and shifted left, as
+                        // asked. The globe was anchored dead centre at zoom
+                        // 1.02, so it read as a small ball floating in a large
+                        // violet panel. 1.72 fills the panel, and an anchor at
+                        // 0.33 pushes its centre left so it bleeds off the
+                        // panel edge the way the Cloudflare reference does.
+                        globeAnchor: const Offset(0.33, 0.56),
+                        zoom: 1.72,
                         dotOpacity: 0.72,
                         orbitalPhase: _spin.value,
                         pulse: _spin.value,

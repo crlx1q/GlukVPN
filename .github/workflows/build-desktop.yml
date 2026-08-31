@@ -46,12 +46,31 @@ jobs:
           $vendor = 'native\glukvpn-tunnel-service\vendor\amd64'
           New-Item -ItemType Directory -Force -Path $vendor | Out-Null
 
-          # 1. Download WireGuardNT (wireguard.dll)
-          Invoke-WebRequest -Uri https://download.wireguard.com/wireguard-nt/wireguard-nt-1.1.zip -OutFile wg-nt.zip -UseBasicParsing
-          Expand-Archive -Path wg-nt.zip -DestinationPath wg-nt -Force
-          Copy-Item wg-nt\wireguard-nt\bin\amd64\wireguard.dll $vendor -Force
+          # 1. Matched pair. tunnel.dll speaks exactly one wireguard.dll ABI.
+          #    wireguard-nt-1.1 next to a git-master tunnel.dll made
+          #    WireGuardTunnelService() exit ~1s after start -> tunnel_error.
+          $paired = $false
+          foreach ($ver in @('0.5.3', '0.5.2', '0.4.9')) {
+            try {
+              Invoke-WebRequest -Uri "https://download.wireguard.com/windows-client/embeddable-dll-service-amd64-$ver.zip" -OutFile embed.zip -UseBasicParsing
+              Expand-Archive -Path embed.zip -DestinationPath embed -Force
+              foreach ($dll in @('tunnel.dll', 'wireguard.dll')) {
+                $f = Get-ChildItem -Path embed -Filter $dll -Recurse | Select-Object -First 1
+                if ($f) { Copy-Item $f.FullName $vendor -Force }
+              }
+              if (Test-Path (Join-Path $vendor 'tunnel.dll')) { $paired = $true; Write-Host "matched DLL pair from release $ver"; break }
+            } catch { Write-Host "embeddable-dll-service $ver unavailable" }
+          }
 
-          # 2. Build official tunnel.dll from wireguard-windows embeddable-dll-service
+          # 2. Fallback: standalone WireGuardNT driver DLL.
+          if (-not (Test-Path (Join-Path $vendor 'wireguard.dll'))) {
+            Invoke-WebRequest -Uri https://download.wireguard.com/wireguard-nt/wireguard-nt-1.1.zip -OutFile wg-nt.zip -UseBasicParsing
+            Expand-Archive -Path wg-nt.zip -DestinationPath wg-nt -Force
+            Copy-Item wg-nt\wireguard-nt\bin\amd64\wireguard.dll $vendor -Force
+          }
+
+          # 3. Last resort: build tunnel.dll from source (ABI not guaranteed).
+          if (-not $paired) {
           git clone --depth 1 https://git.zx2c4.com/wireguard-windows wg-windows
           Push-Location wg-windows\embeddable-dll-service
           $env:CGO_ENABLED = "1"
@@ -60,6 +79,7 @@ jobs:
           $destDll = Join-Path (Resolve-Path "..\..\$vendor") 'tunnel.dll'
           go build -buildmode=c-shared -ldflags="-w -s" -trimpath -o $destDll .
           Pop-Location
+          }
 
           foreach ($dll in @('tunnel.dll', 'wireguard.dll')) {
             if (-not (Test-Path (Join-Path $vendor $dll))) { throw "$dll is missing from $vendor" }

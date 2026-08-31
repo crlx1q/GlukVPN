@@ -97,7 +97,15 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final bool wide = constraints.maxWidth >= 900;
+        // ROUND 5: 700, not 900.
+        //
+        // The window is a fixed 1000x780 panel, so the content area is
+        // 1000 - 208 sidebar - 36 padding = 756 px. Against the old 900
+        // threshold the three-column composition never engaged and the page
+        // collapsed into one tall column - map on top, connection block under
+        // it, traffic below that - with empty bands above and below the map.
+        // That is exactly the screenshot the user held against the mockup.
+        final bool wide = constraints.maxWidth >= 700;
 
         final Widget mapCard = _MapCard(
           vpn: vpn,
@@ -198,11 +206,17 @@ class _MapCard extends StatelessWidget {
     final ConnectionPhase phase = vpn.phase;
     final VpnNodeInfo? node = vpn.selectedNode;
 
-    // publicNodeTitle instead of displayTitle: an internal-looking node is
-    // still usable, but its handle must never reach the screen.
+    // ROUND 5: "Frankfurt, Германия" - city first, country second, both run
+    // through the shared dictionary. publicNodeLocation instead of
+    // publicNodeTitle: an internal-looking node is still usable, but its handle
+    // must never reach the screen, and a bare "DE" is not a place name.
     final String serverTitle = node == null
         ? s.autoBestServer
-        : publicNodeTitle(node, fallback: s.autoBestServer);
+        : publicNodeLocation(
+            node,
+            russian: s.isRussian,
+            fallback: s.autoBestServer,
+          );
 
     // Never repeat the title as the subtitle: an empty second line is better
     // than "Auto - Best server" printed twice, which is what the first build
@@ -211,8 +225,13 @@ class _MapCard extends StatelessWidget {
     if (node == null) {
       serverSubtitle = vpn.autoSelectionEnabled ? s.autoDescription : null;
     } else {
+      // The title already carries both city and country, so a subtitle that
+      // repeats either half would print the same place twice.
       final String sub = publicNodeSubtitle(node) ?? '';
-      serverSubtitle = (sub.isEmpty || sub == serverTitle) ? null : sub;
+      serverSubtitle = (sub.isEmpty ||
+              serverTitle.toLowerCase().contains(sub.toLowerCase()))
+          ? null
+          : sub;
       if (vpn.autoSelectionEnabled) {
         serverSubtitle = serverSubtitle == null
             ? s.autoBestServer
@@ -267,8 +286,9 @@ class _MapCard extends StatelessWidget {
                     const SizedBox(height: 12),
                     LocationLine(
                       youLabel: s.isRussian ? 'Вы' : 'You',
-                      place: self!.placeLabel,
+                      place: self!.localizedPlace(russian: s.isRussian),
                       flag: self!.flag,
+                      countryCode: self!.countryCode,
                     ),
                   ],
                 ],

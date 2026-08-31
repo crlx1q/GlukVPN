@@ -1,4 +1,5 @@
 import '../../models/models.dart';
+import '../../utils/geo_dictionary.dart';
 
 /// Substrings that mark a node as internal-only.
 ///
@@ -122,6 +123,43 @@ String? publicNodeSubtitle(VpnNodeInfo node) {
     return candidate;
   }
   return null;
+}
+
+/// "Frankfurt, Германия" - city first, country second, both translated.
+///
+/// ROUND 5: the requested label shape, and the reason a German node used to
+/// read as a bare "DE" on Windows. [publicNodeTitle] and [publicNodeSubtitle]
+/// keep their old contracts (the privacy tests pin them down); this is the
+/// display label built on top of them, and it goes through the same dictionary
+/// as `extension/lib/geo.js` so all three clients agree.
+String publicNodeLocation(
+  VpnNodeInfo node, {
+  bool russian = true,
+  String fallback = 'VPN server',
+}) {
+  final String city = _clean(node.city);
+  final String code = _clean(node.countryCode);
+  final String country = _clean(node.country);
+
+  final String label = formatNodeLocation(
+    city: city,
+    countryCode: code,
+    countryName: country.isEmpty ? null : country,
+    region: _clean(node.region),
+    russian: russian,
+  );
+  if (label.isNotEmpty) return label;
+
+  // Nothing geographic survived the internal-marker filter.
+  return publicNodeTitle(node, fallback: fallback);
+}
+
+/// Drops values that would leak an internal handle into the UI.
+String _clean(String? value) {
+  final String text = (value ?? '').trim();
+  if (text.isEmpty) return '';
+  if (_hasInternalMarker(text)) return '';
+  return text;
 }
 
 /// Quality score in [0..1]; higher is better.

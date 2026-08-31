@@ -59,9 +59,11 @@ export async function issueTokens(
 	}
 }
 
+const ROTATION_GRACE_MS = 60_000
+
 /**
- * Single-use refresh token rotation.
- * Re-using an already rotated token is treated as theft: every active refresh
+ * Single-use refresh token rotation with a grace window for concurrent requests.
+ * Re-using a token long after rotation is treated as theft: every active refresh
  * token of that user is revoked.
  */
 export async function rotateRefreshToken(
@@ -75,11 +77,14 @@ export async function rotateRefreshToken(
 	if (!existing) throw unauthorized("Invalid refresh token")
 
 	if (existing.revokedAt) {
-		await prisma.refreshToken.updateMany({
-			where: { userId: existing.userId, revokedAt: null },
-			data: { revokedAt: new Date() },
-		})
-		throw unauthorized("Refresh token already used")
+		const isWithinGrace = (Date.now() - existing.revokedAt.getTime()) < ROTATION_GRACE_MS
+		if (!isWithinGrace) {
+			await prisma.refreshToken.updateMany({
+				where: { userId: existing.userId, revokedAt: null },
+				data: { revokedAt: new Date() },
+			})
+			throw unauthorized("Refresh token already used")
+		}
 	}
 	if (existing.expiresAt.getTime() <= Date.now()) throw unauthorized("Refresh token expired")
 	if (existing.user.status !== "ACTIVE") throw forbidden("User is disabled")

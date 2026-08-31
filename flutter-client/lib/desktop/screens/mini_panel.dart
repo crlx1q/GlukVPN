@@ -67,7 +67,11 @@ class MiniPanel extends StatelessWidget {
 
     final String serverTitle = node == null
         ? s.autoBestServer
-        : publicNodeTitle(node, fallback: s.autoBestServer);
+        : publicNodeLocation(
+            node,
+            russian: s.isRussian,
+            fallback: s.autoBestServer,
+          );
 
     return ColoredBox(
       color: const Color(0xFF0B0813),

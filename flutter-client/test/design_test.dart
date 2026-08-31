@@ -125,8 +125,11 @@ void main() {
         utcOffsetOverride: const Duration(hours: 5),
       );
       expect(self.precision, 'timezone');
-      expect(self.countryCode, 'KG');
-      expect(self.label, 'Kyrgyzstan');
+      // ROUND 5: KZ, not KG. Nearest-longitude scoring preferred Kyrgyzstan
+      // (74.8E) over Kazakhstan (68E) for UTC+5 and so placed the user in the
+      // wrong country; utcOffsetCountries breaks that tie explicitly now.
+      expect(self.countryCode, 'KZ');
+      expect(self.label, 'Kazakhstan');
     });
 
     test('a Russian phone in Moscow still lands in Russia', () {
@@ -144,9 +147,10 @@ void main() {
         utcOffsetOverride: const Duration(hours: 5),
       );
       expect(self.precision, 'timezone');
-      // 5h east of UTC is longitude 75; the nearest country we can plot is
-      // Kyrgyzstan (lon ≈ 74.6°), which is closer than Kazakhstan (lon ≈ 71.4°).
-      expect(self.countryCode, 'KG');
+      // 5h east of UTC is longitude 75. Geometry alone answers Kyrgyzstan
+      // (lon ≈ 74.8°), which is exactly how the marker landed in the wrong
+      // country; the curated utcOffsetCountries table ranks Kazakhstan first.
+      expect(self.countryCode, 'KZ');
       // UTC+1 = lon 15°; AT (lon ≈ 16.4°) is closer than DE (lon ≈ 8.5°).
       expect(countryForUtcOffset(const Duration(hours: 1)), 'AT');
       // UTC-5 = lon -75°; CA/Ottawa (lon ≈ -75.7°) is closer than US (lon ≈ -77°).

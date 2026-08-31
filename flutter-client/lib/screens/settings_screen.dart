@@ -106,13 +106,13 @@ class SettingsScreen extends StatelessWidget {
           ),
           // Everything below this point is for internal builds. A release APK
           // talks to one control plane and shows none of it.
-          if (channel.canSwitch) ...<Widget>[
+          if (channel.canSwitchAs(user)) ...<Widget>[
             const SizedBox(height: 20),
             const _SectionLabel('Internal'),
             const SizedBox(height: 8),
             _ChannelPanel(channel: channel, vpn: vpn),
           ],
-          if (AppConfig.betaChannelAvailable) ...<Widget>[
+          if (channel.canSwitchAs(user)) ...<Widget>[
             const SizedBox(height: 12),
             _DiagnosticsPanel(channel: channel, auth: auth),
           ],

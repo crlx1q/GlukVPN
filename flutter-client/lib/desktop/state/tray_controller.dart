@@ -99,9 +99,13 @@ class TrayController with TrayListener {
     final String status = _strings.phaseLabel(_vpn.phase);
     final VpnNodeInfo? node = _vpn.selectedNode;
     if (node == null) return 'GlukVPN \u2014 $status';
-    // Never the node handle: publicNodeTitle only ever returns geography.
-    final String server =
-        publicNodeTitle(node, fallback: _strings.trayAutoServer);
+    // Never the node handle: publicNodeLocation only ever returns geography,
+    // now as "Frankfurt, Германия" rather than a bare country code.
+    final String server = publicNodeLocation(
+      node,
+      russian: _strings.isRussian,
+      fallback: _strings.trayAutoServer,
+    );
     return 'GlukVPN \u2014 $status \u00b7 $server';
   }
 
@@ -117,7 +121,11 @@ class TrayController with TrayListener {
     final VpnNodeInfo? selected = _vpn.selectedNode;
     final String server = selected == null
         ? _strings.trayAutoServer
-        : publicNodeTitle(selected, fallback: _strings.trayAutoServer);
+        : publicNodeLocation(
+            selected,
+            russian: _strings.isRussian,
+            fallback: _strings.trayAutoServer,
+          );
 
     final Menu menu = Menu(
       items: <MenuItem>[

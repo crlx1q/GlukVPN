@@ -132,8 +132,41 @@ if (-not $SkipNative) {
     $wgTemp = Join-Path $env:TEMP "glukvpn-wg-$PID"
     New-Item -ItemType Directory -Force -Path $wgTemp | Out-Null
 
+    # ROUND 5: the two DLLs are a MATCHED PAIR. tunnel.dll speaks exactly one
+    # wireguard.dll ABI. Round 4 shipped wireguard.dll from wireguard-nt-1.1.zip
+    # next to a tunnel.dll built from git master, and the mismatch made
+    # WireGuardTunnelService() bail out roughly a second after start, which the
+    # service reported as tunnel_error. Take both from the same release zip.
+    $paired = $false
+    if (-not ((Test-Path (Join-Path $vendor 'tunnel.dll')) -and (Test-Path (Join-Path $vendor 'wireguard.dll')))) {
+        $embedZip = Join-Path $wgTemp 'embeddable-dll-service.zip'
+        $embedDir = Join-Path $wgTemp 'embeddable'
+        foreach ($ver in @('0.5.3', '0.5.2', '0.4.9')) {
+            try {
+                Write-Note "Fetching matched tunnel.dll + wireguard.dll pair (embeddable-dll-service $ver)"
+                Invoke-WebRequest -Uri "https://download.wireguard.com/windows-client/embeddable-dll-service-amd64-$ver.zip" -OutFile $embedZip -UseBasicParsing
+                Expand-Archive -Path $embedZip -DestinationPath $embedDir -Force
+                foreach ($dll in @('tunnel.dll', 'wireguard.dll')) {
+                    $found = Get-ChildItem -Path $embedDir -Filter $dll -Recurse |
+                        Sort-Object { if ($_.FullName -match 'amd64') { 0 } else { 1 } } |
+                        Select-Object -First 1
+                    if ($found) { Copy-Item $found.FullName $vendor -Force }
+                }
+                if (Test-Path (Join-Path $vendor 'tunnel.dll')) {
+                    $paired = $true
+                    Write-Note "  matched pair taken from release $ver"
+                    break
+                }
+            } catch {
+                Write-Note "  release $ver unavailable, trying an older one"
+            }
+        }
+    } else {
+        $paired = $true
+    }
+
     if (-not (Test-Path (Join-Path $vendor 'wireguard.dll'))) {
-        Write-Note 'Fetching wireguard.dll (WireGuardNT 1.1)'
+        Write-Note 'Fetching wireguard.dll (WireGuardNT 1.1 fallback)'
         $ntZip = Join-Path $wgTemp 'wireguard-nt.zip'
         Invoke-WebRequest -Uri 'https://download.wireguard.com/wireguard-nt/wireguard-nt-1.1.zip' -OutFile $ntZip -UseBasicParsing
         Expand-Archive -Path $ntZip -DestinationPath (Join-Path $wgTemp 'wg-nt') -Force
@@ -145,7 +178,7 @@ if (-not $SkipNative) {
     }
 
     if (-not (Test-Path (Join-Path $vendor 'tunnel.dll'))) {
-        Write-Note 'Building tunnel.dll from wireguard-windows'
+        Write-Note 'Building tunnel.dll from wireguard-windows (UNMATCHED fallback - may cause tunnel_start_failed)'
         $goCmd = Get-Command 'go' -ErrorAction SilentlyContinue
         if ($goCmd) {
             $wgWinDir = Join-Path $wgTemp 'wg-windows'

@@ -150,6 +150,36 @@ final Map<String, List<_Op>> _bodies = <String, List<_Op>>{
     const _Band(5.33, 5.34, 0xFFDD0000),
     const _Band(10.67, 5.33, 0xFFFFCE00),
   ],
+  // ROUND 5: the neighbours were missing, which is why the home screen showed
+  // a bare "кг" instead of a flag. Windows has no colour emoji flags, so every
+  // country we can plausibly place a user in needs painted art.
+  'KG': <_Op>[
+    const _Bg(0xFFE8112D),
+    const _Disc(12, 8, 3.1, 0xFFFFEF00),
+    const _Disc(12, 8, 1.9, 0xFFE8112D, stroke: 0.5),
+  ],
+  'UZ': <_Op>[
+    const _Bg(0xFF0099B5),
+    const _Band(5.33, 5.34, _white),
+    const _Band(10.67, 5.33, 0xFF1EB53A),
+    const _Band(5.1, 0.5, 0xFFCE1126),
+    const _Band(10.4, 0.5, 0xFFCE1126),
+    const _Disc(4.4, 2.7, 1.2, _white),
+    const _Disc(5.2, 2.7, 1.2, 0xFF0099B5),
+  ],
+  'TJ': <_Op>[
+    const _Bg(0xFFCC0000),
+    const _Band(4.6, 6.8, _white),
+    const _Band(11.4, 4.6, 0xFF006600),
+    const _Disc(12, 8, 1.0, 0xFFF8C300),
+  ],
+  'TM': <_Op>[
+    const _Bg(0xFF00843D),
+    const _Box(4.4, 0, 2.6, _gh, 0xFFD22630),
+    const _Disc(12.6, 4.6, 1.1, _white),
+    const _Disc(13.4, 4.6, 1.1, 0xFF00843D),
+  ],
+  'AZ': _h3(0xFF00B5E2, 0xFFEF3340, 0xFF509E2F),
   'FR': _v3(0xFF0B3E9C, _white, 0xFFE1273B),
   'US': <_Op>[
     const _Bg(_white),

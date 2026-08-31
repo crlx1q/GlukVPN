@@ -57,7 +57,7 @@ const EnvSchema = z.object({
 		.string()
 		.min(32, "TOKEN_HASH_PEPPER must be at least 32 chars"),
 
-	ACCESS_TOKEN_TTL_SEC: z.coerce.number().int().min(60).max(86400).default(900),
+	ACCESS_TOKEN_TTL_SEC: z.coerce.number().int().min(60).max(86400).default(3600),
 	REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(14),
 
 	NODE_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(30),

@@ -80,7 +80,8 @@ function New-Frame {
         [int]$Size,
         [System.Drawing.Image]$Image,
         $State,
-        [bool]$WithGlow
+        [bool]$WithGlow,
+        [bool]$WithHalo = $false
     )
 
     $bmp = New-Object System.Drawing.Bitmap($Size, $Size,
@@ -94,7 +95,11 @@ function New-Frame {
             [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
         $g.Clear([System.Drawing.Color]::Transparent)
 
-        if ($WithGlow) {
+        # ROUND 5: no halo on the tray icon any more. The user asked for the
+        # plain logo with just the coloured lamp, and the glow was eating about
+        # a quarter of a 16 px icon, which is exactly why it looked small.
+        # Kept behind a switch in case a future variant wants it back.
+        if ($WithHalo) {
             # Soft halo: concentric translucent rings, cheap and dependable
             # across every .NET version shipped with Windows.
             $rings = [Math]::Max(4, [int]($Size / 5))
@@ -121,7 +126,9 @@ function New-Frame {
         # and left by 4% to clear the status dot, which is exactly what made the
         # small icon look glued into a corner - the logo is centred now and the
         # dot simply overlaps it.
-        $scale = if ($WithGlow) { 0.74 } else { 0.94 }
+        # Tray: 0.98 instead of 0.74. With the halo gone the logo can use
+        # almost the whole frame, which is what "make it bigger" means at 16 px.
+        $scale = if ($WithGlow) { 0.98 } else { 0.94 }
         $side = [int]($Size * $scale)
         $offset = [double](($Size - $side) / 2.0)
         $radius = [double]([Math]::Max(2.0, $side * 0.28))

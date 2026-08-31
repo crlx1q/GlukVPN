@@ -26,8 +26,11 @@ class DesktopTokens {
   static const double innerRadius = 16;
   static const double pillRadius = 999;
 
-  static const double sidebarWidth = 236;
-  static const double rightRailWidth = 304;
+  // ROUND 5: 208 and 272, down from 236 and 304. The window is 1000x780 now,
+  // and the old widths left the map card only ~440 px between them, which is
+  // why the composition kept collapsing into a single column.
+  static const double sidebarWidth = 208;
+  static const double rightRailWidth = 272;
   static const double gutter = 16;
   static const double pagePadding = 18;
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -10,6 +11,7 @@ import '../../services/ping_service.dart';
 import '../../state/auth_controller.dart';
 import '../logic/connection_phase.dart';
 import '../logic/node_selector.dart';
+import '../services/app_paths.dart';
 import '../services/desktop_log.dart';
 import '../services/service_bootstrap.dart';
 import 'desktop_settings.dart';
@@ -198,7 +200,26 @@ class DesktopVpnController extends ChangeNotifier {
     sb.writeln('rx/tx     : ${_snapshot.rxBytes}/${_snapshot.txBytes}');
     sb.writeln('--- log ---');
     sb.writeln(dlog.dump());
+    sb.writeln('--- service log (tail) ---');
+    sb.writeln(_serviceLogTail());
     return sb.toString();
+  }
+
+  /// Last lines the privileged service wrote.
+  ///
+  /// tunnel_error is produced inside GlukVpnTunnelService, so the UI log on its
+  /// own could never explain it: the dump stopped right after "tunnel up
+  /// accepted". Whatever the service logged now travels with the diagnostics.
+  String _serviceLogTail({int lines = 40}) {
+    try {
+      final File file = File(AppPaths().serviceLogPath);
+      if (!file.existsSync()) return '(no service log at ${file.path})';
+      final List<String> all = file.readAsLinesSync();
+      final int from = all.length > lines ? all.length - lines : 0;
+      return all.sublist(from).join('\n');
+    } catch (e) {
+      return '(service log unreadable: $e)';
+    }
   }
 
   // -------------------------------------------------------------------
@@ -1016,6 +1037,38 @@ class DesktopVpnController extends ChangeNotifier {
     _statusDetail = detail;
     _userMessage = _humanise(detail, message);
     _notify();
+
+    // ROUND 5, the "now the whole PC has no internet" bug.
+    //
+    // Tunnel::Up() arms the WFP kill switch and only Tunnel::Down() disarmed
+    // it. When the WireGuard worker died by itself (tunnel_error 1.7s after
+    // "tunnel up accepted") nothing released the block-all filters, so every
+    // app on the machine stayed firewalled until the service was stopped or
+    // the PC rebooted. Any failed connect now tears the tunnel down
+    // explicitly, which drops the filters and the split-tunnel routes.
+    if (phase == ConnectionPhase.connectionFailed ||
+        phase == ConnectionPhase.tunnelLost ||
+        phase == ConnectionPhase.serverUnavailable ||
+        phase == ConnectionPhase.sessionExpired ||
+        phase == ConnectionPhase.accessRevoked) {
+      unawaited(releaseNetworkLocks(reason: detail));
+    }
+  }
+
+  /// Drops the kill-switch filters and the split-tunnel routes.
+  ///
+  /// Also exposed in Settings -> Diagnostics as "restore internet access",
+  /// because a half-dead tunnel used to leave the machine offline with no way
+  /// out except `net stop GlukVpnTunnel` from an admin prompt.
+  Future<bool> releaseNetworkLocks({String reason = 'manual'}) async {
+    dlog.write('tunnel', 'releasing network locks ($reason)');
+    try {
+      await _tunnel.down();
+      return true;
+    } catch (e) {
+      dlog.error('tunnel', 'releasing network locks failed', e);
+      return false;
+    }
   }
 
   /// Rewrites native error codes into something the user can act on.
@@ -1036,6 +1089,26 @@ class DesktopVpnController extends ChangeNotifier {
         return _ru
             ? 'Служба GlukVPN не запущена. Нажмите «Установить службу».'
             : 'The GlukVPN service is not running. Use "Install service".';
+      case 'tunnel_start_failed':
+        return _ru
+            ? 'Туннель не поднялся: файлы WireGuard в сборке несовместимы. Переустановите GlukVPN последней версией.'
+            : 'The tunnel did not start: the bundled WireGuard files are mismatched. Reinstall the latest GlukVPN.'; 
+      case 'tunnel_error':
+        return _ru
+            ? 'Туннель завершился с ошибкой. Интернет восстановлен, попробуйте подключиться снова.'
+            : 'The tunnel exited with an error. Internet access is restored — try connecting again.';
+      case 'tunnel_lost':
+        return _ru
+            ? 'Соединение с сервером потеряно. Переподключаемся.'
+            : 'The tunnel lost contact with the server. Reconnecting.';
+      case 'tunnel_service_unavailable':
+        return _ru
+            ? 'Служба туннеля не отвечает. Нажмите «Восстановить службу» в настройках.'
+            : 'The tunnel service is not responding. Use "Repair service" in Settings.';
+      case 'connect_timeout':
+        return _ru
+            ? 'Сервер не ответил вовремя. Проверьте сеть и попробуйте другой сервер.'
+            : 'The server did not answer in time. Check your network or pick another server.';
       case 'not_authenticated':
         return _ru
             ? 'Сессия истекла. Войдите заново.'
@@ -1061,6 +1134,22 @@ class DesktopVpnController extends ChangeNotifier {
     if (disconnectTunnel && _phase.isConnected) {
       await _tunnel.down();
       await _releaseServerSession();
+    }
+
+    // ROUND 5: "why is GlukVpnTunnelService always sitting in the background?"
+    //
+    // It was registered SERVICE_AUTO_START, so it booted with Windows and kept
+    // running with the app closed. It is demand-start now, and when we leave
+    // without an active tunnel we also stop it, so nothing of ours runs while
+    // GlukVPN is not running.
+    if (disconnectTunnel) {
+      await releaseNetworkLocks(reason: 'shutdown');
+      try {
+        _service?.stopService();
+        dlog.write('service', 'stop requested on exit');
+      } catch (e) {
+        dlog.error('service', 'stop on exit failed', e);
+      }
     }
 
     _usage.endSession();

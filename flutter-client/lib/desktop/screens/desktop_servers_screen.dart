@@ -49,7 +49,10 @@ class _DesktopServersScreenState extends State<DesktopServersScreen> {
         ? all
         : all.where((VpnNodeInfo n) {
             final needle = _query.toLowerCase();
-            return publicNodeTitle(n).toLowerCase().contains(needle) ||
+            return publicNodeLocation(n, russian: strings.isRussian)
+                    .toLowerCase()
+                    .contains(needle) ||
+                publicNodeTitle(n).toLowerCase().contains(needle) ||
                 (publicNodeSubtitle(n) ?? '')
                     .toLowerCase()
                     .contains(needle);
@@ -280,7 +283,7 @@ class _AutoCard extends StatelessWidget {
                   resolved == null
                       ? strings.autoDescription
                       : '${strings.autoDescription} · '
-                          '${publicNodeTitle(resolved!)}',
+                          '${publicNodeLocation(resolved!, russian: strings.isRussian)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(

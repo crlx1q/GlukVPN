@@ -67,6 +67,7 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
   String? _devicesError;
 
   bool _testingGateway = false;
+  bool _restoringNetwork = false;
 
   DesktopSettings get _value => widget.settings.value;
 
@@ -134,6 +135,29 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
       _notice = _ru
           ? 'Журнал скопирован в буфер обмена'
           : 'Diagnostics copied to the clipboard';
+    });
+  }
+
+  /// ROUND 5: the way out of "the whole PC has no internet".
+  ///
+  /// The kill switch was armed when the tunnel went up and only released when
+  /// it was shut down cleanly. A tunnel that died on its own left the WFP
+  /// block-all filters in place, and the only cure was `net stop
+  /// GlukVpnTunnel` from an admin prompt. Requirement 2 says the user never
+  /// touches a terminal, so it is a button now.
+  Future<void> _restoreInternet() async {
+    setState(() => _restoringNetwork = true);
+    final bool ok = await widget.vpn.releaseNetworkLocks(reason: 'settings');
+    if (!mounted) return;
+    setState(() {
+      _restoringNetwork = false;
+      _notice = ok
+          ? (_ru
+              ? 'Сетевые фильтры сняты, интернет должен работать'
+              : 'Network filters released, internet should be back')
+          : (_ru
+              ? 'Не удалось снять фильтры. Перезагрузите ПК.'
+              : 'Could not release the filters. Reboot the PC.');
     });
   }
 
@@ -366,10 +390,17 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
               label: ru ? 'Сетевой адаптер' : 'Network adapter',
               value: AppConfig.desktopAdapterName,
             ),
-            _InfoTile(
-              label: ru ? 'Канал' : 'Channel',
-              value: AppConfig.activeChannel.label,
-            ),
+            // ROUND 5: admins only.
+            //
+            // The beta control plane refuses non-admin accounts and has no
+            // registration, so naming the channel to an ordinary user only ever
+            // raised questions it could not answer. Non-admins see PROD and
+            // nothing about channels at all.
+            if (widget.auth.user?.isAdmin ?? false)
+              _InfoTile(
+                label: ru ? 'Канал' : 'Channel',
+                value: AppConfig.activeChannel.label,
+              ),
 
             // The extension's "for developers" disclosure, read-only.
             //
@@ -451,6 +482,17 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
                       'contains keys or passwords.',
               buttonLabel: ru ? 'Копировать' : 'Copy',
               onPressed: _copyDiagnostics,
+            ),
+            _ActionTile(
+              label: ru ? 'Восстановить интернет' : 'Restore internet access',
+              subtitle: ru
+                  ? 'Снимает kill switch и маршруты, если туннель упал и сеть '
+                      'осталась заблокированной'
+                  : 'Releases the kill switch and routes if a dead tunnel left '
+                      'the network blocked',
+              buttonLabel: ru ? 'Снять блокировку' : 'Release',
+              busy: _restoringNetwork,
+              onPressed: _restoreInternet,
             ),
             if (!widget.vpn.serviceReady)
               _ActionTile(

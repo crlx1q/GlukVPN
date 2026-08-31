@@ -107,6 +107,11 @@ private:
 
     void WorkerMain(std::wstring configPath);
     void RefreshFromDriver(TunnelStatus& status);
+
+    // Drops the kill switch and the split routes. Takes no lock of its own,
+    // so it is safe to call with or without mutex_ held, and safe to call
+    // twice. "No tunnel" must always mean "working internet".
+    void ReleaseNetworkLocks(const char* why);
     bool LoadTunnelDll();
     std::wstring StopEventName() const;
 

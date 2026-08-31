@@ -24,6 +24,7 @@ class ServerRow extends StatefulWidget {
     this.locked = false,
     this.loadLabel,
     this.offlineLabel,
+    this.russian = true,
   });
 
   final VpnNodeInfo node;
@@ -36,6 +37,10 @@ class ServerRow extends StatefulWidget {
 
   final String? loadLabel;
   final String? offlineLabel;
+
+  /// Language for the geography label. ROUND 5: rows read "Frankfurt,
+  /// Германия" instead of a bare "DE".
+  final bool russian;
 
   @override
   State<ServerRow> createState() => _ServerRowState();
@@ -97,7 +102,7 @@ class _ServerRowState extends State<ServerRow> {
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
                         Text(
-                          publicNodeTitle(node),
+                          publicNodeLocation(node, russian: widget.russian),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -167,7 +172,9 @@ class _ServerRowState extends State<ServerRow> {
     if (!node.online) {
       return widget.offlineLabel ?? 'Offline';
     }
-    final parts = <String>[publicNodeSubtitle(node) ?? ''];
+    // The title already spells out city and country, so the second line is
+    // just load and status now instead of repeating the city.
+    final parts = <String>[];
     final load = node.loadPercent;
     if (load != null) {
       parts.add('${widget.loadLabel ?? 'Load'} ${formatPercent(load.toDouble())}');

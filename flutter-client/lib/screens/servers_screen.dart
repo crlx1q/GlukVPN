@@ -6,6 +6,7 @@ import '../services/ping_service.dart';
 import '../state/vpn_controller.dart';
 import '../theme/tokens.dart';
 import '../utils/geo.dart';
+import '../utils/geo_dictionary.dart';
 import '../utils/signal.dart';
 import '../widgets/glass.dart';
 import '../widgets/signal_bars.dart';
@@ -281,7 +282,16 @@ class _ServerTile extends StatelessWidget {
                     children: <Widget>[
                       Flexible(
                         child: Text(
-                          node.displayTitle,
+                          // ROUND 5: "Frankfurt, Германия" - city first, then
+                          // country, translated through the shared dictionary
+                          // that mirrors extension/lib/geo.js, so the phone and
+                          // the PC name the same server identically.
+                          formatNodeLocation(
+                            city: node.city,
+                            countryCode: node.countryCode,
+                            countryName: node.country,
+                            region: node.region,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: text.titleMedium,

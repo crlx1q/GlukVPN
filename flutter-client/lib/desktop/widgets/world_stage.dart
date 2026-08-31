@@ -197,7 +197,19 @@ class _WorldStageState extends State<WorldStage>
                 rotationDegrees: _spin.value * 360,
                 centreLongitude: _centreLongitude(self, server),
                 centreLatitude: 12,
-                driftDegrees: widget.reduceMotion ? 0 : (_orbit.value * 8) - 4,
+                // ROUND 5: the map used to slide right and then snap back,
+                // replaying the drift from the start. `_orbit` runs 0 -> 1 and
+                // was mapped straight onto -4 -> +4 degrees, so every cycle
+                // ended in an eight-degree jump. Folding it into a triangle
+                // wave makes the ends meet: the drift travels out and back like
+                // the phone version, and the loop is seamless.
+                driftDegrees: widget.reduceMotion
+                    ? 0
+                    : (((_orbit.value <= 0.5
+                                    ? _orbit.value * 2
+                                    : (1 - _orbit.value) * 2) *
+                                8) -
+                            4),
                 zoom: widget.zoomBoost * (1.0 + (_morph.value * 0.06)),
                 dotOpacity: 0.55 + (_morph.value * 0.15),
                 selfPoint: self,
