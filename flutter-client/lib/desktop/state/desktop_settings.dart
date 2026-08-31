@@ -19,10 +19,12 @@ class DesktopSettings {
     this.language = 'system',
     this.animationsEnabled = true,
     this.reduceMotion = false,
+    this.pauseAnimationsOnBattery = true,
     this.autoConnect = false,
     this.killSwitch = false,
     this.dns = const <String>[],
     this.mtu,
+    this.bypassRoutes = const <String>[],
     this.splitMode = SplitMode.allApps,
     this.splitApps = const <String>[],
     this.keepTunnelWithoutUi = true,
@@ -35,14 +37,33 @@ class DesktopSettings {
     this.autoNodeSelection = true,
   });
 
+  /// Schema version of the stored file.
+  ///
+  /// 1 -> 2 drops the remembered window geometry once, because the window was
+  /// reshaped (much closer to square) and an old 1165x739 rectangle would
+  /// otherwise keep the new layout cramped for ever.
+  static const int schemaVersion = 2;
+
   // --- General ---
   final bool startWithWindows;
   final bool startMinimized;
 
   /// 'system', 'ru', 'en'.
   final String language;
+
+  /// The one and only animation switch the user sees.
   final bool animationsEnabled;
+
+  /// Legacy "reduce motion" flag.
+  ///
+  /// It used to be a second, near-identical toggle next to Animations, which
+  /// was confusing for no benefit. The UI no longer shows it; it is still read
+  /// and written so an existing settings.json keeps working, and it still
+  /// forces motion off when it was left on.
   final bool reduceMotion;
+
+  /// Cut animations automatically on battery / in Windows battery saver.
+  final bool pauseAnimationsOnBattery;
 
   // --- VPN ---
   final bool autoConnect;
@@ -51,6 +72,10 @@ class DesktopSettings {
 
   /// Null means "use whatever the server hands us" (currently 1420).
   final int? mtu;
+
+  /// Hosts, IPs and CIDRs that must always go straight out, never through the
+  /// tunnel. Mirrors "Always direct" in the browser extension.
+  final List<String> bypassRoutes;
 
   // --- Split tunnelling ---
   final SplitMode splitMode;
@@ -75,6 +100,17 @@ class DesktopSettings {
 
   static const DesktopSettings defaults = DesktopSettings();
 
+  /// True when the UI should hold still, whatever the reason.
+  ///
+  /// [onBattery] comes from [PowerMonitor]. Requirement 15: this only ever
+  /// affects motion, never the tunnel.
+  bool motionDisabled({bool onBattery = false}) {
+    if (!animationsEnabled) return true;
+    if (reduceMotion) return true;
+    if (pauseAnimationsOnBattery && onBattery) return true;
+    return false;
+  }
+
   /// WireGuard tolerates 1280..1500; anything else breaks path MTU.
   static int? clampMtu(int? value) {
     if (value == null) return null;
@@ -89,11 +125,13 @@ class DesktopSettings {
     String? language,
     bool? animationsEnabled,
     bool? reduceMotion,
+    bool? pauseAnimationsOnBattery,
     bool? autoConnect,
     bool? killSwitch,
     List<String>? dns,
     int? mtu,
     bool clearMtu = false,
+    List<String>? bypassRoutes,
     SplitMode? splitMode,
     List<String>? splitApps,
     bool? keepTunnelWithoutUi,
@@ -112,10 +150,13 @@ class DesktopSettings {
       language: language ?? this.language,
       animationsEnabled: animationsEnabled ?? this.animationsEnabled,
       reduceMotion: reduceMotion ?? this.reduceMotion,
+      pauseAnimationsOnBattery:
+          pauseAnimationsOnBattery ?? this.pauseAnimationsOnBattery,
       autoConnect: autoConnect ?? this.autoConnect,
       killSwitch: killSwitch ?? this.killSwitch,
       dns: dns ?? this.dns,
       mtu: clearMtu ? null : clampMtu(mtu ?? this.mtu),
+      bypassRoutes: bypassRoutes ?? this.bypassRoutes,
       splitMode: splitMode ?? this.splitMode,
       splitApps: splitApps ?? this.splitApps,
       keepTunnelWithoutUi: keepTunnelWithoutUi ?? this.keepTunnelWithoutUi,
@@ -130,16 +171,18 @@ class DesktopSettings {
   }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'version': 1,
+        'version': schemaVersion,
         'startWithWindows': startWithWindows,
         'startMinimized': startMinimized,
         'language': language,
         'animationsEnabled': animationsEnabled,
         'reduceMotion': reduceMotion,
+        'pauseAnimationsOnBattery': pauseAnimationsOnBattery,
         'autoConnect': autoConnect,
         'killSwitch': killSwitch,
         'dns': dns,
         'mtu': mtu,
+        'bypassRoutes': bypassRoutes,
         'splitMode': splitModeWire(splitMode),
         'splitApps': splitApps,
         'keepTunnelWithoutUi': keepTunnelWithoutUi,
@@ -182,24 +225,32 @@ class DesktopSettings {
       return null;
     }
 
+    // Migration: a file written before the window was reshaped keeps its old
+    // rectangle. Forgetting it once lets the new default apply, and the very
+    // next move or resize stores the user's own choice again.
+    final int version = whole('version') ?? 1;
+    final bool keepGeometry = version >= 2;
+
     return DesktopSettings(
       startWithWindows: flag('startWithWindows', false),
       startMinimized: flag('startMinimized', false),
       language: (json['language'] as String?) ?? 'system',
       animationsEnabled: flag('animationsEnabled', true),
       reduceMotion: flag('reduceMotion', false),
+      pauseAnimationsOnBattery: flag('pauseAnimationsOnBattery', true),
       autoConnect: flag('autoConnect', false),
       killSwitch: flag('killSwitch', false),
       dns: strings(json['dns']),
       mtu: clampMtu(whole('mtu')),
+      bypassRoutes: strings(json['bypassRoutes']),
       splitMode: splitModeFromWire(json['splitMode'] as String?),
       splitApps: strings(json['splitApps']),
       keepTunnelWithoutUi: flag('keepTunnelWithoutUi', true),
       disconnectOnExit: flag('disconnectOnExit', true),
-      windowWidth: real('windowWidth'),
-      windowHeight: real('windowHeight'),
-      windowX: real('windowX'),
-      windowY: real('windowY'),
+      windowWidth: keepGeometry ? real('windowWidth') : null,
+      windowHeight: keepGeometry ? real('windowHeight') : null,
+      windowX: keepGeometry ? real('windowX') : null,
+      windowY: keepGeometry ? real('windowY') : null,
       lastNodeId: json['lastNodeId'] as String?,
       autoNodeSelection: flag('autoNodeSelection', true),
     );

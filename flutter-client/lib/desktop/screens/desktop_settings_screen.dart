@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../config.dart';
+import '../../models/models.dart';
 import '../../platform/tunnel_backend.dart';
 import '../../state/auth_controller.dart';
 import '../../theme/tokens.dart';
@@ -8,16 +12,29 @@ import '../../utils/format.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
 import '../i18n/desktop_strings.dart';
+import '../logic/connection_phase.dart';
 import '../services/app_inventory.dart';
 import '../services/autostart_service.dart';
 import '../state/desktop_settings.dart';
 import '../state/desktop_vpn_controller.dart';
-import '../logic/connection_phase.dart';
+import '../theme/desktop_theme.dart';
 
 /// Settings (requirement 13).
 ///
-/// Four sections: General, VPN, Split tunneling, Account. Diagnostics are
-/// deliberately only compiled into internal builds.
+/// Sections, in the order the user meets them:
+///
+///  1. **Quick start** - a highlighted card, because "start hidden in the tray
+///     and connect on its own" is how this client is meant to be used, not an
+///     option buried three screens down.
+///  2. General - language and a *single* animation switch. The old pair
+///     (Animations + Reduce motion) did nearly the same thing and only made the
+///     screen harder to read; motion now also stands down by itself on battery.
+///  3. VPN - kill switch, DNS, lifecycle.
+///  4. Split tunneling.
+///  5. Advanced - ported from the browser extension: always-direct routes, MTU,
+///     protocol and channel.
+///  6. Diagnostics - available in every build now, not just internal ones.
+///  7. Account - profile, subscription and the real device list.
 class DesktopSettingsScreen extends StatefulWidget {
   const DesktopSettingsScreen({
     super.key,
@@ -43,7 +60,23 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
 
   String? _notice;
 
+  // Devices, loaded from GET /api/devices.
+  List<DeviceInfo>? _devices;
+  int _maxDevices = 0;
+  bool _devicesLoading = false;
+  String? _devicesError;
+
+  bool _testingGateway = false;
+
   DesktopSettings get _value => widget.settings.value;
+
+  bool get _ru => widget.strings.isRussian;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadDevices());
+  }
 
   Future<void> _patch(
     DesktopSettings Function(DesktopSettings s) mutate,
@@ -52,9 +85,77 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _loadDevices() async {
+    if (_devicesLoading) return;
+    setState(() {
+      _devicesLoading = true;
+      _devicesError = null;
+    });
+    try {
+      final DevicesResult result = await widget.vpn.api.devices();
+      if (!mounted) return;
+      setState(() {
+        _devices = result.devices;
+        _maxDevices = result.maxDevices;
+        _devicesLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _devicesLoading = false;
+        _devicesError = _ru
+            ? 'Не удалось загрузить устройства'
+            : 'Could not load devices';
+      });
+    }
+  }
+
+  Future<void> _revokeDevice(DeviceInfo device) async {
+    try {
+      await widget.vpn.api.revokeDevice(device.id);
+      setState(() {
+        _notice = _ru
+            ? 'Устройство отключено. Статистика сохранена.'
+            : 'Device removed. Its history is kept.';
+      });
+      await _loadDevices();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _notice = _ru ? 'Не удалось отключить устройство' : 'Could not remove it';
+      });
+    }
+  }
+
+  Future<void> _copyDiagnostics() async {
+    await Clipboard.setData(ClipboardData(text: widget.vpn.diagnosticsDump()));
+    if (!mounted) return;
+    setState(() {
+      _notice = _ru
+          ? 'Журнал скопирован в буфер обмена'
+          : 'Diagnostics copied to the clipboard';
+    });
+  }
+
+  Future<void> _testGateway() async {
+    setState(() => _testingGateway = true);
+    await widget.vpn.measureNodePings();
+    if (!mounted) return;
+    final int? ping = widget.vpn.currentPingMs;
+    setState(() {
+      _testingGateway = false;
+      _notice = ping == null
+          ? (_ru ? 'Сервер не ответил на проверку' : 'The server did not answer')
+          : (_ru
+              ? 'Сервер отвечает за ${formatPing(ping)}'
+              : 'Server responds in ${formatPing(ping)}');
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final s = widget.strings;
+    final DesktopStrings s = widget.strings;
+    final bool ru = _ru;
 
     return ListView(
       padding: const EdgeInsets.all(GlukSizes.pagePadding),
@@ -74,15 +175,22 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
           const SizedBox(height: 14),
         ],
 
-        _Section(
-          title: s.sectionGeneral,
+        // ---- 1. Quick start (primary) ------------------------------------
+        _HeroSection(
+          title: ru ? 'Быстрый старт' : 'Quick start',
+          subtitle: ru
+              ? 'GlukVPN стартует вместе с Windows, прячется в трей и сам '
+                  'поднимает туннель. Открыл окно — уже подключено.'
+              : 'GlukVPN starts with Windows, stays in the tray and brings the '
+                  'tunnel up on its own. By the time you open the window it is '
+                  'already connected.',
           children: <Widget>[
             _SwitchTile(
               label: s.startWithWindows,
               value: _value.startWithWindows,
               onChanged: (bool v) async {
-                await _patch((DesktopSettings x) =>
-                    x.copyWith(startWithWindows: v));
+                await _patch(
+                    (DesktopSettings x) => x.copyWith(startWithWindows: v));
                 _autostart.apply(
                   startWithWindows: v,
                   startMinimized: _value.startMinimized,
@@ -91,8 +199,10 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
             ),
             _SwitchTile(
               label: s.startMinimized,
+              subtitle: ru
+                  ? 'Окно не появляется — только значок в трее'
+                  : 'No window on launch, just the tray icon',
               value: _value.startMinimized,
-              enabled: _value.startWithWindows,
               onChanged: (bool v) async {
                 await _patch(
                     (DesktopSettings x) => x.copyWith(startMinimized: v));
@@ -102,6 +212,22 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
                 );
               },
             ),
+            _SwitchTile(
+              label: s.autoConnect,
+              subtitle: ru
+                  ? 'Подключаться к лучшему серверу сразу после запуска'
+                  : 'Connect to the best server right after launch',
+              value: _value.autoConnect,
+              onChanged: (bool v) =>
+                  _patch((DesktopSettings x) => x.copyWith(autoConnect: v)),
+            ),
+          ],
+        ),
+
+        // ---- 2. General ---------------------------------------------------
+        _Section(
+          title: s.sectionGeneral,
+          children: <Widget>[
             _ChoiceTile<String>(
               label: s.language,
               value: _value.language,
@@ -117,36 +243,42 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
             ),
             _SwitchTile(
               label: s.animations,
+              subtitle: ru
+                  ? 'Глобус, пульсация кнопки и переходы между экранами'
+                  : 'Globe, button pulse and screen transitions',
               value: _value.animationsEnabled,
               onChanged: (bool v) => _patch(
                 (DesktopSettings x) => x.copyWith(animationsEnabled: v),
               ),
             ),
             _SwitchTile(
-              label: s.reduceMotion,
-              value: _value.reduceMotion,
-              onChanged: (bool v) =>
-                  _patch((DesktopSettings x) => x.copyWith(reduceMotion: v)),
+              label: ru
+                  ? 'Экономить заряд: выключать анимации от батареи'
+                  : 'Save power: no animations on battery',
+              subtitle: ru
+                  ? 'Само сработает, если ноутбук отключили от сети или '
+                      'включён режим энергосбережения. На VPN не влияет.'
+                  : 'Kicks in when the laptop is unplugged or Windows battery '
+                      'saver is on. Never affects the VPN.',
+              value: _value.pauseAnimationsOnBattery,
+              onChanged: (bool v) => _patch(
+                (DesktopSettings x) =>
+                    x.copyWith(pauseAnimationsOnBattery: v),
+              ),
             ),
           ],
         ),
 
+        // ---- 3. VPN -------------------------------------------------------
         _Section(
           title: s.sectionVpn,
           children: <Widget>[
-            _SwitchTile(
-              label: s.autoConnect,
-              value: _value.autoConnect,
-              onChanged: (bool v) =>
-                  _patch((DesktopSettings x) => x.copyWith(autoConnect: v)),
-            ),
             _SwitchTile(
               label: s.killSwitch,
               subtitle: s.killSwitchHint,
               value: _value.killSwitch,
               onChanged: (bool v) async {
-                await _patch(
-                    (DesktopSettings x) => x.copyWith(killSwitch: v));
+                await _patch((DesktopSettings x) => x.copyWith(killSwitch: v));
                 if (widget.vpn.phase.isConnected) {
                   setState(() => _notice = s.splitReconnectNeeded);
                 }
@@ -158,12 +290,7 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
               value: _value.dns.join(', '),
               hint: '1.1.1.1, 1.0.0.1',
               onSubmitted: (String raw) {
-                final list = raw
-                    .split(RegExp(r'[,\s]+'))
-                    .map((String e) => e.trim())
-                    .where((String e) => e.isNotEmpty)
-                    .toList();
-                _patch((DesktopSettings x) => x.copyWith(dns: list));
+                _patch((DesktopSettings x) => x.copyWith(dns: _list(raw)));
               },
             ),
             _SwitchTile(
@@ -181,25 +308,10 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
                 (DesktopSettings x) => x.copyWith(disconnectOnExit: v),
               ),
             ),
-            // MTU is an advanced knob; only internal builds expose it so a
-            // normal user cannot silently break their own path MTU.
-            if (AppConfig.internalBuild)
-              _TextTile(
-                label: s.mtu,
-                value: _value.mtu?.toString() ?? '',
-                hint: '1420',
-                onSubmitted: (String raw) {
-                  final parsed = int.tryParse(raw.trim());
-                  _patch(
-                    (DesktopSettings x) => parsed == null
-                        ? x.copyWith(clearMtu: true)
-                        : x.copyWith(mtu: parsed),
-                  );
-                },
-              ),
           ],
         ),
 
+        // ---- 4. Split tunnelling -----------------------------------------
         _SplitSection(
           strings: s,
           settings: widget.settings,
@@ -208,13 +320,111 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
           onNotice: (String? message) => setState(() => _notice = message),
         ),
 
+        // ---- 5. Advanced (from the browser extension) --------------------
+        _Section(
+          title: ru ? 'Расширенные настройки' : 'Advanced',
+          children: <Widget>[
+            _TextTile(
+              label: ru ? 'Всегда напрямую' : 'Always direct',
+              subtitle: ru
+                  ? 'Домены и подсети, которые никогда не идут через VPN. '
+                      'Через запятую.'
+                  : 'Hosts and subnets that never travel through the tunnel. '
+                      'Comma separated.',
+              value: _value.bypassRoutes.join(', '),
+              hint: 'gluk.tech, 192.168.0.0/16',
+              onSubmitted: (String raw) {
+                _patch(
+                  (DesktopSettings x) => x.copyWith(bypassRoutes: _list(raw)),
+                );
+                if (widget.vpn.phase.isConnected) {
+                  setState(() => _notice = s.splitReconnectNeeded);
+                }
+              },
+            ),
+            _TextTile(
+              label: s.mtu,
+              subtitle: ru
+                  ? 'Пусто — как отдаёт сервер. Допустимо 1280–1500.'
+                  : 'Empty means whatever the server hands us. 1280-1500.',
+              value: _value.mtu?.toString() ?? '',
+              hint: '1420',
+              onSubmitted: (String raw) {
+                final int? parsed = int.tryParse(raw.trim());
+                _patch(
+                  (DesktopSettings x) => parsed == null
+                      ? x.copyWith(clearMtu: true)
+                      : x.copyWith(mtu: parsed),
+                );
+              },
+            ),
+            _InfoTile(
+              label: ru ? 'Протокол' : 'Protocol',
+              value: 'WireGuard · NT',
+            ),
+            _InfoTile(
+              label: ru ? 'Сетевой адаптер' : 'Network adapter',
+              value: AppConfig.desktopAdapterName,
+            ),
+            _InfoTile(
+              label: ru ? 'Канал' : 'Channel',
+              value: AppConfig.activeChannel.label,
+            ),
+            _ActionTile(
+              label: ru ? 'Проверить сервер' : 'Test the server',
+              subtitle: ru
+                  ? 'Измеряет задержку до выбранного узла'
+                  : 'Measures latency to the selected node',
+              buttonLabel: ru ? 'Проверить' : 'Test',
+              busy: _testingGateway,
+              onPressed: _testGateway,
+            ),
+          ],
+        ),
+
+        // ---- 6. Diagnostics (every build) --------------------------------
+        _Section(
+          title: ru ? 'Диагностика' : 'Diagnostics',
+          children: <Widget>[
+            _InfoTile(
+              label: ru ? 'Служба туннеля' : 'Tunnel service',
+              value: widget.vpn.serviceReady
+                  ? (ru ? 'работает' : 'running')
+                  : (widget.vpn.serviceProblem ?? s.dash),
+            ),
+            _InfoTile(
+              label: ru ? 'Серверов доступно' : 'Servers available',
+              value: '${widget.vpn.userVisibleNodes.length}',
+            ),
+            _ActionTile(
+              label: ru ? 'Журнал работы' : 'Activity log',
+              subtitle: ru
+                  ? 'Полный отчёт для поддержки: состояние, узлы, последние '
+                      'события. Ключи и пароли в него не попадают.'
+                  : 'Full support report: state, nodes, recent events. Never '
+                      'contains keys or passwords.',
+              buttonLabel: ru ? 'Копировать' : 'Copy',
+              onPressed: _copyDiagnostics,
+            ),
+            if (!widget.vpn.serviceReady)
+              _ActionTile(
+                label: ru ? 'Восстановить службу' : 'Repair the service',
+                subtitle: ru
+                    ? 'Переустановит и запустит службу туннеля'
+                    : 'Reinstalls and starts the tunnel service',
+                buttonLabel: ru ? 'Восстановить' : 'Repair',
+                busy: widget.vpn.serviceRepairing,
+                onPressed: () => widget.vpn.repairService(),
+              ),
+          ],
+        ),
+
+        // ---- 7. Account ---------------------------------------------------
         _Section(
           title: s.sectionAccount,
           children: <Widget>[
-            _InfoTile(
-              label: widget.auth.user?.username ?? '—',
-              value: widget.auth.user?.publicIdLabel ?? '',
-            ),
+            _ProfileCard(auth: widget.auth, strings: s),
+            const SizedBox(height: 6),
             _InfoTile(
               label: s.plan,
               value: widget.auth.subscription?.status ?? s.free,
@@ -224,8 +434,24 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
                 label: s.expires,
                 value: formatDateTime(widget.auth.subscription!.expiresAt!),
               ),
+            if (widget.auth.user != null)
+              _InfoTile(
+                label: ru ? 'Одновременных сессий' : 'Concurrent sessions',
+                value: '${widget.auth.user!.maxConcurrentSessions}',
+              ),
+            const SizedBox(height: 10),
+            _DevicesBlock(
+              devices: _devices,
+              maxDevices: _maxDevices,
+              loading: _devicesLoading,
+              error: _devicesError,
+              ru: ru,
+              refreshTooltip: s.refresh,
+              onRefresh: _loadDevices,
+              onRevoke: _revokeDevice,
+            ),
             Padding(
-              padding: const EdgeInsets.only(top: 12),
+              padding: const EdgeInsets.only(top: 14),
               child: PrimaryPillButton(
                 label: s.logout,
                 onPressed: () async {
@@ -246,6 +472,393 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
         ),
         const SizedBox(height: 12),
       ],
+    );
+  }
+
+  static List<String> _list(String raw) => raw
+      .split(RegExp(r'[,\s]+'))
+      .map((String e) => e.trim())
+      .where((String e) => e.isNotEmpty)
+      .toList();
+}
+
+// ---------------------------------------------------------------------------
+// Account
+// ---------------------------------------------------------------------------
+
+class _ProfileCard extends StatelessWidget {
+  const _ProfileCard({required this.auth, required this.strings});
+
+  final AuthController auth;
+  final DesktopStrings strings;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool ru = strings.isRussian;
+    final AuthUser? user = auth.user;
+    final String name = user?.username ?? (ru ? 'Аккаунт' : 'Account');
+    final String initial =
+        name.trim().isEmpty ? '?' : name.trim().substring(0, 1).toUpperCase();
+
+    final bool active = auth.subscription?.isActive ?? false;
+    final Color accent = active ? GlukColors.connected : GlukColors.violetLight;
+
+    // Pulled into locals so the null checks below are plain and unambiguous.
+    final String publicId = user?.publicIdLabel ?? '';
+    final String? email = user?.email;
+    final bool emailVerified = user?.emailVerified ?? false;
+    final String? origin = user?.originLabel;
+    final DateTime? created = user?.createdAt;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.all(14),
+      decoration: DesktopTokens.cardDecoration(
+        color: DesktopTokens.cardRaised,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            width: 52,
+            height: 52,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: <Color>[
+                  GlukColors.violet.withOpacity(0.85),
+                  GlukColors.violet2.withOpacity(0.85),
+                ],
+              ),
+              border: Border.all(color: accent.withOpacity(0.45), width: 1.5),
+            ),
+            child: Text(
+              initial,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Flexible(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: GlukColors.text0,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: accent.withOpacity(0.14),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: accent.withOpacity(0.35)),
+                      ),
+                      child: Text(
+                        active
+                            ? (ru ? 'Активна' : 'Active')
+                            : (ru ? 'Бесплатный' : 'Free'),
+                        style: TextStyle(
+                          color: accent,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                if (publicId.isNotEmpty)
+                  _MetaLine(
+                    icon: Icons.badge_outlined,
+                    text: publicId,
+                  ),
+                if (email != null)
+                  _MetaLine(
+                    icon: Icons.alternate_email_rounded,
+                    text: email,
+                    trailing: emailVerified
+                        ? Icons.verified_rounded
+                        : Icons.error_outline_rounded,
+                    trailingColor: emailVerified
+                        ? GlukColors.connected
+                        : GlukColors.amber,
+                  ),
+                if (origin != null)
+                  _MetaLine(
+                    icon: Icons.place_outlined,
+                    text: origin,
+                  ),
+                if (created != null)
+                  _MetaLine(
+                    icon: Icons.schedule_rounded,
+                    text: (ru ? 'С нами с ' : 'Member since ') +
+                        formatDateTime(created),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetaLine extends StatelessWidget {
+  const _MetaLine({
+    required this.icon,
+    required this.text,
+    this.trailing,
+    this.trailingColor,
+  });
+
+  final IconData icon;
+  final String text;
+  final IconData? trailing;
+  final Color? trailingColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 13, color: GlukColors.text2),
+          const SizedBox(width: 7),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: GlukColors.text1, fontSize: 12),
+            ),
+          ),
+          if (trailing != null) ...<Widget>[
+            const SizedBox(width: 6),
+            Icon(trailing, size: 13, color: trailingColor),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DevicesBlock extends StatelessWidget {
+  const _DevicesBlock({
+    required this.devices,
+    required this.maxDevices,
+    required this.loading,
+    required this.error,
+    required this.ru,
+    required this.refreshTooltip,
+    required this.onRefresh,
+    required this.onRevoke,
+  });
+
+  final List<DeviceInfo>? devices;
+  final int maxDevices;
+  final bool loading;
+  final String? error;
+  final bool ru;
+  final String refreshTooltip;
+  final Future<void> Function() onRefresh;
+  final Future<void> Function(DeviceInfo device) onRevoke;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<DeviceInfo> list = devices ?? const <DeviceInfo>[];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Text(
+              ru ? 'Устройства' : 'Devices',
+              style: const TextStyle(
+                color: GlukColors.text1,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (devices != null)
+              Text(
+                maxDevices > 0
+                    ? '${list.length} / $maxDevices'
+                    : '${list.length}',
+                style: const TextStyle(
+                  color: GlukColors.text2,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            const Spacer(),
+            if (loading)
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              CircleIconButton(
+                icon: Icons.refresh_rounded,
+                tooltip: refreshTooltip,
+                size: 26,
+                onTap: onRefresh,
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (error != null)
+          InlineNotice(message: error!, tone: NoticeTone.warning)
+        else if (devices == null && loading)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              ru ? 'Загружаю…' : 'Loading…',
+              style: const TextStyle(color: GlukColors.text2, fontSize: 12),
+            ),
+          )
+        else if (list.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              ru ? 'Пока только это устройство' : 'Only this device so far',
+              style: const TextStyle(color: GlukColors.text2, fontSize: 12),
+            ),
+          )
+        else
+          ...list.map(
+            (DeviceInfo device) => _DeviceRow(
+              device: device,
+              ru: ru,
+              onRevoke: device.isCurrent ? null : () => onRevoke(device),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _DeviceRow extends StatelessWidget {
+  const _DeviceRow({
+    required this.device,
+    required this.ru,
+    this.onRevoke,
+  });
+
+  final DeviceInfo device;
+  final bool ru;
+  final VoidCallback? onRevoke;
+
+  IconData get _icon {
+    final String platform = (device.platform ?? '').toLowerCase();
+    if (platform.contains('windows') || platform.contains('desktop')) {
+      return Icons.desktop_windows_rounded;
+    }
+    if (platform.contains('android') || platform.contains('ios')) {
+      return Icons.smartphone_rounded;
+    }
+    if (platform.contains('chrome') ||
+        platform.contains('browser') ||
+        platform.contains('extension')) {
+      return Icons.public_rounded;
+    }
+    return Icons.devices_other_rounded;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Color accent =
+        device.connected ? GlukColors.connected : GlukColors.text2;
+
+    final List<String> meta = <String>[
+      if (device.isCurrent) ru ? 'это устройство' : 'this device',
+      if (device.connected) ru ? 'подключено' : 'connected',
+      if (device.lastSeen != null)
+        (ru ? 'был(а) ' : 'seen ') + formatDateTime(device.lastSeen!),
+    ];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: device.isCurrent
+              ? GlukColors.violet.withOpacity(0.35)
+              : DesktopTokens.cardBorder,
+        ),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(_icon, size: 17, color: accent),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  device.deviceName.isEmpty
+                      ? (ru ? 'Без названия' : 'Unnamed')
+                      : device.deviceName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: GlukColors.text0,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (meta.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 2),
+                  Text(
+                    meta.join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: GlukColors.text2,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (onRevoke != null)
+            CircleIconButton(
+              icon: Icons.link_off_rounded,
+              tooltip: ru ? 'Отключить' : 'Remove',
+              size: 26,
+              onTap: onRevoke!,
+            ),
+        ],
+      ),
     );
   }
 }
@@ -331,9 +944,8 @@ class _SplitSectionState extends State<_SplitSection> {
   Widget build(BuildContext context) {
     final s = widget.strings;
     final value = widget.settings.value;
-    final selected = value.splitApps
-        .map((String e) => e.toLowerCase())
-        .toSet();
+    final selected =
+        value.splitApps.map((String e) => e.toLowerCase()).toSet();
 
     return _Section(
       title: s.sectionSplit,
@@ -400,8 +1012,7 @@ class _SplitSectionState extends State<_SplitSection> {
                 itemCount: _apps?.length ?? 0,
                 itemBuilder: (BuildContext context, int index) {
                   final app = _apps![index];
-                  final checked =
-                      selected.contains(app.exePath.toLowerCase());
+                  final checked = selected.contains(app.exePath.toLowerCase());
                   return CheckboxListTile(
                     dense: true,
                     value: checked,
@@ -418,7 +1029,8 @@ class _SplitSectionState extends State<_SplitSection> {
                       ),
                     ),
                     subtitle: Text(
-                      app.running ? '${app.fileName} · ${s.running}'
+                      app.running
+                          ? '${app.fileName} · ${s.running}'
                           : app.fileName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -442,6 +1054,71 @@ class _SplitSectionState extends State<_SplitSection> {
 // ---------------------------------------------------------------------------
 // Small reusable settings widgets
 // ---------------------------------------------------------------------------
+
+/// A section that matters more than the rest: violet frame, title, one-line
+/// explanation, then the switches.
+class _HeroSection extends StatelessWidget {
+  const _HeroSection({
+    required this.title,
+    required this.subtitle,
+    required this.children,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+        decoration: DesktopTokens.cardDecoration(
+          color: Color.alphaBlend(
+            GlukColors.violet.withOpacity(0.10),
+            DesktopTokens.card,
+          ),
+          borderColor: GlukColors.violet.withOpacity(0.32),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Icon(
+                  Icons.rocket_launch_rounded,
+                  size: 17,
+                  color: GlukColors.violetLight,
+                ),
+                const SizedBox(width: 9),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: GlukColors.text0,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                color: GlukColors.text1,
+                fontSize: 12,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 6),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _Section extends StatelessWidget {
   const _Section({required this.title, required this.children});
@@ -524,12 +1201,14 @@ class _SwitchTile extends StatelessWidget {
                       style: const TextStyle(
                         color: GlukColors.text2,
                         fontSize: 11,
+                        height: 1.3,
                       ),
                     ),
                   ],
                 ],
               ),
             ),
+            const SizedBox(width: 10),
             Switch(
               value: value,
               activeColor: GlukColors.violetLight,
@@ -537,6 +1216,112 @@ class _SwitchTile extends StatelessWidget {
               onChanged: enabled ? onChanged : null,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A row that explains something and offers one button.
+class _ActionTile extends StatelessWidget {
+  const _ActionTile({
+    required this.label,
+    required this.buttonLabel,
+    required this.onPressed,
+    this.subtitle,
+    this.busy = false,
+  });
+
+  final String label;
+  final String buttonLabel;
+  final VoidCallback onPressed;
+  final String? subtitle;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: GlukColors.text0,
+                    fontSize: 13,
+                  ),
+                ),
+                if (subtitle != null) ...<Widget>[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    style: const TextStyle(
+                      color: GlukColors.text2,
+                      fontSize: 11,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          _SmallButton(
+            label: buttonLabel,
+            busy: busy,
+            onTap: busy ? null : onPressed,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SmallButton extends StatelessWidget {
+  const _SmallButton({
+    required this.label,
+    this.onTap,
+    this.busy = false,
+  });
+
+  final String label;
+  final VoidCallback? onTap;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: onTap == null ? 0.5 : 1,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: GlukColors.violet.withOpacity(0.16),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: GlukColors.violet.withOpacity(0.42)),
+          ),
+          child: busy
+              ? const SizedBox(
+                  width: 13,
+                  height: 13,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(
+                  label,
+                  style: const TextStyle(
+                    color: GlukColors.violetLight,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
         ),
       ),
     );
@@ -685,7 +1470,11 @@ class _TextTileState extends State<_TextTile> {
             const SizedBox(height: 2),
             Text(
               widget.subtitle!,
-              style: const TextStyle(color: GlukColors.text2, fontSize: 11),
+              style: const TextStyle(
+                color: GlukColors.text2,
+                fontSize: 11,
+                height: 1.3,
+              ),
             ),
           ],
           const SizedBox(height: 8),
@@ -744,12 +1533,18 @@ class _InfoTile extends StatelessWidget {
               style: const TextStyle(color: GlukColors.text1, fontSize: 13),
             ),
           ),
-          Text(
-            value,
-            style: const TextStyle(
-              color: GlukColors.text0,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: GlukColors.text0,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],

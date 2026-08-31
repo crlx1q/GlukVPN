@@ -11,6 +11,7 @@ import '../../utils/format.dart';
 import '../../utils/geo.dart';
 import '../i18n/desktop_strings.dart';
 import '../logic/connection_phase.dart';
+import '../logic/node_selector.dart';
 import '../state/desktop_vpn_controller.dart';
 import '../theme/desktop_theme.dart';
 import '../widgets/desktop_connect_button.dart';
@@ -197,8 +198,11 @@ class _MapCard extends StatelessWidget {
     final ConnectionPhase phase = vpn.phase;
     final VpnNodeInfo? node = vpn.selectedNode;
 
-    final String serverTitle =
-        node?.displayTitle ?? s.autoBestServer;
+    // publicNodeTitle instead of displayTitle: an internal-looking node is
+    // still usable, but its handle must never reach the screen.
+    final String serverTitle = node == null
+        ? s.autoBestServer
+        : publicNodeTitle(node, fallback: s.autoBestServer);
 
     // Never repeat the title as the subtitle: an empty second line is better
     // than "Auto - Best server" printed twice, which is what the first build
@@ -207,7 +211,7 @@ class _MapCard extends StatelessWidget {
     if (node == null) {
       serverSubtitle = vpn.autoSelectionEnabled ? s.autoDescription : null;
     } else {
-      final String sub = node.displaySubtitle;
+      final String sub = publicNodeSubtitle(node) ?? '';
       serverSubtitle = (sub.isEmpty || sub == serverTitle) ? null : sub;
       if (vpn.autoSelectionEnabled) {
         serverSubtitle = serverSubtitle == null
@@ -275,7 +279,7 @@ class _MapCard extends StatelessWidget {
                 phase: phase,
                 strings: s,
                 reduceMotion: reduceMotion,
-                size: 186,
+                size: 232,
                 showLabel: false,
                 onTap: () => vpn.toggle(),
               ),

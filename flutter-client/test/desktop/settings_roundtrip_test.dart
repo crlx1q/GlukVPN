@@ -76,7 +76,21 @@ void main() {
     });
 
     test('the payload is versioned so future migrations are possible', () {
-      expect(DesktopSettings.defaults.toJson()['version'], 1);
+      expect(
+        DesktopSettings.defaults.toJson()['version'],
+        DesktopSettings.schemaVersion,
+      );
+    });
+
+    test('advanced fields round trip', () {
+      final original = DesktopSettings.defaults.copyWith(
+        bypassRoutes: <String>['10.0.0.0/8', 'intranet.local'],
+        pauseAnimationsOnBattery: false,
+      );
+      final restored = DesktopSettings.fromJson(original.toJson());
+
+      expect(restored.bypassRoutes, <String>['10.0.0.0/8', 'intranet.local']);
+      expect(restored.pauseAnimationsOnBattery, isFalse);
     });
 
     test('every split mode round trips', () {
@@ -86,6 +100,39 @@ void main() {
         );
         expect(restored.splitMode, mode, reason: mode.name);
       }
+    });
+  });
+
+  group('geometry migration', () {
+    test('a version 1 file forgets its window rectangle exactly once', () {
+      // The window was reshaped to something much closer to square; keeping a
+      // stored 1165x739 would leave the new layout cramped for ever.
+      final legacy = DesktopSettings.fromJson(<String, dynamic>{
+        'version': 1,
+        'windowWidth': 1165.0,
+        'windowHeight': 739.0,
+        'windowX': 40.0,
+        'windowY': 20.0,
+        'killSwitch': true,
+      });
+
+      expect(legacy.windowWidth, isNull);
+      expect(legacy.windowHeight, isNull);
+      expect(legacy.windowX, isNull);
+      expect(legacy.windowY, isNull);
+      // Everything else must survive the migration untouched.
+      expect(legacy.killSwitch, isTrue);
+    });
+
+    test('a current file keeps its geometry', () {
+      final current = DesktopSettings.fromJson(<String, dynamic>{
+        'version': DesktopSettings.schemaVersion,
+        'windowWidth': 1200.0,
+        'windowHeight': 980.0,
+      });
+
+      expect(current.windowWidth, 1200);
+      expect(current.windowHeight, 980);
     });
   });
 

@@ -5,6 +5,7 @@ import '../../theme/tokens.dart';
 import '../../widgets/page_background.dart';
 import '../i18n/desktop_strings.dart';
 import '../logic/connection_phase.dart';
+import '../services/power_monitor.dart';
 import '../state/desktop_settings.dart';
 import '../state/desktop_vpn_controller.dart';
 import '../state/tray_controller.dart';
@@ -30,6 +31,7 @@ class DesktopShell extends StatefulWidget {
     required this.settings,
     required this.window,
     required this.tray,
+    required this.power,
     required this.strings,
     required this.onLanguageChanged,
   });
@@ -39,6 +41,7 @@ class DesktopShell extends StatefulWidget {
   final SettingsStore settings;
   final WindowController window;
   final TrayController tray;
+  final PowerMonitor power;
   final DesktopStrings strings;
   final ValueChanged<String> onLanguageChanged;
 
@@ -71,9 +74,14 @@ class DesktopShellState extends State<DesktopShell> {
     setState(() => _index = _servers);
   }
 
+  /// One switch, plus the laptop's own opinion.
+  ///
+  /// Requirement 15, as restated by the user: a single Animations toggle, and
+  /// motion stands down on its own when running on battery or in Windows
+  /// battery saver. The VPN itself is never affected.
   bool get _reduceMotion {
     final DesktopSettings s = widget.settings.value;
-    return s.reduceMotion || !s.animationsEnabled;
+    return s.motionDisabled(onBattery: widget.power.shouldReduceMotion);
   }
 
   Color get _statusColor {
@@ -92,6 +100,7 @@ class DesktopShellState extends State<DesktopShell> {
         widget.window,
         widget.settings,
         widget.auth,
+        widget.power,
       ]),
       builder: (BuildContext context, Widget? child) {
         if (widget.window.mode == WindowMode.mini) {

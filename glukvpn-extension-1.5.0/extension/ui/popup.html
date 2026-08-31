@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GlukVPN</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap" />
+<link rel="stylesheet" href="theme.css" />
+</head>
+<body>
+
+<div class="app" id="app">
+
+	<!-- ================= left rail: brand, nav, account ================= -->
+	<nav class="rail">
+		<div class="rail-brand" id="rail-brand" title="GlukVPN">
+			<img class="brand-mark" id="brand-mark" src="../icons/logo96.png" alt="" />
+			<span class="brand-word">Gluk<em>VPN</em></span>
+		</div>
+
+		<!-- the sliding pill is a child of the rail, not of the nav group, so it
+		     can also land on the account chip at the very bottom -->
+		<span class="nav-glide" id="nav-glide" aria-hidden="true"></span>
+
+		<div class="rail-nav">
+			<button class="nav-item active" data-view="vpn" type="button">
+				<span class="nav-ic" data-icon="shield"></span>
+				<span class="nav-label" data-i18n="nav.vpn">VPN</span>
+			</button>
+			<button class="nav-item" data-view="servers" type="button">
+				<span class="nav-ic" data-icon="globe"></span>
+				<span class="nav-label" data-i18n="nav.servers">Серверы</span>
+			</button>
+			<button class="nav-item" data-view="settings" type="button">
+				<span class="nav-ic" data-icon="gear"></span>
+				<span class="nav-label" data-i18n="nav.settings">Настройки</span>
+			</button>
+		</div>
+
+		<div class="rail-spacer"></div>
+
+		<!-- the account chip IS the profile tab now, not a separate button -->
+		<button class="nav-item acct" id="acct" data-view="profile" type="button">
+			<span class="avatar" id="acct-initial">?</span>
+			<span class="acct-name" id="acct-name" data-i18n="nav.profile">Профиль</span>
+		</button>
+	</nav>
+
+	<!-- ============================ main ============================== -->
+	<main class="main">
+
+		<!-- ------------------------- VPN ------------------------------- -->
+		<section class="view" id="view-vpn">
+			<div class="hero" id="hero">
+				<div class="map-stage">
+					<img class="map-img" id="map-img" src="world-map.svg" alt="" />
+					<svg class="map-overlay" viewBox="0 0 119 60" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+						<defs>
+							<linearGradient id="pathGrad" x1="0" y1="0" x2="1" y2="0">
+								<stop offset="0%" stop-color="#c4b5fd" />
+								<stop offset="100%" stop-color="#4f7cff" />
+							</linearGradient>
+						</defs>
+						<circle class="net-node" cx="22" cy="18" r="0.7" />
+						<circle class="net-node" cx="55" cy="14" r="0.7" />
+						<circle class="net-node" cx="78" cy="22" r="0.7" />
+						<circle class="net-node" cx="96" cy="30" r="0.7" />
+						<circle class="net-node" cx="40" cy="38" r="0.7" />
+						<circle class="net-node-ring" cx="55" cy="14" r="2" />
+						<path class="conn-path" id="conn-path" d="" />
+						<circle id="server-ring" class="pt-ring" cx="-9" cy="-9" r="2.4" />
+						<circle id="server-dot" class="pt-dot srv" cx="-9" cy="-9" r="1.15" />
+						<circle id="you-ring" class="pt-ring" cx="-9" cy="-9" r="2.4" />
+						<circle id="you-dot" class="pt-dot you" cx="-9" cy="-9" r="1.15" />
+					</svg>
+				</div>
+
+				<div class="hero-content">
+					<div class="badge" id="status-badge">
+						<span class="dot"></span>
+						<span id="status-text">—</span>
+					</div>
+
+					<div class="blob-zone">
+						<div class="blob-glow"></div>
+						<div class="blob-outer"></div>
+						<div class="blob-inner-ring"></div>
+						<div class="power-spin" id="power-spin"></div>
+						<button class="power-btn" id="btn-power" type="button" aria-label="Power">
+							<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+								<path class="glyph" d="M12 3.4v8.2" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" />
+								<path class="glyph" d="M6.9 6.6a7.2 7.2 0 1 0 10.2 0" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" />
+							</svg>
+						</button>
+					</div>
+
+					<div class="loc-row">
+						<span class="flag-circle" id="home-flag"></span>
+						<span id="home-label">—</span>
+					</div>
+				</div>
+			</div>
+
+			<div class="body">
+				<div id="vpn-banner"></div>
+
+				<div class="grid">
+					<div class="cell"><span class="k" data-i18n="stat.publicIp">Внешний IP</span><span class="v" id="st-public-ip">—</span></div>
+					<div class="cell"><span class="k" data-i18n="stat.vpnIp">IP в VPN</span><span class="v" id="st-vpn-ip">—</span></div>
+					<div class="cell"><span class="k" data-i18n="stat.duration">Время</span><span class="v" id="st-duration">—</span></div>
+					<div class="cell"><span class="k" data-i18n="stat.ping">Пинг</span><span class="v" id="st-ping">—</span></div>
+				</div>
+
+				<div class="traffic">
+					<div class="t-item">
+						<span class="t-ic" data-icon="down"></span>
+						<span class="t-text"><span class="k" data-i18n="stat.rx">Принято</span><span class="v" id="st-rx">—</span></span>
+					</div>
+					<div class="t-item">
+						<span class="t-ic up" data-icon="up"></span>
+						<span class="t-text"><span class="k" data-i18n="stat.tx">Отправлено</span><span class="v" id="st-tx">—</span></span>
+					</div>
+				</div>
+
+				<button class="srv-current" id="btn-servers-jump" type="button">
+					<span class="flag-circle" id="cur-flag"></span>
+					<span class="srv-text">
+						<span class="srv-name" id="cur-name">—</span>
+						<span class="srv-meta" id="cur-meta">—</span>
+					</span>
+					<span class="chev" data-icon="chevron"></span>
+				</button>
+			</div>
+		</section>
+
+		<!-- ----------------------- SERVERS ------------------------------ -->
+		<section class="view hidden" id="view-servers" hidden>
+			<div class="view-head">
+				<span class="view-title" data-i18n="nav.servers">Серверы</span>
+				<button class="ghost-btn" id="btn-refresh" type="button">
+					<span class="gb-ic" data-icon="refresh"></span>
+					<span data-i18n="servers.refresh">Обновить</span>
+				</button>
+			</div>
+			<div class="body">
+				<div id="srv-banner"></div>
+				<div id="srv-list"></div>
+			</div>
+		</section>
+
+		<!-- ----------------------- SETTINGS ----------------------------- -->
+		<section class="view hidden" id="view-settings" hidden>
+			<div class="view-head">
+				<span class="view-title" data-i18n="nav.settings">Настройки</span>
+				<span class="save-state" id="save-state" aria-live="polite"></span>
+			</div>
+
+			<div class="body">
+				<div id="set-banner"></div>
+
+				<div class="field">
+					<label data-i18n="settings.language">Язык</label>
+					<div class="seg" id="seg-lang">
+						<span class="seg-glide" aria-hidden="true"></span>
+						<button type="button" data-value="auto" data-i18n="settings.langAuto">Авто</button>
+						<button type="button" data-value="ru">Русский</button>
+						<button type="button" data-value="en">English</button>
+					</div>
+				</div>
+
+				<div class="field">
+					<label data-i18n="settings.tunnel">Туннелирование</label>
+					<div class="seg" id="seg-tunnel">
+						<span class="seg-glide" aria-hidden="true"></span>
+						<button type="button" data-value="all" data-i18n="settings.tunnelAll">Всё через VPN</button>
+						<button type="button" data-value="except" data-i18n="settings.tunnelExcept">Кроме этих</button>
+						<button type="button" data-value="only" data-i18n="settings.tunnelOnly">Только эти</button>
+					</div>
+					<span class="hint" id="tunnel-hint"></span>
+				</div>
+
+				<!-- the list that «Кроме этих» / «Только эти» actually needs -->
+				<div class="field site-field hidden" id="site-field" hidden>
+					<label for="s-site-list" id="site-list-label" data-i18n="settings.siteList">Список сайтов</label>
+					<textarea id="s-site-list" rows="4" spellcheck="false" autocapitalize="off" autocomplete="off"
+						placeholder="youtube.com&#10;netflix.com&#10;*.openai.com"></textarea>
+					<span class="hint" data-i18n="settings.siteListHint">По одному домену в строке. Можно со звёздочкой: *.example.com</span>
+				</div>
+
+				<div class="row">
+					<span class="rt">
+						<span class="t" data-i18n="settings.autoConnect">Автоподключение</span>
+						<span class="s" data-i18n="settings.autoConnectHint">Включать VPN при запуске браузера</span>
+					</span>
+					<button class="switch" id="sw-auto" type="button" role="switch" aria-checked="false"><span class="knob"></span></button>
+				</div>
+
+				<div class="row">
+					<span class="rt">
+						<span class="t" data-i18n="settings.killSwitch">Kill Switch</span>
+						<span class="s" data-i18n="settings.killSwitchHint">Блокировать трафик, если туннель упал</span>
+					</span>
+					<button class="switch" id="sw-kill" type="button" role="switch" aria-checked="false"><span class="knob"></span></button>
+				</div>
+
+				<div class="section-label">
+					<span data-i18n="settings.devices">Устройства</span>
+					<span class="count" id="dev-count"></span>
+				</div>
+				<div id="dev-list"></div>
+
+				<!-- renamed: was «Внутренности подключения. Обычно…» -->
+				<button class="disclosure" id="btn-advanced" type="button" aria-expanded="false">
+					<span class="dc-ic" data-icon="sliders"></span>
+					<span class="dc-text" data-i18n="settings.advanced">Расширенные настройки</span>
+					<span class="chev" data-icon="chevron"></span>
+				</button>
+
+				<div class="disclosure-body hidden" id="advanced-body" hidden>
+					<div class="field">
+						<label for="s-channel" data-i18n="settings.channel">Канал</label>
+						<select id="s-channel">
+							<option value="prod">prod</option>
+							<option value="beta">beta</option>
+						</select>
+					</div>
+
+					<div class="field">
+						<label for="s-gw-scheme" data-i18n="settings.scheme">Протокол</label>
+						<select id="s-gw-scheme">
+							<option value="https">HTTPS</option>
+							<option value="http">HTTP</option>
+							<option value="socks5">SOCKS5</option>
+						</select>
+					</div>
+
+					<div class="field">
+						<label for="s-bypass" data-i18n="settings.bypass">Всегда напрямую</label>
+						<textarea id="s-bypass" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+						<span class="hint" data-i18n="settings.bypassHint">Эти адреса всегда идут мимо VPN. По одному в строке.</span>
+					</div>
+
+					<!-- everything below is genuinely internal, so it hides one level deeper -->
+					<button class="disclosure sub" id="btn-devmode" type="button" aria-expanded="false">
+						<span class="dc-ic" data-icon="code"></span>
+						<span class="dc-text" data-i18n="settings.developer">Для разработчиков</span>
+						<span class="chev" data-icon="chevron"></span>
+					</button>
+
+					<div class="disclosure-body hidden" id="dev-body" hidden>
+						<div class="field">
+							<label for="s-api-base" data-i18n="settings.apiBase">API</label>
+							<input id="s-api-base" type="text" spellcheck="false" autocapitalize="off" autocomplete="off" />
+						</div>
+						<div class="field">
+							<label for="s-site-base" data-i18n="settings.siteBase">Сайт</label>
+							<input id="s-site-base" type="text" spellcheck="false" autocapitalize="off" autocomplete="off" />
+						</div>
+						<div class="field">
+							<label data-i18n="settings.gateway">Шлюз</label>
+							<div class="grid-2">
+								<input id="s-gw-host" type="text" placeholder="138.2.186.223" spellcheck="false" autocapitalize="off" autocomplete="off" />
+								<input id="s-gw-port" type="number" min="1" max="65535" placeholder="8443" />
+							</div>
+							<button class="ghost-btn wide" id="btn-test-gw" type="button">
+								<span class="gb-ic" data-icon="plug"></span>
+								<span data-i18n="settings.testGateway">Проверить шлюз</span>
+							</button>
+							<span class="hint" id="gw-result"></span>
+						</div>
+					</div>
+				</div>
+
+				<div class="actions">
+					<button class="btn btn-ghost" id="btn-reset" type="button" data-i18n="settings.reset">Сбросить</button>
+				</div>
+			</div>
+		</section>
+
+		<!-- ----------------------- PROFILE ------------------------------ -->
+		<section class="view hidden" id="view-profile" hidden>
+			<div class="view-head">
+				<span class="view-title" data-i18n="nav.profile">Профиль</span>
+			</div>
+			<div class="body">
+				<div id="prof-banner"></div>
+
+				<div class="prof-card">
+					<span class="prof-avatar" id="prof-initial">?</span>
+					<span class="prof-id">
+						<span class="prof-name" id="prof-name">—</span>
+						<span class="prof-account" data-i18n="profile.account">Аккаунт GlukVPN</span>
+					</span>
+					<span class="prof-chip" id="prof-chip">—</span>
+				</div>
+
+				<div class="prof-grid">
+					<div class="pstat"><span class="pk" data-i18n="profile.plan">Тариф</span><span class="pv" id="prof-plan">—</span></div>
+					<div class="pstat"><span class="pk" data-i18n="profile.expires">Действует до</span><span class="pv" id="prof-expires">—</span></div>
+					<div class="pstat"><span class="pk" data-i18n="profile.devices">Устройства</span><span class="pv" id="prof-devices">—</span></div>
+					<div class="pstat"><span class="pk" data-i18n="profile.status">Статус</span><span class="pv" id="prof-status">—</span></div>
+				</div>
+
+				<div class="actions">
+					<button class="btn btn-danger" id="btn-signout" type="button">
+						<span class="gb-ic" data-icon="logout"></span>
+						<span data-i18n="profile.signOut">Выйти</span>
+					</button>
+				</div>
+			</div>
+		</section>
+
+	</main>
+</div>
+
+<!-- ======================= login (signed out) ======================== -->
+<section class="screen-login hidden" id="screen-login" hidden>
+	<div class="login-logo"><img src="../icons/logo96.png" alt="" /></div>
+	<div class="login-title" data-i18n="login.title">Вход в GlukVPN</div>
+	<div class="login-sub" data-i18n="login.sub">Войдите, чтобы подключаться к серверам</div>
+
+	<div class="login-body">
+		<div id="login-banner"></div>
+
+		<div class="seg login-seg" id="seg-login">
+			<span class="seg-glide" aria-hidden="true"></span>
+			<button type="button" data-value="site" data-i18n="login.modeSite">Через сайт</button>
+			<button type="button" data-value="password" data-i18n="login.modePassword">Логин и пароль</button>
+		</div>
+
+		<div id="login-site">
+			<button class="btn btn-primary" id="btn-site-login" type="button">
+				<span class="gb-ic" data-icon="external"></span>
+				<span data-i18n="login.withSite">Войти на vpn.gluk.tech</span>
+			</button>
+			<span class="hint" data-i18n="login.siteHint">Откроется сайт. После входа расширение подхватит сессию само.</span>
+		</div>
+
+		<div id="login-password" class="hidden" hidden>
+			<div class="field">
+				<label for="identifier" data-i18n="login.identifier">Email или логин</label>
+				<input id="identifier" type="text" autocomplete="username" spellcheck="false" autocapitalize="off" />
+			</div>
+			<div class="field">
+				<label for="password" data-i18n="login.password">Пароль</label>
+				<div class="pwd-wrap">
+					<input id="password" type="password" autocomplete="current-password" />
+					<button class="pwd-toggle" id="btn-pwd-toggle" type="button" data-i18n="login.show">Показать</button>
+				</div>
+			</div>
+			<button class="btn btn-primary" id="btn-login" type="button" data-i18n="login.submit">Войти</button>
+		</div>
+	</div>
+</section>
+
+<script type="module" src="popup.js"></script>
+</body>
+</html>

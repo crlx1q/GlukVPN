@@ -6,6 +6,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../../config.dart';
 import '../services/desktop_log.dart';
+import '../services/window_fx.dart';
 import '../services/work_area.dart';
 import 'desktop_settings.dart';
 
@@ -80,6 +81,12 @@ class WindowController extends ChangeNotifier with WindowListener {
       _visible = true;
     }
 
+    // Dark title bar, no Windows 11 light border, DWM-owned rounding.
+    WindowFx.applyWindowChrome();
+    // Win32 popup menus follow the process theme, so it has to be set before
+    // the tray menu can ever be opened.
+    WindowFx.applySystemMenuTheme();
+
     notifyListeners();
   }
 
@@ -112,6 +119,7 @@ class WindowController extends ChangeNotifier with WindowListener {
 
     await windowManager.show();
     await windowManager.focus();
+    WindowFx.applyWindowChrome();
     _visible = true;
     notifyListeners();
   }
@@ -146,6 +154,10 @@ class WindowController extends ChangeNotifier with WindowListener {
     _miniShownAt = DateTime.now();
     await windowManager.show();
     await windowManager.focus();
+    // Small DWM radius and no native border: the panel is painted flat, so
+    // there is exactly one rounded shape instead of a widget radius fighting
+    // the window's own border. That double edge is what glowed at the sides.
+    WindowFx.applyPanelChrome();
     _visible = true;
     notifyListeners();
   }

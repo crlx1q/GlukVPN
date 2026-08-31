@@ -140,9 +140,28 @@ class DesktopVpnController extends ChangeNotifier {
   /// True on plans that may not choose a server by hand (requirement 8).
   bool get manualSelectionLocked => !manualSelectionAllowed(_auth.subscription);
 
-  /// Visible list, with internal nodes stripped for production builds.
+  /// The list the user actually works with.
+  ///
+  /// Internal nodes are stripped for production builds, with one hard rule:
+  /// filtering must never leave the account with zero servers. The real case
+  /// that broke the first release was a fleet of exactly one node whose handle
+  /// matched an internal marker: the list came back empty, Auto reported
+  /// no_available_nodes and Connect could not do anything. The node is now kept
+  /// and only its *label* is sanitised - see publicNodeTitle.
   List<VpnNodeInfo> get userVisibleNodes =>
-      visibleNodes(_nodes, internalBuild: AppConfig.internalBuild);
+      selectableNodes(_nodes, internalBuild: AppConfig.internalBuild);
+
+  /// True when every node in the fleet would normally be hidden.
+  bool get fleetLooksInternal =>
+      fleetIsInternalOnly(_nodes, internalBuild: AppConfig.internalBuild);
+
+  /// Exposed for account panels that need to list or revoke devices.
+  ApiClient get api => _api;
+
+  /// Language for user-facing text produced here. Set by the shell, because
+  /// these strings end up in banners the user reads.
+  bool _ru = false;
+  set russian(bool value) => _ru = value;
 
   bool get autoSelectionEnabled => _settings.value.autoNodeSelection;
 
@@ -407,7 +426,10 @@ class DesktopVpnController extends ChangeNotifier {
         _fail(
           ConnectionPhase.serverUnavailable,
           'no_available_nodes',
-          _nodesError ?? 'No servers are available right now.',
+          _nodesError ??
+              (_ru
+                  ? 'Сейчас нет доступных серверов. Обновите список.'
+                  : 'No servers are available right now.'),
         );
         return;
       }
@@ -463,6 +485,9 @@ class DesktopVpnController extends ChangeNotifier {
         mtu: settings.mtu,
         splitMode: settings.splitMode,
         splitApps: settings.splitApps,
+        // "Always direct" from the browser extension: hosts and subnets that
+        // must never travel through the tunnel.
+        bypassRoutes: settings.bypassRoutes,
         endpointIps: _activeEndpointIps,
       );
 
@@ -722,17 +747,24 @@ class DesktopVpnController extends ChangeNotifier {
       _nodeRetries = 0;
 
       final int visible = userVisibleNodes.length;
-      dlog.write('nodes', 'loaded ${list.length} nodes, $visible visible');
+      dlog.write('nodes', 'loaded ${list.length} nodes, $visible usable');
 
       if (list.isEmpty) {
-        _nodesError = 'The control plane returned an empty server list.';
-      } else if (visible == 0) {
-        // Every node was filtered out as internal. Say so instead of showing
-        // an empty list with no explanation.
-        _nodesError = 'All ${list.length} servers were filtered out as '
-            'internal. Ask support to publish a public node.';
+        _nodesError = _ru
+            ? 'Сервер вернул пустой список. Попробуйте обновить.'
+            : 'The control plane returned an empty server list.';
       } else {
+        // A fleet that looks internal is still perfectly usable: the nodes are
+        // relabelled, not hidden. Refusing to connect over a naming convention
+        // was the bug, not the safeguard.
         _nodesError = null;
+        if (fleetLooksInternal) {
+          dlog.warn(
+            'nodes',
+            'fleet of ${list.length} looks internal, kept usable with '
+                'sanitised labels',
+          );
+        }
       }
 
       _resolveSelection();
@@ -805,7 +837,10 @@ class DesktopVpnController extends ChangeNotifier {
     final AutoNodeChoice best = pickBestNode(
       _nodes,
       pings: _pings,
-      internalBuild: AppConfig.internalBuild,
+      // When the entire fleet looks internal it is scored normally instead of
+      // being discarded, otherwise Auto would report no_available_nodes for a
+      // perfectly working server. The label is sanitised separately.
+      internalBuild: AppConfig.internalBuild || fleetLooksInternal,
       preferCountryCode: _auth.user?.originCountryCode,
     );
     _autoSelection = best;

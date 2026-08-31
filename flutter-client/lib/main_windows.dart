@@ -10,6 +10,7 @@ import 'desktop/screens/desktop_login_screen.dart';
 import 'desktop/screens/desktop_shell.dart';
 import 'desktop/services/app_paths.dart';
 import 'desktop/services/desktop_log.dart';
+import 'desktop/services/power_monitor.dart';
 import 'desktop/services/service_bootstrap.dart';
 import 'desktop/services/tunnel_client.dart';
 import 'desktop/state/desktop_settings.dart';
@@ -113,6 +114,9 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
   late final WindowController _window;
   late final TrayController _tray;
 
+  /// Watches the battery so animations can stand down on their own.
+  final PowerMonitor _power = PowerMonitor();
+
   DesktopStrings _strings = DesktopStrings.english;
   bool _ready = false;
   bool _splashDone = false;
@@ -151,6 +155,14 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
 
     _window = WindowController(settings: widget.settings);
     _tray = TrayController(vpn: _vpn, window: _window, strings: _strings);
+
+    // Banners and failure reasons produced inside the controller are read by
+    // the user, so it has to know which language the UI is in.
+    _vpn.russian = _strings.isRussian;
+
+    // Battery and power-saver state feed the single Animations switch. This is
+    // purely cosmetic: the tunnel never reacts to it.
+    unawaited(_power.start());
 
     _window.onExitRequested = _exit;
 
@@ -200,6 +212,7 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
   void _onLanguageChanged(String preference) {
     setState(() => _strings = DesktopStrings.resolve(preference));
     _tray.updateStrings(_strings);
+    _vpn.russian = _strings.isRussian;
   }
 
   /// Tray -> Exit. Requirement 11: this is the only path that really quits.
@@ -216,6 +229,7 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
   @override
   void dispose() {
     _auth.removeListener(_onAuthChanged);
+    _power.dispose();
     _window.dispose();
     _vpn.dispose();
     super.dispose();
@@ -254,6 +268,7 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
                   settings: widget.settings,
                   window: _window,
                   tray: _tray,
+                  power: _power,
                   strings: _strings,
                   onLanguageChanged: _onLanguageChanged,
                 )

@@ -63,7 +63,7 @@ class SecureBanner extends StatelessWidget {
 
     return AnimatedContainer(
       duration: GlukMotion.screen,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
       decoration: DesktopTokens.cardDecoration(
         color: tone == SecureTone.idle
             ? DesktopTokens.card
@@ -75,14 +75,14 @@ class SecureBanner extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Container(
-            width: 40,
-            height: 40,
+            width: 34,
+            height: 34,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: accent.withOpacity(0.14),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(_icon, size: 19, color: accent),
+            child: Icon(_icon, size: 17, color: accent),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -182,7 +182,7 @@ class _BannerButtonState extends State<_BannerButton> {
         behavior: HitTestBehavior.opaque,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
           decoration: BoxDecoration(
             color: widget.subtle
                 ? (_hovered
@@ -200,7 +200,7 @@ class _BannerButtonState extends State<_BannerButton> {
             widget.label,
             style: TextStyle(
               color: widget.subtle ? GlukColors.text1 : widget.accent,
-              fontSize: 12.5,
+              fontSize: 11.5,
               fontWeight: FontWeight.w700,
               decoration: TextDecoration.none,
             ),

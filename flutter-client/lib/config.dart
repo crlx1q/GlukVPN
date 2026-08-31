@@ -165,12 +165,12 @@ class AppConfig {
 	/// instead of spinning forever.
 	static const Duration connectTimeout = Duration(seconds: 25);
 
-	static const Size desktopMinSize = Size(960, 660);
-	static const Size desktopDefaultSize = Size(1180, 740);
+	static const Size desktopMinSize = Size(1000, 780);
+	static const Size desktopDefaultSize = Size(1160, 1000);
 	/// Tray quick panel. Small on purpose: it only carries the connect button,
 	/// the current server, ping and the two traffic counters, in the spirit of
 	/// the native Windows utility panels that appear above the tray.
-	static const Size miniPanelSize = Size(316, 352);
+	static const Size miniPanelSize = Size(320, 356);
 
 	/// Deliberately short. The logo animation must never be the reason the app
 	/// feels slow; session, servers and subscription all load behind it.

@@ -131,6 +131,86 @@ void main() {
     });
   });
 
+  group('selectableNodes never leaves the user stranded', () {
+    // The bug this exists to prevent: an account with exactly one node whose
+    // handle matched an internal marker got an empty list, a dead Connect
+    // button and "no_available_nodes" in the log.
+    test('a mixed fleet is still filtered', () {
+      final nodes = <VpnNodeInfo>[node('de-01'), node('beta-01')];
+      expect(
+        selectableNodes(nodes).map((n) => n.name),
+        <String>['de-01'],
+      );
+    });
+
+    test('an internal-only fleet stays usable', () {
+      final nodes = <VpnNodeInfo>[node('beta-01')];
+      expect(visibleNodes(nodes), isEmpty);
+      expect(selectableNodes(nodes).length, 1);
+      expect(fleetIsInternalOnly(nodes), isTrue);
+    });
+
+    test('an empty fleet stays empty', () {
+      expect(selectableNodes(<VpnNodeInfo>[]), isEmpty);
+      expect(fleetIsInternalOnly(<VpnNodeInfo>[]), isFalse);
+    });
+
+    test('the fallback can be switched off', () {
+      final nodes = <VpnNodeInfo>[node('beta-01')];
+      expect(selectableNodes(nodes, allowFallback: false), isEmpty);
+    });
+  });
+
+  group('public labels never expose the handle', () {
+    test('an internal node is described by its geography', () {
+      final n = node('beta-01', country: 'Germany', countryCode: 'DE');
+      expect(publicNodeTitle(n), 'Germany');
+      expect(publicNodeSubtitle(n), 'Frankfurt');
+      expect(publicNodeTitle(n), isNot(contains('beta')));
+    });
+
+    test('a title that is itself internal is discarded', () {
+      final n = VpnNodeInfo(
+        id: 'beta-01',
+        name: 'beta-01',
+        country: '',
+        countryCode: 'KZ',
+        host: 'beta-01.gluk.tech',
+        port: 51820,
+        status: 'ONLINE',
+        online: true,
+        connectable: true,
+        loadPercent: 10,
+        activePeers: 1,
+        capacity: 50,
+        title: 'beta-01',
+        subtitle: 'beta-01',
+      );
+
+      expect(publicNodeTitle(n), 'KZ');
+      expect(publicNodeSubtitle(n), isNull);
+    });
+
+    test('a node with nothing usable falls back to the caller label', () {
+      final n = VpnNodeInfo(
+        id: 'test-1',
+        name: 'test-1',
+        country: '',
+        countryCode: '',
+        host: 'test-1.gluk.tech',
+        port: 51820,
+        status: 'ONLINE',
+        online: true,
+        connectable: true,
+        loadPercent: 0,
+        activePeers: 0,
+        capacity: 10,
+      );
+
+      expect(publicNodeTitle(n, fallback: 'Auto'), 'Auto');
+    });
+  });
+
   group('display fields never expose the handle', () {
     test('title and subtitle come from the backend, not the node name', () {
       final n = node('de-01');

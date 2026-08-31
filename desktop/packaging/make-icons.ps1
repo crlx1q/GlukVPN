@@ -21,9 +21,14 @@
 .PARAMETER Logo
     Source artwork. Defaults to flutter-client/assets/logo.png.
 
+.PARAMETER KeepExisting
+    Leave icons that already exist alone. By default every icon is rebuilt from
+    the logo, because refreshing them is the entire point of running this
+    script - keeping stale files is exactly how a placeholder power glyph
+    survived in the tray instead of the GlukVPN logo.
+
 .PARAMETER Force
-    Overwrite icons that already exist. Without it, existing files are kept,
-    which makes the script safe to run inside build-all.ps1.
+    Kept for compatibility. Regenerating is now the default.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File desktop\packaging\make-icons.ps1 -Force
@@ -32,7 +37,8 @@
 [CmdletBinding()]
 param(
     [string]$Logo,
-    [switch]$Force
+    [switch]$Force,
+    [switch]$KeepExisting
 )
 
 $ErrorActionPreference = 'Stop'
@@ -107,7 +113,7 @@ function New-Frame {
         }
 
         # Logo, centred, leaving room for the halo and the status dot.
-        $scale = if ($WithGlow) { 0.70 } else { 0.98 }
+        $scale = if ($WithGlow) { 0.78 } else { 0.98 }
         $side = [int]($Size * $scale)
         $offset = [int](($Size - $side) / 2)
         if ($WithGlow) { $offset = [int](($Size - $side) / 2) - [int]($Size * 0.04) }
@@ -116,7 +122,7 @@ function New-Frame {
 
         if ($WithGlow) {
             # Status dot. At 16 px the halo alone is hard to read, this is not.
-            $dot = [Math]::Max(5, [int]($Size * 0.34))
+            $dot = [Math]::Max(5, [int]($Size * 0.28))
             $dx = $Size - $dot - [Math]::Max(0, [int]($Size * 0.03))
             $dy = $Size - $dot - [Math]::Max(0, [int]($Size * 0.03))
 
@@ -199,8 +205,8 @@ try {
     Write-Host "  source: $Logo"
 
     $appIco = Join-Path $assets 'app.ico'
-    if ((Test-Path $appIco) -and -not $Force) {
-        Write-Host '  app.ico exists, skipping (use -Force to regenerate)'
+    if ((Test-Path $appIco) -and $KeepExisting -and -not $Force) {
+        Write-Host '  app.ico exists, kept (-KeepExisting)'
     }
     else {
         Save-Ico -Path $appIco -Sizes $appSizes -Image $source `
@@ -209,8 +215,8 @@ try {
 
     foreach ($state in $states) {
         $path = Join-Path $trayDir ("{0}.ico" -f $state.Name)
-        if ((Test-Path $path) -and -not $Force) {
-            Write-Host ("  {0}.ico exists, skipping" -f $state.Name)
+        if ((Test-Path $path) -and $KeepExisting -and -not $Force) {
+            Write-Host ("  {0}.ico exists, kept" -f $state.Name)
             continue
         }
         Save-Ico -Path $path -Sizes $traySizes -Image $source `

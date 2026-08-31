@@ -1,0 +1,1610 @@
+/*
+ * Popup controller.
+ *
+ * Hard rules learned from the last round of bug reports:
+ *  - every call to the service worker has a deadline and a visible outcome;
+ *    "spinning forever" is treated as a bug, not as a state
+ *  - the worker is asleep most of the time in MV3, so the first message after
+ *    opening the popup is retried once before anything is called broken
+ *  - a failed request never blanks a screen: the last good data stays on
+ *    screen with an inline retry next to it
+ *  - the power button is never disabled - if it looks pressable it must react
+ *  - every control writes through to storage the instant it changes, and the
+ *    background poll is not allowed to overwrite a value the user just set
+ *  - the connect animation is a report, not a decoration: it only runs while
+ *    a real attempt is in flight
+ */
+
+import { createTranslator, resolveLanguage, errorKeyFor } from '../lib/i18n.js'
+import { paintIcons, iconSvg } from './icons.js'
+import { flagSvg } from './flags.js'
+
+/* The shared modules hand out a translator factory and a flag element
+ * builder. These adapters keep the rest of the file readable. */
+let translate = createTranslator('en')
+
+function t(key, vars) {
+	return translate(key, vars)
+}
+
+function setLanguage(preference) {
+	// 'auto' resolves through GeoIP, then the browser locale, then the clock.
+	const lang = resolveLanguage(preference, state?.runtime?.geo?.countryCode)
+	translate = createTranslator(lang)
+	document.documentElement.lang = lang
+	return lang
+}
+
+// The city is passed through as well: the control plane often sends a display
+// name ("Kazakhstan") rather than an ISO code, and sometimes only a city.
+function paintFlag(holder, code, city) {
+	if (!holder) return
+	holder.replaceChildren(flagSvg(code, 22, city))
+}
+
+const $ = (id) => document.getElementById(id)
+const VIEWS = ['vpn', 'servers', 'settings', 'profile']
+const CALL_TIMEOUT_MS = 20000
+const NODES_CACHE = 'gluk.popup.nodes'
+const SAVE_DEBOUNCE_MS = 320
+// A connect attempt that produces nothing for this long is a failure, not a
+// state. Without this the spinner ran forever on a dead network.
+const CONNECT_WATCHDOG_MS = 30000
+
+const DEFAULTS = {
+	channel: 'prod',
+	apiBase: { prod: 'https://api.gluk.tech', beta: 'https://beta-api.gluk.tech' },
+	siteBase: 'https://vpn.gluk.tech',
+	gateway: { host: '', port: 8443, scheme: 'https' },
+	killSwitch: true,
+	bypass: ['localhost', '127.0.0.1', '*.local', '10.*', '192.168.*'],
+	autoConnect: false,
+	preferredNodeId: null,
+	tunnelMode: 'all',
+	siteList: [],
+	language: 'auto',
+}
+
+let state = null
+let settings = { ...DEFAULTS }
+let nodes = []
+let view = 'vpn'
+let busySince = 0
+let tickTimer = null
+let pollTimer = null
+let advancedOpen = false
+let devModeOpen = false
+let savePending = false
+let saveTimer = null
+let saveStateTimer = null
+// Until this moment passes, incoming state must not overwrite the local
+// settings object. This is the other half of the "toggle snaps back" fix:
+// the worker keeps reporting the old values for a beat after a write.
+let saveGuardUntil = 0
+let deviceActiveCount = 0
+// Device paging. The fetched rows are kept here so flipping pages never costs
+// another request, and five per page stops a long list from eating the popup.
+const DEVICES_PER_PAGE = 5
+let deviceRows = []
+let deviceMax = 0
+let deviceFailure = ''
+let devicePage = 0
+let loginMode = 'site'
+let connectWatchdog = null
+let localPhase = null
+
+// ------------------------------------------------------------- messaging ---
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const isOnline = () => {
+	try {
+		return navigator.onLine !== false
+	} catch {
+		return true
+	}
+}
+
+/** One attempt. Always resolves - never throws, never hangs. */
+function sendOnce(message) {
+	return new Promise((resolve) => {
+		let settled = false
+		const done = (value) => {
+			if (settled) return
+			settled = true
+			resolve(value)
+		}
+		const timer = setTimeout(() => done({ ok: false, error: t('err.timeout'), code: 'timeout' }), CALL_TIMEOUT_MS)
+		try {
+			chrome.runtime.sendMessage(message, (response) => {
+				clearTimeout(timer)
+				const lastError = chrome.runtime.lastError
+				if (lastError) return done({ ok: false, error: lastError.message, code: 'asleep' })
+				if (response === undefined || response === null) return done({ ok: false, error: t('err.wakeFailed'), code: 'asleep' })
+				done(response)
+			})
+		} catch (error) {
+			clearTimeout(timer)
+			done({ ok: false, error: String(error?.message ?? error), code: 'asleep' })
+		}
+	})
+}
+
+/**
+ * Talks to the background worker. The payload is sent both nested and spread
+ * so the call works whichever shape the worker reads.
+ */
+async function call(type, payload = {}) {
+	const message = { type, payload, ...payload }
+	let response = await sendOnce(message)
+	// MV3 tears the worker down aggressively; the first message after opening
+	// the popup often lands while it is still booting. That is not an error.
+	if (!response?.ok && response?.code === 'asleep') {
+		await sleep(300)
+		response = await sendOnce(message)
+	}
+	// The worker wraps every reply in { ok, data }. A handler that failed
+	// politely reports ok:false *inside* that envelope - unwrap it, otherwise
+	// a refused connect would be read as a successful one.
+	if (response?.ok === true && response.data && typeof response.data === 'object' && response.data.ok === false) {
+		const inner = response.data
+		return { ok: false, error: inner.error, code: inner.code ?? inner.error?.code ?? 'error' }
+	}
+	return response ?? { ok: false, error: t('err.unknown'), code: 'unknown' }
+}
+
+/** Turns anything the worker can return into a sentence for the user. */
+function humanError(response) {
+	if (!response) return t('err.unknown')
+	const raw = response.error ?? response
+	const probe = typeof raw === 'string' ? { message: raw, code: response.code } : { message: raw?.message, code: raw?.code ?? response.code }
+	const key = errorKeyFor(probe)
+	if (key) return t(key)
+	const text = String(probe.message ?? '').trim()
+	return text || t('err.unknown')
+}
+
+// ---------------------------------------------------------------- callouts --
+
+/**
+ * A framed notice. An error is a thing that happened, so it gets a red frame,
+ * an icon and a title - not a grey sentence floating above the layout.
+ */
+function calloutNode({ title, text, kind = 'bad', actionLabel, onAction } = {}) {
+	const box = document.createElement('div')
+	box.className = 'callout ' + (kind === 'ok' ? 'ok' : kind === 'info' ? 'info' : kind === 'warn' ? 'warn' : 'err')
+	const ic = document.createElement('span')
+	ic.className = 'c-ic'
+	ic.appendChild(iconSvg(kind === 'ok' ? 'check' : kind === 'info' ? 'info' : kind === 'warn' ? 'warn' : 'alert'))
+	box.appendChild(ic)
+	const body = document.createElement('div')
+	body.className = 'c-body'
+	const heading = title ?? (kind === 'ok' || kind === 'info' ? '' : t('err.title'))
+	if (heading) {
+		const h = document.createElement('div')
+		h.className = 'c-title'
+		h.textContent = heading
+		body.appendChild(h)
+	}
+	if (text) {
+		const p = document.createElement('div')
+		p.className = 'c-text'
+		p.textContent = text
+		body.appendChild(p)
+	}
+	if (actionLabel && onAction) {
+		const b = document.createElement('button')
+		b.type = 'button'
+		b.className = 'c-act'
+		b.textContent = actionLabel
+		b.addEventListener('click', onAction)
+		body.appendChild(b)
+	}
+	box.appendChild(body)
+	return box
+}
+
+/**
+ * Shows a message in one of the banner slots.
+ *
+ * Everything goes through calloutNode now. The old implementation wrote a bare
+ * `class="banner"` for the failure case, and the stylesheet only had rules for
+ * `.banner.err` - which is why connection errors rendered as plain text with
+ * no frame at all.
+ */
+function banner(id, text, { kind = 'bad', title, actionLabel, onAction } = {}) {
+	const node = $(id)
+	if (!node) return
+	node.textContent = ''
+	if (!text) {
+		// Clearing only the text used to leave the frame behind, which rendered
+		// as a tall empty slab at the top of the view.
+		node.hidden = true
+		node.className = ''
+		return
+	}
+	node.className = 'banner-slot'
+	node.hidden = false
+	node.appendChild(calloutNode({ title, text, kind, actionLabel, onAction }))
+}
+
+// -------------------------------------------------------------- formatting -
+
+function bytesLabel(bytes) {
+	const value = Number(bytes)
+	if (!Number.isFinite(value) || value < 0) return '0 B'
+	const units = ['B', 'KB', 'MB', 'GB', 'TB']
+	let index = 0
+	let scaled = value
+	while (scaled >= 1024 && index < units.length - 1) {
+		scaled /= 1024
+		index += 1
+	}
+	const digits = scaled >= 100 || index === 0 ? 0 : 1
+	return `${scaled.toFixed(digits)} ${units[index]}`
+}
+
+function durationLabel(ms) {
+	const total = Math.max(0, Math.floor(Number(ms) / 1000))
+	if (!Number.isFinite(total)) return '--'
+	const hours = Math.floor(total / 3600)
+	const minutes = Math.floor((total % 3600) / 60)
+	const seconds = total % 60
+	const pad = (n) => String(n).padStart(2, '0')
+	return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`
+}
+
+function pingLabel(ms) {
+	const value = Number(ms)
+	return Number.isFinite(value) && value > 0 ? `${Math.round(value)} ${t('stat.msUnit')}` : '--'
+}
+
+function signalOf(ms) {
+	const value = Number(ms)
+	if (!Number.isFinite(value) || value <= 0) return 2
+	if (value <= 60) return 3
+	if (value <= 140) return 2
+	return 1
+}
+
+// -------------------------------------------------------------------- geo ---
+
+const PLACES = {
+	DE: [51.2, 10.4], FR: [46.6, 2.4], NL: [52.2, 5.3], US: [39.8, -98.6], GB: [54.0, -2.0],
+	TR: [39.0, 35.2], SG: [1.35, 103.8], JP: [36.2, 138.3], KZ: [48.0, 68.0], RU: [55.8, 37.6],
+	PL: [52.1, 19.4], SE: [60.1, 18.6], FI: [64.0, 26.0], NO: [60.5, 8.5], DK: [56.0, 10.0],
+	CH: [46.8, 8.2], ES: [40.2, -3.7], IT: [42.8, 12.6], CA: [56.1, -106.3], AU: [-25.3, 133.8],
+	IN: [21.0, 78.0], BR: [-14.2, -51.9], UA: [48.4, 31.2], CZ: [49.8, 15.5], AT: [47.5, 14.6],
+	RO: [45.9, 25.0], BE: [50.5, 4.5], IE: [53.4, -8.2], PT: [39.4, -8.2], LT: [55.2, 23.9],
+	LV: [56.9, 24.6], EE: [58.6, 25.0], MX: [23.6, -102.5], AR: [-38.4, -63.6], CL: [-35.7, -71.5],
+	ZA: [-30.6, 22.9], AE: [23.4, 53.8], IL: [31.0, 34.9], HK: [22.3, 114.2], KR: [35.9, 127.8],
+	CN: [35.9, 104.2], ID: [-0.8, 113.9], IS: [64.9, -19.0], BD: [23.7, 90.4], CO: [4.6, -74.3],
+	UZ: [41.4, 64.6], KG: [41.2, 74.8], GE: [42.3, 43.4], AM: [40.1, 45.0], AZ: [40.1, 47.6],
+	BY: [53.7, 27.9], MD: [47.4, 28.4], HU: [47.2, 19.5], BG: [42.7, 25.5], GR: [39.1, 21.8],
+	HR: [45.1, 15.2], RS: [44.0, 21.0], SK: [48.7, 19.7], SI: [46.2, 14.8], TJ: [38.9, 71.3],
+	TM: [38.9, 59.6], EG: [26.8, 30.8], TH: [15.9, 101.0], VN: [14.1, 108.3], MY: [4.2, 101.9],
+	NZ: [-40.9, 174.9],
+}
+
+const CITIES = {
+	frankfurt: [50.11, 8.68], berlin: [52.52, 13.4], paris: [48.86, 2.35], amsterdam: [52.37, 4.9],
+	london: [51.51, -0.13], 'new york': [40.71, -74.01], 'los angeles': [34.05, -118.24],
+	istanbul: [41.01, 28.98], singapore: [1.35, 103.82], tokyo: [35.68, 139.69],
+	astana: [51.16, 71.47], almaty: [43.24, 76.89], aqmola: [51.16, 71.47], akmola: [51.16, 71.47],
+	qyzylorda: [44.85, 65.51], kyzylorda: [44.85, 65.51], shymkent: [42.32, 69.59], aqtobe: [50.28, 57.17],
+	moscow: [55.76, 37.62], warsaw: [52.23, 21.01], stockholm: [59.33, 18.07],
+	helsinki: [60.17, 24.94], zurich: [47.38, 8.54], madrid: [40.42, -3.7], milan: [45.46, 9.19],
+	vienna: [48.21, 16.37], prague: [50.08, 14.44], toronto: [43.65, -79.38], sydney: [-33.87, 151.21],
+	mumbai: [19.08, 72.88], 'sao paulo': [-23.55, -46.63], kyiv: [50.45, 30.52], dubai: [25.2, 55.27],
+	'hong kong': [22.32, 114.17], seoul: [37.57, 126.98], oslo: [59.91, 10.75], copenhagen: [55.68, 12.57],
+	tashkent: [41.3, 69.24], bishkek: [42.87, 74.59], tbilisi: [41.72, 44.79], baku: [40.41, 49.87],
+	yerevan: [40.18, 44.51], minsk: [53.9, 27.57],
+}
+
+function latLonFor(place) {
+	const city = String(place?.city ?? '').trim().toLowerCase()
+	if (city && CITIES[city]) return CITIES[city]
+	const code = String(place?.countryCode ?? place?.country ?? '').trim().toUpperCase()
+	if (code && PLACES[code]) return PLACES[code]
+	return null
+}
+
+function placeLabel(place) {
+	const parts = [place?.city, place?.region, place?.country].map((p) => String(p ?? '').trim()).filter(Boolean)
+	const unique = parts.filter((part, index) => parts.indexOf(part) === index)
+	return unique.length ? unique.join(', ') : ''
+}
+
+/** Equirectangular projection onto the shipped 119x60 dotted map. */
+function project(lat, lon) {
+	return { x: ((Number(lon) + 180) / 360) * 119, y: ((90 - Number(lat)) / 180) * 60 }
+}
+
+function isDeviceLimit(error) {
+	const raw = error?.error ?? error
+	const probe = typeof raw === 'string' ? { message: raw } : { message: raw?.message, code: raw?.code ?? error?.code }
+	return errorKeyFor(probe) === 'err.tooManyDevices'
+}
+
+/** Renders an error into a slot. Everything lands in a red frame. */
+function showError(id, error) {
+	if (!$(id)) return
+	if (!error) {
+		banner(id, '')
+		return
+	}
+	if (isDeviceLimit(error)) {
+		banner(id, humanError({ error }), {
+			title: t('err.limitTitle'),
+			actionLabel: t('settings.devices'),
+			onAction: () => {
+				setView('settings')
+				ensureDevices(true)
+			},
+		})
+		return
+	}
+	banner(id, humanError({ error }), { title: t('err.connectTitle') })
+}
+
+// -------------------------------------------------------------- when/geo ---
+
+function whenLabel(value) {
+	if (!value) return t('dev.never')
+	const then = new Date(value).getTime()
+	if (!Number.isFinite(then)) return t('dev.never')
+	const diff = then - Date.now()
+	const abs = Math.abs(diff)
+	const units = [
+		['minute', 60000],
+		['hour', 3600000],
+		['day', 86400000],
+	]
+	try {
+		const rtf = new Intl.RelativeTimeFormat(currentLang(), { numeric: 'auto' })
+		if (abs < 60000) return rtf.format(0, 'minute')
+		for (let i = units.length - 1; i >= 0; i -= 1) {
+			const [unit, ms] = units[i]
+			if (abs >= ms) return rtf.format(Math.round(diff / ms), unit)
+		}
+	} catch {}
+	return new Date(then).toLocaleDateString()
+}
+
+// Timezone -> country. Used only when the worker has no IP geolocation yet,
+// so the map still knows roughly where "you" are instead of giving up.
+const TZ_COUNTRY = {
+	'Asia/Almaty': 'KZ', 'Asia/Qyzylorda': 'KZ', 'Asia/Aqtobe': 'KZ', 'Asia/Aqtau': 'KZ',
+	'Asia/Atyrau': 'KZ', 'Asia/Oral': 'KZ', 'Europe/Moscow': 'RU', 'Europe/Samara': 'RU',
+	'Asia/Yekaterinburg': 'RU', 'Asia/Novosibirsk': 'RU', 'Europe/Kyiv': 'UA', 'Europe/Kiev': 'UA',
+	'Europe/Minsk': 'BY', 'Asia/Tashkent': 'UZ', 'Asia/Bishkek': 'KG', 'Asia/Tbilisi': 'GE',
+	'Asia/Yerevan': 'AM', 'Asia/Baku': 'AZ', 'Europe/Berlin': 'DE', 'Europe/Paris': 'FR',
+	'Europe/Amsterdam': 'NL', 'Europe/Istanbul': 'TR', 'Asia/Singapore': 'SG', 'Asia/Tokyo': 'JP',
+	'America/New_York': 'US', 'America/Chicago': 'US', 'America/Los_Angeles': 'US',
+	'Europe/London': 'GB', 'Europe/Warsaw': 'PL',
+}
+
+function currentLang() {
+	const pref = settings.language ?? 'auto'
+	if (pref === 'ru' || pref === 'en') return pref
+	try {
+		return (navigator.language || 'en').slice(0, 2)
+	} catch {
+		return 'en'
+	}
+}
+
+/** Best-effort "where am I". Never returns null once a timezone is readable. */
+function resolveGeo() {
+	const geo = state?.runtime?.geo ?? null
+	if (geo && (geo.countryCode || geo.city)) return geo
+	try {
+		const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+		const cc = TZ_COUNTRY[tz]
+		if (cc) {
+			return {
+				countryCode: cc,
+				city: String(tz.split('/').pop() ?? '').replace(/_/g, ' '),
+				approximate: true,
+			}
+		}
+	} catch {}
+	return geo
+}
+
+// ---------------------------------------------------------------- routing ---
+
+function setPoint(dotId, ringId, point) {
+	for (const id of [dotId, ringId]) {
+		const node = $(id)
+		if (!node) continue
+		node.setAttribute('cx', point.x.toFixed(2))
+		node.setAttribute('cy', point.y.toFixed(2))
+	}
+}
+
+/** Draws "you" and "the server" and the arc between them. */
+function drawRoute(home, server, phase = 'idle') {
+	const you = home ? project(home[0], home[1]) : { x: 82.44, y: 12.24 }
+	setPoint('you-dot', 'you-ring', you)
+	const path = $('conn-path')
+	const show = (id, on) => {
+		const node = $(id)
+		if (node) node.style.opacity = on ? '' : '0'
+	}
+	show('you-dot', true)
+	show('you-ring', true)
+	if (!server) {
+		show('server-dot', false)
+		show('server-ring', false)
+		if (path) {
+			path.style.opacity = '0'
+			path.setAttribute('d', 'M' + you.x.toFixed(2) + ',' + you.y.toFixed(2) + ' L' + you.x.toFixed(2) + ',' + you.y.toFixed(2))
+		}
+		return
+	}
+	const target = project(server[0], server[1])
+	setPoint('server-dot', 'server-ring', target)
+	show('server-dot', true)
+	show('server-ring', true)
+	// Lift the control point so the arc bows away from the globe instead of
+	// cutting a straight line across it.
+	const midX = (you.x + target.x) / 2
+	const midY = (you.y + target.y) / 2
+	const span = Math.hypot(target.x - you.x, target.y - you.y)
+	const lift = Math.min(14, Math.max(3, span * 0.32))
+	if (path) {
+		path.setAttribute(
+			'd',
+			'M' + you.x.toFixed(2) + ',' + you.y.toFixed(2) + ' Q' + midX.toFixed(2) + ',' + (midY - lift).toFixed(2) + ' ' + target.x.toFixed(2) + ',' + target.y.toFixed(2),
+		)
+		// Solid while the tunnel is up, faint while it is only a proposal, and
+		// dead while there is no link to carry it.
+		path.style.opacity = phase === 'connected' ? '1' : phase === 'offline' ? '0.14' : '0.45'
+	}
+}
+
+// ------------------------------------------------------------------ views ---
+
+function syncGlide() {
+	const glide = $('nav-glide')
+	const target = document.querySelector(`.nav-item[data-view="${view}"]`)
+	// Measured, not hard-coded, so the pill lands exactly on the button
+	// whatever spacing the rail happens to use - including the account chip
+	// at the very bottom, which is now a tab like any other.
+	if (glide && target && target.offsetHeight) {
+		glide.style.height = `${target.offsetHeight}px`
+		glide.style.transform = `translateY(${Math.round(target.offsetTop)}px)`
+		glide.style.opacity = '1'
+	}
+	for (const item of document.querySelectorAll('.nav-item')) {
+		item.classList.toggle('active', item.dataset.view === view)
+		item.setAttribute('aria-current', item.dataset.view === view ? 'page' : 'false')
+	}
+}
+
+function setView(next) {
+	if (!VIEWS.includes(next)) return
+	view = next
+	for (const section of document.querySelectorAll('.view')) {
+		const on = section.id === `view-${next}`
+		section.classList.toggle('active', on)
+		// Both the class and the attribute, or `.hidden { display:none }` wins
+		// and the view never appears.
+		section.classList.toggle('hidden', !on)
+		section.hidden = !on
+	}
+	syncGlide()
+	if (next === 'servers') ensureNodes()
+	if (next === 'settings') ensureDevices()
+	if (next === 'profile') {
+		ensureDevices()
+		renderProfile()
+	}
+	// A hidden element measures 0 wide, so the sliding pill can only be placed
+	// after the section is on screen.
+	requestAnimationFrame(() => {
+		syncSegment('seg-lang', settings.language ?? 'auto')
+		syncSegment('seg-tunnel', settings.tunnelMode ?? 'all')
+		syncGlide()
+	})
+}
+
+function applyI18n(root = document) {
+	for (const node of root.querySelectorAll('[data-i18n]')) {
+		node.textContent = t(node.getAttribute('data-i18n'))
+	}
+	const identifier = $('identifier')
+	if (identifier) identifier.placeholder = t('login.identifier')
+	const password = $('password')
+	if (password) password.placeholder = t('login.password')
+	const hint = $('tunnel-hint')
+	if (hint) {
+		const map = { all: 'settings.tunnelAllHint', except: 'settings.tunnelExceptHint', only: 'settings.tunnelOnlyHint' }
+		hint.textContent = t(map[settings.tunnelMode] ?? map.all)
+	}
+	// The list label says what the list actually does in the selected mode.
+	const listLabel = $('site-list-label')
+	if (listLabel) {
+		listLabel.textContent = settings.tunnelMode === 'only' ? t('settings.siteListOnly') : t('settings.siteListExcept')
+	}
+	const acctName = $('acct-name')
+	if (acctName && !acctName.textContent.trim()) acctName.textContent = t('nav.profile')
+}
+
+// ----------------------------------------------------------------- render ---
+
+function phaseOf() {
+	if (localPhase) return localPhase
+	return String(state?.runtime?.phase ?? (state?.signedIn === false ? 'signedOut' : 'idle'))
+}
+
+function statusInfo() {
+	const phase = phaseOf()
+	const map = {
+		connected: { text: t('status.connected'), cls: 'on' },
+		connecting: { text: t('status.connecting'), cls: 'busy' },
+		disconnecting: { text: t('status.disconnecting'), cls: 'busy' },
+		error: { text: t('status.error'), cls: 'bad' },
+		signedOut: { text: t('status.signedOut'), cls: '' },
+	}
+	return map[phase] ?? { text: t('status.idle'), cls: '' }
+}
+
+function nodeById(id) {
+	return nodes.find((node) => String(node?.id ?? node?.nodeId) === String(id)) ?? null
+}
+
+function activeNode() {
+	const id = state?.runtime?.nodeId ?? settings.preferredNodeId
+	return nodeById(id)
+}
+
+function renderVpn() {
+	const online = isOnline()
+	const phase = phaseOf()
+	const info = online ? statusInfo() : { text: t('status.offline'), cls: 'bad' }
+	const hero = $('hero')
+	if (hero) {
+		hero.classList.toggle('on', online && phase === 'connected')
+		// The whole point of the spinner is to say "something is happening".
+		// With the machine offline nothing is happening, so it must not spin.
+		hero.classList.toggle('busy', online && (phase === 'connecting' || phase === 'disconnecting'))
+		hero.classList.toggle('offline', !online)
+		hero.classList.toggle('bad', online && phase === 'error')
+	}
+	const badge = $('status-badge')
+	if (badge) badge.className = `badge ${info.cls}`.trim()
+	const badgeText = $('status-text')
+	if (badgeText) badgeText.textContent = info.text
+	// The status is shown once, on the map badge. It used to be repeated in
+	// the top bar, which just read as "connected connected".
+	document.body.classList.toggle('is-connected', online && phase === 'connected')
+	document.body.classList.toggle('is-offline', !online)
+
+	// Where the user is.
+	const geo = resolveGeo()
+	const homeLabel = $('home-label')
+	if (homeLabel) {
+		if (state?.signedIn === false) homeLabel.textContent = t('loc.signIn')
+		else homeLabel.textContent = placeLabel(geo) || t('loc.unknown')
+	}
+	paintFlag($('home-flag'), geo?.countryCode ?? geo?.country, geo?.city)
+
+	// Where the traffic goes.
+	const node = activeNode()
+	const curName = $('cur-name')
+	if (curName) curName.textContent = node ? `${node.city ?? node.name ?? node.id}, ${node.country ?? node.countryCode ?? ''}`.replace(/, $/, '') : t('node.none')
+	const curMeta = $('cur-meta')
+	if (curMeta) {
+		const bits = []
+		if (node?.load !== undefined && node?.load !== null) bits.push(t('node.load', { n: Math.round(Number(node.load)) }))
+		if (node?.ping) bits.push(pingLabel(node.ping))
+		// Once a node is resolved - chosen by hand or picked automatically - the
+		// "fastest server" placeholder is stale and gets out of the way.
+		curMeta.textContent = node ? bits.join(' \u00b7 ') : t('node.fastest')
+		curMeta.hidden = Boolean(node) && bits.length === 0
+	}
+	paintFlag($('cur-flag'), node?.countryCode ?? node?.country, node?.city)
+
+	// Both ends are drawn whenever they are known, like the phone app: you can
+	// always see where you are and where the tunnel lands, connected or not.
+	const target = node ? latLonFor({ city: node.city, countryCode: node.countryCode ?? node.country }) : null
+	drawRoute(latLonFor(geo), target, online ? phase : 'offline')
+
+	// Numbers.
+	const stats = state?.runtime?.stats ?? {}
+	const session = state?.runtime?.session ?? {}
+	const setText = (id, value) => {
+		const node2 = $(id)
+		if (node2) node2.textContent = value
+	}
+	setText('st-public-ip', stats.publicIp ?? '--')
+	setText('st-vpn-ip', session.vpnIp ?? state?.runtime?.vpnIp ?? '--')
+	setText('st-ping', pingLabel(stats.ping))
+	setText('st-rx', bytesLabel(stats.bytesRx))
+	setText('st-tx', bytesLabel(stats.bytesTx))
+	tickDuration()
+
+	// Errors are shown, never swallowed - and no connection at all outranks
+	// whatever stale error the worker is still holding.
+	if (!online) {
+		banner('vpn-banner', t('err.offlineText'), { title: t('err.offlineTitle'), kind: 'bad' })
+	} else {
+		const error = state?.runtime?.error
+		if (error && phase !== 'connected') showError('vpn-banner', error)
+		else banner('vpn-banner', '')
+	}
+	renderProfile()
+}
+
+function tickDuration() {
+	const since = Number(state?.runtime?.since ?? state?.runtime?.connectedAt ?? 0)
+	const node = $('st-duration')
+	if (!node) return
+	if (phaseOf() !== 'connected' || !since) {
+		node.textContent = '--'
+		return
+	}
+	node.textContent = durationLabel(Date.now() - since)
+}
+
+function renderServers() {
+	const list = $('srv-list')
+	if (!list) return
+	list.textContent = ''
+	if (!nodes.length) {
+		const empty = document.createElement('div')
+		empty.className = 'empty'
+		empty.textContent = t('servers.empty')
+		list.appendChild(empty)
+		return
+	}
+	const activeId = String(state?.runtime?.nodeId ?? settings.preferredNodeId ?? '')
+	nodes.forEach((node, index) => {
+		const id = String(node?.id ?? node?.nodeId ?? index)
+		const offline = node?.online === false || node?.status === 'offline'
+		const row = document.createElement('button')
+		row.type = 'button'
+		row.className = 'srv-row' + (id === activeId ? ' active' : '') + (offline ? ' offline' : '')
+		row.style.animationDelay = `${Math.min(index, 8) * 26}ms`
+
+		const flag = document.createElement('span')
+		flag.className = 'flag-circle sm'
+		// Real SVG artwork. The emoji version rendered as nothing on Windows,
+		// which is why this column looked empty.
+		paintFlag(flag, node?.countryCode ?? node?.country, node?.city)
+		row.appendChild(flag)
+
+		const text = document.createElement('span')
+		text.className = 's-text'
+		const name = document.createElement('span')
+		name.className = 's-name'
+		name.textContent = `${node?.city ?? node?.name ?? id}, ${node?.country ?? node?.countryCode ?? ''}`.replace(/, $/, '')
+		text.appendChild(name)
+
+		const meta = document.createElement('span')
+		meta.className = 's-meta'
+		if (offline) {
+			meta.textContent = t('node.offline')
+		} else {
+			const load = Math.max(0, Math.min(100, Math.round(Number(node?.load ?? 0))))
+			const bar = document.createElement('span')
+			bar.className = 'load-bar' + (load >= 70 ? ' warm' : '')
+			const fill = document.createElement('i')
+			fill.style.width = `${load}%`
+			bar.appendChild(fill)
+			meta.appendChild(bar)
+			const label = document.createElement('span')
+			label.textContent = t('node.load', { n: load })
+			meta.appendChild(label)
+		}
+		text.appendChild(meta)
+		row.appendChild(text)
+
+		const sig = document.createElement('span')
+		sig.className = `sig l${signalOf(node?.ping)}`
+		sig.appendChild(document.createElement('i'))
+		sig.appendChild(document.createElement('i'))
+		sig.appendChild(document.createElement('i'))
+		row.appendChild(sig)
+
+		const ping = document.createElement('span')
+		ping.className = 's-ping'
+		ping.textContent = pingLabel(node?.ping)
+		row.appendChild(ping)
+
+		row.addEventListener('click', () => chooseNode(id, offline))
+		list.appendChild(row)
+	})
+}
+
+/** True while the user is mid-edit, so a poll must not rewrite the box. */
+function isEditing(node) {
+	return Boolean(node) && document.activeElement === node
+}
+
+function renderSettings() {
+	const setValue = (id, value) => {
+		const node = $(id)
+		// Never yank text out from under the cursor, and never undo a value the
+		// user set in the last moment.
+		if (!node || isEditing(node)) return
+		const next = value ?? ''
+		if (node.value !== String(next)) node.value = next
+	}
+	syncSegment('seg-lang', settings.language ?? 'auto')
+	syncSegment('seg-tunnel', settings.tunnelMode ?? 'all')
+	setSiteFieldVisible((settings.tunnelMode ?? 'all') !== 'all')
+	setValue('s-site-list', (settings.siteList ?? []).join('\n'))
+	setValue('s-bypass', (settings.bypass ?? []).join('\n'))
+	setValue('s-channel', settings.channel ?? 'prod')
+	setValue('s-api-base', settings.apiBase?.[settings.channel ?? 'prod'] ?? '')
+	setValue('s-site-base', settings.siteBase ?? '')
+	setValue('s-gw-host', settings.gateway?.host ?? '')
+	setValue('s-gw-port', settings.gateway?.port ?? 8443)
+	setValue('s-gw-scheme', settings.gateway?.scheme ?? 'https')
+	toggleSwitch($('sw-auto'), Boolean(settings.autoConnect))
+	toggleSwitch($('sw-kill'), Boolean(settings.killSwitch))
+	applyI18n()
+}
+
+/** "Except these" and "only these" are meaningless without somewhere to type. */
+function setSiteFieldVisible(show) {
+	const field = $('site-field')
+	if (!field) return
+	// Both, always. The class carries `display:none !important`, so setting
+	// only the attribute left the box invisible no matter what.
+	field.classList.toggle('hidden', !show)
+	field.hidden = !show
+}
+
+function setDisclosure(buttonId, bodyId, open) {
+	const button = $(buttonId)
+	const body = $(bodyId)
+	if (button) {
+		button.classList.toggle('open', open)
+		button.setAttribute('aria-expanded', open ? 'true' : 'false')
+	}
+	if (body) {
+		body.classList.toggle('open', open)
+		body.classList.toggle('hidden', !open)
+		body.hidden = !open
+	}
+}
+
+function syncSegment(id, value) {
+	const group = $(id)
+	if (!group) return
+	let active = null
+	for (const button of group.querySelectorAll('button')) {
+		const on = button.dataset.value === String(value)
+		button.classList.toggle('on', on)
+		button.classList.toggle('active', on)
+		if (on) active = button
+	}
+	// The pill is positioned from measurements so it lands on the button no
+	// matter how wide the translated label turns out to be.
+	const glide = group.querySelector('.seg-glide')
+	if (glide && active && active.offsetWidth) {
+		glide.style.width = active.offsetWidth + 'px'
+		glide.style.transform = 'translateX(' + active.offsetLeft + 'px)'
+		glide.style.opacity = '1'
+	}
+}
+
+function toggleSwitch(node, on) {
+	if (!node) return
+	node.classList.toggle('on', Boolean(on))
+	node.setAttribute('aria-checked', on ? 'true' : 'false')
+	node.setAttribute('aria-pressed', on ? 'true' : 'false')
+}
+
+// Takes the fetched payload, keeps it, and hands the drawing to paintDevices
+// so the arrows can redraw a page without touching the network.
+function renderDevices(devices, failure) {
+	if (failure) {
+		deviceRows = []
+		deviceMax = 0
+		deviceFailure = failure
+	} else {
+		const rows = Array.isArray(devices) ? devices : (devices?.devices ?? [])
+		deviceRows = rows
+		deviceMax = Number(devices?.maxDevices ?? state?.user?.maxDevices ?? 0)
+		deviceFailure = ''
+		// The control server models DeviceStatus as ACTIVE | REVOKED and returns
+		// active rows first. A revoked device must never read as a live one.
+		deviceActiveCount = rows.filter((d) => !isRevokedDevice(d)).length
+		devicePage = 0
+	}
+	paintDevices()
+}
+
+function isRevokedDevice(d) {
+	return String(d?.status ?? '').toUpperCase() === 'REVOKED' || Boolean(d?.revokedAt)
+}
+
+function paintDevices() {
+	const list = $('dev-list')
+	if (!list) return
+	list.textContent = ''
+	const counter = $('dev-count')
+	if (counter) counter.textContent = ''
+	if (deviceFailure) {
+		list.appendChild(
+			calloutNode({ text: deviceFailure, actionLabel: t('settings.devicesRetry'), onAction: () => ensureDevices(true) }),
+		)
+		return
+	}
+	const rows = deviceRows
+	if (!rows.length) {
+		const empty = document.createElement('div')
+		empty.className = 'empty'
+		empty.textContent = t('settings.devicesEmpty')
+		list.appendChild(empty)
+		deviceActiveCount = 0
+		return
+	}
+	const revokedOf = isRevokedDevice
+	const max = deviceMax
+	if (counter) counter.textContent = max ? t('dev.limit', { used: deviceActiveCount, max }) : String(deviceActiveCount)
+
+	const pageCount = Math.max(1, Math.ceil(rows.length / DEVICES_PER_PAGE))
+	devicePage = Math.min(Math.max(0, devicePage), pageCount - 1)
+	const from = devicePage * DEVICES_PER_PAGE
+
+	const selfId = String(state?.device?.id ?? '')
+	rows.slice(from, from + DEVICES_PER_PAGE).forEach((device, index) => {
+		const id = String(device?.id ?? device?.deviceId ?? index)
+		const revoked = revokedOf(device)
+		const isSelf = device?.isCurrent === true || (selfId !== '' && id === selfId)
+		const row = document.createElement('div')
+		row.className = 'dev-row' + (revoked ? ' revoked' : '')
+		row.style.animationDelay = Math.min(index, 8) * 26 + 'ms'
+
+		const icon = document.createElement('span')
+		icon.className = 'd-ic'
+		icon.appendChild(iconSvg(/phone|android|ios/i.test(String(device?.platform ?? '')) ? 'phone' : 'laptop'))
+		row.appendChild(icon)
+
+		const text = document.createElement('span')
+		text.className = 'd-text'
+		const name = document.createElement('span')
+		name.className = 'd-name'
+		name.textContent = device?.deviceName ?? device?.name ?? device?.platform ?? id
+		text.appendChild(name)
+		const sub = document.createElement('span')
+		sub.className = 'd-sub'
+		const bits = []
+		if (device?.platform) bits.push(String(device.platform))
+		if (revoked) bits.push(t('dev.revoked'))
+		else if (device?.connected) bits.push(device?.connectedNode?.name ? t('dev.online') + ' \u00b7 ' + device.connectedNode.name : t('dev.online'))
+		else bits.push(t('dev.lastSeen', { when: whenLabel(device?.lastSeen) }))
+		sub.textContent = bits.join(' \u00b7 ')
+		text.appendChild(sub)
+		row.appendChild(text)
+
+		const badge = document.createElement('span')
+		badge.className = 'dev-badge' + (revoked ? ' revoked' : isSelf ? ' self' : '')
+		badge.textContent = revoked ? t('dev.revoked') : isSelf ? t('dev.thisDevice') : t('dev.active')
+		row.appendChild(badge)
+
+		// Revoking an already revoked device is a no-op the API rejects anyway.
+		if (!revoked && !isSelf) {
+			const revoke = document.createElement('button')
+			revoke.type = 'button'
+			revoke.className = 'link-btn'
+			revoke.textContent = t('settings.revoke')
+			revoke.addEventListener('click', () => revokeDevice(id))
+			row.appendChild(revoke)
+		}
+		list.appendChild(row)
+	})
+
+	if (pageCount > 1) list.appendChild(devicePagerNode(pageCount))
+}
+
+/** Arrows around a "1 of 3" counter. Only drawn when there is a second page. */
+function devicePagerNode(pageCount) {
+	const pager = document.createElement('div')
+	pager.className = 'pager'
+
+	const step = (delta, label, icon, disabled) => {
+		const button = document.createElement('button')
+		button.type = 'button'
+		button.className = 'pager-btn'
+		button.disabled = disabled
+		button.setAttribute('aria-label', label)
+		button.appendChild(iconSvg(icon))
+		button.addEventListener('click', () => {
+			devicePage = Math.min(Math.max(0, devicePage + delta), pageCount - 1)
+			paintDevices()
+		})
+		return button
+	}
+
+	pager.appendChild(step(-1, t('dev.prevPage'), 'back', devicePage <= 0))
+
+	const info = document.createElement('span')
+	info.className = 'pager-info'
+	info.textContent = t('dev.page', { page: devicePage + 1, total: pageCount })
+	pager.appendChild(info)
+
+	pager.appendChild(step(1, t('dev.nextPage'), 'chevron', devicePage >= pageCount - 1))
+
+	return pager
+}
+
+/** The profile screen mirrors the Flutter "My profile" page. */
+function renderProfile() {
+	const user = state?.user ?? null
+	const sub = state?.subscription ?? null
+	const name = user?.username ?? user?.email ?? user?.name ?? ''
+	const set = (id, value) => {
+		const node = $(id)
+		if (node) node.textContent = value
+	}
+	set('prof-name', name || '\u2014')
+	const initial = $('prof-initial')
+	if (initial) initial.textContent = (name || '?').trim().charAt(0).toUpperCase() || '?'
+
+	const status = String(sub?.status ?? '').toUpperCase()
+	const label =
+		status === 'ACTIVE' ? t('profile.active')
+		: status === 'EXPIRED' ? t('profile.expired')
+		: status === 'DISABLED' ? t('profile.disabled')
+		: t('profile.noSub')
+	const chip = $('prof-chip')
+	if (chip) {
+		chip.textContent = label
+		chip.className = 'prof-chip' + (status === 'ACTIVE' ? '' : status === 'EXPIRED' ? ' warn' : ' off')
+	}
+	set('prof-status', label)
+	set('prof-plan', status === 'ACTIVE' ? t('profile.active') : t('profile.free'))
+	const until = sub?.expiresAt ? new Date(sub.expiresAt) : null
+	set('prof-expires', until && Number.isFinite(until.getTime()) ? until.toLocaleDateString() : status === 'ACTIVE' ? t('profile.unlimited') : '\u2014')
+	const max = Number(user?.maxDevices ?? 0)
+	set('prof-devices', max ? t('dev.limit', { used: deviceActiveCount, max }) : String(deviceActiveCount || '\u2014'))
+}
+
+/**
+ * Signed out means one screen and one screen only: the login screen.
+ *
+ * The element carries both `class="hidden"` and the `hidden` attribute, and
+ * `.hidden` is `display:none !important`. Flipping only the attribute - which
+ * is what used to happen - left the login screen permanently invisible, so a
+ * signed-out popup showed an empty VPN tab instead.
+ */
+function showLogin(show) {
+	const screen = $('screen-login')
+	const app = $('app')
+	if (screen) {
+		screen.classList.toggle('hidden', !show)
+		screen.hidden = !show
+	}
+	if (app) {
+		app.classList.toggle('behind', Boolean(show))
+		app.setAttribute('aria-hidden', show ? 'true' : 'false')
+	}
+	document.body.classList.toggle('signed-out', Boolean(show))
+	if (!show) return
+	setLoginMode(loginMode)
+}
+
+/** Password or website - both are always one click away. */
+function setLoginMode(mode) {
+	loginMode = mode === 'password' ? 'password' : 'site'
+	const site = $('login-site')
+	const pwd = $('login-password')
+	if (site) {
+		site.classList.toggle('hidden', loginMode !== 'site')
+		site.hidden = loginMode !== 'site'
+	}
+	if (pwd) {
+		pwd.classList.toggle('hidden', loginMode !== 'password')
+		pwd.hidden = loginMode !== 'password'
+	}
+	requestAnimationFrame(() => syncSegment('seg-login', loginMode))
+}
+
+function applyState(next) {
+	if (next && typeof next === 'object') state = next
+	const incoming = state?.settings
+	// While a save is in flight - or has only just landed - the worker still
+	// reports the previous values. Applying them here is exactly what made
+	// every toggle snap back to its old position a second later.
+	const accepting = !savePending && Date.now() >= saveGuardUntil
+	if (incoming && typeof incoming === 'object' && accepting) {
+		settings = {
+			...DEFAULTS,
+			...incoming,
+			apiBase: { ...DEFAULTS.apiBase, ...(incoming.apiBase ?? {}) },
+			gateway: { ...DEFAULTS.gateway, ...(incoming.gateway ?? {}) },
+			bypass: Array.isArray(incoming.bypass) ? incoming.bypass : DEFAULTS.bypass,
+			siteList: Array.isArray(incoming.siteList) ? incoming.siteList : [],
+		}
+	}
+	setLanguage(settings.language)
+	document.documentElement.lang = settings.language === 'auto' ? document.documentElement.lang : settings.language
+	if (Array.isArray(state?.nodes) && state.nodes.length) {
+		nodes = state.nodes
+		cacheNodes(nodes)
+	}
+	// The worker is authoritative once a real phase arrives.
+	if (state?.runtime?.phase) localPhase = null
+	const account = state?.user ?? null
+	const name = account?.username ?? account?.email ?? account?.name ?? ''
+	const acctName = $('acct-name')
+	if (acctName) acctName.textContent = name || t('nav.profile')
+	const initial = $('acct-initial')
+	if (initial) initial.textContent = (name || '?').trim().charAt(0).toUpperCase() || '?'
+	applyI18n()
+	renderSettings()
+	renderVpn()
+	renderServers()
+	showLogin(state?.signedIn === false)
+}
+
+// -------------------------------------------------------------- data loads --
+
+function cacheNodes(list) {
+	try {
+		localStorage.setItem(NODES_CACHE, JSON.stringify(list))
+	} catch {}
+}
+
+function cachedNodes() {
+	try {
+		const raw = localStorage.getItem(NODES_CACHE)
+		const parsed = raw ? JSON.parse(raw) : null
+		return Array.isArray(parsed) ? parsed : []
+	} catch {
+		return []
+	}
+}
+
+/** Loads the server list. Failure keeps whatever is on screen and offers a retry. */
+async function ensureNodes(force = false) {
+	if (nodes.length && !force) {
+		banner('srv-banner', '')
+		return
+	}
+	const button = $('btn-refresh')
+	button?.classList.add('spinning')
+	if (!nodes.length) {
+		const list = $('srv-list')
+		if (list && !list.childElementCount) {
+			const loading = document.createElement('div')
+			loading.className = 'empty'
+			loading.textContent = t('servers.loading')
+			list.appendChild(loading)
+		}
+	}
+	const response = await call('refreshNodes')
+	button?.classList.remove('spinning')
+	const list = response?.nodes ?? response?.data?.nodes ?? response?.items
+	if (response?.ok && Array.isArray(list) && list.length) {
+		nodes = list
+		cacheNodes(nodes)
+		banner('srv-banner', '')
+		renderServers()
+		return
+	}
+	if (response?.ok && Array.isArray(list)) {
+		nodes = list
+		banner('srv-banner', '')
+		renderServers()
+		return
+	}
+	// Failed. Fall back to the last known list rather than an empty screen.
+	if (!nodes.length) nodes = cachedNodes()
+	renderServers()
+	banner('srv-banner', nodes.length ? t('servers.cached') : humanError(response), {
+		title: t('servers.failed'),
+		kind: nodes.length ? 'warn' : 'bad',
+		actionLabel: t('servers.retry'),
+		onAction: () => ensureNodes(true),
+	})
+}
+
+let devicesLoaded = false
+
+async function ensureDevices(force = false) {
+	if (devicesLoaded && !force) return
+	if (state?.signedIn === false) {
+		renderDevices([], null)
+		return
+	}
+	devicesLoaded = true
+	const response = await call('devices')
+	const list = response?.devices ?? response?.items ?? response?.results ?? response?.data?.devices
+	if (response?.ok && Array.isArray(list)) {
+		renderDevices(list, null)
+		return
+	}
+	devicesLoaded = false
+	renderDevices(null, `${t('settings.devicesFailed')} ${humanError(response)}`)
+}
+
+/** Pulls fresh state. A failure never blanks the UI - it adds a banner. */
+async function refreshState({ quiet = false } = {}) {
+	const response = await call('getState')
+	if (response?.ok) {
+		const next = response.state ?? response.data ?? response
+		applyState(next)
+		if (!quiet) banner('vpn-banner', state?.runtime?.error ? humanError({ error: state.runtime.error }) : '', { title: t('err.connectTitle') })
+		return true
+	}
+	// Keep the last known screen. Never wipe the settings form.
+	if (!state) {
+		applyState({ settings: { ...DEFAULTS }, signedIn: true, runtime: null, nodes: cachedNodes() })
+	}
+	if (!quiet) {
+		banner('vpn-banner', humanError(response), { actionLabel: t('common.retry'), onAction: () => refreshState() })
+		banner('set-banner', humanError(response), { actionLabel: t('common.retry'), onAction: () => refreshState() })
+	}
+	return false
+}
+
+// ---------------------------------------------------------------- actions ---
+
+function markBusy(on) {
+	busySince = on ? Date.now() : 0
+}
+
+function isBusy() {
+	// A stuck flag is worse than a double click: it expires by itself.
+	return busySince > 0 && Date.now() - busySince < 25000
+}
+
+function clearWatchdog() {
+	if (connectWatchdog) clearTimeout(connectWatchdog)
+	connectWatchdog = null
+}
+
+async function togglePower() {
+	const phase = phaseOf()
+	if (state?.signedIn === false) {
+		showLogin(true)
+		return
+	}
+	const going = phase === 'connected' || phase === 'connecting'
+	// No link, no attempt, no animation. Pretending to dial on a dead network
+	// is the bug, not the missing spinner.
+	if (!going && !isOnline()) {
+		localPhase = null
+		renderVpn()
+		banner('vpn-banner', t('err.offlineText'), { title: t('err.offlineTitle') })
+		return
+	}
+	if (isBusy()) return
+	markBusy(true)
+	banner('vpn-banner', '')
+	try {
+		if (!going) {
+			// Optimistic feedback so the button never feels dead - but it is now
+			// on a leash: if nothing comes back, it becomes an error instead of
+			// spinning until the popup is closed.
+			localPhase = 'connecting'
+			state = { ...(state ?? {}), runtime: { ...(state?.runtime ?? {}), phase: 'connecting', error: null } }
+			renderVpn()
+			clearWatchdog()
+			connectWatchdog = setTimeout(() => {
+				if (phaseOf() !== 'connecting') return
+				localPhase = 'error'
+				markBusy(false)
+				renderVpn()
+				banner('vpn-banner', t('err.connectTimeoutText'), {
+					title: t('err.connectTitle'),
+					actionLabel: t('common.retry'),
+					onAction: () => togglePower(),
+				})
+			}, CONNECT_WATCHDOG_MS)
+		}
+		const nodeId = state?.runtime?.nodeId ?? settings.preferredNodeId ?? nodes[0]?.id ?? null
+		const response = going ? await call('disconnect', { silent: false }) : await call('connect', nodeId ? { nodeId } : {})
+		clearWatchdog()
+		if (!response?.ok) {
+			localPhase = 'error'
+			renderVpn()
+			banner('vpn-banner', humanError(response), {
+				title: t('err.connectTitle'),
+				actionLabel: t('common.retry'),
+				onAction: () => togglePower(),
+			})
+		} else {
+			localPhase = null
+		}
+	} finally {
+		markBusy(false)
+		await refreshState({ quiet: true })
+	}
+}
+
+async function chooseNode(nodeId, offline) {
+	if (offline) return
+	const response = await call('selectNode', { nodeId })
+	if (!response?.ok) {
+		banner('srv-banner', humanError(response), { actionLabel: t('common.retry'), onAction: () => chooseNode(nodeId, false) })
+		return
+	}
+	banner('srv-banner', '')
+	await refreshState({ quiet: true })
+	setView('vpn')
+	// Selecting a server while connected should move the tunnel there.
+	if (phaseOf() === 'connected') {
+		markBusy(true)
+		const reconnect = await call('connect', { nodeId })
+		markBusy(false)
+		if (!reconnect?.ok) banner('vpn-banner', humanError(reconnect), { title: t('err.connectTitle') })
+		await refreshState({ quiet: true })
+	}
+}
+
+function linesOf(id) {
+	return String($(id)?.value ?? '')
+		.split('\n')
+		.map((line) => line.trim())
+		.filter(Boolean)
+}
+
+function buildSettingsPatch() {
+	const channel = $('s-channel')?.value ?? settings.channel ?? 'prod'
+	return {
+		channel,
+		apiBase: { ...settings.apiBase, [channel]: String($('s-api-base')?.value ?? '').trim() || settings.apiBase?.[channel] },
+		siteBase: String($('s-site-base')?.value ?? '').trim() || settings.siteBase,
+		gateway: {
+			host: String($('s-gw-host')?.value ?? '').trim(),
+			port: Number($('s-gw-port')?.value) || 8443,
+			scheme: $('s-gw-scheme')?.value ?? 'https',
+		},
+		bypass: linesOf('s-bypass'),
+		siteList: linesOf('s-site-list'),
+		tunnelMode: settings.tunnelMode ?? 'all',
+		language: settings.language ?? 'auto',
+		autoConnect: Boolean(settings.autoConnect),
+		killSwitch: Boolean(settings.killSwitch),
+		preferredNodeId: settings.preferredNodeId ?? null,
+	}
+}
+
+function setSaveState(kind, text) {
+	const node = $('save-state')
+	if (!node) return
+	clearTimeout(saveStateTimer)
+	node.className = 'save-state' + (kind ? ' ' + kind : '')
+	node.textContent = text ?? ''
+	if (kind === 'ok') saveStateTimer = setTimeout(() => setSaveState('', ''), 1600)
+}
+
+/**
+ * Debounced write-through. Every control calls this the moment it changes.
+ *
+ * This is the whole "settings do not save" bug: the switches and segments only
+ * mutated the in-memory object, the text fields had no listener at all, and
+ * the one function that did persist was bound to a #btn-save button that does
+ * not exist in the markup. Five seconds later the poll rebuilt `settings` from
+ * storage and every change vanished.
+ */
+function queueSave() {
+	setSaveState('busy', t('settings.saving'))
+	// Hold off the poll for the whole debounce window plus the round trip.
+	saveGuardUntil = Date.now() + SAVE_DEBOUNCE_MS + 2500
+	clearTimeout(saveTimer)
+	saveTimer = setTimeout(() => {
+		saveSettings()
+	}, SAVE_DEBOUNCE_MS)
+}
+
+async function saveSettings() {
+	clearTimeout(saveTimer)
+	const patch = buildSettingsPatch()
+	// Keep the local copy authoritative straight away so nothing can flicker
+	// back while the write is in flight.
+	settings = { ...settings, ...patch }
+	savePending = true
+	let response
+	try {
+		response = await call('saveSettings', patch)
+	} finally {
+		savePending = false
+		saveGuardUntil = Date.now() + 1200
+	}
+	if (!response?.ok) {
+		setSaveState('bad', t('settings.saveFailedShort'))
+		banner('set-banner', humanError(response), {
+			title: t('settings.saveFailed'),
+			actionLabel: t('common.retry'),
+			onAction: saveSettings,
+		})
+		return false
+	}
+	banner('set-banner', '')
+	setSaveState('ok', t('settings.saved'))
+	await refreshState({ quiet: true })
+	return true
+}
+
+async function resetSettings() {
+	clearTimeout(saveTimer)
+	const response = await call('resetSettings')
+	if (!response?.ok) {
+		banner('set-banner', humanError(response), { actionLabel: t('common.retry'), onAction: resetSettings })
+		return
+	}
+	banner('set-banner', '')
+	saveGuardUntil = 0
+	savePending = false
+	setSaveState('ok', t('settings.resetDone'))
+	await refreshState()
+}
+
+async function testGateway() {
+	const host = String($('s-gw-host')?.value ?? '').trim()
+	const result = $('gw-result')
+	if (!host) {
+		if (result) {
+			result.className = 'hint bad'
+			result.textContent = t('settings.enterHost')
+		}
+		return
+	}
+	if (result) {
+		result.className = 'hint'
+		result.textContent = t('settings.probing')
+	}
+	const gateway = { host, port: Number($('s-gw-port')?.value) || 8443, scheme: $('s-gw-scheme')?.value ?? 'https' }
+	const response = await call('testGateway', { gateway })
+	if (!result) return
+	if (response?.ok) {
+		result.className = 'hint ok'
+		result.textContent = t('settings.reachable', { ms: Math.round(Number(response.data?.ping ?? response.ping ?? 0)) })
+	} else {
+		result.className = 'hint bad'
+		result.textContent = `${t('settings.unreachable')} ${humanError(response)}`
+	}
+}
+
+async function revokeDevice(deviceId) {
+	const response = await call('revokeDevice', { deviceId })
+	if (!response?.ok) {
+		banner('set-banner', humanError(response))
+		return
+	}
+	await ensureDevices(true)
+}
+
+async function signOut() {
+	await call('logout')
+	devicesLoaded = false
+	localPhase = null
+	await refreshState()
+	// Signing out lands on the login screen, exactly like it used to.
+	showLogin(true)
+}
+
+async function submitLogin() {
+	const identifier = String($('identifier')?.value ?? '').trim()
+	const password = String($('password')?.value ?? '')
+	if (!identifier || !password) {
+		banner('login-banner', t('login.needBoth'))
+		return
+	}
+	if (!isOnline()) {
+		banner('login-banner', t('err.offlineText'), { title: t('err.offlineTitle') })
+		return
+	}
+	const button = $('btn-login')
+	if (button) {
+		button.disabled = true
+		button.textContent = t('login.submitting')
+	}
+	const response = await call('login', { identifier, password })
+	if (button) {
+		button.disabled = false
+		button.textContent = t('login.submit')
+	}
+	if (!response?.ok) {
+		banner('login-banner', humanError(response), { title: t('login.failed') })
+		return
+	}
+	banner('login-banner', '')
+	devicesLoaded = false
+	await refreshState()
+}
+
+async function siteLogin() {
+	const button = $('btn-site-login')
+	if (button) button.disabled = true
+	banner('login-banner', t('login.opened'), { kind: 'info', title: t('login.waiting') })
+	const response = await call('linkWithSite')
+	if (!response?.ok) {
+		if (button) button.disabled = false
+		banner('login-banner', humanError(response), { title: t('login.openFailed') })
+		return
+	}
+	// The site tab signs in and the content bridge hands the refresh token back.
+	// Waiting for that here is what stops the popup asking for credentials a
+	// second time after the website has already accepted them.
+	const deadline = Date.now() + 90000
+	while (Date.now() < deadline) {
+		await sleep(1500)
+		await refreshState({ quiet: true })
+		if (state?.signedIn) break
+	}
+	if (button) button.disabled = false
+	if (state?.signedIn) {
+		banner('login-banner', '')
+		setView('vpn')
+	}
+}
+
+// ------------------------------------------------------------------- wiring -
+
+function wire() {
+	// The account chip is a tab, not a shortcut: it selects the profile view
+	// and lights up in the rail like every other entry.
+	for (const item of document.querySelectorAll('.nav-item')) {
+		item.addEventListener('click', () => setView(item.dataset.view))
+	}
+	$('btn-power')?.addEventListener('click', togglePower)
+	$('btn-servers-jump')?.addEventListener('click', () => setView('servers'))
+	$('btn-refresh')?.addEventListener('click', () => ensureNodes(true))
+	$('rail-brand')?.addEventListener('click', () => setView('vpn'))
+
+	$('seg-lang')?.addEventListener('click', (event) => {
+		const button = event.target.closest('button')
+		if (!button) return
+		settings.language = button.dataset.value
+		setLanguage(settings.language)
+		syncSegment('seg-lang', settings.language)
+		applyI18n()
+		renderVpn()
+		renderServers()
+		renderSettings()
+		queueSave()
+	})
+
+	$('seg-tunnel')?.addEventListener('click', (event) => {
+		const button = event.target.closest('button')
+		if (!button) return
+		settings.tunnelMode = button.dataset.value
+		syncSegment('seg-tunnel', settings.tunnelMode)
+		setSiteFieldVisible(settings.tunnelMode !== 'all')
+		applyI18n()
+		queueSave()
+		if (settings.tunnelMode !== 'all') $('s-site-list')?.focus()
+	})
+
+	$('sw-auto')?.addEventListener('click', () => {
+		settings.autoConnect = !settings.autoConnect
+		toggleSwitch($('sw-auto'), settings.autoConnect)
+		queueSave()
+	})
+	$('sw-kill')?.addEventListener('click', () => {
+		settings.killSwitch = !settings.killSwitch
+		toggleSwitch($('sw-kill'), settings.killSwitch)
+		queueSave()
+	})
+
+	$('s-channel')?.addEventListener('change', () => {
+		const channel = $('s-channel').value
+		settings.channel = channel
+		const field = $('s-api-base')
+		if (field) field.value = settings.apiBase?.[channel] ?? ''
+		queueSave()
+	})
+
+	// Everything that holds a value writes through. Text areas and inputs save
+	// as you type (debounced) and again on blur, selects on change.
+	for (const id of ['s-gw-scheme']) {
+		$(id)?.addEventListener('change', queueSave)
+	}
+	for (const id of ['s-site-list', 's-bypass', 's-api-base', 's-site-base', 's-gw-host', 's-gw-port']) {
+		const node = $(id)
+		if (!node) continue
+		node.addEventListener('input', queueSave)
+		node.addEventListener('change', queueSave)
+		node.addEventListener('blur', () => saveSettings())
+	}
+
+	$('btn-advanced')?.addEventListener('click', () => {
+		advancedOpen = !advancedOpen
+		setDisclosure('btn-advanced', 'advanced-body', advancedOpen)
+	})
+	$('btn-devmode')?.addEventListener('click', () => {
+		devModeOpen = !devModeOpen
+		setDisclosure('btn-devmode', 'dev-body', devModeOpen)
+	})
+
+	$('btn-test-gw')?.addEventListener('click', testGateway)
+	$('btn-reset')?.addEventListener('click', resetSettings)
+	$('btn-signout')?.addEventListener('click', signOut)
+	$('btn-login')?.addEventListener('click', submitLogin)
+	$('btn-site-login')?.addEventListener('click', siteLogin)
+	$('seg-login')?.addEventListener('click', (event) => {
+		const button = event.target.closest('button')
+		if (!button) return
+		setLoginMode(button.dataset.value)
+	})
+	$('identifier')?.addEventListener('keydown', (event) => {
+		if (event.key === 'Enter') $('password')?.focus()
+	})
+	$('password')?.addEventListener('keydown', (event) => {
+		if (event.key === 'Enter') submitLogin()
+	})
+	$('btn-pwd-toggle')?.addEventListener('click', () => {
+		const field = $('password')
+		if (!field) return
+		const show = field.type === 'password'
+		field.type = show ? 'text' : 'password'
+		const button = $('btn-pwd-toggle')
+		if (button) button.textContent = show ? t('login.hide') : t('login.show')
+	})
+
+	// Losing the link mid-session must stop the animation immediately, not at
+	// the next five-second poll.
+	window.addEventListener('online', () => {
+		renderVpn()
+		refreshState({ quiet: true })
+	})
+	window.addEventListener('offline', () => {
+		clearWatchdog()
+		if (localPhase === 'connecting') localPhase = 'error'
+		markBusy(false)
+		renderVpn()
+	})
+
+	// A pending debounce must not be lost when the popup closes.
+	window.addEventListener('blur', () => {
+		if (saveTimer) saveSettings()
+	})
+
+	try {
+		chrome.runtime.onMessage.addListener((message) => {
+			if (!message || typeof message !== 'object') return
+			if (message.type === 'state' || message.type === 'runtime') {
+				const runtime = message.runtime ?? message.payload ?? null
+				if (runtime) {
+					if (runtime.phase) {
+						localPhase = null
+						clearWatchdog()
+					}
+					state = { ...(state ?? {}), runtime }
+					renderVpn()
+				}
+			}
+		})
+	} catch {}
+}
+
+async function boot() {
+	paintIcons()
+	setLanguage('auto')
+	applyI18n()
+	wire()
+	setView('vpn')
+	setDisclosure('btn-advanced', 'advanced-body', false)
+	setDisclosure('btn-devmode', 'dev-body', false)
+	syncGlide()
+	// Show the cached list immediately so the servers tab is never empty while
+	// the worker wakes up.
+	nodes = cachedNodes()
+	renderServers()
+	await refreshState()
+	paintIcons()
+	if (!nodes.length) ensureNodes()
+	tickTimer = setInterval(tickDuration, 1000)
+	pollTimer = setInterval(() => refreshState({ quiet: true }), 5000)
+	window.addEventListener('unload', () => {
+		clearInterval(tickTimer)
+		clearInterval(pollTimer)
+		clearWatchdog()
+	})
+}
+
+// A crash during boot used to leave a blank popup with no explanation.
+boot().catch((error) => {
+	banner('vpn-banner', String(error?.message ?? error), { actionLabel: t('common.retry'), onAction: () => location.reload() })
+})

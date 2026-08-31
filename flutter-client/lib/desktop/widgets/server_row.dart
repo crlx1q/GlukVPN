@@ -7,6 +7,7 @@ import '../../utils/signal.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/signal_bars.dart';
+import '../logic/node_selector.dart';
 
 /// One selectable server in the desktop list (requirement 8).
 ///
@@ -96,7 +97,7 @@ class _ServerRowState extends State<ServerRow> {
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
                         Text(
-                          node.displayTitle,
+                          publicNodeTitle(node),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -166,7 +167,7 @@ class _ServerRowState extends State<ServerRow> {
     if (!node.online) {
       return widget.offlineLabel ?? 'Offline';
     }
-    final parts = <String>[node.displaySubtitle];
+    final parts = <String>[publicNodeSubtitle(node) ?? ''];
     final load = node.loadPercent;
     if (load != null) {
       parts.add('${widget.loadLabel ?? 'Load'} ${formatPercent(load.toDouble())}');

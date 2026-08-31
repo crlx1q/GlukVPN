@@ -107,6 +107,18 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
     ValueData: """{app}\{#AppExeName}"" --hidden"; \
     Flags: uninsdeletevalue; Tasks: autostart
 
+; Clear any "always run as administrator" compatibility flag left behind by an
+; earlier build. Windows records those per-exe under AppCompatFlags\Layers, and
+; a stale RUNASADMIN entry makes every launch of glukvpn.exe demand elevation -
+; which is what turned the installer's own "run now" step into
+; "CreateProcess failed; code 740".
+Root: HKCU; Subkey: "Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"; \
+    ValueType: none; ValueName: "{app}\{#AppExeName}"; \
+    Flags: deletevalue noerror
+Root: HKLM; Subkey: "Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"; \
+    ValueType: none; ValueName: "{app}\{#AppExeName}"; \
+    Flags: deletevalue noerror
+
 [Run]
 ; Register and start the tunnel service. waituntilterminated so a failure is
 ; reported before Setup claims success.
@@ -118,12 +130,23 @@ Filename: "{app}\service\{#ServiceExeName}"; Parameters: "--install"; \
 ;
 ; Without runasoriginaluser the app inherits Setup's administrator token. It
 ; then writes its settings into the administrator profile and Windows refuses
-; parts of the shell integration, which is what produced the "administrator
-; rights are required" error on the last page of the installer. The client
-; itself never needs elevation: the privileged work lives in the service.
+; parts of the shell integration. The client itself never needs elevation: the
+; privileged work lives in the service.
+;
+; runasoriginaluser on its own was not enough. It goes through
+; CreateProcessAsUser, which cannot elevate and fails with
+;   "CreateProcess failed; code 740 - the requested operation requires
+;    elevation"
+; whenever Windows believes glukvpn.exe needs administrator rights. Three
+; changes make sure it does not:
+;   * the exe manifest now declares requestedExecutionLevel asInvoker
+;     (flutter-client\windows\runner\runner.exe.manifest),
+;   * shellexec hands the launch to the shell, which honours that manifest
+;     instead of failing the call, and
+;   * the [Registry] section above clears any stale RUNASADMIN layer.
 Filename: "{app}\{#AppExeName}"; \
     Description: "{cm:LaunchProgram,{#AppName}}"; \
-    Flags: nowait postinstall skipifsilent runasoriginaluser
+    Flags: nowait postinstall skipifsilent runasoriginaluser shellexec
 
 [UninstallRun]
 ; Stop the tunnel and remove the service before the files disappear.

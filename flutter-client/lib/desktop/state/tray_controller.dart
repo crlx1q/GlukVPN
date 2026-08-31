@@ -3,10 +3,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:tray_manager/tray_manager.dart';
 
+import '../../models/models.dart';
 import '../../utils/format.dart';
 import '../i18n/desktop_strings.dart';
 import '../logic/connection_phase.dart';
+import '../logic/node_selector.dart';
 import '../services/desktop_log.dart';
+import '../services/window_fx.dart';
 import 'desktop_vpn_controller.dart';
 import 'window_controller.dart';
 
@@ -57,6 +60,10 @@ class TrayController with TrayListener {
     _attached = true;
 
     trayManager.addListener(this);
+    // The context menu is a real Win32 menu, so it follows the *process*
+    // theme rather than the app's colours. Without this it is bright white on
+    // a dark desktop, which is exactly what was reported.
+    WindowFx.applySystemMenuTheme();
     await _applyIcon(force: true);
     await _rebuildMenu(force: true);
 
@@ -90,9 +97,12 @@ class TrayController with TrayListener {
 
   String _tooltip() {
     final String status = _strings.phaseLabel(_vpn.phase);
-    final Object? node = _vpn.selectedNode;
+    final VpnNodeInfo? node = _vpn.selectedNode;
     if (node == null) return 'GlukVPN \u2014 $status';
-    return 'GlukVPN \u2014 $status \u00b7 ${_vpn.selectedNode!.displayTitle}';
+    // Never the node handle: publicNodeTitle only ever returns geography.
+    final String server =
+        publicNodeTitle(node, fallback: _strings.trayAutoServer);
+    return 'GlukVPN \u2014 $status \u00b7 $server';
   }
 
   /// Rebuilds only when something visible actually changed; Windows flickers
@@ -104,8 +114,10 @@ class TrayController with TrayListener {
 
     final ConnectionPhase phase = _vpn.phase;
     final int? ping = _vpn.currentPingMs;
-    final String server =
-        _vpn.selectedNode?.displayTitle ?? _strings.trayAutoServer;
+    final VpnNodeInfo? selected = _vpn.selectedNode;
+    final String server = selected == null
+        ? _strings.trayAutoServer
+        : publicNodeTitle(selected, fallback: _strings.trayAutoServer);
 
     final Menu menu = Menu(
       items: <MenuItem>[
@@ -189,6 +201,9 @@ class TrayController with TrayListener {
 
   @override
   void onTrayIconRightMouseDown() {
+    // Re-read the system theme first, so switching Windows to dark mode is
+    // picked up without restarting GlukVPN.
+    WindowFx.refreshMenuTheme();
     unawaited(trayManager.popUpContextMenu());
   }
 

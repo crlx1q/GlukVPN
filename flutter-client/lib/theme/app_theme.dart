@@ -8,7 +8,8 @@ import 'tokens.dart';
 
 /// The single ThemeData for the app, built from [GlukColors].
 ///
-/// The mockup uses Poppins 400-800 throughout. `google_fonts` fetches and
+/// The app uses Nunito 400-800 throughout, the same family as the Windows
+/// client, so the two never look like different products. `google_fonts` fetches and
 /// caches it on first launch and falls back to the platform sans-serif if the
 /// device is offline before the first successful fetch - acceptable here
 /// because the VPN is not connected at that point anyway.
@@ -120,10 +121,10 @@ class GlukTheme {
 
 	/// Type scale transcribed from the mockup's CSS.
 	static TextTheme _textTheme(TextTheme base) {
-		final poppins = GoogleFonts.poppinsTextTheme(base);
-		return poppins.copyWith(
+		final nunito = GoogleFonts.nunitoTextTheme(base);
+		return nunito.copyWith(
 			// `.ob-head h1` - 25px / 700 / line-height 1.24
-			headlineMedium: poppins.headlineMedium?.copyWith(
+			headlineMedium: nunito.headlineMedium?.copyWith(
 				fontSize: 25,
 				fontWeight: FontWeight.w700,
 				height: 1.24,
@@ -131,55 +132,55 @@ class GlukTheme {
 				letterSpacing: -0.2,
 			),
 			// Screen titles.
-			titleLarge: poppins.titleLarge?.copyWith(
+			titleLarge: nunito.titleLarge?.copyWith(
 				fontSize: 19,
 				fontWeight: FontWeight.w700,
 				color: GlukColors.text0,
 			),
-			titleMedium: poppins.titleMedium?.copyWith(
+			titleMedium: nunito.titleMedium?.copyWith(
 				fontSize: 15,
 				fontWeight: FontWeight.w600,
 				color: GlukColors.text0,
 			),
 			// `.statusbar` - 14px / 600
-			titleSmall: poppins.titleSmall?.copyWith(
+			titleSmall: nunito.titleSmall?.copyWith(
 				fontSize: 14,
 				fontWeight: FontWeight.w600,
 				color: GlukColors.text0,
 			),
-			bodyLarge: poppins.bodyLarge?.copyWith(
+			bodyLarge: nunito.bodyLarge?.copyWith(
 				fontSize: 15,
 				fontWeight: FontWeight.w500,
 				color: GlukColors.text0,
 			),
-			bodyMedium: poppins.bodyMedium?.copyWith(
+			bodyMedium: nunito.bodyMedium?.copyWith(
 				fontSize: 13.5,
 				fontWeight: FontWeight.w400,
 				height: 1.45,
 				color: GlukColors.text1,
 			),
-			bodySmall: poppins.bodySmall?.copyWith(
+			bodySmall: nunito.bodySmall?.copyWith(
 				fontSize: 12,
 				fontWeight: FontWeight.w500,
 				color: GlukColors.text2,
 			),
 			// `.cell-value` - 15px / 700 / tabular numbers, so the duration and
 			// traffic readouts do not jitter while they tick.
-			labelLarge: poppins.labelLarge?.copyWith(
+			labelLarge: nunito.labelLarge?.copyWith(
 				fontSize: 15,
 				fontWeight: FontWeight.w700,
 				color: GlukColors.text0,
 				fontFeatures: const [FontFeature.tabularFigures()],
 			),
 			// `.cell-label` - 10px / 700 / letter-spacing .06em / uppercase
-			labelMedium: poppins.labelMedium?.copyWith(
+			labelMedium: nunito.labelMedium?.copyWith(
 				fontSize: 10,
 				fontWeight: FontWeight.w700,
 				letterSpacing: 0.6,
 				color: GlukColors.text2,
 			),
 			// `.badge` - 11.5px / 700
-			labelSmall: poppins.labelSmall?.copyWith(
+			labelSmall: nunito.labelSmall?.copyWith(
 				fontSize: 11.5,
 				fontWeight: FontWeight.w700,
 				letterSpacing: 0.2,

@@ -1,0 +1,13 @@
+{
+	"name": "glukvpn-browser-proxy",
+	"version": "1.0.0",
+	"private": true,
+	"description": "TLS CONNECT gateway that carries GlukVPN browser-extension traffic on a VPN node",
+	"main": "src/server.js",
+	"scripts": {
+		"start": "node src/server.js"
+	},
+	"engines": {
+		"node": ">=20"
+	}
+}

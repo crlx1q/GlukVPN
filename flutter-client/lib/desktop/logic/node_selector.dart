@@ -15,25 +15,30 @@ const List<String> kInternalNodeMarkers = <String>[
   'tmp',
 ];
 
-/// True when the node looks like infrastructure rather than a product server.
-///
-/// Matching is done on word boundaries so a legitimate city like "Detroit"
-/// is not caught by the "dev" marker, and "Testov" is not caught by "test".
-bool isInternalNode(VpnNodeInfo node) {
-  final haystack = <String?>[node.id, node.name, node.host]
-      .whereType<String>()
-      .map((String s) => s.toLowerCase())
-      .join(' ');
+/// True when [text] contains an internal marker as a whole word.
+bool _hasInternalMarker(String text) {
+  final String haystack = text.toLowerCase();
   if (haystack.isEmpty) return false;
-
-  for (final marker in kInternalNodeMarkers) {
-    final re = RegExp('(^|[^a-z0-9])' + marker + '([^a-z0-9]|\$)');
+  for (final String marker in kInternalNodeMarkers) {
+    final RegExp re = RegExp('(^|[^a-z0-9])' + marker + r'([^a-z0-9]|$)');
     if (re.hasMatch(haystack)) return true;
   }
   return false;
 }
 
-/// Nodes that may be rendered in the server list.
+/// True when the node looks like infrastructure rather than a product server.
+///
+/// Matching is done on word boundaries so a legitimate city like "Detroit"
+/// is not caught by the "dev" marker, and "Testov" is not caught by "test".
+bool isInternalNode(VpnNodeInfo node) {
+  final String haystack = <String?>[node.id, node.name, node.host]
+      .whereType<String>()
+      .map((String s) => s.toLowerCase())
+      .join(' ');
+  return _hasInternalMarker(haystack);
+}
+
+/// Nodes that may be *advertised* to the user.
 ///
 /// Internal builds (GLUK_INTERNAL=true) see everything; production builds
 /// never do, regardless of what the API returns.
@@ -45,6 +50,78 @@ List<VpnNodeInfo> visibleNodes(
   return List<VpnNodeInfo>.unmodifiable(
     nodes.where((VpnNodeInfo n) => !isInternalNode(n)),
   );
+}
+
+/// True when the whole fleet was filtered out as internal.
+///
+/// This is the state that broke the first Windows release: the account had
+/// exactly one node, its handle matched an internal marker, and the client
+/// ended up with an empty list and a dead Connect button.
+bool fleetIsInternalOnly(
+  List<VpnNodeInfo> nodes, {
+  bool internalBuild = false,
+}) {
+  if (nodes.isEmpty) return false;
+  return visibleNodes(nodes, internalBuild: internalBuild).isEmpty;
+}
+
+/// Nodes the client may actually select and connect to.
+///
+/// Same filter as [visibleNodes], with one deliberate difference: hiding a
+/// node must never leave the user with nothing. When filtering would empty the
+/// list, the raw fleet is returned instead - the node is still usable, it just
+/// must never be *named* in the UI. Use [publicNodeTitle] and
+/// [publicNodeSubtitle] for that, they never expose a handle.
+///
+/// Requirement 8 is about not leaking internal identifiers, not about refusing
+/// to work.
+List<VpnNodeInfo> selectableNodes(
+  List<VpnNodeInfo> nodes, {
+  bool internalBuild = false,
+  bool allowFallback = true,
+}) {
+  final List<VpnNodeInfo> public =
+      visibleNodes(nodes, internalBuild: internalBuild);
+  if (public.isNotEmpty || !allowFallback || nodes.isEmpty) return public;
+  return List<VpnNodeInfo>.unmodifiable(nodes);
+}
+
+/// First line of a server row, guaranteed free of internal identifiers.
+///
+/// Tries the backend display fields, then the geography, and only ever falls
+/// back to a neutral label. The node handle, host and id are never candidates.
+String publicNodeTitle(VpnNodeInfo node, {String fallback = 'VPN server'}) {
+  for (final String candidate in <String>[
+    node.title,
+    node.country,
+    node.city ?? '',
+    node.region ?? '',
+  ]) {
+    if (candidate.isNotEmpty && !_hasInternalMarker(candidate)) return candidate;
+  }
+  final String code = node.countryCode;
+  if (code.isNotEmpty && !_hasInternalMarker(code)) return code.toUpperCase();
+  return fallback;
+}
+
+/// Second line of a server row: city, region or country - never the handle.
+///
+/// Returns null when there is nothing meaningful to add, so the caller can
+/// drop the line instead of printing the title twice.
+String? publicNodeSubtitle(VpnNodeInfo node) {
+  final String title = publicNodeTitle(node);
+  for (final String candidate in <String>[
+    node.subtitle,
+    node.city ?? '',
+    node.region ?? '',
+    node.country,
+  ]) {
+    if (candidate.isEmpty) continue;
+    if (_hasInternalMarker(candidate)) continue;
+    if (candidate == title) continue;
+    return candidate;
+  }
+  return null;
 }
 
 /// Quality score in [0..1]; higher is better.
@@ -105,9 +182,12 @@ class AutoNodeChoice {
 
 /// Picks the best node for the Auto / Best Server option.
 ///
-/// Only considers nodes that are online, connectable and visible to this
+/// Only considers nodes that are online, connectable and advertised to this
 /// build. A small bonus is given to the user's own country so that Auto does
 /// not bounce across continents when two nodes score almost identically.
+///
+/// Callers that must always end up with a target (the connect path) fall back
+/// to [selectableNodes] when this returns empty.
 AutoNodeChoice pickBestNode(
   List<VpnNodeInfo> nodes, {
   Map<String, int> pings = const <String, int>{},
