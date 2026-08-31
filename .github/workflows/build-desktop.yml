@@ -26,7 +26,10 @@ jobs:
         shell: pwsh
 
       - name: Install Dependencies
-        run: choco install innosetup 7zip 7zip.extra -y
+        run: |
+          choco install innosetup 7zip -y
+          Invoke-WebRequest -Uri "https://github.com/ip7z/7zip/releases/download/26.02/7z2602-extra.7z" -OutFile 7z-extra.7z
+          & "C:\Program Files\7-Zip\7z.exe" x 7z-extra.7z -o"C:\Program Files\7-Zip" -y
         shell: pwsh
 
       - name: Download WireGuard dependencies
