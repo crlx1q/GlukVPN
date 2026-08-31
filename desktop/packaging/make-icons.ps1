@@ -1,22 +1,38 @@
 <#
 .SYNOPSIS
-    Generates the tray and application icons for GlukVPN Desktop.
+    Generates the GlukVPN Windows icon set from the app logo.
 
 .DESCRIPTION
-    TrayController loads assets\tray\{off,connecting,on,error}.ico, one per
-    connection phase. This script draws them from the GlukVPN palette using
-    System.Drawing, so the build has no external image dependency.
+    Produces five .ico files:
 
-    Each .ico contains 32, 24, 20 and 16 pixel frames so Windows picks a crisp
-    one at any DPI.
+      flutter-client/assets/app.ico          installer + exe + window icon
+      flutter-client/assets/tray/off.ico     idle          violet glow
+      flutter-client/assets/tray/connecting.ico  coming up  amber  glow
+      flutter-client/assets/tray/on.ico      verified up   green  glow
+      flutter-client/assets/tray/error.ico   failed        red    glow
 
-    assets\app.ico is generated from assets\logo.png when that file exists,
-    otherwise from the same vector-ish drawing routine.
+    All four tray icons are the real logo, not an abstract shape, with a
+    state-coloured halo and a small status dot in the bottom-right corner so the
+    state is readable at 16 px on both light and dark taskbars.
+
+    Each .ico embeds PNG frames (Vista+ format) at several sizes, so Windows
+    picks a crisp one for the tray, the taskbar, Alt+Tab and the Programs list.
+
+.PARAMETER Logo
+    Source artwork. Defaults to flutter-client/assets/logo.png.
+
+.PARAMETER Force
+    Overwrite icons that already exist. Without it, existing files are kept,
+    which makes the script safe to run inside build-all.ps1.
+
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File desktop\packaging\make-icons.ps1 -Force
 #>
 
 [CmdletBinding()]
 param(
-    [string]$AssetsDir
+    [string]$Logo,
+    [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,185 +40,185 @@ Set-StrictMode -Version Latest
 
 Add-Type -AssemblyName System.Drawing
 
-$PackagingDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$RepoRoot     = Resolve-Path (Join-Path $PackagingDir '..\..')
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..')
+$assets = Join-Path $repoRoot 'flutter-client\assets'
+$trayDir = Join-Path $assets 'tray'
 
-if (-not $AssetsDir) {
-    $AssetsDir = Join-Path $RepoRoot 'flutter-client\assets'
+if (-not $Logo) { $Logo = Join-Path $assets 'logo.png' }
+
+if (-not (Test-Path $Logo)) {
+    Write-Warning "Logo not found at $Logo - icons cannot be generated."
+    Write-Warning 'Drop the artwork in flutter-client/assets/logo.png and re-run.'
+    exit 1
 }
-$TrayDir = Join-Path $AssetsDir 'tray'
 
-New-Item -ItemType Directory -Force -Path $TrayDir | Out-Null
+New-Item -ItemType Directory -Force -Path $trayDir | Out-Null
 
-# GlukVPN palette, matching lib/theme/tokens.dart.
-$Phases = @(
-    @{ Name = 'off';        Color = '#8B5CF6'; Glow = '#6D4DE0' }  # violet idle
-    @{ Name = 'connecting'; Color = '#F0B567'; Glow = '#8B5CF6' }  # amber
-    @{ Name = 'on';         Color = '#3DDC97'; Glow = '#8B5CF6' }  # green
-    @{ Name = 'error';      Color = '#FF6B6B'; Glow = '#6D4DE0' }  # danger
+# State palette. Matches GlukColors in lib/theme/tokens.dart so the tray icon,
+# the connect button and the status pill always agree.
+$states = @(
+    @{ Name = 'off';        R = 139; G = 92;  B = 246 }  # violet  #8B5CF6
+    @{ Name = 'connecting'; R = 240; G = 181; B = 103 }  # amber   #F0B567
+    @{ Name = 'on';         R = 61;  G = 220; B = 151 }  # green   #3DDC97
+    @{ Name = 'error';      R = 255; G = 107; B = 107 }  # red     #FF6B6B
 )
 
-$Sizes = @(32, 24, 20, 16)
+# Tray icons are only ever drawn small; the app icon needs the large frames.
+$traySizes = @(16, 20, 24, 32, 40, 48)
+$appSizes = @(16, 20, 24, 32, 48, 64, 128, 256)
 
-function ConvertFrom-Hex([string]$hex) {
-    $hex = $hex.TrimStart('#')
-    return [System.Drawing.Color]::FromArgb(
-        255,
-        [Convert]::ToInt32($hex.Substring(0, 2), 16),
-        [Convert]::ToInt32($hex.Substring(2, 2), 16),
-        [Convert]::ToInt32($hex.Substring(4, 2), 16)
+$source = [System.Drawing.Image]::FromFile($Logo)
+
+function New-Frame {
+    param(
+        [int]$Size,
+        [System.Drawing.Image]$Image,
+        $State,
+        [bool]$WithGlow
     )
-}
 
-# Draws the GlukVPN mark: a ring with a vertical power stroke, tinted per phase.
-function New-PhaseBitmap([int]$size, [System.Drawing.Color]$color, [System.Drawing.Color]$glow) {
-    $bitmap = New-Object System.Drawing.Bitmap($size, $size,
+    $bmp = New-Object System.Drawing.Bitmap($Size, $Size,
         [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-
-    $g = [System.Drawing.Graphics]::FromImage($bitmap)
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
     try {
         $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $g.InterpolationMode =
+            [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+        $g.PixelOffsetMode =
+            [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
         $g.Clear([System.Drawing.Color]::Transparent)
 
-        $pad       = [Math]::Max(1, [int]($size * 0.12))
-        $diameter  = $size - ($pad * 2)
-        $thickness = [Math]::Max(1.5, $size * 0.13)
+        if ($WithGlow) {
+            # Soft halo: concentric translucent rings, cheap and dependable
+            # across every .NET version shipped with Windows.
+            $rings = [Math]::Max(4, [int]($Size / 5))
+            for ($i = $rings; $i -ge 1; $i--) {
+                $t = $i / $rings
+                $alpha = [int](46 * $t * $t)
+                if ($alpha -le 0) { continue }
+                $colour = [System.Drawing.Color]::FromArgb(
+                    $alpha, $State.R, $State.G, $State.B)
+                $brush = New-Object System.Drawing.SolidBrush($colour)
+                $inset = ($Size * 0.5) * (1.0 - $t)
+                $g.FillEllipse($brush, $inset, $inset,
+                    $Size - (2 * $inset), $Size - (2 * $inset))
+                $brush.Dispose()
+            }
+        }
 
-        # Soft halo so the icon reads on both light and dark taskbars.
-        $haloColor = [System.Drawing.Color]::FromArgb(70, $glow.R, $glow.G, $glow.B)
-        $haloBrush = New-Object System.Drawing.SolidBrush($haloColor)
-        $g.FillEllipse($haloBrush, 0, 0, $size - 1, $size - 1)
-        $haloBrush.Dispose()
+        # Logo, centred, leaving room for the halo and the status dot.
+        $scale = if ($WithGlow) { 0.70 } else { 0.98 }
+        $side = [int]($Size * $scale)
+        $offset = [int](($Size - $side) / 2)
+        if ($WithGlow) { $offset = [int](($Size - $side) / 2) - [int]($Size * 0.04) }
+        if ($offset -lt 0) { $offset = 0 }
+        $g.DrawImage($Image, $offset, $offset, $side, $side)
 
-        # Open ring, gap at the top for the power stroke.
-        $pen = New-Object System.Drawing.Pen($color, $thickness)
-        $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
-        $pen.EndCap   = [System.Drawing.Drawing2D.LineCap]::Round
-        $g.DrawArc($pen, $pad, $pad, $diameter, $diameter, -60, 300)
+        if ($WithGlow) {
+            # Status dot. At 16 px the halo alone is hard to read, this is not.
+            $dot = [Math]::Max(5, [int]($Size * 0.34))
+            $dx = $Size - $dot - [Math]::Max(0, [int]($Size * 0.03))
+            $dy = $Size - $dot - [Math]::Max(0, [int]($Size * 0.03))
 
-        # Vertical stroke.
-        $centreX = $size / 2.0
-        $top     = $pad * 0.55
-        $bottom  = $size / 2.0 - ($size * 0.04)
-        $g.DrawLine($pen, $centreX, $top, $centreX, $bottom)
-        $pen.Dispose()
+            # Dark outline keeps the dot visible on a light taskbar.
+            $ring = New-Object System.Drawing.SolidBrush(
+                [System.Drawing.Color]::FromArgb(215, 8, 6, 14))
+            $g.FillEllipse($ring, $dx - 1, $dy - 1, $dot + 2, $dot + 2)
+            $ring.Dispose()
+
+            $fill = New-Object System.Drawing.SolidBrush(
+                [System.Drawing.Color]::FromArgb(255, $State.R, $State.G, $State.B))
+            $g.FillEllipse($fill, $dx, $dy, $dot, $dot)
+            $fill.Dispose()
+        }
     }
     finally {
         $g.Dispose()
     }
-    return $bitmap
+
+    return $bmp
 }
 
-# Writes a multi-resolution .ico by hand; System.Drawing cannot do it directly.
-function Save-Icon([System.Drawing.Bitmap[]]$frames, [string]$path) {
-    $pngs = @()
-    foreach ($frame in $frames) {
-        $stream = New-Object System.IO.MemoryStream
-        $frame.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
-        $pngs += , $stream.ToArray()
-        $stream.Dispose()
-    }
-
-    $file = [System.IO.File]::Create($path)
-    $writer = New-Object System.IO.BinaryWriter($file)
-    try {
-        # ICONDIR
-        $writer.Write([UInt16]0)                # reserved
-        $writer.Write([UInt16]1)                # type: icon
-        $writer.Write([UInt16]$frames.Count)    # image count
-
-        $offset = 6 + (16 * $frames.Count)
-        for ($i = 0; $i -lt $frames.Count; $i++) {
-            $width  = $frames[$i].Width
-            $height = $frames[$i].Height
-
-            # ICONDIRENTRY. 0 means 256 in the icon format.
-            $writer.Write([Byte]$(if ($width -ge 256) { 0 } else { $width }))
-            $writer.Write([Byte]$(if ($height -ge 256) { 0 } else { $height }))
-            $writer.Write([Byte]0)              # palette
-            $writer.Write([Byte]0)              # reserved
-            $writer.Write([UInt16]1)            # colour planes
-            $writer.Write([UInt16]32)           # bits per pixel
-            $writer.Write([UInt32]$pngs[$i].Length)
-            $writer.Write([UInt32]$offset)
-
-            $offset += $pngs[$i].Length
-        }
-
-        foreach ($png in $pngs) {
-            $writer.Write($png)
-        }
-    }
-    finally {
-        $writer.Dispose()
-        $file.Dispose()
-    }
-}
-
-Write-Host 'Generating tray icons' -ForegroundColor Cyan
-
-foreach ($phase in $Phases) {
-    $color = ConvertFrom-Hex $phase.Color
-    $glow  = ConvertFrom-Hex $phase.Glow
+function Save-Ico {
+    param(
+        [string]$Path,
+        [int[]]$Sizes,
+        [System.Drawing.Image]$Image,
+        $State,
+        [bool]$WithGlow
+    )
 
     $frames = @()
     foreach ($size in $Sizes) {
-        $frames += , (New-PhaseBitmap -size $size -color $color -glow $glow)
+        $bmp = New-Frame -Size $size -Image $Image -State $State -WithGlow $WithGlow
+        $stream = New-Object System.IO.MemoryStream
+        $bmp.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
+        $bmp.Dispose()
+        $frames += [pscustomobject]@{ Size = $size; Bytes = $stream.ToArray() }
+        $stream.Dispose()
     }
 
-    $target = Join-Path $TrayDir "$($phase.Name).ico"
-    Save-Icon -frames $frames -path $target
-    foreach ($frame in $frames) { $frame.Dispose() }
-
-    Write-Host "    $target" -ForegroundColor DarkGray
-}
-
-# ---------------------------------------------------------------------------
-# Application icon
-# ---------------------------------------------------------------------------
-
-$appIcon = Join-Path $AssetsDir 'app.ico'
-$logoPng = Join-Path $AssetsDir 'logo.png'
-
-if (Test-Path $logoPng) {
-    Write-Host 'Generating app.ico from logo.png' -ForegroundColor Cyan
-    $source = [System.Drawing.Image]::FromFile($logoPng)
+    $fs = [System.IO.File]::Open($Path, [System.IO.FileMode]::Create)
+    $bw = New-Object System.IO.BinaryWriter($fs)
     try {
-        $frames = @()
-        foreach ($size in @(256, 128, 64, 48, 32, 16)) {
-            $bitmap = New-Object System.Drawing.Bitmap($size, $size,
-                [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-            $g = [System.Drawing.Graphics]::FromImage($bitmap)
-            try {
-                $g.InterpolationMode =
-                    [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-                $g.Clear([System.Drawing.Color]::Transparent)
-                $g.DrawImage($source, 0, 0, $size, $size)
-            }
-            finally {
-                $g.Dispose()
-            }
-            $frames += , $bitmap
+        # ICONDIR
+        $bw.Write([UInt16]0)                  # reserved
+        $bw.Write([UInt16]1)                  # type: 1 = icon
+        $bw.Write([UInt16]$frames.Count)
+
+        # Image data starts after the directory.
+        $offset = 6 + (16 * $frames.Count)
+        foreach ($frame in $frames) {
+            $dim = if ($frame.Size -ge 256) { 0 } else { $frame.Size }
+            $bw.Write([Byte]$dim)             # width  (0 means 256)
+            $bw.Write([Byte]$dim)             # height
+            $bw.Write([Byte]0)                # palette entries
+            $bw.Write([Byte]0)                # reserved
+            $bw.Write([UInt16]1)              # colour planes
+            $bw.Write([UInt16]32)             # bits per pixel
+            $bw.Write([UInt32]$frame.Bytes.Length)
+            $bw.Write([UInt32]$offset)
+            $offset += $frame.Bytes.Length
         }
 
-        Save-Icon -frames $frames -path $appIcon
-        foreach ($frame in $frames) { $frame.Dispose() }
+        foreach ($frame in $frames) {
+            $bw.Write($frame.Bytes)
+        }
     }
     finally {
-        $source.Dispose()
+        $bw.Dispose()
+        $fs.Dispose()
     }
-} else {
-    Write-Warning "logo.png not found; drawing a fallback app.ico"
-    $color = ConvertFrom-Hex '#8B5CF6'
-    $glow  = ConvertFrom-Hex '#6D4DE0'
 
-    $frames = @()
-    foreach ($size in @(256, 128, 64, 48, 32, 16)) {
-        $frames += , (New-PhaseBitmap -size $size -color $color -glow $glow)
-    }
-    Save-Icon -frames $frames -path $appIcon
-    foreach ($frame in $frames) { $frame.Dispose() }
+    $kb = [Math]::Round((Get-Item $Path).Length / 1KB, 1)
+    Write-Host ("  {0,-42} {1} KB" -f (Split-Path $Path -Leaf), $kb)
 }
 
-Write-Host "    $appIcon" -ForegroundColor DarkGray
-Write-Host 'Icons generated.' -ForegroundColor Green
+try {
+    Write-Host 'GlukVPN icon set'
+    Write-Host "  source: $Logo"
+
+    $appIco = Join-Path $assets 'app.ico'
+    if ((Test-Path $appIco) -and -not $Force) {
+        Write-Host '  app.ico exists, skipping (use -Force to regenerate)'
+    }
+    else {
+        Save-Ico -Path $appIco -Sizes $appSizes -Image $source `
+            -State $states[0] -WithGlow $false
+    }
+
+    foreach ($state in $states) {
+        $path = Join-Path $trayDir ("{0}.ico" -f $state.Name)
+        if ((Test-Path $path) -and -not $Force) {
+            Write-Host ("  {0}.ico exists, skipping" -f $state.Name)
+            continue
+        }
+        Save-Ico -Path $path -Sizes $traySizes -Image $source `
+            -State $state -WithGlow $true
+    }
+
+    Write-Host 'Done.'
+}
+finally {
+    $source.Dispose()
+}

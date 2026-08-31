@@ -1,20 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
 
+import '../../models/models.dart';
 import '../../theme/tokens.dart';
 import '../../utils/format.dart';
 import '../../widgets/common.dart';
-import '../../widgets/glass.dart';
 import '../../widgets/logo.dart';
 import '../i18n/desktop_strings.dart';
 import '../logic/connection_phase.dart';
 import '../state/desktop_vpn_controller.dart';
+import '../theme/desktop_theme.dart';
 import '../widgets/desktop_connect_button.dart';
+import '../widgets/status_pill.dart';
 
-/// Compact quick panel opened by left-clicking the tray icon.
+/// Tray quick panel.
 ///
-/// Requirement 10: status, connect, current server, ping, download/upload and
-/// nothing else. No navigation — the goal is "click tray, see everything,
-/// connect, close".
+/// One left click on the tray icon pops this up just above the notification
+/// area, the way a native Windows utility panel does. A double click opens the
+/// full window instead.
+///
+/// Contents are deliberately minimal, per the request: connect button, current
+/// server, ping, download and upload. No navigation, no settings, no metrics
+/// wall.
 class MiniPanel extends StatelessWidget {
   const MiniPanel({
     super.key,
@@ -31,112 +38,146 @@ class MiniPanel extends StatelessWidget {
   final VoidCallback onExpand;
   final VoidCallback onHide;
 
+  Color get _accent {
+    final ConnectionPhase phase = vpn.phase;
+    if (phase.isConnected) return GlukColors.connected;
+    if (phase.isError) return GlukColors.danger;
+    if (phase.isBusy) return GlukColors.amber;
+    return GlukColors.violetLight;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final s = strings;
-    final phase = vpn.phase;
-    final node = vpn.selectedNode;
-    final duration = vpn.connectedFor;
+    final DesktopStrings s = strings;
+    final ConnectionPhase phase = vpn.phase;
+    final VpnNodeInfo? node = vpn.selectedNode;
 
-    return ColoredBox(
-      color: GlukColors.pageBg,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            // Header doubles as the drag handle.
-            Row(
-              children: <Widget>[
-                const GlukLogo(size: 22, radius: 7),
-                const SizedBox(width: 9),
-                const Text(
-                  'GlukVPN',
-                  style: TextStyle(
-                    color: GlukColors.text1,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.6,
-                  ),
-                ),
-                const Spacer(),
-                CircleIconButton(
-                  icon: Icons.open_in_full_rounded,
-                  tooltip: s.trayOpen,
-                  size: 26,
-                  onTap: onExpand,
-                ),
-                const SizedBox(width: 6),
-                CircleIconButton(
-                  icon: Icons.close_rounded,
-                  tooltip: s.cancel,
-                  size: 26,
-                  onTap: onHide,
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 14),
-
-            Center(
-              child: DesktopConnectButton(
-                phase: phase,
-                strings: s,
-                reduceMotion: reduceMotion,
-                size: 116,
-                onTap: () => vpn.toggle(),
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            GlassPanel(
-              radius: 14,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 10,
-              ),
-              child: Row(
-                children: <Widget>[
-                  FlagCircle(flag: node?.countryCode ?? '🌐', size: 22),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      node?.displayTitle ?? s.autoBestServer,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: GlukColors.text0,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A0812),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withOpacity(0.09)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(13),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 13),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              // Header doubles as the drag handle.
+              GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onPanStart: (_) => windowManager.startDragging(),
+                onDoubleTap: onExpand,
+                child: Row(
+                  children: <Widget>[
+                    const GlukLogo(size: 20, radius: 6),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'GlukVPN',
+                      style: TextStyle(
+                        color: GlukColors.text1,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.7,
+                        decoration: TextDecoration.none,
                       ),
                     ),
-                  ),
-                  Text(
-                    vpn.currentPingMs == null
-                        ? s.dash
-                        : formatPing(vpn.currentPingMs!),
-                    style: const TextStyle(
-                      color: GlukColors.text1,
-                      fontSize: 11,
-                      fontFeatures: <FontFeature>[
-                        FontFeature.tabularFigures(),
-                      ],
+                    const Spacer(),
+                    CircleIconButton(
+                      icon: Icons.open_in_full_rounded,
+                      tooltip: s.trayOpen,
+                      size: 24,
+                      onTap: onExpand,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 5),
+                    CircleIconButton(
+                      icon: Icons.close_rounded,
+                      tooltip: s.cancel,
+                      size: 24,
+                      onTap: onHide,
+                    ),
+                  ],
+                ),
               ),
-            ),
 
-            const SizedBox(height: 9),
+              const SizedBox(height: 10),
 
-            GlassPanel(
-              radius: 14,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 11,
+              Center(
+                child: StatusPill(
+                  label: s.phaseLabel(phase),
+                  color: _accent,
+                  dense: true,
+                  pulsing: phase.isBusy && !reduceMotion,
+                ),
               ),
-              child: Row(
+
+              const SizedBox(height: 8),
+
+              Center(
+                child: DesktopConnectButton(
+                  phase: phase,
+                  strings: s,
+                  reduceMotion: reduceMotion,
+                  size: 96,
+                  showLabel: false,
+                  onTap: () => vpn.toggle(),
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
+              // Server + ping on one compact row.
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: DesktopTokens.cardRaised,
+                  borderRadius: BorderRadius.circular(11),
+                  border: Border.all(color: DesktopTokens.cardBorder),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    FlagCircle(flag: node?.countryCode ?? '\u{1F310}', size: 20),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        node?.displayTitle ?? s.autoBestServer,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: GlukColors.text0,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          decoration: TextDecoration.none,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      vpn.currentPingMs == null
+                          ? s.dash
+                          : formatPing(vpn.currentPingMs!),
+                      style: const TextStyle(
+                        color: GlukColors.text1,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        decoration: TextDecoration.none,
+                        fontFeatures: <FontFeature>[
+                          FontFeature.tabularFigures(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Download / upload.
+              Row(
                 children: <Widget>[
                   Expanded(
                     child: _MiniStat(
@@ -145,6 +186,7 @@ class MiniPanel extends StatelessWidget {
                       tint: GlukColors.connected,
                     ),
                   ),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: _MiniStat(
                       icon: Icons.north_rounded,
@@ -152,43 +194,10 @@ class MiniPanel extends StatelessWidget {
                       tint: GlukColors.violetLight,
                     ),
                   ),
-                  Expanded(
-                    child: _MiniStat(
-                      icon: Icons.schedule_rounded,
-                      value: duration == null
-                          ? s.dash
-                          : formatDuration(duration),
-                      tint: GlukColors.text1,
-                    ),
-                  ),
                 ],
               ),
-            ),
-
-            const Spacer(),
-
-            if (vpn.userMessage != null && phase.isError)
-              Text(
-                vpn.userMessage!,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: GlukColors.danger,
-                  fontSize: 11,
-                ),
-              )
-            else
-              Text(
-                vpn.snapshot.vpnIp ?? '',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: GlukColors.text2,
-                  fontSize: 11,
-                  fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
-                ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -208,23 +217,33 @@ class _MiniStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Icon(icon, size: 13, color: tint),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: GlukColors.text0,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: DesktopTokens.cardRaised,
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: DesktopTokens.cardBorder),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 13, color: tint),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: GlukColors.text0,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                decoration: TextDecoration.none,
+                fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

@@ -4,12 +4,13 @@ import '../../state/auth_controller.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/page_background.dart';
 import '../i18n/desktop_strings.dart';
+import '../logic/connection_phase.dart';
 import '../state/desktop_settings.dart';
 import '../state/desktop_vpn_controller.dart';
-import '../logic/connection_phase.dart';
 import '../state/tray_controller.dart';
 import '../state/window_controller.dart';
-import '../widgets/side_nav.dart';
+import '../theme/desktop_theme.dart';
+import '../widgets/desktop_sidebar.dart';
 import '../widgets/window_title_bar.dart';
 import 'desktop_home_screen.dart';
 import 'desktop_servers_screen.dart';
@@ -19,8 +20,8 @@ import 'mini_panel.dart';
 
 /// Root of the authenticated desktop UI.
 ///
-/// Switches between the full window layout and the compact tray panel based
-/// on [WindowController.mode], and owns the navigation rail.
+/// Switches between the full window layout and the compact tray panel based on
+/// [WindowController.mode], and owns navigation.
 class DesktopShell extends StatefulWidget {
   const DesktopShell({
     super.key,
@@ -56,7 +57,6 @@ class DesktopShellState extends State<DesktopShell> {
   @override
   void initState() {
     super.initState();
-    // Let the tray jump straight to the settings tab.
     widget.tray.onOpenSettings = openSettings;
   }
 
@@ -72,13 +72,20 @@ class DesktopShellState extends State<DesktopShell> {
   }
 
   bool get _reduceMotion {
-    final s = widget.settings.value;
+    final DesktopSettings s = widget.settings.value;
     return s.reduceMotion || !s.animationsEnabled;
+  }
+
+  Color get _statusColor {
+    final ConnectionPhase phase = widget.vpn.phase;
+    if (phase.isConnected) return GlukColors.connected;
+    if (phase.isError) return GlukColors.danger;
+    if (phase.isBusy) return GlukColors.amber;
+    return GlukColors.text2;
   }
 
   @override
   Widget build(BuildContext context) {
-    // Rebuild whenever the VPN, window mode or settings change.
     return AnimatedBuilder(
       animation: Listenable.merge(<Listenable>[
         widget.vpn,
@@ -102,44 +109,48 @@ class DesktopShellState extends State<DesktopShell> {
   }
 
   Widget _buildMain(BuildContext context) {
-    final s = widget.strings;
+    final DesktopStrings s = widget.strings;
+    final String name = widget.auth.user?.username ??
+        (s.isRussian ? 'Аккаунт' : 'Account');
 
     return ColoredBox(
       color: GlukColors.pageBg,
       child: Stack(
         children: <Widget>[
-          // Shared ambient background from the mobile design system.
           const Positioned.fill(child: PageBackground()),
-
-          Column(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              const WindowTitleBar(),
+              DesktopSidebar(
+                index: _index,
+                onChanged: (int i) => setState(() => _index = i),
+                userName: name,
+                userIdLabel: widget.auth.user?.publicIdLabel,
+                statusColor: _statusColor,
+                onAccountTap: openSettings,
+                items: <SidebarItem>[
+                  SidebarItem(
+                    icon: Icons.vpn_lock_rounded,
+                    label: s.navHome,
+                  ),
+                  SidebarItem(
+                    icon: Icons.public_rounded,
+                    label: s.navServers,
+                  ),
+                  SidebarItem(
+                    icon: Icons.insights_rounded,
+                    label: s.navStats,
+                  ),
+                  SidebarItem(
+                    icon: Icons.tune_rounded,
+                    label: s.navSettings,
+                  ),
+                ],
+              ),
               Expanded(
-                child: Row(
+                child: Column(
                   children: <Widget>[
-                    SideNav(
-                      index: _index,
-                      onChanged: (int i) => setState(() => _index = i),
-                      items: <SideNavItem>[
-                        SideNavItem(
-                          icon: Icons.shield_moon_outlined,
-                          label: s.navHome,
-                        ),
-                        SideNavItem(
-                          icon: Icons.public_rounded,
-                          label: s.navServers,
-                        ),
-                        SideNavItem(
-                          icon: Icons.insights_rounded,
-                          label: s.navStats,
-                        ),
-                        SideNavItem(
-                          icon: Icons.tune_rounded,
-                          label: s.navSettings,
-                        ),
-                      ],
-                      footer: _StatusDot(vpn: widget.vpn),
-                    ),
+                    const WindowTitleBar(),
                     Expanded(
                       child: AnimatedSwitcher(
                         duration: GlukMotion.screen,
@@ -150,7 +161,7 @@ class DesktopShellState extends State<DesktopShell> {
                             opacity: anim,
                             child: SlideTransition(
                               position: Tween<Offset>(
-                                begin: const Offset(0.015, 0),
+                                begin: const Offset(0.012, 0),
                                 end: Offset.zero,
                               ).animate(anim),
                               child: child,
@@ -176,22 +187,40 @@ class DesktopShellState extends State<DesktopShell> {
   Widget _page() {
     switch (_index) {
       case _servers:
-        return DesktopServersScreen(
-          vpn: widget.vpn,
-          strings: widget.strings,
+        return Padding(
+          padding: const EdgeInsets.only(
+            right: DesktopTokens.pagePadding,
+            bottom: DesktopTokens.pagePadding,
+          ),
+          child: DesktopServersScreen(
+            vpn: widget.vpn,
+            strings: widget.strings,
+          ),
         );
       case _stats:
-        return DesktopStatsScreen(
-          usage: widget.vpn.usage,
-          strings: widget.strings,
+        return Padding(
+          padding: const EdgeInsets.only(
+            right: DesktopTokens.pagePadding,
+            bottom: DesktopTokens.pagePadding,
+          ),
+          child: DesktopStatsScreen(
+            usage: widget.vpn.usage,
+            strings: widget.strings,
+          ),
         );
       case _settingsTab:
-        return DesktopSettingsScreen(
-          settings: widget.settings,
-          vpn: widget.vpn,
-          auth: widget.auth,
-          strings: widget.strings,
-          onLanguageChanged: widget.onLanguageChanged,
+        return Padding(
+          padding: const EdgeInsets.only(
+            right: DesktopTokens.pagePadding,
+            bottom: DesktopTokens.pagePadding,
+          ),
+          child: DesktopSettingsScreen(
+            settings: widget.settings,
+            vpn: widget.vpn,
+            auth: widget.auth,
+            strings: widget.strings,
+            onLanguageChanged: widget.onLanguageChanged,
+          ),
         );
       case _home:
       default:
@@ -203,44 +232,5 @@ class DesktopShellState extends State<DesktopShell> {
           onOpenServers: openServers,
         );
     }
-  }
-}
-
-/// Small always-visible tunnel indicator at the bottom of the rail.
-class _StatusDot extends StatelessWidget {
-  const _StatusDot({required this.vpn});
-
-  final DesktopVpnController vpn;
-
-  @override
-  Widget build(BuildContext context) {
-    final phase = vpn.phase;
-    final color = phase.isConnected
-        ? GlukColors.connected
-        : phase.isError
-            ? GlukColors.danger
-            : phase.isBusy
-                ? GlukColors.amber
-                : GlukColors.text2;
-
-    return Tooltip(
-      message: phase.labelKey,
-      child: AnimatedContainer(
-        duration: GlukMotion.screen,
-        width: 10,
-        height: 10,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: color,
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: color.withOpacity(0.55),
-              blurRadius: 10,
-              spreadRadius: 1,
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

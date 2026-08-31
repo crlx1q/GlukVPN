@@ -38,15 +38,22 @@ AllowNoIcons=yes
 
 ; The tunnel service must be registered with the SCM, which needs admin.
 ; This is the only elevation the user ever sees.
+;
+; PrivilegesRequiredOverridesAllowed is deliberately EMPTY. With "dialog" Inno
+; Setup shows the "Install for all users / Install for me only" page, which is
+; the odd choice reported after the first release. GlukVPN cannot be installed
+; per-user anyway - it registers a system service - so Setup now simply asks
+; for administrator rights once and installs machine-wide.
 PrivilegesRequired=admin
-PrivilegesRequiredOverridesAllowed=dialog
+PrivilegesRequiredOverridesAllowed=
+UsePreviousPrivileges=no
 
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.17763
 
 OutputDir=..\..\dist
- OutputBaseFilename=GlukVPN-Setup-{#AppVersion}
+OutputBaseFilename=GlukVPN-Setup-{#AppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -107,9 +114,16 @@ Filename: "{app}\service\{#ServiceExeName}"; Parameters: "--install"; \
     StatusMsg: "{cm:ServiceInstalling}"; \
     Flags: runhidden waituntilterminated
 
+; Launch the client as the *logged-in user*, not as the elevated installer.
+;
+; Without runasoriginaluser the app inherits Setup's administrator token. It
+; then writes its settings into the administrator profile and Windows refuses
+; parts of the shell integration, which is what produced the "administrator
+; rights are required" error on the last page of the installer. The client
+; itself never needs elevation: the privileged work lives in the service.
 Filename: "{app}\{#AppExeName}"; \
     Description: "{cm:LaunchProgram,{#AppName}}"; \
-    Flags: nowait postinstall skipifsilent
+    Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [UninstallRun]
 ; Stop the tunnel and remove the service before the files disappear.
@@ -125,9 +139,7 @@ Type: filesandordirs; Name: "{commonappdata}\GlukVPN\logs"
 // installer has to check for a live process rather than a visible window.
 function IsAppRunning(const FileName: string): Boolean;
 var
-  Locator, Service, Items, Item: Variant;
-  Enum: IUnknown;
-  Value: Cardinal;
+  Locator, Service, Items: Variant;
 begin
   Result := False;
   try

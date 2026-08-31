@@ -2,29 +2,34 @@ import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../theme/tokens.dart';
-import '../../widgets/logo.dart';
 
-/// Custom frameless title bar.
+/// Frameless-window caption strip.
 ///
-/// The native Windows chrome does not fit the deep-black glass look, so the
-/// window is created without a frame and this bar provides dragging and the
-/// caption buttons.
+/// Redesigned to be invisible furniture: the logo and wordmark now live in the
+/// sidebar (as in the approved reference), so this bar only provides the drag
+/// region and the three caption buttons floating over the page background.
 ///
-/// The close button intentionally routes through the normal close path, which
-/// [WindowController] intercepts to hide to tray instead of quitting.
+/// The close button routes through the normal close path, which
+/// [WindowController] intercepts to hide to tray instead of quitting, so the
+/// tunnel survives closing the window.
 class WindowTitleBar extends StatelessWidget {
   const WindowTitleBar({
     super.key,
-    this.height = 44,
+    this.height = 40,
     this.showMaximize = true,
     this.title = 'GlukVPN',
     this.trailing,
+    this.showTitle = false,
   });
 
   final double height;
   final bool showMaximize;
   final String title;
   final Widget? trailing;
+
+  /// Only the mini panel needs a caption label; the main window gets it from
+  /// the sidebar wordmark.
+  final bool showTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -44,24 +49,24 @@ class WindowTitleBar extends StatelessWidget {
                   await windowManager.maximize();
                 }
               },
-              child: Padding(
-                padding: const EdgeInsets.only(left: 14),
-                child: Row(
-                  children: <Widget>[
-                    const GlukLogo(size: 20, radius: 6),
-                    const SizedBox(width: 10),
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: GlukColors.text1,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.6,
+              child: showTitle
+                  ? Padding(
+                      padding: const EdgeInsets.only(left: 14),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          title,
+                          style: const TextStyle(
+                            color: GlukColors.text2,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.8,
+                            decoration: TextDecoration.none,
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
+                    )
+                  : const SizedBox.expand(),
             ),
           ),
           if (trailing != null) trailing!,
@@ -86,8 +91,6 @@ class WindowTitleBar extends StatelessWidget {
             icon: Icons.close_rounded,
             tooltip: 'Hide to tray',
             danger: true,
-            // setPreventClose(true) turns this into onWindowClose, which the
-            // WindowController handles by hiding. The VPN keeps running.
             onTap: () => windowManager.close(),
           ),
         ],
@@ -118,7 +121,7 @@ class _CaptionButtonState extends State<_CaptionButton> {
 
   @override
   Widget build(BuildContext context) {
-    final background = !_hovered
+    final Color background = !_hovered
         ? Colors.transparent
         : (widget.danger
             ? GlukColors.danger.withOpacity(0.85)
@@ -136,15 +139,15 @@ class _CaptionButtonState extends State<_CaptionButton> {
           behavior: HitTestBehavior.opaque,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
-            width: 46,
+            width: 44,
             height: double.infinity,
             color: background,
             child: Icon(
               widget.icon,
-              size: 16,
+              size: 15,
               color: _hovered && widget.danger
                   ? Colors.white
-                  : GlukColors.text1,
+                  : GlukColors.text2,
             ),
           ),
         ),

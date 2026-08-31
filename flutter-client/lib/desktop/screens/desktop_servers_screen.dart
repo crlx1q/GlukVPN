@@ -81,13 +81,23 @@ class _DesktopServersScreenState extends State<DesktopServersScreen> {
                 icon: Icons.refresh_rounded,
                 tooltip: s.refresh,
                 onTap: () {
-                  vpn.refreshNodes();
+                  vpn.retryNodes();
                   vpn.measureNodePings();
                 },
               ),
             ],
           ),
           const SizedBox(height: 16),
+
+          // Never leave the user staring at an empty list without a reason.
+          if (vpn.nodesError != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: InlineNotice(
+                message: vpn.nodesError!,
+                tone: NoticeTone.warning,
+              ),
+            ),
 
           // Auto / Best server is always first and always available.
           _AutoCard(
@@ -153,12 +163,41 @@ class _DesktopServersScreenState extends State<DesktopServersScreen> {
           Expanded(
             child: filtered.isEmpty
                 ? Center(
-                    child: Text(
-                      s.noServers,
-                      style: const TextStyle(
-                        color: GlukColors.text2,
-                        fontSize: 13,
-                      ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(
+                          vpn.nodesLoading
+                              ? Icons.hourglass_empty_rounded
+                              : Icons.cloud_off_rounded,
+                          size: 26,
+                          color: GlukColors.text2,
+                        ),
+                        const SizedBox(height: 12),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 420),
+                          child: Text(
+                            vpn.nodesError ?? s.noServers,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: GlukColors.text1,
+                              fontSize: 13,
+                              height: 1.35,
+                              decoration: TextDecoration.none,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        SizedBox(
+                          width: 220,
+                          child: PrimaryPillButton(
+                            label: s.refresh,
+                            icon: Icons.refresh_rounded,
+                            busy: vpn.nodesLoading,
+                            onPressed: () => vpn.retryNodes(),
+                          ),
+                        ),
+                      ],
                     ),
                   )
                 : ListView.builder(

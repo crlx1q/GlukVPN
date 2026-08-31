@@ -9,6 +9,7 @@ import 'desktop/i18n/desktop_strings.dart';
 import 'desktop/screens/desktop_login_screen.dart';
 import 'desktop/screens/desktop_shell.dart';
 import 'desktop/services/app_paths.dart';
+import 'desktop/services/desktop_log.dart';
 import 'desktop/services/service_bootstrap.dart';
 import 'desktop/services/tunnel_client.dart';
 import 'desktop/state/desktop_settings.dart';
@@ -16,12 +17,12 @@ import 'desktop/state/desktop_vpn_controller.dart';
 import 'desktop/state/tray_controller.dart';
 import 'desktop/state/usage_store.dart';
 import 'desktop/state/window_controller.dart';
+import 'desktop/theme/desktop_theme.dart';
 import 'desktop/widgets/desktop_splash.dart';
 import 'services/api_client.dart';
 import 'services/ping_service.dart';
 import 'services/secure_store.dart';
 import 'state/auth_controller.dart';
-import 'theme/app_theme.dart';
 
 /// Windows entry point.
 ///
@@ -34,18 +35,20 @@ Future<void> main(List<String> args) async {
 
   // --hidden is passed by the autostart registry entry when the user asked to
   // start minimised.
-  final startHidden = args.contains('--hidden');
+  final bool startHidden = args.contains('--hidden');
 
   await windowManager.ensureInitialized();
 
-  final paths = AppPaths();
+  final AppPaths paths = AppPaths();
   paths.ensureCreated();
+  dlog.attach(paths);
+  dlog.write('boot', 'GlukVPN desktop starting (hidden=$startHidden)');
 
-  final settings = SettingsStore(paths: paths);
+  final SettingsStore settings = SettingsStore(paths: paths);
   await settings.load();
 
-  final saved = settings.value;
-  final windowSize = Size(
+  final DesktopSettings saved = settings.value;
+  final Size windowSize = Size(
     saved.windowWidth ?? AppConfig.desktopDefaultSize.width,
     saved.windowHeight ?? AppConfig.desktopDefaultSize.height,
   );
@@ -131,10 +134,7 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
     _api = ApiClient();
     _auth = AuthController(api: _api, store: _store);
 
-    _tunnel = WindowsTunnelClient(
-      pipeName: AppConfig.tunnelPipeName,
-    );
-
+    _tunnel = WindowsTunnelClient(pipeName: AppConfig.tunnelPipeName);
     _usage = UsageStore(paths: widget.paths);
 
     _vpn = DesktopVpnController(
@@ -144,6 +144,9 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
       settings: widget.settings,
       usage: _usage,
       ping: PingService(),
+      // The controller probes the service without elevating, and only asks for
+      // elevation when the user presses Connect or "Install service".
+      service: ServiceBootstrap(paths: widget.paths),
     );
 
     _window = WindowController(settings: widget.settings);
@@ -151,33 +154,45 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
 
     _window.onExitRequested = _exit;
 
-    // Make sure the privileged tunnel service exists before the user ever
-    // presses Connect. This is the only place that may raise a UAC prompt,
-    // and only when the service is missing (portable mode).
-    unawaited(
-      ServiceBootstrap(paths: widget.paths)
-          .ensureInstalledAndRunning()
-          .then((_) => _vpn.bootstrap()),
-    );
+    // Attach the auth listener BEFORE restoring the session.
+    //
+    // This is the bug that made the desktop client show an empty server list:
+    // the listener used to be added after `_auth.bootstrap()`, so when a saved
+    // session was restored the authenticated transition happened with nobody
+    // listening, and the VPN controller never learned it could call
+    // GET /api/nodes.
+    _auth.addListener(_onAuthChanged);
 
     await _window.attach(startHidden: widget.startHidden);
     await _tray.attach();
 
-    // Restore the session and adopt any tunnel that is already up (for
-    // example after the UI was closed while the VPN kept running).
-    await _auth.bootstrap();
-    await _usage.load(owner: _auth.user?.publicId);
-    await _vpn.adopt();
+    try {
+      await _auth.bootstrap();
+    } catch (e) {
+      dlog.error('boot', 'auth bootstrap failed', e);
+    }
 
-    _auth.addListener(_onAuthChanged);
+    try {
+      await _usage.load(owner: _auth.user?.publicId);
+    } catch (e) {
+      dlog.error('boot', 'usage load failed', e);
+    }
+
+    // Independent of the tunnel service and of the auth result: bootstrap is
+    // fault-isolated and retries the node list on its own.
+    unawaited(_vpn.bootstrap());
 
     if (mounted) setState(() => _ready = true);
+    dlog.write('boot', 'ready (auth=${_auth.stage})');
   }
 
   void _onAuthChanged() {
     if (_auth.stage == AuthStage.authenticated) {
       unawaited(_usage.load(owner: _auth.user?.publicId));
       unawaited(_vpn.bootstrap());
+      // bootstrap() is re-entrancy guarded; this makes sure a session restored
+      // while an earlier bootstrap was still running still gets its nodes.
+      unawaited(_vpn.retryNodes());
     }
     if (mounted) setState(() {});
   }
@@ -187,12 +202,12 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
     _tray.updateStrings(_strings);
   }
 
-  /// Tray → Exit. Requirement 11: this is the only path that really quits.
+  /// Tray -> Exit. Requirement 11: this is the only path that really quits.
   Future<void> _exit() async {
     await _vpn.shutdown(
       disconnectTunnel: widget.settings.value.disconnectOnExit,
     );
-    _tray.dispose();
+    await _tray.dispose();
     await windowManager.setPreventClose(false);
     await windowManager.destroy();
     exit(0);
@@ -211,13 +226,18 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
     return MaterialApp(
       title: 'GlukVPN',
       debugShowCheckedModeBanner: false,
-      theme: GlukTheme.build(),
+      theme: DesktopTheme.build(),
+      // Guarantees a Material ancestor and a real ambient text style for the
+      // whole tree. Without it Flutter falls back to its error text style,
+      // which is what drew a yellow double underline under every label in the
+      // first build.
+      builder: DesktopTheme.appBuilder,
       home: _buildHome(),
     );
   }
 
   Widget _buildHome() {
-    final showSplash = !_splashDone ||
+    final bool showSplash = !_splashDone ||
         !_ready ||
         _auth.stage == AuthStage.unknown ||
         _auth.stage == AuthStage.restoring;

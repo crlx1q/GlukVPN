@@ -1,25 +1,38 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import '../../services/ping_service.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/models.dart';
+import '../../services/ping_service.dart';
 import '../../state/auth_controller.dart';
 import '../../theme/tokens.dart';
 import '../../utils/format.dart';
 import '../../utils/geo.dart';
-import '../../widgets/common.dart';
-import '../../widgets/glass.dart';
 import '../i18n/desktop_strings.dart';
 import '../logic/connection_phase.dart';
 import '../state/desktop_vpn_controller.dart';
+import '../theme/desktop_theme.dart';
 import '../widgets/desktop_connect_button.dart';
-import '../widgets/metric_cell.dart';
+import '../widgets/info_panel.dart';
+import '../widgets/secure_banner.dart';
+import '../widgets/server_pill.dart';
+import '../widgets/status_pill.dart';
 import '../widgets/world_stage.dart';
 
-/// Desktop home: globe on the left, connect + live metrics on the right.
+/// Desktop home screen.
 ///
-/// Requirement 7 asks for a large living map that still feels dense, so the
-/// layout is a two-column split rather than a stretched phone screen.
-class DesktopHomeScreen extends StatelessWidget {
+/// Composition, straight from the approved reference:
+///   * one large map card holding the state pill, the location line, the
+///     connect button and the server selector,
+///   * a right rail with the CONNECTION and TRAFFIC cards,
+///   * a full-width strip at the bottom that is reassuring when the tunnel is
+///     up and becomes the problem/diagnostics surface when it is not.
+///
+/// The previous version scattered the button, four metric tiles and a traffic
+/// panel down a narrow column beside an oversized empty map, which is what made
+/// the window look unfinished.
+class DesktopHomeScreen extends StatefulWidget {
   const DesktopHomeScreen({
     super.key,
     required this.vpn,
@@ -36,67 +49,109 @@ class DesktopHomeScreen extends StatelessWidget {
   final VoidCallback onOpenServers;
 
   @override
-  Widget build(BuildContext context) {
-    final s = strings;
-    final phase = vpn.phase;
-    final node = vpn.selectedNode;
-    final user = auth.user;
+  State<DesktopHomeScreen> createState() => _DesktopHomeScreenState();
+}
 
-    final self = approximateSelfLocation(
+class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    // The duration readout has to advance once a second; the controller only
+    // notifies on real state changes, which is correct but not enough here.
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (widget.vpn.phase.isConnected) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  DesktopStrings get s => widget.strings;
+  DesktopVpnController get vpn => widget.vpn;
+
+  @override
+  Widget build(BuildContext context) {
+    final AuthUser? user = widget.auth.user;
+
+    final SelfLocation? self = approximateSelfLocation(
       originCountryCode: user?.originCountryCode,
       originCountryName: user?.originCountry,
       originRegion: user?.originRegion,
     );
 
-    final serverPoint =
+    final VpnNodeInfo? node = vpn.selectedNode;
+    final MapPoint? serverPoint =
         node == null ? null : countryPoint(node.countryCode);
 
-    final nodePoints = <MapPoint>[
-      for (final n in vpn.userVisibleNodes)
+    final List<MapPoint> nodePoints = <MapPoint>[
+      for (final VpnNodeInfo n in vpn.userVisibleNodes)
         if (countryPoint(n.countryCode) != null) countryPoint(n.countryCode)!,
     ];
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final wide = constraints.maxWidth >= 980;
+        final bool wide = constraints.maxWidth >= 900;
 
-        final stage = WorldStage(
-          phase: phase,
-          reduceMotion: reduceMotion,
-          selfLocation: self,
-          serverPoint: serverPoint,
-          allNodes: nodePoints,
-          height: wide ? constraints.maxHeight - 48 : 340,
-        );
-
-        final panel = _ControlPanel(
+        final Widget mapCard = _MapCard(
           vpn: vpn,
           strings: s,
-          reduceMotion: reduceMotion,
-          onOpenServers: onOpenServers,
-          selfLabel: self?.placeLabel,
+          reduceMotion: widget.reduceMotion,
+          self: self,
+          serverPoint: serverPoint,
+          nodePoints: nodePoints,
+          onOpenServers: widget.onOpenServers,
         );
+
+        final Widget rail = _MetricsRail(vpn: vpn, strings: s);
+        final Widget banner = _HomeBanner(vpn: vpn, strings: s);
 
         if (!wide) {
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(GlukSizes.pagePadding),
+            padding: const EdgeInsets.all(DesktopTokens.pagePadding),
             child: Column(
-              children: <Widget>[stage, const SizedBox(height: 20), panel],
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                SizedBox(height: 420, child: mapCard),
+                const SizedBox(height: DesktopTokens.gutter),
+                rail,
+                const SizedBox(height: DesktopTokens.gutter),
+                banner,
+              ],
             ),
           );
         }
 
         return Padding(
-          padding: const EdgeInsets.all(GlukSizes.pagePadding),
-          child: Row(
+          padding: const EdgeInsets.fromLTRB(
+            0,
+            0,
+            DesktopTokens.pagePadding,
+            DesktopTokens.pagePadding,
+          ),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Expanded(flex: 6, child: stage),
-              const SizedBox(width: 22),
-              SizedBox(
-                width: 348,
-                child: SingleChildScrollView(child: panel),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Expanded(child: mapCard),
+                    const SizedBox(width: DesktopTokens.gutter),
+                    SizedBox(
+                      width: DesktopTokens.rightRailWidth,
+                      child: rail,
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(height: DesktopTokens.gutter),
+              banner,
             ],
           ),
         );
@@ -105,171 +160,163 @@ class DesktopHomeScreen extends StatelessWidget {
   }
 }
 
-class _ControlPanel extends StatelessWidget {
-  const _ControlPanel({
+// ---------------------------------------------------------------------------
+// Map card
+// ---------------------------------------------------------------------------
+
+class _MapCard extends StatelessWidget {
+  const _MapCard({
     required this.vpn,
     required this.strings,
     required this.reduceMotion,
+    required this.self,
+    required this.serverPoint,
+    required this.nodePoints,
     required this.onOpenServers,
-    this.selfLabel,
   });
 
   final DesktopVpnController vpn;
   final DesktopStrings strings;
   final bool reduceMotion;
+  final SelfLocation? self;
+  final MapPoint? serverPoint;
+  final List<MapPoint> nodePoints;
   final VoidCallback onOpenServers;
-  final String? selfLabel;
+
+  Color get _accent {
+    final ConnectionPhase phase = vpn.phase;
+    if (phase.isConnected) return GlukColors.connected;
+    if (phase.isError) return GlukColors.danger;
+    if (phase.isBusy) return GlukColors.amber;
+    return GlukColors.violetLight;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final s = strings;
-    final phase = vpn.phase;
-    final node = vpn.selectedNode;
-    final snapshot = vpn.snapshot;
-    final duration = vpn.connectedFor;
+    final DesktopStrings s = strings;
+    final ConnectionPhase phase = vpn.phase;
+    final VpnNodeInfo? node = vpn.selectedNode;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        if (!vpn.serviceReady)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: InlineNotice(
-              message: s.serviceMissingHint,
-              tone: NoticeTone.danger,
-            ),
-          ),
+    final String serverTitle =
+        node?.displayTitle ?? s.autoBestServer;
 
-        if (vpn.userMessage != null && vpn.serviceReady)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: InlineNotice(
-              message: vpn.userMessage!,
-              tone: phase.isError ? NoticeTone.danger : NoticeTone.info,
-            ),
-          ),
+    // Never repeat the title as the subtitle: an empty second line is better
+    // than "Auto - Best server" printed twice, which is what the first build
+    // did whenever no node had been resolved yet.
+    String? serverSubtitle;
+    if (node == null) {
+      serverSubtitle = vpn.autoSelectionEnabled ? s.autoDescription : null;
+    } else {
+      final String sub = node.displaySubtitle;
+      serverSubtitle = (sub.isEmpty || sub == serverTitle) ? null : sub;
+      if (vpn.autoSelectionEnabled) {
+        serverSubtitle = serverSubtitle == null
+            ? s.autoBestServer
+            : '${s.autoBestServer} \u00b7 $serverSubtitle';
+      }
+    }
 
-        // Connect button, unchanged visual language, desktop scale.
-        Center(
-          child: DesktopConnectButton(
-            phase: phase,
-            strings: s,
-            reduceMotion: reduceMotion,
-            onTap: () => vpn.toggle(),
-          ),
-        ),
-
-        const SizedBox(height: 22),
-
-        // Current server card doubles as the entry point to the selector.
-        _ServerCard(
-          node: node,
-          strings: s,
-          autoLabel: vpn.autoSelectionEnabled ? s.autoBestServer : null,
-          onTap: onOpenServers,
-        ),
-
-        const SizedBox(height: 14),
-
-        MetricRow(
+    return Container(
+      decoration: DesktopTokens.cardDecoration(),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(DesktopTokens.cardRadius - 1),
+        child: Stack(
           children: <Widget>[
-            MetricCell(
-              label: s.publicIp,
-              value: vpn.publicIp ?? s.dash,
-              monospace: true,
-            ),
-            MetricCell(
-              label: s.vpnIp,
-              value: snapshot.vpnIp ?? s.dash,
-              monospace: true,
-              valueColor:
-                  phase.isConnected ? GlukColors.connected : null,
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 10),
-
-        MetricRow(
-          children: <Widget>[
-            MetricCell(
-              label: s.duration,
-              value: duration == null ? s.dash : formatDuration(duration),
-              monospace: true,
-            ),
-            MetricCell(
-              label: s.ping,
-              value: vpn.currentPingMs == null
-                  ? s.dash
-                  : '${formatPing(vpn.currentPingMs!)} · ${_pingSourceLabel()}',
-              monospace: true,
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 10),
-
-        GlassPanel(
-          radius: GlukSizes.trafficRadius,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                s.traffic,
-                style: const TextStyle(
-                  color: GlukColors.text2,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.1,
-                ),
+            Positioned.fill(
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints c) {
+                  return WorldStage(
+                    phase: phase,
+                    reduceMotion: reduceMotion,
+                    selfLocation: self,
+                    serverPoint: serverPoint,
+                    allNodes: nodePoints,
+                    height: c.maxHeight,
+                  );
+                },
               ),
-              const SizedBox(height: 12),
-              Row(
+            ),
+
+            // State pill + location line.
+            Positioned(
+              top: 22,
+              left: 0,
+              right: 0,
+              child: Column(
                 children: <Widget>[
-                  Expanded(
-                    child: _TrafficLeg(
-                      icon: Icons.south_rounded,
-                      label: s.downloaded,
-                      value: formatBytes(vpn.rxBytes),
-                      tint: GlukColors.connected,
+                  StatusPill(
+                    label: s.phaseLabel(phase),
+                    color: _accent,
+                    icon: phase.isConnected
+                        ? Icons.lock_rounded
+                        : phase.isError
+                            ? Icons.error_outline_rounded
+                            : phase.isBusy
+                                ? Icons.sync_rounded
+                                : Icons.lock_open_rounded,
+                    pulsing: phase.isBusy && !reduceMotion,
+                  ),
+                  if (self != null) ...<Widget>[
+                    const SizedBox(height: 12),
+                    LocationLine(
+                      youLabel: s.isRussian ? 'Вы' : 'You',
+                      place: self!.placeLabel,
+                      flag: self!.flag,
                     ),
-                  ),
-                  Container(
-                    width: 1,
-                    height: 30,
-                    color: GlukColors.stroke,
-                  ),
-                  Expanded(
-                    child: _TrafficLeg(
-                      icon: Icons.north_rounded,
-                      label: s.uploaded,
-                      value: formatBytes(vpn.txBytes),
-                      tint: GlukColors.violetLight,
-                    ),
-                  ),
+                  ],
                 ],
               ),
-            ],
-          ),
-        ),
+            ),
 
-        if (selfLabel != null) ...<Widget>[
-          const SizedBox(height: 12),
-          Center(
-            child: Text(
-              selfLabel!,
-              style: const TextStyle(
-                color: GlukColors.text2,
-                fontSize: 11,
+            // Connect button, slightly below centre so the arc stays visible.
+            Align(
+              alignment: const Alignment(0, 0.10),
+              child: DesktopConnectButton(
+                phase: phase,
+                strings: s,
+                reduceMotion: reduceMotion,
+                size: 186,
+                showLabel: false,
+                onTap: () => vpn.toggle(),
               ),
             ),
-          ),
-        ],
-      ],
+
+            // Server selector.
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: 20,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  child: ServerPill(
+                    title: serverTitle,
+                    subtitle: serverSubtitle,
+                    flag: node?.countryCode,
+                    online: node?.online ?? true,
+                    locked: vpn.manualSelectionLocked,
+                    pingMs: node == null ? null : vpn.pings[node.id],
+                    onTap: onOpenServers,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Right rail
+// ---------------------------------------------------------------------------
+
+class _MetricsRail extends StatelessWidget {
+  const _MetricsRail({required this.vpn, required this.strings});
+
+  final DesktopVpnController vpn;
+  final DesktopStrings strings;
 
   String _pingSourceLabel() {
     switch (vpn.pingSource) {
@@ -278,120 +325,169 @@ class _ControlPanel extends StatelessWidget {
       case PingSource.controlApi:
         return strings.viaApi;
       case PingSource.none:
-        return strings.dash;
-      default:
-        return strings.dash;
+        return '';
     }
   }
-}
-
-class _ServerCard extends StatelessWidget {
-  const _ServerCard({
-    required this.node,
-    required this.strings,
-    required this.onTap,
-    this.autoLabel,
-  });
-
-  final VpnNodeInfo? node;
-  final DesktopStrings strings;
-  final VoidCallback onTap;
-  final String? autoLabel;
 
   @override
   Widget build(BuildContext context) {
-    return GlassPanel(
-      radius: GlukSizes.cellRadius,
-      onTap: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-      child: Row(
-        children: <Widget>[
-          FlagCircle(
-            flag: node?.countryCode ?? '🌐',
-            size: GlukSizes.flagCircle,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  node?.displayTitle ?? strings.autoBestServer,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: GlukColors.text0,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  autoLabel ?? node?.displaySubtitle ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: GlukColors.text2,
-                    fontSize: 11,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Icon(
-            Icons.chevron_right_rounded,
-            size: 20,
-            color: GlukColors.text2,
-          ),
-        ],
-      ),
-    );
-  }
-}
+    final DesktopStrings s = strings;
+    final bool connected = vpn.phase.isConnected;
+    final Duration? duration = vpn.connectedFor;
+    final int? ping = vpn.currentPingMs;
 
-class _TrafficLeg extends StatelessWidget {
-  const _TrafficLeg({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.tint,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color tint;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Icon(icon, size: 15, color: tint),
-        const SizedBox(width: 8),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(
-              label,
-              style: const TextStyle(color: GlukColors.text2, fontSize: 10),
+        InfoCard(
+          title: s.isRussian ? 'Соединение' : 'Connection',
+          accent: connected ? GlukColors.connected : null,
+          rows: <InfoRow>[
+            InfoRow(
+              label: s.publicIp,
+              value: vpn.publicIp ?? s.dash,
             ),
-            const SizedBox(height: 1),
-            Text(
-              value,
-              style: const TextStyle(
-                color: GlukColors.text0,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
-              ),
+            InfoRow(
+              label: s.vpnIp,
+              value: vpn.snapshot.vpnIp ?? s.dash,
+              valueColor: connected ? GlukColors.connected : null,
+            ),
+            InfoRow(
+              label: s.duration,
+              value: duration == null ? s.dash : formatDuration(duration),
+            ),
+            InfoRow(
+              label: s.ping,
+              value: ping == null ? s.dash : formatPing(ping),
+              unit: ping == null ? null : _pingSourceLabel(),
             ),
           ],
         ),
+        const SizedBox(height: DesktopTokens.gutter),
+        InfoCard(
+          title: s.traffic,
+          rows: <InfoRow>[
+            InfoRow(
+              label: s.downloaded,
+              value: formatBytes(vpn.rxBytes),
+              icon: Icons.south_rounded,
+              iconColor: GlukColors.connected,
+              compact: true,
+            ),
+            InfoRow(
+              label: s.uploaded,
+              value: formatBytes(vpn.txBytes),
+              icon: Icons.north_rounded,
+              iconColor: GlukColors.violetLight,
+              compact: true,
+            ),
+          ],
+        ),
+        const Spacer(),
       ],
     );
   }
 }
 
+// ---------------------------------------------------------------------------
+// Bottom strip: reassurance, or the one place a failure is explained
+// ---------------------------------------------------------------------------
+
+class _HomeBanner extends StatelessWidget {
+  const _HomeBanner({required this.vpn, required this.strings});
+
+  final DesktopVpnController vpn;
+  final DesktopStrings strings;
+
+  @override
+  Widget build(BuildContext context) {
+    final DesktopStrings s = strings;
+    final bool ru = s.isRussian;
+    final ConnectionPhase phase = vpn.phase;
+
+    void copyLog() {
+      Clipboard.setData(ClipboardData(text: vpn.diagnosticsDump()));
+    }
+
+    final String copyLabel = ru ? 'Копировать журнал' : 'Copy log';
+
+    // 1. Tunnel is verified up: the calm state from the reference.
+    if (phase.isConnected) {
+      return SecureBanner(
+        tone: SecureTone.secure,
+        title: ru ? 'Соединение защищено' : 'Your connection is secure',
+        subtitle: ru
+            ? 'Приватный и быстрый интернет через туннель GlukVPN'
+            : 'Enjoy private and fast internet',
+      );
+    }
+
+    // 2. The privileged tunnel service cannot be reached: nothing else matters
+    //    until this is fixed, so it wins over every other message.
+    if (!vpn.serviceReady) {
+      return SecureBanner(
+        tone: SecureTone.danger,
+        title: s.serviceMissing,
+        subtitle: vpn.serviceProblem ?? s.serviceMissingHint,
+        actionLabel: ru ? 'Установить службу' : 'Install service',
+        onAction: () => vpn.repairService(),
+        secondaryActionLabel: copyLabel,
+        onSecondaryAction: copyLog,
+      );
+    }
+
+    // 3. The server list never arrived. This is exactly the failure that was
+    //    invisible before: the list was empty and no reason was shown.
+    if (vpn.nodesError != null && vpn.userVisibleNodes.isEmpty) {
+      return SecureBanner(
+        tone: SecureTone.warning,
+        title: ru ? 'Серверы не загрузились' : 'Could not load servers',
+        subtitle: vpn.nodesError!,
+        actionLabel: vpn.nodesLoading
+            ? (ru ? 'Обновляю…' : 'Refreshing…')
+            : s.refresh,
+        onAction: vpn.nodesLoading ? null : () => vpn.retryNodes(),
+        secondaryActionLabel: copyLabel,
+        onSecondaryAction: copyLog,
+      );
+    }
+
+    // 4. A connect attempt failed, or the session/subscription is the problem.
+    if (phase.isError) {
+      return SecureBanner(
+        tone: SecureTone.danger,
+        title: s.phaseLabel(phase),
+        subtitle: vpn.userMessage ??
+            (vpn.statusDetail.isEmpty
+                ? (ru ? 'Не удалось подключиться' : 'Could not connect')
+                : vpn.statusDetail),
+        actionLabel: s.retry,
+        onAction: () => vpn.connect(),
+        secondaryActionLabel: copyLabel,
+        onSecondaryAction: copyLog,
+      );
+    }
+
+    // 5. Busy.
+    if (phase.isBusy) {
+      return SecureBanner(
+        tone: SecureTone.warning,
+        title: s.phaseLabel(phase),
+        subtitle: vpn.statusDetail.isEmpty
+            ? (ru ? 'Поднимаю туннель…' : 'Bringing the tunnel up…')
+            : vpn.statusDetail,
+      );
+    }
+
+    // 6. Idle and healthy.
+    return SecureBanner(
+      tone: SecureTone.idle,
+      title: ru ? 'Соединение не защищено' : 'You are not protected',
+      subtitle: ru
+          ? 'Нажмите кнопку включения, чтобы поднять VPN'
+          : 'Press the power button to bring the VPN up',
+      actionLabel: s.connect,
+      onAction: () => vpn.connect(),
+    );
+  }
+}

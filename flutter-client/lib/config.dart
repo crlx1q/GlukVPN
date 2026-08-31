@@ -167,7 +167,10 @@ class AppConfig {
 
 	static const Size desktopMinSize = Size(960, 660);
 	static const Size desktopDefaultSize = Size(1180, 740);
-	static const Size miniPanelSize = Size(340, 420);
+	/// Tray quick panel. Small on purpose: it only carries the connect button,
+	/// the current server, ping and the two traffic counters, in the spirit of
+	/// the native Windows utility panels that appear above the tray.
+	static const Size miniPanelSize = Size(316, 352);
 
 	/// Deliberately short. The logo animation must never be the reason the app
 	/// feels slow; session, servers and subscription all load behind it.

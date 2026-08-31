@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../config.dart';
+import '../services/desktop_log.dart';
+import '../services/work_area.dart';
 import 'desktop_settings.dart';
 
 /// Which shell layout the single native window is currently showing.
@@ -12,7 +14,7 @@ enum WindowMode {
   /// Full application window.
   main,
 
-  /// Compact quick panel anchored near the tray.
+  /// Compact quick panel anchored above the notification area.
   mini,
 }
 
@@ -21,6 +23,12 @@ enum WindowMode {
 /// The single most important rule, straight from requirement 11:
 /// **closing the window is not disconnecting.** [onWindowClose] hides the
 /// window and returns; it never touches the VPN controller.
+///
+/// Tray behaviour implemented here:
+///   * one left click  -> [toggleMini], a small panel pinned to the corner
+///     nearest the tray, exactly like a native Windows utility panel,
+///   * double left click -> [openFromTray], the full window,
+///   * clicking elsewhere dismisses the mini panel (focus loss).
 class WindowController extends ChangeNotifier with WindowListener {
   WindowController({required SettingsStore settings}) : _settings = settings;
 
@@ -29,6 +37,10 @@ class WindowController extends ChangeNotifier with WindowListener {
   WindowMode _mode = WindowMode.main;
   bool _visible = false;
   bool _exiting = false;
+
+  /// Suppresses the auto-dismiss during the frames right after showing the
+  /// mini panel, when Windows has not handed us focus yet.
+  DateTime? _miniShownAt;
 
   WindowMode get mode => _mode;
   bool get visible => _visible;
@@ -42,8 +54,8 @@ class WindowController extends ChangeNotifier with WindowListener {
     // Intercept the close button so we can hide instead of terminating.
     await windowManager.setPreventClose(true);
 
-    final saved = _settings.value;
-    final size = Size(
+    final DesktopSettings saved = _settings.value;
+    final Size size = Size(
       saved.windowWidth ?? AppConfig.desktopDefaultSize.width,
       saved.windowHeight ?? AppConfig.desktopDefaultSize.height,
     );
@@ -51,8 +63,8 @@ class WindowController extends ChangeNotifier with WindowListener {
     await windowManager.setMinimumSize(AppConfig.desktopMinSize);
     await windowManager.setSize(size);
 
-    final x = saved.windowX;
-    final y = saved.windowY;
+    final double? x = saved.windowX;
+    final double? y = saved.windowY;
     if (x != null && y != null) {
       await windowManager.setPosition(Offset(x, y));
     } else {
@@ -75,42 +87,70 @@ class WindowController extends ChangeNotifier with WindowListener {
   Future<void> showMain() async {
     if (_mode != WindowMode.main) {
       _mode = WindowMode.main;
-      final saved = _settings.value;
-      await windowManager.setResizable(true);
-      await windowManager.setMinimumSize(AppConfig.desktopMinSize);
-      await windowManager.setSize(Size(
-        saved.windowWidth ?? AppConfig.desktopDefaultSize.width,
-        saved.windowHeight ?? AppConfig.desktopDefaultSize.height,
-      ));
-      await windowManager.setAlwaysOnTop(false);
-      await windowManager.center();
+      final DesktopSettings saved = _settings.value;
+      try {
+        await windowManager.setAlwaysOnTop(false);
+        await windowManager.setSkipTaskbar(false);
+        await windowManager.setResizable(true);
+        await windowManager.setMinimumSize(AppConfig.desktopMinSize);
+        await windowManager.setSize(Size(
+          saved.windowWidth ?? AppConfig.desktopDefaultSize.width,
+          saved.windowHeight ?? AppConfig.desktopDefaultSize.height,
+        ));
+
+        final double? x = saved.windowX;
+        final double? y = saved.windowY;
+        if (x != null && y != null) {
+          await windowManager.setPosition(Offset(x, y));
+        } else {
+          await windowManager.center();
+        }
+      } catch (e) {
+        dlog.warn('window', 'restore to main failed: $e');
+      }
     }
 
     await windowManager.show();
     await windowManager.focus();
     _visible = true;
     notifyListeners();
+  }
+
+  /// Double left click on the tray icon.
+  Future<void> openFromTray() async {
+    dlog.write('tray', 'double click -> full window');
+    await showMain();
   }
 
   /// Shows the compact quick panel (requirement 10).
   Future<void> showMini() async {
+    final Size panel = AppConfig.miniPanelSize;
+
     if (_mode != WindowMode.mini) {
       _mode = WindowMode.mini;
-      // Shrink below the main minimum, so drop the constraint first.
-      await windowManager.setMinimumSize(AppConfig.miniPanelSize);
-      await windowManager.setSize(AppConfig.miniPanelSize);
-      await windowManager.setResizable(false);
-      await windowManager.setAlwaysOnTop(true);
-      await _anchorNearTray();
+      try {
+        // Shrink below the main minimum, so drop the constraint first.
+        await windowManager.setMinimumSize(panel);
+        await windowManager.setSize(panel);
+        await windowManager.setResizable(false);
+        await windowManager.setAlwaysOnTop(true);
+        // A tray panel does not belong on the taskbar.
+        await windowManager.setSkipTaskbar(true);
+      } catch (e) {
+        dlog.warn('window', 'mini resize failed: $e');
+      }
     }
 
+    await _anchorNearTray(panel);
+
+    _miniShownAt = DateTime.now();
     await windowManager.show();
     await windowManager.focus();
     _visible = true;
     notifyListeners();
   }
 
-  /// Left-clicking the tray toggles the quick panel.
+  /// Single left click on the tray icon.
   Future<void> toggleMini() async {
     if (_visible && _mode == WindowMode.mini) {
       await hide();
@@ -128,25 +168,44 @@ class WindowController extends ChangeNotifier with WindowListener {
     notifyListeners();
   }
 
-  /// Places the mini panel in the bottom-right corner, above the taskbar.
-  Future<void> _anchorNearTray() async {
+  /// Pins the mini panel to the work-area corner nearest the notification
+  /// area, a few pixels above the taskbar.
+  Future<void> _anchorNearTray(Size panel) async {
     try {
-      final bounds = await windowManager.getBounds();
-      // window_manager has no screen API; nudging by the saved position keeps
-      // this predictable, and Windows clamps us on screen anyway.
-      const margin = 16.0;
-      final x = bounds.left;
-      final y = bounds.top;
-      await windowManager.setPosition(Offset(x + margin, y + margin));
-    } catch (_) {
+      final Rect? bounds = WorkArea.trayAnchoredBounds(
+        width: panel.width,
+        height: panel.height,
+        margin: 12,
+        devicePixelRatio: _devicePixelRatio(),
+      );
+
+      if (bounds == null) {
+        dlog.warn('window', 'work area unavailable, centring mini panel');
+        await windowManager.center();
+        return;
+      }
+
+      await windowManager.setPosition(Offset(bounds.left, bounds.top));
+    } catch (e) {
+      dlog.warn('window', 'anchor failed: $e');
       await windowManager.center();
     }
+  }
+
+  double _devicePixelRatio() {
+    try {
+      final Iterable<FlutterView> views = PlatformDispatcher.instance.views;
+      if (views.isNotEmpty) return views.first.devicePixelRatio;
+    } catch (_) {
+      // Fall through to 1.0 on any platform surprise.
+    }
+    return 1.0;
   }
 
   Future<void> _persistGeometry() async {
     if (_mode != WindowMode.main) return;
     try {
-      final bounds = await windowManager.getBounds();
+      final Rect bounds = await windowManager.getBounds();
       await _settings.update(
         (DesktopSettings s) => s.copyWith(
           windowWidth: bounds.width,
@@ -165,7 +224,7 @@ class WindowController extends ChangeNotifier with WindowListener {
     if (_exiting) return;
     _exiting = true;
     await _persistGeometry();
-    final handler = onExitRequested;
+    final Future<void> Function()? handler = onExitRequested;
     if (handler != null) await handler();
     await windowManager.setPreventClose(false);
     await windowManager.destroy();
@@ -196,6 +255,20 @@ class WindowController extends ChangeNotifier with WindowListener {
   void onWindowFocus() {
     _visible = true;
     notifyListeners();
+  }
+
+  @override
+  void onWindowBlur() {
+    // Native tray panels close when they lose focus. The main window must not.
+    if (_mode != WindowMode.mini || !_visible || _exiting) return;
+
+    final DateTime? shown = _miniShownAt;
+    if (shown != null &&
+        DateTime.now().difference(shown) < const Duration(milliseconds: 400)) {
+      return;
+    }
+
+    unawaited(hide());
   }
 
   @override

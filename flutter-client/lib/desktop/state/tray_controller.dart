@@ -6,13 +6,26 @@ import 'package:tray_manager/tray_manager.dart';
 import '../../utils/format.dart';
 import '../i18n/desktop_strings.dart';
 import '../logic/connection_phase.dart';
+import '../services/desktop_log.dart';
 import 'desktop_vpn_controller.dart';
 import 'window_controller.dart';
 
 /// System tray icon and context menu (requirement 9).
 ///
-/// The icon reflects the *verified* tunnel phase, so it never shows green
-/// while the tunnel is still coming up.
+/// Mouse mapping, as requested:
+///   * right click        -> the context menu below,
+///   * single left click   -> the compact quick panel near the tray,
+///   * double left click   -> the full application window.
+///
+/// Windows delivers one `mouseDown` per physical click with no notion of a
+/// double click, so the two are told apart with a short debounce: the first
+/// click schedules the panel, and a second click inside the window cancels it
+/// and opens the main window instead.
+///
+/// The icon reflects the *verified* tunnel phase, so it never shows green while
+/// the tunnel is still coming up. The four .ico files are logo-based and carry
+/// a state-coloured glow (violet idle, amber connecting, green connected, red
+/// error) - see desktop/packaging/make-icons.ps1.
 class TrayController with TrayListener {
   TrayController({
     required DesktopVpnController vpn,
@@ -22,6 +35,9 @@ class TrayController with TrayListener {
         _window = window,
         _strings = strings;
 
+  /// How long to wait for a possible second click.
+  static const Duration doubleClickWindow = Duration(milliseconds: 280);
+
   final DesktopVpnController _vpn;
   final WindowController _window;
   DesktopStrings _strings;
@@ -29,6 +45,9 @@ class TrayController with TrayListener {
   String? _lastIcon;
   String? _lastSignature;
   bool _attached = false;
+
+  Timer? _clickTimer;
+  int _pendingClicks = 0;
 
   /// Set by the shell so the tray can jump straight to Settings.
   void Function()? onOpenSettings;
@@ -39,7 +58,6 @@ class TrayController with TrayListener {
 
     trayManager.addListener(this);
     await _applyIcon(force: true);
-    await trayManager.setToolTip('GlukVPN');
     await _rebuildMenu(force: true);
 
     _vpn.addListener(_onVpnChanged);
@@ -58,36 +76,38 @@ class TrayController with TrayListener {
   // -------------------------------------------------------------------
 
   Future<void> _applyIcon({bool force = false}) async {
-    final icon = 'assets/tray/${_vpn.phase.trayIconName}.ico';
+    final String icon = 'assets/tray/${_vpn.phase.trayIconName}.ico';
     if (!force && icon == _lastIcon) return;
     _lastIcon = icon;
     try {
       await trayManager.setIcon(icon);
       await trayManager.setToolTip(_tooltip());
-    } catch (_) {
+    } catch (e) {
       // A missing icon must never take down the app.
+      dlog.warn('tray', 'setIcon($icon) failed: $e');
     }
   }
 
   String _tooltip() {
-    final status = _strings.phaseLabel(_vpn.phase);
-    final node = _vpn.selectedNode;
-    if (node == null) return 'GlukVPN — $status';
-    return 'GlukVPN — $status · ${node.displayTitle}';
+    final String status = _strings.phaseLabel(_vpn.phase);
+    final Object? node = _vpn.selectedNode;
+    if (node == null) return 'GlukVPN \u2014 $status';
+    return 'GlukVPN \u2014 $status \u00b7 ${_vpn.selectedNode!.displayTitle}';
   }
 
   /// Rebuilds only when something visible actually changed; Windows flickers
   /// the menu otherwise.
   Future<void> _rebuildMenu({bool force = false}) async {
-    final signature = _signature();
+    final String signature = _signature();
     if (!force && signature == _lastSignature) return;
     _lastSignature = signature;
 
-    final phase = _vpn.phase;
-    final node = _vpn.selectedNode;
-    final ping = _vpn.currentPingMs;
+    final ConnectionPhase phase = _vpn.phase;
+    final int? ping = _vpn.currentPingMs;
+    final String server =
+        _vpn.selectedNode?.displayTitle ?? _strings.trayAutoServer;
 
-    final menu = Menu(
+    final Menu menu = Menu(
       items: <MenuItem>[
         MenuItem(key: 'title', label: 'GlukVPN', disabled: true),
         MenuItem.separator(),
@@ -104,8 +124,7 @@ class TrayController with TrayListener {
         MenuItem.separator(),
         MenuItem(
           key: 'server',
-          label: '${_strings.trayServer}: '
-              '${node?.displayTitle ?? _strings.trayAutoServer}',
+          label: '${_strings.trayServer}: $server',
           disabled: true,
         ),
         MenuItem(
@@ -117,7 +136,8 @@ class TrayController with TrayListener {
         MenuItem(
           key: 'traffic',
           label: '${_strings.trayTraffic}: '
-              '↓ ${formatBytes(_vpn.rxBytes)}  ↑ ${formatBytes(_vpn.txBytes)}',
+              '\u2193 ${formatBytes(_vpn.rxBytes)}  '
+              '\u2191 ${formatBytes(_vpn.txBytes)}',
           disabled: true,
         ),
         MenuItem.separator(),
@@ -130,8 +150,8 @@ class TrayController with TrayListener {
 
     try {
       await trayManager.setContextMenu(menu);
-    } catch (_) {
-      // Ignore transient shell failures.
+    } catch (e) {
+      dlog.warn('tray', 'setContextMenu failed: $e');
     }
   }
 
@@ -147,8 +167,24 @@ class TrayController with TrayListener {
 
   @override
   void onTrayIconMouseDown() {
-    // Left click opens the compact quick panel (requirement 10).
-    unawaited(_window.toggleMini());
+    _pendingClicks++;
+
+    if (_pendingClicks >= 2) {
+      // Second click inside the window: this is a double click.
+      _clickTimer?.cancel();
+      _clickTimer = null;
+      _pendingClicks = 0;
+      unawaited(_window.openFromTray());
+      return;
+    }
+
+    _clickTimer?.cancel();
+    _clickTimer = Timer(doubleClickWindow, () {
+      _clickTimer = null;
+      _pendingClicks = 0;
+      dlog.write('tray', 'single click -> mini panel');
+      unawaited(_window.toggleMini());
+    });
   }
 
   @override
@@ -181,6 +217,7 @@ class TrayController with TrayListener {
   }
 
   Future<void> dispose() async {
+    _clickTimer?.cancel();
     _vpn.removeListener(_onVpnChanged);
     trayManager.removeListener(this);
     try {

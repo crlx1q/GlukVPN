@@ -10,7 +10,8 @@ import '../../services/ping_service.dart';
 import '../../state/auth_controller.dart';
 import '../logic/connection_phase.dart';
 import '../logic/node_selector.dart';
-import '../services/tunnel_client.dart';
+import '../services/desktop_log.dart';
+import '../services/service_bootstrap.dart';
 import 'desktop_settings.dart';
 import 'usage_store.dart';
 
@@ -19,10 +20,20 @@ import 'usage_store.dart';
 /// Design rules baked in here:
 ///  * The Windows tunnel is the source of truth. The UI mirrors it; it never
 ///    invents a state the tunnel does not have.
-///  * CONNECTED is only published after [TunnelVerifier] agrees — this is the
-///    fix for the premature-CONNECTED bug on Android.
+///  * CONNECTED is only published after [TunnelVerifier] agrees.
 ///  * The control API going away never tears down a healthy tunnel.
 ///  * Closing the window does not touch this controller at all.
+///
+/// Hard lessons from the first Windows build, all fixed below:
+///  * Loading the server list must never sit behind the tunnel service probe.
+///    It used to be chained after it, so a slow or missing service left the
+///    app with an empty server list and no explanation.
+///  * No failure may be swallowed. `refreshNodes` used to end in
+///    `catch (_) {}`, which is why "no servers" looked like "no servers exist".
+///    Every failure now lands in [nodesError], the log, and the home banner.
+///  * Auto selection must degrade instead of returning nothing, otherwise the
+///    server row shows a placeholder twice and Connect has no target.
+///  * Elevation prompts only ever happen for an explicit user action.
 class DesktopVpnController extends ChangeNotifier {
   DesktopVpnController({
     required ApiClient api,
@@ -32,12 +43,14 @@ class DesktopVpnController extends ChangeNotifier {
     required UsageStore usage,
     PingService? ping,
     TunnelVerifier? verifier,
+    ServiceBootstrap? service,
   })  : _api = api,
         _auth = auth,
         _tunnel = tunnel,
         _settings = settings,
         _usage = usage,
         _ping = ping ?? PingService(),
+        _service = service,
         _verifier = verifier ??
             TunnelVerifier(handshakeStaleAfter: AppConfig.handshakeStaleAfter);
 
@@ -48,6 +61,9 @@ class DesktopVpnController extends ChangeNotifier {
   final UsageStore _usage;
   final PingService _ping;
   final TunnelVerifier _verifier;
+
+  /// Optional: only present on Windows builds that can talk to the SCM.
+  final ServiceBootstrap? _service;
 
   // ---- published state ----
   ConnectionPhase _phase = ConnectionPhase.disconnected;
@@ -65,6 +81,16 @@ class DesktopVpnController extends ChangeNotifier {
   bool _serviceReady = false;
   DateTime? _connectedSince;
 
+  // ---- diagnostics ----
+  String? _serviceProblem;
+  String? _nodesError;
+  String? _autoFallbackReason;
+  bool _nodesLoading = false;
+  bool _serviceRepairing = false;
+  int _nodeRetries = 0;
+  Timer? _nodeRetryTimer;
+  bool _bootstrapping = false;
+
   // ---- internals ----
   Timer? _statusTimer;
   Timer? _serverTimer;
@@ -77,6 +103,8 @@ class DesktopVpnController extends ChangeNotifier {
   bool _reconnectAttempted = false;
   String? _activeSessionId;
   List<String> _activeEndpointIps = const <String>[];
+  ServerTunnelStatus? _lastServerStatus;
+  int _serverStatusFailures = 0;
 
   // ---- getters ----
   ConnectionPhase get phase => _phase;
@@ -97,6 +125,21 @@ class DesktopVpnController extends ChangeNotifier {
   int get txBytes => _snapshot.txBytes;
   UsageSnapshot get usage => _usage.snapshot();
 
+  /// Why the privileged tunnel service cannot be used, or null when it can.
+  String? get serviceProblem => _serviceProblem;
+
+  /// Why the server list is empty, or null when it loaded.
+  String? get nodesError => _nodesError;
+
+  bool get nodesLoading => _nodesLoading;
+  bool get serviceRepairing => _serviceRepairing;
+
+  /// Set when Auto had to fall back to a less-than-ideal node.
+  String? get autoFallbackReason => _autoFallbackReason;
+
+  /// True on plans that may not choose a server by hand (requirement 8).
+  bool get manualSelectionLocked => !manualSelectionAllowed(_auth.subscription);
+
   /// Visible list, with internal nodes stripped for production builds.
   List<VpnNodeInfo> get userVisibleNodes =>
       visibleNodes(_nodes, internalBuild: AppConfig.internalBuild);
@@ -104,48 +147,107 @@ class DesktopVpnController extends ChangeNotifier {
   bool get autoSelectionEnabled => _settings.value.autoNodeSelection;
 
   Duration? get connectedFor {
-    final since = _connectedSince;
+    final DateTime? since = _connectedSince;
     if (since == null) return null;
     return DateTime.now().difference(since);
+  }
+
+  /// Clipboard-ready state dump plus the rolling log. This is what the user
+  /// sends when something still does not work.
+  String diagnosticsDump() {
+    final StringBuffer sb = StringBuffer();
+    sb.writeln('GlukVPN desktop diagnostics');
+    sb.writeln('time      : ${DateTime.now().toIso8601String()}');
+    sb.writeln('api       : ${AppConfig.activeBaseUrl}');
+    sb.writeln('internal  : ${AppConfig.internalBuild}');
+    sb.writeln('auth      : ${_auth.stage}');
+    sb.writeln('user      : ${_auth.user?.publicId ?? '-'}');
+    sb.writeln('subscript.: ${_auth.subscription?.status ?? '-'}');
+    sb.writeln('service   : ready=$_serviceReady');
+    sb.writeln('service ? : ${_serviceProblem ?? '-'}');
+    sb.writeln('phase     : $_phase ($_statusDetail)');
+    sb.writeln('message   : ${_userMessage ?? '-'}');
+    sb.writeln(
+      'nodes     : total=${_nodes.length} visible=${userVisibleNodes.length}',
+    );
+    sb.writeln('nodes ?   : ${_nodesError ?? '-'}');
+    sb.writeln('selected  : ${_selectedNode?.id ?? '-'}');
+    sb.writeln('auto      : ${_settings.value.autoNodeSelection}');
+    sb.writeln('auto why  : ${_autoSelection?.reason ?? _autoFallbackReason ?? '-'}');
+    sb.writeln('tunnel    : ${_snapshot.state}');
+    sb.writeln('vpn ip    : ${_snapshot.vpnIp ?? '-'}');
+    sb.writeln('rx/tx     : ${_snapshot.rxBytes}/${_snapshot.txBytes}');
+    sb.writeln('--- log ---');
+    sb.writeln(dlog.dump());
+    return sb.toString();
   }
 
   // -------------------------------------------------------------------
   // Lifecycle
   // -------------------------------------------------------------------
 
-  /// Called once at startup, after the window is already visible.
+  /// Called at startup and again whenever the account becomes authenticated.
   ///
-  /// Everything here is deliberately non-blocking so the UI appears fast
-  /// (requirement 3).
+  /// Every step is fault-isolated: one failing step can no longer prevent the
+  /// others from running.
   Future<void> bootstrap() async {
-    _serviceReady = await _tunnel.isAvailable();
-    _notify();
+    if (_disposed || _bootstrapping) return;
+    _bootstrapping = true;
+    dlog.write('vpn', 'bootstrap start (auth=${_auth.stage})');
 
-    // Adopt whatever the service is already doing (requirement 12: the UI can
-    // be closed and reopened while the tunnel keeps running).
-    await adopt();
+    try {
+      // Deliberately concurrent. The node list comes from the control API and
+      // has nothing to do with the local tunnel service, so it must not wait
+      // for a pipe probe that can take seconds or fail outright.
+      await Future.wait<void>(<Future<void>>[
+        _guard('nodes', refreshNodes),
+        _guard('service', () async {
+          await _probeService();
+          await adopt();
+        }),
+      ]);
 
-    unawaited(refreshNodes());
-    _startStatusPolling();
+      _startStatusPolling();
+      unawaited(_guard('exit-ip', _refreshPublicIp));
 
-    if (_settings.value.autoConnect &&
-        _phase == ConnectionPhase.disconnected &&
-        _auth.stage == AuthStage.authenticated) {
-      unawaited(connect());
+      if (_settings.value.autoConnect &&
+          _phase == ConnectionPhase.disconnected &&
+          _auth.stage == AuthStage.authenticated) {
+        dlog.write('vpn', 'auto-connect enabled, connecting');
+        unawaited(connect());
+      }
+    } finally {
+      _bootstrapping = false;
+      dlog.write(
+        'vpn',
+        'bootstrap done: serviceReady=$_serviceReady '
+            'nodes=${_nodes.length} visible=${userVisibleNodes.length}',
+      );
+      _notify();
+    }
+  }
+
+  /// Runs [body], turning any throw into a logged, non-fatal event.
+  Future<void> _guard(String tag, Future<void> Function() body) async {
+    try {
+      await body();
+    } catch (e) {
+      dlog.error('vpn/$tag', 'step failed', e);
     }
   }
 
   /// Reads live state from the service and republishes it without changing
   /// anything. This is what makes reopening the window instant and correct.
   Future<void> adopt() async {
-    final snap = await _tunnel.status();
+    final TunnelSnapshot snap = await _tunnel.status();
     _snapshot = snap;
     _activeSessionId = snap.sessionId;
 
     if (snap.state == TunnelState.connected) {
+      dlog.write('vpn', 'adopted a live tunnel (session=${snap.sessionId})');
       _baselineRx = snap.rxBytes;
       _dataObserved = snap.rxBytes > 0;
-      final since = snap.uptime(DateTime.now().toUtc());
+      final Duration? since = snap.uptime(DateTime.now().toUtc());
       if (since != null) {
         _connectedSince = DateTime.now().subtract(since);
       }
@@ -175,6 +277,77 @@ class DesktopVpnController extends ChangeNotifier {
   }
 
   // -------------------------------------------------------------------
+  // Tunnel service
+  // -------------------------------------------------------------------
+
+  /// Non-elevating probe. Never shows a UAC prompt.
+  Future<void> _probeService() async {
+    final ServiceBootstrap? svc = _service;
+
+    if (svc != null) {
+      try {
+        final ServiceInstallState state = svc.queryState();
+        dlog.write('service', 'SCM reports $state');
+        _serviceProblem = state == ServiceInstallState.running
+            ? null
+            : ServiceBootstrap.describe(state);
+      } catch (e) {
+        dlog.error('service', 'SCM query failed', e);
+        _serviceProblem = 'Could not query the Windows service manager: $e';
+      }
+    }
+
+    try {
+      _serviceReady = await _tunnel.isAvailable();
+    } catch (e) {
+      dlog.error('service', 'pipe probe threw', e);
+      _serviceReady = false;
+    }
+
+    if (_serviceReady) {
+      _serviceProblem = null;
+    } else {
+      _serviceProblem ??= 'The tunnel service is not answering on '
+          '\\\\.\\pipe\\${AppConfig.tunnelPipeName}.';
+    }
+
+    dlog.write('service', 'ready=$_serviceReady problem=${_serviceProblem ?? '-'}');
+    _notify();
+  }
+
+  /// Installs and/or starts the privileged service. This is the only path that
+  /// may raise a UAC prompt, and it is always the result of the user pressing
+  /// a button.
+  Future<void> repairService() async {
+    final ServiceBootstrap? svc = _service;
+    if (svc == null) {
+      _serviceProblem = 'Service control is not available in this build.';
+      _notify();
+      return;
+    }
+    if (_serviceRepairing) return;
+
+    _serviceRepairing = true;
+    _notify();
+    dlog.write('service', 'repair requested by user');
+
+    try {
+      final ServiceInstallState state = await svc.ensureInstalledAndRunning();
+      dlog.write('service', 'repair finished in state $state');
+      _serviceProblem = state == ServiceInstallState.running
+          ? null
+          : ServiceBootstrap.describe(state);
+      await _probeService();
+    } catch (e) {
+      dlog.error('service', 'repair failed', e);
+      _serviceProblem = 'Could not start the tunnel service: $e';
+    } finally {
+      _serviceRepairing = false;
+      _notify();
+    }
+  }
+
+  // -------------------------------------------------------------------
   // Connect / disconnect
   // -------------------------------------------------------------------
 
@@ -186,14 +359,30 @@ class DesktopVpnController extends ChangeNotifier {
     try {
       _setPhase(ConnectionPhase.connecting, detail: 'preparing');
       _userMessage = null;
+      dlog.write('connect', 'requested (node=${node?.id ?? 'auto'})');
 
+      if (_auth.stage != AuthStage.authenticated) {
+        _fail(
+          ConnectionPhase.sessionExpired,
+          'not_authenticated',
+          'Sign in again to connect.',
+        );
+        return;
+      }
+
+      // One repair attempt, because pressing Connect is an explicit action and
+      // a UAC prompt here is understandable.
       if (!_serviceReady) {
-        _serviceReady = await _tunnel.isAvailable();
+        await _probeService();
+        if (!_serviceReady) {
+          await repairService();
+        }
         if (!_serviceReady) {
           _fail(
             ConnectionPhase.connectionFailed,
             'tunnel_service_unavailable',
-            'The GlukVPN tunnel service is not running.',
+            _serviceProblem ??
+                'The GlukVPN tunnel service is not running.',
           );
           return;
         }
@@ -201,30 +390,39 @@ class DesktopVpnController extends ChangeNotifier {
 
       // Make sure this machine is a registered device before asking for a
       // peer. Windows occupies exactly one device slot (requirement 17).
-      try { await _auth.ensureDeviceRegistered(); } catch (_) {
+      try {
+        await _auth.ensureDeviceRegistered();
+      } catch (e) {
+        dlog.error('connect', 'device registration failed', e);
         _fail(
           ConnectionPhase.limitReached,
           'device_registration_failed',
-          'Could not register this PC as a device.',
+          'Could not register this PC as a device: $e',
         );
         return;
       }
 
-      final target = node ?? await _resolveTargetNode();
+      final VpnNodeInfo? target = node ?? await _resolveTargetNode();
       if (target == null) {
         _fail(
           ConnectionPhase.serverUnavailable,
           'no_available_nodes',
-          'No servers are available right now.',
+          _nodesError ?? 'No servers are available right now.',
         );
         return;
       }
       _selectedNode = target;
+      dlog.write('connect', 'target node ${target.id}');
 
       ConnectResult result;
       try {
         result = await _api.connect(nodeId: target.id);
       } on ApiException catch (e) {
+        dlog.error(
+          'connect',
+          'POST /api/vpn/connect failed',
+          '${e.statusCode} ${e.code} ${e.message}',
+        );
         _fail(
           phaseForApiError(
             statusCode: e.statusCode,
@@ -232,16 +430,18 @@ class DesktopVpnController extends ChangeNotifier {
             refreshFailed: e.isUnauthorized,
           ),
           e.code ?? 'api_error',
-          e.message,
+          _describeApi(e),
         );
         return;
       } catch (e) {
+        dlog.error('connect', 'connect call threw', e);
         _fail(ConnectionPhase.connectionFailed, 'connect_failed', e.toString());
         return;
       }
 
-      final privateKey = await _auth.readTunnelPrivateKey();
+      final String? privateKey = await _auth.readTunnelPrivateKey();
       if (privateKey == null || privateKey.isEmpty) {
+        dlog.error('connect', 'no tunnel private key on this device');
         _fail(
           ConnectionPhase.connectionFailed,
           'missing_private_key',
@@ -250,12 +450,13 @@ class DesktopVpnController extends ChangeNotifier {
         return;
       }
 
-      final conf = result.tunnel.toWgQuickConfig(privateKeyBase64: privateKey);
+      final String conf =
+          result.tunnel.toWgQuickConfig(privateKeyBase64: privateKey);
       _activeSessionId = result.session.id;
       _activeEndpointIps = _endpointHostsOf(result.tunnel);
 
-      final settings = _settings.value;
-      final options = TunnelUpOptions(
+      final DesktopSettings settings = _settings.value;
+      final TunnelUpOptions options = TunnelUpOptions(
         adapterName: AppConfig.desktopAdapterName,
         killSwitch: settings.killSwitch,
         dns: settings.dns.isNotEmpty ? settings.dns : result.tunnel.dns,
@@ -268,23 +469,29 @@ class DesktopVpnController extends ChangeNotifier {
       _setPhase(ConnectionPhase.connecting, detail: 'bringing_up');
       _armConnectDeadline();
 
-      final up = await _tunnel.up(
+      final TunnelResult up = await _tunnel.up(
         wgConf: conf,
         sessionId: result.session.id,
         options: options,
       );
 
       if (!up.ok) {
+        dlog.error(
+          'connect',
+          'tunnel up rejected',
+          '${up.errorCode} ${up.errorMessage}',
+        );
         _fail(
           ConnectionPhase.connectionFailed,
           up.errorCode ?? 'tunnel_up_failed',
-          up.errorMessage,
+          up.errorMessage ?? 'The tunnel service refused to start the tunnel.',
         );
         // Release the server-side peer so we do not leak a session.
         unawaited(_releaseServerSession());
         return;
       }
 
+      dlog.write('connect', 'tunnel up accepted, waiting for verification');
       _snapshot = up.snapshot ?? _snapshot;
       _baselineRx = _snapshot.rxBytes;
       _dataObserved = false;
@@ -306,10 +513,11 @@ class DesktopVpnController extends ChangeNotifier {
     _busy = true;
 
     try {
+      dlog.write('disconnect', 'requested (user=$userInitiated)');
       _cancelConnectDeadline();
       _setPhase(ConnectionPhase.disconnecting, detail: 'tearing_down');
 
-      final down = await _tunnel.down();
+      final TunnelResult down = await _tunnel.down();
       _snapshot = down.snapshot ?? TunnelSnapshot.down;
 
       await _releaseServerSession();
@@ -358,15 +566,7 @@ class DesktopVpnController extends ChangeNotifier {
     await _settings.update(
       (DesktopSettings s) => s.copyWith(autoNodeSelection: enabled),
     );
-    if (enabled) {
-      _autoSelection = pickBestNode(
-        _nodes,
-        pings: _pings,
-        internalBuild: AppConfig.internalBuild,
-        preferCountryCode: _auth.user?.originCountryCode,
-      );
-      _selectedNode = _autoSelection?.node;
-    }
+    if (enabled) _resolveSelection();
     _notify();
   }
 
@@ -376,7 +576,13 @@ class DesktopVpnController extends ChangeNotifier {
 
   Future<void> _pollTunnel() async {
     if (_disposed || _busy) return;
-    _snapshot = await _tunnel.status();
+
+    try {
+      _snapshot = await _tunnel.status();
+    } catch (e) {
+      dlog.error('poll', 'status failed', e);
+      return;
+    }
 
     if (_snapshot.rxBytes > _baselineRx) _dataObserved = true;
 
@@ -393,7 +599,7 @@ class DesktopVpnController extends ChangeNotifier {
   Future<void> refreshServerStatus() async {
     if (_disposed) return;
     try {
-      final status = await _api.status();
+      final VpnStatusInfo status = await _api.status();
       _session = status.session;
       _lastServerStatus = ServerTunnelStatus(
         peerReady: status.peerReady,
@@ -403,9 +609,15 @@ class DesktopVpnController extends ChangeNotifier {
     } on ApiException catch (e) {
       // Auth problems are real; transport problems are not the tunnel's fault.
       if (e.isUnauthorized || e.isForbidden) {
-        final mapped = phaseForApiError(statusCode: e.statusCode, code: e.code);
+        final ConnectionPhase mapped =
+            phaseForApiError(statusCode: e.statusCode, code: e.code);
         if (mapped.requiresReauth || mapped == ConnectionPhase.accessRevoked) {
-          _fail(mapped, e.code ?? 'auth_error', e.message);
+          dlog.error(
+            'status',
+            'session/access rejected',
+            '${e.statusCode} ${e.code}',
+          );
+          _fail(mapped, e.code ?? 'auth_error', _describeApi(e));
           await _tunnel.down();
           return;
         }
@@ -419,16 +631,13 @@ class DesktopVpnController extends ChangeNotifier {
     await _reevaluate(fetchServerStatus: false);
   }
 
-  ServerTunnelStatus? _lastServerStatus;
-  int _serverStatusFailures = 0;
-
   Future<void> _reevaluate({required bool fetchServerStatus}) async {
     if (fetchServerStatus) {
       await refreshServerStatus();
       return;
     }
 
-    final verdict = _verifier.evaluate(
+    final TunnelVerdict verdict = _verifier.evaluate(
       snapshot: _snapshot,
       serverStatus: _lastServerStatus,
       dataObserved: _dataObserved,
@@ -439,6 +648,7 @@ class DesktopVpnController extends ChangeNotifier {
     // bother the user.
     if (verdict.phase == ConnectionPhase.tunnelLost && !_reconnectAttempted) {
       _reconnectAttempted = true;
+      dlog.warn('vpn', 'tunnel lost, attempting one silent reconnect');
       _setPhase(ConnectionPhase.connecting, detail: 'auto_reconnect');
       unawaited(_autoReconnect());
       return;
@@ -455,7 +665,7 @@ class DesktopVpnController extends ChangeNotifier {
   }
 
   Future<void> _autoReconnect() async {
-    final node = _selectedNode;
+    final VpnNodeInfo? node = _selectedNode;
     await _tunnel.down();
     await Future<void>.delayed(const Duration(milliseconds: 600));
     await connect(node: node);
@@ -465,6 +675,7 @@ class DesktopVpnController extends ChangeNotifier {
     _cancelConnectDeadline();
     _connectDeadline = Timer(AppConfig.connectTimeout, () {
       if (_phase == ConnectionPhase.connecting) {
+        dlog.error('connect', 'timed out waiting for a verified tunnel');
         _fail(
           ConnectionPhase.connectionFailed,
           'connect_timeout',
@@ -485,68 +696,175 @@ class DesktopVpnController extends ChangeNotifier {
   // Nodes, pings, IP
   // -------------------------------------------------------------------
 
-  Future<void> refreshNodes() async {
-    try {
-      final list = await _api.nodes();
-      _nodes = list;
+  /// Public retry used by the home banner and the server screen.
+  Future<void> retryNodes() {
+    _nodeRetries = 0;
+    return refreshNodes();
+  }
 
-      final remembered = _settings.value.lastNodeId;
-      if (_settings.value.autoNodeSelection || remembered == null) {
-        _autoSelection = pickBestNode(
-          _nodes,
-          pings: _pings,
-          internalBuild: AppConfig.internalBuild,
-          preferCountryCode: _auth.user?.originCountryCode,
-        );
-        _selectedNode ??= _autoSelection?.node;
+  Future<void> refreshNodes() async {
+    if (_disposed || _nodesLoading) return;
+
+    if (_auth.stage != AuthStage.authenticated) {
+      // Not an error the user can act on; it resolves as soon as the session
+      // is restored, and the auth listener calls us again.
+      dlog.write('nodes', 'skipped, auth stage is ${_auth.stage}');
+      _scheduleNodeRetry();
+      return;
+    }
+
+    _nodesLoading = true;
+    _notify();
+
+    try {
+      final List<VpnNodeInfo> list = await _api.nodes();
+      _nodes = list;
+      _nodeRetries = 0;
+
+      final int visible = userVisibleNodes.length;
+      dlog.write('nodes', 'loaded ${list.length} nodes, $visible visible');
+
+      if (list.isEmpty) {
+        _nodesError = 'The control plane returned an empty server list.';
+      } else if (visible == 0) {
+        // Every node was filtered out as internal. Say so instead of showing
+        // an empty list with no explanation.
+        _nodesError = 'All ${list.length} servers were filtered out as '
+            'internal. Ask support to publish a public node.';
       } else {
-        _selectedNode = _nodes.where((VpnNodeInfo n) => n.id == remembered).firstOrNull ??
-            _selectedNode;
+        _nodesError = null;
       }
 
+      _resolveSelection();
       _notify();
-      unawaited(measureNodePings());
-    } catch (_) {
-      // Keep whatever list we already have; the UI shows a stale-data hint.
+      unawaited(_guard('pings', measureNodePings));
+    } on ApiException catch (e) {
+      _nodesError = _describeApi(e);
+      dlog.error(
+        'nodes',
+        'GET /api/nodes failed',
+        '${e.statusCode} ${e.code} ${e.message}',
+      );
+      _scheduleNodeRetry();
+    } catch (e) {
+      _nodesError = 'Could not reach ${AppConfig.activeBaseUrl}: $e';
+      dlog.error('nodes', 'GET /api/nodes threw', e);
+      _scheduleNodeRetry();
+    } finally {
+      _nodesLoading = false;
+      _notify();
     }
+  }
+
+  /// Backoff retry. Without this, a single early 401 (session still being
+  /// restored) left the app with an empty server list until restart.
+  void _scheduleNodeRetry() {
+    if (_disposed) return;
+    _nodeRetryTimer?.cancel();
+
+    const List<int> schedule = <int>[3, 8, 20, 45];
+    final int seconds = _nodeRetries < schedule.length
+        ? schedule[_nodeRetries]
+        : schedule.last;
+    _nodeRetries++;
+
+    dlog.write('nodes', 'retry #$_nodeRetries in ${seconds}s');
+    _nodeRetryTimer = Timer(Duration(seconds: seconds), () {
+      if (_disposed) return;
+      unawaited(refreshNodes());
+    });
+  }
+
+  /// Chooses the node shown in the UI, honouring the remembered manual pick.
+  void _resolveSelection() {
+    final List<VpnNodeInfo> visible = userVisibleNodes;
+    final String? remembered = _settings.value.lastNodeId;
+
+    if (!_settings.value.autoNodeSelection && remembered != null) {
+      final VpnNodeInfo? match =
+          visible.where((VpnNodeInfo n) => n.id == remembered).firstOrNull;
+      if (match != null) {
+        _selectedNode = match;
+        _autoFallbackReason = null;
+        return;
+      }
+    }
+
+    final VpnNodeInfo? auto = _autoTarget();
+    if (auto != null) _selectedNode = auto;
+  }
+
+  /// Auto pick with a graded fallback.
+  ///
+  /// [pickBestNode] only returns nodes that are both online and connectable.
+  /// When the fleet is small or a heartbeat is stale that yields nothing, which
+  /// is why the server row used to show the placeholder twice and Connect had
+  /// no target. Now we degrade: best -> any online -> any visible, and record
+  /// the reason so it can be shown and logged.
+  VpnNodeInfo? _autoTarget() {
+    final AutoNodeChoice best = pickBestNode(
+      _nodes,
+      pings: _pings,
+      internalBuild: AppConfig.internalBuild,
+      preferCountryCode: _auth.user?.originCountryCode,
+    );
+    _autoSelection = best;
+
+    if (best.node != null) {
+      _autoFallbackReason = null;
+      return best.node;
+    }
+
+    final List<VpnNodeInfo> visible = userVisibleNodes;
+
+    final List<VpnNodeInfo> online =
+        visible.where((VpnNodeInfo n) => n.online).toList();
+    if (online.isNotEmpty) {
+      _autoFallbackReason = 'fallback_online_not_connectable';
+      dlog.warn('nodes', 'auto fallback: ${_autoFallbackReason}');
+      return online.first;
+    }
+
+    if (visible.isNotEmpty) {
+      _autoFallbackReason = 'fallback_offline_node';
+      dlog.warn('nodes', 'auto fallback: ${_autoFallbackReason}');
+      return visible.first;
+    }
+
+    _autoFallbackReason = 'no_visible_nodes';
+    return null;
   }
 
   /// Measures latency to visible nodes so Auto has real data to work with.
   Future<void> measureNodePings() async {
-    final targets = userVisibleNodes
+    final List<VpnNodeInfo> targets = userVisibleNodes
         .where((VpnNodeInfo n) => n.online && n.latencyHost != null)
         .take(12)
         .toList();
 
-    for (final node in targets) {
+    for (final VpnNodeInfo node in targets) {
       if (_disposed) return;
-      final host = node.latencyHost;
+      final String? host = node.latencyHost;
       if (host == null) continue;
-      final ms = await _ping.probeHost(host);
+      final PingSample? ms = await _ping.probeHost(host);
       if (ms != null && ms.ok) _pings[node.id] = ms.milliseconds!;
     }
 
-    if (_settings.value.autoNodeSelection) {
-      _autoSelection = pickBestNode(
-        _nodes,
-        pings: _pings,
-        internalBuild: AppConfig.internalBuild,
-        preferCountryCode: _auth.user?.originCountryCode,
-      );
-    }
+    if (_settings.value.autoNodeSelection) _resolveSelection();
     _notify();
   }
 
   Future<void> _measureLivePing() async {
-    final gateway = _snapshot.vpnIp;
-    final sample = await _ping.measure(
+    final String? gateway = _snapshot.vpnIp;
+    final PingSample sample = await _ping.measure(
       gatewayIp: gateway,
       apiBaseUrl: AppConfig.activeBaseUrl,
     );
     _currentPingMs = sample.milliseconds;
     _pingSource = sample.source;
     // Reaching the gateway is independent proof the tunnel carries traffic.
-    if (sample.source == PingSource.tunnelGateway && sample.milliseconds != null) {
+    if (sample.source == PingSource.tunnelGateway &&
+        sample.milliseconds != null) {
       _dataObserved = true;
     }
     _notify();
@@ -555,7 +873,8 @@ class DesktopVpnController extends ChangeNotifier {
   Future<void> _refreshPublicIp() async {
     try {
       _publicIp = await _api.probeExitIp();
-    } catch (_) {
+    } catch (e) {
+      dlog.warn('exit-ip', 'probe failed: $e');
       _publicIp = null;
     }
     _notify();
@@ -564,34 +883,21 @@ class DesktopVpnController extends ChangeNotifier {
   Future<VpnNodeInfo?> _resolveTargetNode() async {
     if (_nodes.isEmpty) await refreshNodes();
 
-    final settings = _settings.value;
-    final paid = manualSelectionAllowed(_auth.subscription);
+    final DesktopSettings settings = _settings.value;
+    final bool paid = manualSelectionAllowed(_auth.subscription);
 
     // Free accounts always get Auto (requirement 8).
-    if (!paid || settings.autoNodeSelection) {
-      final choice = pickBestNode(
-        _nodes,
-        pings: _pings,
-        internalBuild: AppConfig.internalBuild,
-        preferCountryCode: _auth.user?.originCountryCode,
-      );
-      _autoSelection = choice;
-      return choice.node;
-    }
+    if (!paid || settings.autoNodeSelection) return _autoTarget();
 
-    final remembered = settings.lastNodeId;
+    final String? remembered = settings.lastNodeId;
     if (remembered != null) {
-      final match =
-          userVisibleNodes.where((VpnNodeInfo n) => n.id == remembered).firstOrNull;
+      final VpnNodeInfo? match = userVisibleNodes
+          .where((VpnNodeInfo n) => n.id == remembered)
+          .firstOrNull;
       if (match != null && match.online && match.connectable) return match;
     }
 
-    return pickBestNode(
-      _nodes,
-      pings: _pings,
-      internalBuild: AppConfig.internalBuild,
-      preferCountryCode: _auth.user?.originCountryCode,
-    ).node;
+    return _autoTarget();
   }
 
   // -------------------------------------------------------------------
@@ -604,20 +910,18 @@ class DesktopVpnController extends ChangeNotifier {
   /// needed. Changing to or from "all apps" alters how the adapter itself is
   /// created, so it cannot be done in place.
   Future<String?> applySplitTunneling() async {
-    final settings = _settings.value;
+    final DesktopSettings settings = _settings.value;
 
     if (!_phase.isConnected) return null;
 
-    final result = await _tunnel.setSplit(
+    final TunnelResult result = await _tunnel.setSplit(
       mode: settings.splitMode,
       apps: settings.splitApps,
     );
 
     if (result.ok) return null;
 
-    if (result.errorCode == 'reconnect_required') {
-      return 'reconnect_required';
-    }
+    if (result.errorCode == 'reconnect_required') return 'reconnect_required';
     return result.errorMessage ?? result.errorCode;
   }
 
@@ -625,8 +929,22 @@ class DesktopVpnController extends ChangeNotifier {
   // Helpers
   // -------------------------------------------------------------------
 
+  /// Turns an [ApiException] into something a human can act on.
+  String _describeApi(ApiException e) {
+    final String base = e.message.isEmpty ? 'Request failed' : e.message;
+    if (e.isNetwork) {
+      return '$base (cannot reach ${AppConfig.activeBaseUrl})';
+    }
+    final String code = e.code ?? '';
+    final String status = e.statusCode == null ? '' : 'HTTP ${e.statusCode}';
+    final String suffix = <String>[status, code]
+        .where((String p) => p.isNotEmpty)
+        .join(' \u00b7 ');
+    return suffix.isEmpty ? base : '$base ($suffix)';
+  }
+
   Future<void> _releaseServerSession() async {
-    final id = _activeSessionId;
+    final String? id = _activeSessionId;
     if (id == null) return;
     _activeSessionId = null;
     try {
@@ -638,15 +956,19 @@ class DesktopVpnController extends ChangeNotifier {
 
   /// Extracts the endpoint host so the kill switch can whitelist it.
   List<String> _endpointHostsOf(TunnelConfig config) {
-    final endpoint = config.endpoint;
+    final String endpoint = config.endpoint;
     if (endpoint.isEmpty) return const <String>[];
-    final colon = endpoint.lastIndexOf(':');
-    final host = colon > 0 ? endpoint.substring(0, colon) : endpoint;
+    final int colon = endpoint.lastIndexOf(':');
+    final String host =
+        colon > 0 ? endpoint.substring(0, colon) : endpoint;
     return <String>[host];
   }
 
   void _setPhase(ConnectionPhase next, {String detail = ''}) {
     if (_phase == next && _statusDetail == detail) return;
+    if (_phase != next) {
+      dlog.write('phase', '$_phase -> $next ($detail)');
+    }
     _phase = next;
     _statusDetail = detail;
     _notify();
@@ -654,6 +976,7 @@ class DesktopVpnController extends ChangeNotifier {
 
   void _fail(ConnectionPhase phase, String detail, String? message) {
     _cancelConnectDeadline();
+    dlog.error('phase', 'failed -> $phase [$detail]', message);
     _phase = phase;
     _statusDetail = detail;
     _userMessage = message;
@@ -667,9 +990,11 @@ class DesktopVpnController extends ChangeNotifier {
 
   /// Graceful shutdown from the tray Exit action.
   Future<void> shutdown({required bool disconnectTunnel}) async {
+    dlog.write('vpn', 'shutdown (disconnect=$disconnectTunnel)');
     _statusTimer?.cancel();
     _serverTimer?.cancel();
     _pingTimer?.cancel();
+    _nodeRetryTimer?.cancel();
     _cancelConnectDeadline();
 
     if (disconnectTunnel && _phase.isConnected) {
@@ -687,6 +1012,7 @@ class DesktopVpnController extends ChangeNotifier {
     _statusTimer?.cancel();
     _serverTimer?.cancel();
     _pingTimer?.cancel();
+    _nodeRetryTimer?.cancel();
     _cancelConnectDeadline();
     super.dispose();
   }
@@ -694,8 +1020,7 @@ class DesktopVpnController extends ChangeNotifier {
 
 extension _FirstOrNull<T> on Iterable<T> {
   T? get firstOrNull {
-    final it = iterator;
+    final Iterator<T> it = iterator;
     return it.moveNext() ? it.current : null;
   }
 }
-
