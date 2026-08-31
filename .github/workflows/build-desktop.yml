@@ -46,15 +46,17 @@ jobs:
         shell: pwsh
 
       - name: Generate Icons
-        run: pwsh -ExecutionPolicy Bypass -File desktop\packaging\make-icons.ps1
+        run: |
+          pwsh -ExecutionPolicy Bypass -File desktop\packaging\make-icons.ps1
+          Copy-Item flutter-client\assets\app.ico flutter-client\windows\runner\resources\app_icon.ico -Force
         shell: pwsh
 
-      - name: Build Desktop App (Installer & Portable)
-        run: pwsh -ExecutionPolicy Bypass -File desktop\packaging\build-all.ps1 -Channel prod -Installer -SingleFile -Portable
+      - name: Build Desktop App
+        run: pwsh -ExecutionPolicy Bypass -File desktop\packaging\build-all.ps1 -Channel prod -Installer
         shell: pwsh
         
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GlukVPN-Windows-Builds
-          path: dist/*
+          name: GlukVPN-Windows-Setup
+          path: dist/*.exe

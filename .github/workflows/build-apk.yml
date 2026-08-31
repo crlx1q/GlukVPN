@@ -71,6 +71,7 @@ jobs:
         run: |
           set -euo pipefail
           cp android_overrides/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          cp -R android_overrides/res/* android/app/src/main/res/
           cat android_overrides/namespace_patch.gradle >> android/build.gradle
           rm -f android/app/src/debug/AndroidManifest.xml
           rm -f android/app/src/profile/AndroidManifest.xml
