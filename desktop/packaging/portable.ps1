@@ -139,8 +139,27 @@ if ($SingleFile) {
 
     $sfxModule = Join-Path (Split-Path -Parent $sevenZip) '7z.sfx'
     if (-not (Test-Path $sfxModule)) {
-        Write-Warning "7z.sfx not found next to 7z.exe; skipping the single-file build."
-        return
+        $sfxCandidates = @(
+            'C:\Program Files\7-Zip\7z.sfx',
+            'C:\Program Files (x86)\7-Zip\7z.sfx',
+            'C:\ProgramData\chocolatey\lib\7zip.extra\tools\7z.sfx',
+            'C:\ProgramData\chocolatey\lib\7zip.commandline\tools\7z.sfx'
+        )
+        foreach ($cand in $sfxCandidates) {
+            if (Test-Path $cand) {
+                $sfxModule = $cand
+                break
+            }
+        }
+        if (-not (Test-Path $sfxModule)) {
+            $found = Get-ChildItem -Path 'C:\Program Files\7-Zip', 'C:\ProgramData\chocolatey', 'C:\Program Files' -Filter '7z.sfx' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+                $sfxModule = $found.FullName
+            } else {
+                Write-Warning "7z.sfx not found; skipping the single-file build."
+                return
+            }
+        }
     }
 
     Write-Host 'Building the self-extracting executable' -ForegroundColor Cyan

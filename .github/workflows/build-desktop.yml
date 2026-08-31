@@ -26,7 +26,7 @@ jobs:
         shell: pwsh
 
       - name: Install Dependencies
-        run: choco install innosetup 7zip -y
+        run: choco install innosetup 7zip 7zip.extra -y
         shell: pwsh
 
       - name: Download WireGuard dependencies
