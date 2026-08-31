@@ -309,30 +309,6 @@ final Map<String, List<_Op>> _bodies = <String, List<_Op>>{
     const _Box(18.35, 11.95, 0.9, 2.4, 0xFFFF0000),
   ],
   'AM': _h3(0xFFD90012, 0xFF0033A0, 0xFFF2A800),
-  'AZ': <_Op>[
-    const _Bg(0xFF509E2F),
-    const _Band(0, 5.33, 0xFF00B5E2),
-    const _Band(5.33, 5.34, 0xFFEF3340),
-    const _Disc(11.4, 8, 2.1, _pureWhite),
-    const _Disc(12.2, 8, 1.7, 0xFFEF3340),
-  ],
-  'KG': <_Op>[
-    const _Bg(0xFFE8112D),
-    const _Disc(12, 8, 3.4, 0xFFFFEF00, stroke: 1.1),
-    const _Disc(12, 8, 1.5, 0xFFFFEF00),
-  ],
-  'UZ': <_Op>[
-    const _Bg(_white),
-    const _Band(0, 5, 0xFF0099B5),
-    const _Band(11, 5, 0xFF1EB53A),
-    const _Disc(4.6, 2.5, 1.6, _pureWhite),
-    const _Disc(5.4, 2.5, 1.4, 0xFF0099B5),
-  ],
-  'TJ': _h3(_white, 0xFFCC0000, 0xFF006600),
-  'TM': <_Op>[
-    const _Bg(0xFF28AE66),
-    const _Box(3.4, 0, 3, _gh, 0xFFD22630),
-  ],
   'AE': <_Op>[
     const _Bg(_white),
     const _Band(0, 5.33, 0xFF00732F),
