@@ -45,6 +45,7 @@ flutter-client/ios/Pods/
 *.apk
 *.aab
 *.jks.base64
+flutter-client/.metadata
 
 # ---- OS / editors ----
 .DS_Store
