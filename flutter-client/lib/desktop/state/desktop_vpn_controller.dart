@@ -102,7 +102,12 @@ class DesktopVpnController extends ChangeNotifier {
   bool _disposed = false;
   int _baselineRx = 0;
   bool _dataObserved = false;
-  bool _reconnectAttempted = false;
+  /// Reconnect ladder. 0 means "not reconnecting"; every failed attempt raises
+  /// it and the wait doubles - 1s, 2s, 4s, 8s, 16s, 30s. A backend that is
+  /// being redeployed is back within one or two steps, and the user never has
+  /// to press anything.
+  int _reconnectAttempt = 0;
+  Timer? _reconnectTimer;
   String? _activeSessionId;
   List<String> _activeEndpointIps = const <String>[];
   ServerTunnelStatus? _lastServerStatus;
@@ -391,10 +396,13 @@ class DesktopVpnController extends ChangeNotifier {
   // Connect / disconnect
   // -------------------------------------------------------------------
 
-  Future<void> connect({VpnNodeInfo? node}) async {
+  Future<void> connect({VpnNodeInfo? node, bool automatic = false}) async {
     if (_busy) return;
     _busy = true;
-    _reconnectAttempted = false;
+    // A connect the user asked for starts the ladder over. An automatic retry
+    // must not, or the backoff would reset to one second on every attempt and
+    // hammer a control plane that is still restarting.
+    if (!automatic) _cancelReconnect();
 
     try {
       _setPhase(ConnectionPhase.connecting, detail: 'preparing');
@@ -493,10 +501,25 @@ class DesktopVpnController extends ChangeNotifier {
         return;
       }
 
-      final String conf =
+      String conf =
           result.tunnel.toWgQuickConfig(privateKeyBase64: privateKey);
       _activeSessionId = result.session.id;
-      _activeEndpointIps = _endpointHostsOf(result.tunnel);
+
+      // Resolve the node's hostname now, while ordinary DNS still works.
+      //
+      // The kill switch is a WFP filter that blocks everything except the
+      // tunnel, port 53 included. If the config still carries a name by the
+      // time that filter is armed, the worker has nothing left to resolve it
+      // with and the connect dies as tunnel_error. Resolving here also hands
+      // WFP a literal address to permit, which it needs either way.
+      final ({String host, String ip}) endpoint =
+          await _resolveEndpoint(result.tunnel);
+      if (endpoint.ip.isNotEmpty && endpoint.ip != endpoint.host) {
+        conf = conf.replaceAll(endpoint.host, endpoint.ip);
+        dlog.write('connect', 'endpoint resolved before the tunnel is armed');
+      }
+      _activeEndpointIps =
+          endpoint.ip.isEmpty ? const <String>[] : <String>[endpoint.ip];
 
       final DesktopSettings settings = _settings.value;
       final TunnelUpOptions options = TunnelUpOptions(
@@ -690,31 +713,73 @@ class DesktopVpnController extends ChangeNotifier {
       now: DateTime.now().toUtc(),
     );
 
-    // A dropped tunnel gets exactly one silent reconnect attempt before we
-    // bother the user.
-    if (verdict.phase == ConnectionPhase.tunnelLost && !_reconnectAttempted) {
-      _reconnectAttempted = true;
-      dlog.warn('vpn', 'tunnel lost, attempting one silent reconnect');
-      _setPhase(ConnectionPhase.connecting, detail: 'auto_reconnect');
-      unawaited(_autoReconnect());
+    // A dropped tunnel climbs the reconnect ladder instead of dumping an error
+    // on the user. This is the ordinary case during a backend deploy: the node
+    // is fine, the control plane is restarting, and by the second or third step
+    // it answers again. The phase stays `connecting`, so the UI reads as
+    // "reconnecting" instead of flashing a red failure that fixes itself.
+    if (verdict.phase == ConnectionPhase.tunnelLost &&
+        _reconnectAttempt < _maxReconnectAttempts) {
+      _scheduleReconnect();
       return;
     }
 
     if (verdict.phase == ConnectionPhase.connected) {
       _cancelConnectDeadline();
+      _cancelReconnect();
       _connectedSince ??= DateTime.now();
-      _reconnectAttempted = false;
       if (_publicIp == null) unawaited(_refreshPublicIp());
     }
 
     _setPhase(verdict.phase, detail: verdict.reason);
   }
 
+  /// Six steps cover about a minute of downtime, which is longer than a deploy
+  /// takes. After that the tunnel really is lost and the user should be told.
+  static const int _maxReconnectAttempts = 6;
+
+  Duration _reconnectDelay(int attempt) {
+    final int seconds = 1 << (attempt - 1);
+    return Duration(seconds: seconds > 30 ? 30 : seconds);
+  }
+
+  void _scheduleReconnect() {
+    if (_disposed || _reconnectTimer != null) return;
+    _reconnectAttempt++;
+    final Duration wait = _reconnectDelay(_reconnectAttempt);
+    dlog.warn(
+      'vpn',
+      'tunnel lost, reconnect attempt $_reconnectAttempt in ${wait.inSeconds}s',
+    );
+    _setPhase(ConnectionPhase.connecting, detail: 'reconnecting');
+    _reconnectTimer = Timer(wait, () {
+      _reconnectTimer = null;
+      unawaited(_autoReconnect());
+    });
+  }
+
+  void _cancelReconnect() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _reconnectAttempt = 0;
+  }
+
   Future<void> _autoReconnect() async {
+    if (_disposed) return;
+    // The user may have pressed Disconnect, or a hard failure may have taken
+    // over, while we were waiting out the backoff. Reconnecting then would be
+    // the app overriding an explicit decision.
+    if (_phase != ConnectionPhase.connecting) {
+      _cancelReconnect();
+      return;
+    }
     final VpnNodeInfo? node = _selectedNode;
     await _tunnel.down();
+    // The service needs a moment to release the adapter before it is asked for
+    // again under the same fixed GUID.
     await Future<void>.delayed(const Duration(milliseconds: 600));
-    await connect(node: node);
+    if (_disposed) return;
+    await connect(node: node, automatic: true);
   }
 
   void _armConnectDeadline() {
@@ -1008,6 +1073,41 @@ class DesktopVpnController extends ChangeNotifier {
     } catch (_) {
       // The server reaps stale sessions on its own; nothing to do here.
     }
+  }
+
+  /// The endpoint host together with a literal address for it.
+  ///
+  /// Both are returned because both are needed: the address goes into the
+  /// WireGuard config and into the WFP allow-list, while the original host is
+  /// the text that has to be substituted inside the generated config.
+  ///
+  /// A failed lookup is deliberately not fatal. With the kill switch off the
+  /// worker can still resolve the name itself, and refusing to connect here
+  /// would break a case that works today.
+  Future<({String host, String ip})> _resolveEndpoint(
+    TunnelConfig config,
+  ) async {
+    final List<String> hosts = _endpointHostsOf(config);
+    if (hosts.isEmpty) return (host: '', ip: '');
+    final String host = hosts.first;
+
+    // Already literal: nothing to look up, nothing to replace.
+    if (InternetAddress.tryParse(host) != null) {
+      return (host: host, ip: host);
+    }
+
+    try {
+      final List<InternetAddress> found = await InternetAddress.lookup(
+        host,
+        type: InternetAddressType.IPv4,
+      ).timeout(const Duration(seconds: 5));
+      if (found.isNotEmpty) {
+        return (host: host, ip: found.first.address);
+      }
+    } catch (e) {
+      dlog.error('connect', 'endpoint lookup failed', e);
+    }
+    return (host: host, ip: host);
   }
 
   /// Extracts the endpoint host so the kill switch can whitelist it.

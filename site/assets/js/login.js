@@ -37,6 +37,22 @@
     return e.message || "Не удалось войти.";
   }
 
+  /* Куда вернуться после входа.
+     Вход часто является чужим шагом: /login/?next=/link/?code=... открывается
+     из десктопа и расширения. Раньше форма писала «Готово» и оставляла
+     человека на месте — подтверждение входа с ПК упиралось в тупик.
+     Разрешаем только собственные относительные пути: абсолютный URL из
+     параметра — это open redirect, классическая дыра фишинга. */
+  function nextTarget() {
+    var m = /[?&]next=([^&]*)/.exec(window.location.search || "");
+    if (!m) return "";
+    var raw = "";
+    try { raw = decodeURIComponent(m[1]); } catch (e) { return ""; }
+    if (!raw || raw.charAt(0) !== "/") return "";
+    if (raw.charAt(1) === "/" || raw.charAt(1) === "\\") return "";
+    return raw;
+  }
+
   /* вкладки */
   var tabs = [].slice.call(document.querySelectorAll("[data-auth-tab]"));
   function tab(name) {
@@ -79,8 +95,14 @@
       window.GlukAuth.login(id, pass).then(
         function () {
           busy(false);
-          show("Готово. Вы вошли.", "ok");
           form.reset();
+          var next = nextTarget();
+          if (next) {
+            show("Готово. Возвращаемся…", "ok");
+            window.location.href = next;
+            return;
+          }
+          show("Готово. Вы вошли.", "ok");
         },
         function (err) {
           busy(false);
@@ -138,6 +160,14 @@
       '<a class="btn btn--primary" href="' + root + 'app/">' + T("Открыть кабинет") + "</a>" +
       '<button class="btn btn--ghost" type="button" data-acct-logout>' + T("Выйти") + "</button>" +
       "</div>";
+    /* Уже вошли, а нас звали ради ?next= — не показываем кабинет вообще,
+       иначе подтверждение входа с ПК теряется за редиректом в /app/. */
+    var next = nextTarget();
+    if (next) {
+      if (hop) clearTimeout(hop);
+      hop = setTimeout(function () { location.replace(next); }, 250);
+      return;
+    }
     if (!/[?&]stay=1/.test(location.search)) {
       if (hop) clearTimeout(hop);
       hop = setTimeout(function () { location.replace(root + "app/"); }, 1100);
@@ -163,7 +193,7 @@
     },
     register: {
       t: "Создание аккаунта",
-      s: "На время беты доступ выдаётся вручную — напишите нам, это быстро.",
+      s: "Почта и пароль, код из письма, подтверждение в Telegram — три шага.",
     },
   };
   var timer = null;

@@ -17,6 +17,8 @@
     "seed:dev": "tsx src/scripts/seed.ts",
     "cli": "node dist/scripts/cli.js",
     "cli:dev": "tsx src/scripts/cli.ts",
+    "bot": "node dist/services/telegramBot.js",
+    "bot:dev": "tsx src/services/telegramBot.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

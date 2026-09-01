@@ -15,6 +15,7 @@ import { healthRoutes } from "./routes/health"
 import { linkAuthRoutes } from "./routes/link"
 import { nodeAgentRoutes } from "./routes/node"
 import { nodeCatalogRoutes } from "./routes/nodes"
+import { registrationRoutes } from "./routes/register"
 import { vpnRoutes } from "./routes/vpn"
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -131,6 +132,10 @@ export async function buildApp(): Promise<FastifyInstance> {
 	// Sign-in by link (device-authorization grant). Shared by the desktop client
 	// and the browser extension, so neither has to own a password field.
 	await app.register(linkAuthRoutes)
+	// Self-service sign-up, password recovery and the account-security actions
+	// that belong with them. Public by design, so every route inside carries its
+	// own rate limit and its own captcha check.
+	await app.register(registrationRoutes)
 	await app.register(nodeCatalogRoutes)
 	await app.register(deviceRoutes)
 	await app.register(vpnRoutes)

@@ -4,7 +4,9 @@ import { writeAudit } from "../lib/audit"
 import { prisma } from "../prisma"
 import { purgeOldLoginAttempts } from "./loginThrottle"
 import { requeueStaleCommands } from "./nodeCommands"
+import { sweepExpiredRegistrations } from "./registration"
 import { closeSession } from "./sessions"
+import { purgeExpiredCodes } from "./verification"
 
 export type MonitorTickResult = {
 	nodesMarkedOffline: number
@@ -157,6 +159,19 @@ export function startMonitor(app: FastifyInstance): MonitorHandle {
 			if (ticks % 60 === 0) {
 				const purged = await purgeOldLoginAttempts()
 				if (purged > 0) app.log.debug({ purged }, "login_attempts_purged")
+
+				// Sign-ups that were never finished, and codes nobody used.
+				//
+				// Both are already refused on age when they are looked up, so this
+				// is housekeeping rather than enforcement: it keeps the tables from
+				// growing without bound and keeps a stale e-mail address from
+				// blocking a genuine second attempt at registering.
+				const registrations = await sweepExpiredRegistrations()
+				if (registrations > 0) {
+					app.log.debug({ registrations }, "pending_registrations_swept")
+				}
+				const codes = await purgeExpiredCodes(7)
+				if (codes > 0) app.log.debug({ codes }, "verification_codes_purged")
 			}
 		} catch (error) {
 			app.log.error({ err: error }, "monitor_tick_failed")

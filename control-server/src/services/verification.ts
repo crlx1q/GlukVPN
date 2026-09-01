@@ -20,24 +20,21 @@ import { randomInt } from "node:crypto"
 import type { VerificationChannel, VerificationCode, VerificationPurpose } from "@prisma/client"
 import { config } from "../config"
 import { hashSecret } from "../lib/crypto"
-import { badRequest, serviceUnavailable, tooManyRequests } from "../lib/errors"
+import { badRequest, tooManyRequests } from "../lib/errors"
 import { prisma } from "../prisma"
 
 const CODE_DIGITS = 6
 
 /**
- * Flip to true in the same commit that adds a real SMTP transport.
+ * True when codes can actually be delivered.
  *
- * Until then `mailerReady()` is false and every route that would need to send
- * a code answers 503 instead of pretending. That is deliberate: a flow that
- * silently issues codes nobody receives looks like a broken login to the user,
- * and returning the code in the response would defeat the whole point.
+ * This used to be a hard-coded `false` with a note to flip it once SMTP
+ * existed. SMTP exists now (services/mailer.ts), so the only question left is
+ * whether this deployment has credentials - and if it does not, routes still
+ * answer honestly instead of issuing codes nobody will ever receive.
  */
-const MAILER_IMPLEMENTED = false
-
-/** True when codes can actually be delivered (SMTP configured + wired up). */
 export function mailerReady(): boolean {
-	return MAILER_IMPLEMENTED && config.emailEnabled
+	return config.emailEnabled
 }
 
 /** Lower-cased, trimmed. The unique index relies on this being the only form. */
@@ -75,6 +72,12 @@ export async function issueCode(params: {
 	userId?: string | null
 	channel?: VerificationChannel
 	ip?: string | null
+	/**
+	 * Set false when the secret already reached the user by another route -
+	 * a Telegram deep link carries its own token, so there is nothing to send
+	 * and an attempted delivery would just be a wasted SMTP connection.
+	 */
+	deliver?: boolean
 }): Promise<IssuedCode> {
 	const destination = params.destination.trim()
 	if (destination.length === 0) throw badRequest("A destination is required")
@@ -101,33 +104,60 @@ export async function issueCode(params: {
 		},
 	})
 
+	if (params.deliver === false) return { expiresAt, delivered: true }
+
 	const delivered = await deliver(params.channel ?? "EMAIL", destination, code)
 	return { expiresAt, delivered }
+}
+
+/** Minutes, for the message body. Reading "5 minutes" beats reading a clock. */
+function ttlMinutes(): number {
+	return config.VERIFICATION_CODE_TTL_MIN
 }
 
 /**
  * Deliver a code. The only place in the codebase that ever sees the plaintext.
  *
- * Wiring Zoho Mail is a change confined to this function: create a nodemailer
- * transport from config.SMTP_* and flip MAILER_IMPLEMENTED. Nothing above or
- * below needs to change.
+ * Nothing is logged here on any path - not the code, not the address. A
+ * journal is not a safe place for either, and "just for debugging" is how
+ * one-time codes end up permanently readable in a log file.
  */
 async function deliver(
 	channel: VerificationChannel,
 	destination: string,
 	code: string,
 ): Promise<boolean> {
-	if (!mailerReady()) {
-		// Note the absence of `code` and `destination` here: a journal is not a
-		// safe place for either.
+	if (channel === "TELEGRAM") {
+		// Required lazily: telegramBot -> registration -> verification would
+		// otherwise be an import cycle, and the bot is only needed at call time.
+		const { sendTelegramMessage } =
+			require("./telegramBot") as typeof import("./telegramBot")
+		return sendTelegramMessage(
+			destination,
+			`\u041a\u043e\u0434 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u044f <b>GlukVPN</b>: <code>${code}</code>\n\n` +
+				`\u0414\u0435\u0439\u0441\u0442\u0432\u0443\u0435\u0442 ${ttlMinutes()} \u043c\u0438\u043d\u0443\u0442. \u0415\u0441\u043b\u0438 \u044d\u0442\u043e \u043d\u0435 \u0432\u044b \u2014 \u043f\u0440\u043e\u0441\u0442\u043e \u043f\u0440\u043e\u0438\u0433\u043d\u043e\u0440\u0438\u0440\u0443\u0439\u0442\u0435 \u044d\u0442\u043e \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435.`,
+		)
+	}
+
+	if (!mailerReady()) return false
+
+	const { sendMail } = require("./mailer") as typeof import("./mailer")
+	try {
+		await sendMail({
+			to: destination,
+			subject: `GlukVPN: \u043a\u043e\u0434 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u044f ${code}`,
+			text:
+				`\u041a\u043e\u0434 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u044f GlukVPN: ${code}\n\n` +
+				`\u0414\u0435\u0439\u0441\u0442\u0432\u0443\u0435\u0442 ${ttlMinutes()} \u043c\u0438\u043d\u0443\u0442.\n\n` +
+				`\u0415\u0441\u043b\u0438 \u0432\u044b \u043d\u0435 \u0437\u0430\u043f\u0440\u0430\u0448\u0438\u0432\u0430\u043b\u0438 \u043a\u043e\u0434, \u043f\u0440\u043e\u0441\u0442\u043e \u0443\u0434\u0430\u043b\u0438\u0442\u0435 \u044d\u0442\u043e \u043f\u0438\u0441\u044c\u043c\u043e \u2014 \u0431\u0435\u0437 \u043d\u0435\u0433\u043e \u043d\u0438\u0447\u0435\u0433\u043e\n` +
+				`\u043d\u0435 \u043f\u0440\u043e\u0438\u0437\u043e\u0439\u0434\u0451\u0442.\n\n\u2014 GlukVPN, vpn.gluk.tech`,
+		})
+		return true
+	} catch {
+		// A refused send is not a reason to lose the code: the user can ask for
+		// a resend, and `delivered: false` is what tells the UI to offer that.
 		return false
 	}
-	// The code is intentionally unused until a transport exists; referencing it
-	// keeps the signature honest for whoever wires SMTP up.
-	void channel
-	void destination
-	void code
-	throw serviceUnavailable("Code delivery is not configured")
 }
 
 /**

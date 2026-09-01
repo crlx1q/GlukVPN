@@ -62,6 +62,20 @@ import (
 
 const defaultMTU = 1420
 
+// A stable adapter GUID.
+//
+// Without one, every reconnect asks Wintun for a brand new adapter and Windows
+// obliges: "GlukVPN", "GlukVPN 1", "GlukVPN 2", "GlukVPN 3" pile up in Network
+// Connections, each with its own firewall profile, its own DNS cache and its
+// own interface metric. Any fixed GUID fixes that as long as it never changes
+// again - this one is ours.
+var fixedGUID = windows.GUID{
+	Data1: 0x25b5b244,
+	Data2: 0x1f5e,
+	Data3: 0x4b47,
+	Data4: [8]byte{0xb8, 0x47, 0x5d, 0x8f, 0x28, 0xf0, 0xde, 0x20},
+}
+
 // ---------------------------------------------------------------- logging --
 
 var logFile *os.File
@@ -168,7 +182,9 @@ func run() error {
 
 	logf("starting %q: mtu %d, %d peer(s), %d address(es)", name, mtu, len(cfg.peers), len(cfg.addresses))
 
-	tunDevice, err := tun.CreateTUN(name, mtu)
+	// Requesting a fixed GUID makes Windows reuse the same adapter on every
+	// reconnect instead of spawning GlukVPN 1, GlukVPN 2, GlukVPN 3...
+	tunDevice, err := tun.CreateTUNWithRequestedGUID(name, &fixedGUID, mtu)
 	if err != nil {
 		return fmt.Errorf("cannot create the Wintun adapter (is wintun.dll next to the service?): %w", err)
 	}
@@ -195,6 +211,23 @@ func run() error {
 		dev.Close()
 		return fmt.Errorf("cannot bring the tunnel up: %w", err)
 	}
+
+	// Pin a host route to every peer endpoint through the *physical* gateway
+	// before the default route lands on Wintun.
+	//
+	// This is the routing loop. WireGuard's own outgoing packets are ordinary
+	// UDP to 138.2.186.223:51820, so once 0.0.0.0/0 points at the tunnel with
+	// metric 0 those packets match it too: the data plane encrypts a packet,
+	// hands it to the OS, the OS hands it straight back through Wintun, and it
+	// gets encrypted again. That is the 200+ MB in a few seconds with no
+	// working internet - the machine is talking to itself as fast as it can.
+	//
+	// A /32 always beats /0 under longest-prefix match, regardless of metric,
+	// so the outer packets keep using Wi-Fi/Ethernet while everything else
+	// goes into the tunnel. Order matters: the escape hatch has to exist
+	// before the trap does.
+	pinned := pinEndpointRoutes(luid, cfg.endpointAddrs())
+	defer unpinEndpointRoutes(pinned)
 
 	if err := configureInterface(luid, cfg, mtu); err != nil {
 		dev.Close()
@@ -314,6 +347,166 @@ func configureInterface(luid winipcfg.LUID, cfg *tunnelConfig, mtu int) error {
 	}
 
 	return nil
+}
+
+// ---------------------------------------------------------- route pinning --
+
+// pinnedRoute remembers a host route we added, so it can be taken away again.
+type pinnedRoute struct {
+	luid        winipcfg.LUID
+	destination netip.Prefix
+	nextHop     netip.Addr
+}
+
+// physicalGateway finds the default route that is not ours: the interface and
+// next hop this machine was already using to reach the internet.
+//
+// Ranking by route metric plus interface metric is how Windows itself picks
+// between candidates, and it matters on any laptop with Wi-Fi and Ethernet up
+// at the same time - pinning the tunnel's own packets to the wrong link would
+// simply move the outage rather than fix it.
+func physicalGateway(
+	exclude winipcfg.LUID,
+	family winipcfg.AddressFamily,
+) (winipcfg.LUID, netip.Addr, bool) {
+	rows, err := winipcfg.GetIPForwardTable2(family)
+	if err != nil {
+		logf("cannot read the routing table: %v", err)
+		return 0, netip.Addr{}, false
+	}
+
+	var (
+		bestLUID    winipcfg.LUID
+		bestNextHop netip.Addr
+		bestMetric  uint32
+		found       bool
+	)
+	for i := range rows {
+		row := &rows[i]
+		if row.InterfaceLUID == exclude {
+			continue
+		}
+		// Bits() == 0 is 0.0.0.0/0 or ::/0 - a default route and nothing else.
+		if row.DestinationPrefix.Prefix().Bits() != 0 {
+			continue
+		}
+		nextHop := row.NextHop.Addr()
+		if !nextHop.IsValid() || nextHop.IsUnspecified() {
+			continue
+		}
+		metric := row.Metric
+		if iface, ifaceErr := row.InterfaceLUID.IPInterface(family); ifaceErr == nil {
+			metric += iface.Metric
+		}
+		if !found || metric < bestMetric {
+			bestLUID = row.InterfaceLUID
+			bestNextHop = nextHop
+			bestMetric = metric
+			found = true
+		}
+	}
+	return bestLUID, bestNextHop, found
+}
+
+// pinEndpointRoutes installs a /32 (or /128) route to each peer endpoint via
+// the physical gateway, and reports what it managed to add so the caller can
+// undo exactly that and nothing more.
+func pinEndpointRoutes(tunnelLUID winipcfg.LUID, endpoints []netip.Addr) []pinnedRoute {
+	if len(endpoints) == 0 {
+		logf("no peer endpoint address to pin; the tunnel may loop back on itself")
+		return nil
+	}
+
+	pinned := make([]pinnedRoute, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		family := winipcfg.AddressFamily(windows.AF_INET)
+		bits := 32
+		if endpoint.Is6() {
+			family = winipcfg.AddressFamily(windows.AF_INET6)
+			bits = 128
+		}
+
+		gatewayLUID, nextHop, ok := physicalGateway(tunnelLUID, family)
+		if !ok {
+			logf("no physical default route found, not pinning %v", endpoint)
+			continue
+		}
+
+		destination := netip.PrefixFrom(endpoint, bits)
+		if err := gatewayLUID.AddRoute(destination, nextHop, 0); err != nil {
+			// A leftover from a previous run is the state we wanted anyway, so
+			// it is a success - but it is not ours to delete on the way out.
+			if errors.Is(err, windows.ERROR_OBJECT_ALREADY_EXISTS) {
+				logf("route to %v via %v was already pinned", endpoint, nextHop)
+				continue
+			}
+			logf("could not pin a route to %v via %v: %v", endpoint, nextHop, err)
+			continue
+		}
+		logf("pinned %v/%d via the physical gateway %v", endpoint, bits, nextHop)
+		pinned = append(pinned, pinnedRoute{
+			luid:        gatewayLUID,
+			destination: destination,
+			nextHop:     nextHop,
+		})
+	}
+	return pinned
+}
+
+// unpinEndpointRoutes removes the host routes again. Leaving them behind would
+// send traffic for that one address around the tunnel on the next connect,
+// which is a quiet leak rather than a visible failure - so it must not happen.
+func unpinEndpointRoutes(routes []pinnedRoute) {
+	for _, route := range routes {
+		if err := route.luid.DeleteRoute(route.destination, route.nextHop); err != nil {
+			logf("could not remove the pinned route %v: %v", route.destination, err)
+		}
+	}
+}
+
+// endpointAddrs resolves every peer endpoint to a literal address.
+//
+// Names are resolved here, while the machine still has ordinary internet: once
+// the default route is on the tunnel and the kill switch is armed, port 53 is
+// blocked and the same lookup would fail.
+func (c *tunnelConfig) endpointAddrs() []netip.Addr {
+	seen := make(map[netip.Addr]bool, len(c.peers))
+	out := make([]netip.Addr, 0, len(c.peers))
+
+	add := func(addr netip.Addr) {
+		addr = addr.Unmap()
+		if !addr.IsValid() || seen[addr] {
+			return
+		}
+		seen[addr] = true
+		out = append(out, addr)
+	}
+
+	for i := range c.peers {
+		endpoint := strings.TrimSpace(c.peers[i].endpoint)
+		if endpoint == "" {
+			continue
+		}
+		host := endpoint
+		if h, _, err := net.SplitHostPort(endpoint); err == nil {
+			host = h
+		}
+		if addr, err := netip.ParseAddr(host); err == nil {
+			add(addr)
+			continue
+		}
+		ips, err := net.LookupIP(host)
+		if err != nil {
+			logf("cannot resolve the endpoint %q: %v", host, err)
+			continue
+		}
+		for _, ip := range ips {
+			if addr, ok := netip.AddrFromSlice(ip); ok {
+				add(addr)
+			}
+		}
+	}
+	return out
 }
 
 // ------------------------------------------------------------------ stop ---

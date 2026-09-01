@@ -66,8 +66,13 @@ type LinkRecord = {
 	lastPollAt: number
 }
 
-/** Ten minutes is long enough to find the browser window, short enough to be safe. */
-const TTL_MS = 10 * 60 * 1000
+/**
+ * Five minutes: long enough to switch to the browser and press a button, short
+ * enough that an abandoned request does not sit in memory holding a code that
+ * still works. Deliberately the same number as VERIFICATION_CODE_TTL_MIN, so
+ * every code in the product expires on one clock rather than three.
+ */
+const TTL_MS = 5 * 60 * 1000
 const POLL_INTERVAL_SEC = 2
 /** A client that never comes back must not pin memory forever. */
 const MAX_RECORDS = 5000

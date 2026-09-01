@@ -96,6 +96,14 @@ model User {
   /// email. A new address only replaces the old one once it is confirmed.
   email           String?    @unique
   emailVerifiedAt DateTime?  @map("email_verified_at")
+  /// Telegram is the second step of the signup funnel, not a login method.
+  /// The bot only ever learns the numeric id, the @handle and - once the user
+  /// presses "Share contact" - the phone number. The phone is what makes one
+  /// human one account, which is the whole reason this step exists.
+  telegramId         String?   @unique @map("telegram_id")
+  telegramUsername   String?   @map("telegram_username")
+  telegramPhone      String?   @unique @map("telegram_phone")
+  telegramVerifiedAt DateTime? @map("telegram_verified_at")
   passwordHash    String     @map("password_hash")
   status          UserStatus @default(ACTIVE)
   isAdmin         Boolean    @default(false) @map("is_admin")
@@ -413,6 +421,42 @@ model VerificationCode {
   @@map("verification_codes")
 }
 
+/// A signup that has not become an account yet.
+///
+/// The funnel is email -> 6-digit code -> Telegram contact, and a row only
+/// turns into a `User` when all three are done. Keeping it out of `users` is
+/// what stops an abandoned signup from occupying a username, from ever being
+/// able to sign in, and from lingering as a half-account: the sweeper simply
+/// deletes it. It also means the uniqueness rules on `users` keep meaning
+/// "real accounts", not "real accounts and everyone who once typed an email".
+model PendingRegistration {
+  id                 String    @id @default(uuid()) @db.Uuid
+  email              String    @unique
+  /// Argon2id, exactly like `users.password_hash`. A pending row holds a real
+  /// credential from the first request, so it gets real credential storage.
+  passwordHash       String    @map("password_hash")
+  emailVerifiedAt    DateTime? @map("email_verified_at")
+  /// The token the user hands to the bot as `/start <code>`. Stored in the
+  /// clear on purpose: on its own it authorises nothing, it only tells the bot
+  /// which pending row a chat belongs to. The account still cannot exist until
+  /// that chat shares a phone number.
+  telegramCode       String    @unique @map("telegram_code")
+  telegramId         String?   @map("telegram_id")
+  telegramUsername   String?   @map("telegram_username")
+  telegramPhone      String?   @map("telegram_phone")
+  telegramVerifiedAt DateTime? @map("telegram_verified_at")
+  /// Google signup skips the email code but still has to pass Telegram.
+  googleSub          String?   @map("google_sub")
+  createdIp          String?   @map("created_ip")
+  expiresAt          DateTime  @map("expires_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@index([expiresAt])
+  @@index([telegramId])
+  @@map("pending_registrations")
+}
+
 /// Google / Telegram account link. Stays empty until those sign-in flows are
 /// switched on; it exists now so they never have to alter the users table.
 model IdentityLink {
@@ -421,6 +465,8 @@ model IdentityLink {
   provider       IdentityProvider
   providerUserId String           @map("provider_user_id")
   providerEmail  String?          @map("provider_email")
+  providerName   String?          @map("provider_name")
+  providerPhone  String?          @map("provider_phone")
   createdAt      DateTime         @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -436,6 +482,8 @@ enum VerificationPurpose {
   PASSWORD_RESET
   REGISTRATION
   DEVICE_CONFIRM
+  /// Re-binding Telegram on an existing account (Settings -> Account).
+  TELEGRAM_LINK
 }
 
 enum VerificationChannel {

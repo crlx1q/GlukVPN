@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ru" data-base="/" data-lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Восстановление пароля — GlukVPN</title>
+  <meta name="description" content="Восстановление доступа к аккаунту GlukVPN: код на почту или в Telegram.">
+  <link rel="canonical" href="https://vpn.gluk.tech/recover/">
+  <meta name="theme-color" content="#0a0714">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&amp;display=swap">
+  <link rel="stylesheet" href="/assets/css/fonts.css?v=0.7.4">
+  <link rel="stylesheet" href="/assets/css/tokens.css?v=0.7.4">
+  <link rel="stylesheet" href="/assets/css/base.css?v=0.7.4">
+  <link rel="stylesheet" href="/assets/css/components.css?v=0.7.4">
+  <link rel="stylesheet" href="/assets/css/sections.css?v=0.7.4">
+  <link rel="stylesheet" href="/assets/css/app-ui.css?v=0.7.4">
+  <link rel="stylesheet" href="/assets/css/utilities.css?v=0.7.4">
+  <link rel="stylesheet" href="/assets/css/fx.css?v=0.7.4">
+  <link rel="stylesheet" href="/assets/css/auth.css?v=0.7.4">
+  <script src="/assets/js/config.js?v=0.7.4" defer></script>
+  <script src="/assets/js/i18n.js?v=0.7.4" defer></script>
+  <script src="/assets/js/ui.js?v=0.7.4" defer></script>
+  <script src="/assets/js/fx.js?v=0.7.4" defer></script>
+  <script src="/assets/js/auth.js?v=0.7.4" defer></script>
+  <script src="/assets/js/fonts.js?v=0.7.4" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">К основному содержимому</a>
+  <div class="scene" aria-hidden="true">
+    <span class="scene__glow scene__glow--a"></span>
+    <span class="scene__glow scene__glow--b"></span>
+    <span class="scene__grain"></span>
+  </div>
+  <div class="page">
+  <header class="header">
+    <div class="wrap header__inner">
+      <a class="brand" href="/" aria-label="GlukVPN — на главную">
+        <img src="/assets/img/logo-96.png" width="96" height="96" alt="" decoding="async">
+        <span>GlukVPN</span>
+      </a>
+      <nav class="nav" aria-label="Основное меню"><a class="nav__link" href="/features/">Возможности</a><a class="nav__link" href="/mobile/">Приложение</a><a class="nav__link" href="/pricing/">Тарифы</a><a class="nav__link" href="/download/">Загрузки</a><a class="nav__link" href="/support/">Поддержка</a></nav>
+      <div class="header__actions">
+        <div class="acct" data-acct><span class="acct__skel" aria-hidden="true"></span></div>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+  <section class="auth-screen">
+    <div class="auth-screen__bg" aria-hidden="true">
+      <span class="auth-screen__veil"></span>
+      <span class="auth-screen__glow auth-screen__glow--a"></span>
+      <span class="auth-screen__glow auth-screen__glow--b"></span>
+    </div>
+
+    <div class="auth-screen__inner">
+      <div class="auth-card glass glass--raised auth-card--solo" data-spotlight>
+        <div class="auth-card__head">
+          <span class="auth-card__logo"><img src="/assets/img/logo-96.png" width="96" height="96" alt="" decoding="async"></span>
+          <h1 class="auth-card__title">Восстановление доступа</h1>
+          <p class="auth-card__sub">Пришлём код на почту или в Telegram — куда удобнее.</p>
+        </div>
+
+        <!-- Шаг 1 — куда прислать код -->
+        <div data-reg-step="request">
+          <form class="form" data-rec-form novalidate>
+            <label class="field">
+              <span class="field__label">Логин или email</span>
+              <span class="field__box">
+                <input class="input" type="text" name="identifier" autocomplete="username" placeholder="gluk_user" required>
+              </span>
+            </label>
+
+            <fieldset class="choice">
+              <legend class="field__label">Куда прислать код</legend>
+              <label class="choice__opt">
+                <input type="radio" name="channel" value="email" checked>
+                <span>На почту</span>
+              </label>
+              <label class="choice__opt">
+                <input type="radio" name="channel" value="telegram">
+                <span>В Telegram</span>
+              </label>
+            </fieldset>
+
+            <div class="captcha" data-turnstile="recover"></div>
+            <button class="btn btn--primary btn--lg btn--block" type="submit">Прислать код</button>
+            <p class="auth-msg" id="rec-msg" role="status" aria-live="polite"></p>
+            <p class="auth-hint">Если аккаунт существует, код придёт в течение минуты. Мы не сообщаем, зарегистрирован ли адрес — иначе этой формой можно было бы перебирать чужие почты.</p>
+          </form>
+        </div>
+
+        <!-- Шаг 2 — код и новый пароль -->
+        <div data-reg-step="reset" hidden>
+          <form class="form" data-rec-reset-form novalidate>
+            <p class="auth-card__sub" id="rec-where"></p>
+            <label class="field">
+              <span class="field__label">Код подтверждения</span>
+              <span class="field__box">
+                <input class="input input--code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" required>
+              </span>
+            </label>
+            <label class="field">
+              <span class="field__label">Новый пароль</span>
+              <span class="field__box">
+                <input class="input" type="password" name="password" autocomplete="new-password" placeholder="Минимум 8 символов" required>
+                <button class="pw-toggle" type="button" data-pw-toggle aria-label="Показать пароль">
+                  <span class="pw-toggle__ic pw-toggle__ic--off"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 3l18 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.6 6.3A9.6 9.6 0 0 1 12 6.2c4.6 0 8 3.3 9.3 5.8-.6 1.2-1.7 2.7-3.3 3.9M6.5 7.9C4.6 9.1 3.3 10.8 2.7 12c1.3 2.5 4.7 5.8 9.3 5.8 1.2 0 2.3-.2 3.3-.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+                  <span class="pw-toggle__ic pw-toggle__ic--on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3.1"/></svg></span>
+                </button>
+              </span>
+            </label>
+            <label class="field">
+              <span class="field__label">Повторите пароль</span>
+              <span class="field__box">
+                <input class="input" type="password" name="password2" autocomplete="new-password" placeholder="Ещё раз" required>
+              </span>
+            </label>
+            <button class="btn btn--primary btn--lg btn--block" type="submit">Сохранить пароль</button>
+            <p class="auth-msg" id="rec-reset-msg" role="status" aria-live="polite"></p>
+            <p class="auth-hint">После смены пароля все активные сессии завершаются — придётся войти заново на всех устройствах.</p>
+          </form>
+        </div>
+
+        <!-- Готово -->
+        <div data-reg-step="reset-done" hidden>
+          <div class="auth-invite">
+            <span class="icon-badge icon-badge--ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg></span>
+            <h2 class="h3">Пароль обновлён</h2>
+            <p class="muted">Теперь войдите с новым паролем — на сайте и во всех приложениях.</p>
+            <a class="btn btn--primary btn--lg btn--block" href="/login/">Войти</a>
+          </div>
+        </div>
+
+        <div class="auth-card__foot">
+          <a class="auth-link" href="/login/">Вернуться ко входу</a>
+          <a class="auth-link" href="/register/">Создать аккаунт</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script src="/assets/js/register.js?v=0.7.4" defer></script>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <div class="footer__bottom">
+        <span>© <span data-year>2026</span> GlukVPN · <span data-site-domain>vpn.gluk.tech</span></span>
+        <div class="footer__right"><a class="madeby" href="https://crlx1q.com" target="_blank" rel="noopener">made by <b>crlx1q</b></a></div>
+      </div>
+    </div>
+  </footer>
+  </div>
+</body>
+</html>

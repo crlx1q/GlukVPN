@@ -78,19 +78,51 @@ const EnvSchema = z.object({
 	RATE_LIMIT_WINDOW: z.string().min(1).default("1 minute"),
 
 	// ------------------------------ identity ---------------------------------
-	// Email is an optional second login identity. Delivery is not wired up yet:
-	// codes are created and verified, but only mailed once SMTP is filled in.
-	// Zoho Mail is the intended provider (smtp.zoho.eu:587, STARTTLS).
-	SMTP_HOST: z.string().default(""),
-	SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
-	SMTP_USER: z.string().default(""),
+	// Email is a second login identity and the first step of sign-up. Delivery
+	// is live: services/mailer.ts speaks SMTP straight to Zoho over implicit TLS
+	// on 465. The defaults describe the real mailbox so a fresh .env works out
+	// of the box; SMTP_PASSWORD is the one value that must come from the file,
+	// because a password with a default is a password in the git history.
+	SMTP_HOST: z.string().default("smtp.zoho.com"),
+	SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(465),
+	SMTP_USER: z.string().default("noreply@gluk.tech"),
 	SMTP_PASSWORD: z.string().default(""),
-	SMTP_FROM: z.string().default(""),
-	SMTP_SECURE: envFlag("false"),
-	VERIFICATION_CODE_TTL_MIN: z.coerce.number().int().min(1).max(120).default(15),
+	SMTP_FROM: z.string().default("GlukVPN <noreply@gluk.tech>"),
+	SMTP_SECURE: envFlag("true"),
+	// Five minutes for every code, everywhere.
+	//
+	// Long enough to switch to a mail app and back, short enough that an
+	// intercepted code is worthless by the time anyone tries it - and short
+	// enough that pending codes and sign-in links do not accumulate in memory
+	// or in the table waiting for a sweeper to notice them.
+	VERIFICATION_CODE_TTL_MIN: z.coerce.number().int().min(1).max(120).default(5),
 	VERIFICATION_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
-	// Self-service signup stays off until email verification is live.
-	SELF_REGISTRATION_ENABLED: envFlag("false"),
+	// Sign-up is self-service now: email + 6-digit code + Telegram contact.
+	SELF_REGISTRATION_ENABLED: envFlag("true"),
+
+	// ------------------------------ Telegram ---------------------------------
+	// The bot is the second half of sign-up: it collects a phone number through
+	// Telegram's own "share contact" button, which is what actually makes one
+	// human one account. An empty token means the bot never starts and the
+	// sign-up routes say so plainly, rather than leaving the user on a step
+	// that can never complete.
+	TELEGRAM_BOT_TOKEN: z.string().default(""),
+	// Without the leading @. Left empty, it is resolved once through getMe.
+	TELEGRAM_BOT_USERNAME: z.string().default(""),
+	// Run the long-polling loop inside the API process. Turn it off to run
+	// `npm run bot` as its own unit, so a deploy restart does not drop the bot.
+	TELEGRAM_BOT_IN_PROCESS: envFlag("true"),
+
+	// ------------------------------- captcha ---------------------------------
+	// Cloudflare Turnstile guards sign-up and password reset: both are cheap for
+	// us and expensive to abuse in bulk, which is exactly the shape of problem a
+	// captcha solves. With no secret configured verification is skipped, so a
+	// dev checkout is never blocked by a widget it cannot render.
+	TURNSTILE_SECRET_KEY: z.string().default(""),
+	TURNSTILE_ENABLED: envFlag("true"),
+
+	// Where the browser is sent for link sign-in and sign-up confirmation.
+	SITE_BASE_URL: z.string().default("https://vpn.gluk.tech"),
 
 	// -------------------------- approximate origin ---------------------------
 	// Country/region of the login IP, used to place the map marker. Coarse by
@@ -184,8 +216,13 @@ function loadConfig(): Config {
 		...env,
 		APP_VERSION: env.APP_VERSION.trim() || packageVersion(),
 		release: releaseId(),
+		// A host and a From line are not enough to send anything: without
+		// credentials Zoho refuses at AUTH, and a flow that issues codes nobody
+		// can receive looks exactly like a broken login.
 		emailEnabled:
-			env.SMTP_HOST.trim().length > 0 && env.SMTP_FROM.trim().length > 0,
+			env.SMTP_HOST.trim().length > 0 &&
+			env.SMTP_USER.trim().length > 0 &&
+			env.SMTP_PASSWORD.length > 0,
 		corsOrigins: env.CORS_ALLOWED_ORIGINS.split(",")
 			.map((origin) => origin.trim())
 			.filter((origin) => origin.length > 0),

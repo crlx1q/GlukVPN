@@ -74,6 +74,35 @@ class AppConfig {
 	/// Android application id; also the VPN tunnel's owner.
 	static const String appId = 'tech.gluk.glukvpn';
 
+	// -------------------------------------------------------------------------
+	// Version and update checks
+	// -------------------------------------------------------------------------
+
+	/// Human version of this build. Must stay in sync with pubspec.yaml's
+	/// `version: 1.0.0+2`. package_info_plus reads the real value at runtime on
+	/// desktop, but the update checker needs a number before any plugin is
+	/// initialised, and the unit tests must not depend on a platform channel.
+	static const String appVersion = '1.0.0';
+
+	/// Monotonic build number from pubspec.yaml (the part after `+`).
+	static const int appBuild = 2;
+
+	/// The public site. Registration, password recovery and the link sign-in
+	/// page all live there; the clients only ever open URLs under it, they never
+	/// reimplement those flows.
+	static const String siteBaseUrl = 'https://vpn.gluk.tech';
+
+	/// Static release manifest, published next to the installers.
+	///
+	/// Deliberately a static file and not an API route: a client is most likely
+	/// to be out of date exactly while the control server is being redeployed,
+	/// and a static file cannot go down together with the backend.
+	static const String updateManifestUrl =
+			'https://vpn.gluk.tech/api/version.json';
+
+	/// How often a running client re-reads the manifest.
+	static const Duration updateCheckInterval = Duration(hours: 4);
+
 	/// Name of the WireGuard interface created on the device.
 	static const String tunnelInterfaceName = 'glukvpn';
 
@@ -100,10 +129,11 @@ class AppConfig {
 	static const bool telegramSignInEnabled = false;
 	static const bool googleSignInEnabled = false;
 
-	/// Self-service registration. Off until Telegram verification exists -
-	/// without it an open endpoint would be an invitation to create thousands of
-	/// accounts. Admin-created accounts still work.
-	static const bool selfRegistrationEnabled = false;
+	/// Self-service registration. ROUND 8: on. The control server now runs the
+	/// whole sign-up chain - email plus a six digit code, then a Telegram
+	/// contact handed to the bot - so an open endpoint can no longer be farmed
+	/// for throwaway accounts. Admin-created accounts still work.
+	static const bool selfRegistrationEnabled = true;
 
 	// -------------------------------------------------------------------------
 	// Build channel

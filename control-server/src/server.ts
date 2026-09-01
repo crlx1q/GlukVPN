@@ -2,6 +2,7 @@ import { buildApp } from "./app"
 import { config } from "./config"
 import { disconnectPrisma, prisma } from "./prisma"
 import { startMonitor } from "./services/monitor"
+import { startTelegramBot, stopTelegramBot } from "./services/telegramBot"
 
 async function main(): Promise<void> {
 	const app = await buildApp()
@@ -17,6 +18,14 @@ async function main(): Promise<void> {
 	}
 
 	const monitor = startMonitor(app)
+
+	// The sign-up bot. In-process by default because it is one long-polling
+	// loop with no state of its own; set TELEGRAM_BOT_IN_PROCESS=false to run
+	// `npm run bot` as a separate unit, so an API restart during a deploy does
+	// not interrupt someone halfway through sharing their contact.
+	if (config.TELEGRAM_BOT_IN_PROCESS) {
+		startTelegramBot(app.log)
+	}
 
 	// Binds to 127.0.0.1 by default: the API is reachable only through Nginx/HTTPS.
 	await app.listen({ host: config.HOST, port: config.PORT })
@@ -36,6 +45,7 @@ async function main(): Promise<void> {
 		shuttingDown = true
 		app.log.info({ signal }, "shutting_down")
 		monitor.stop()
+		stopTelegramBot()
 		try {
 			await app.close()
 			await disconnectPrisma()
