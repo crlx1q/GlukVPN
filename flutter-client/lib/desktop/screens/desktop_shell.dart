@@ -12,6 +12,7 @@ import '../state/tray_controller.dart';
 import '../state/window_controller.dart';
 import '../theme/desktop_theme.dart';
 import '../widgets/desktop_sidebar.dart';
+import '../widgets/update_banner.dart';
 import '../widgets/window_title_bar.dart';
 import 'desktop_account_screen.dart';
 import 'desktop_home_screen.dart';
@@ -175,6 +176,17 @@ class DesktopShellState extends State<DesktopShell> {
                   children: <Widget>[
                     // No maximise button: the window is a fixed panel.
                   const WindowTitleBar(showMaximize: false),
+                    // Above every page, and above the tab strip on purpose: an
+                    // update notice that only appears on one screen is an
+                    // update notice nobody reads. Renders nothing when there is
+                    // no newer release.
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        left: DesktopTokens.pagePadding,
+                        right: DesktopTokens.pagePadding,
+                      ),
+                      child: DesktopUpdateBanner(russian: s.isRussian),
+                    ),
                     Expanded(
                       child: AnimatedSwitcher(
                         duration: GlukMotion.screen,

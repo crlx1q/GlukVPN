@@ -146,10 +146,32 @@ class AppConfig {
 	static const String _buildChannel =
 			String.fromEnvironment('GLUK_CHANNEL', defaultValue: 'prod');
 
+	/// Set by the hidden developer menu (five clicks on the version number).
+	/// `null` means "whatever this build was compiled for".
+	///
+	/// Ordinary users never see a channel switch, so this stays null for them.
+	static AppChannel? _channelOverride;
+
+	static AppChannel? get channelOverride => _channelOverride;
+
+	/// Applies a developer channel override, or clears it with `null`.
+	///
+	/// Beta is refused outright when the build was compiled without it. That is
+	/// the whole point of `ALLOW_BETA_CHANNEL`: a public build must not be
+	/// talkable into the beta control plane, not even by its own dev menu or by a
+	/// leftover preference from an internal build.
+	static bool setChannelOverride(AppChannel? channel) {
+		if (channel != null && channel.isBeta && !betaChannelAvailable) return false;
+		_channelOverride = channel;
+		return true;
+	}
+
 	/// The channel this build talks to. A build compiled with
 	/// `ALLOW_BETA_CHANNEL=false` can never resolve to beta, even if someone
 	/// passes `GLUK_CHANNEL=beta`.
 	static AppChannel get activeChannel {
+		final AppChannel? override = _channelOverride;
+		if (override != null) return override;
 		final AppChannel channel = AppChannel.fromId(_buildChannel);
 		if (channel.isBeta && !betaChannelAvailable) return AppChannel.prod;
 		return channel;

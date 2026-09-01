@@ -18,6 +18,7 @@ import '../services/autostart_service.dart';
 import '../state/desktop_settings.dart';
 import '../state/desktop_vpn_controller.dart';
 import '../theme/desktop_theme.dart';
+import '../widgets/dev_channel_switch.dart';
 
 /// Settings (requirement 13).
 ///
@@ -460,10 +461,15 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
         // disagree with each other.
 
         const SizedBox(height: 24),
+        // ROUND 8: the version line is also the door to the developer menu.
+        // Five clicks reveal the Prod/Beta switch; ordinary users only ever see
+        // the version number, which is the point - a normal install pointed at
+        // beta looks broken and nothing on screen would explain why.
         Center(
-          child: Text(
-            'GlukVPN Desktop · ${AppConfig.activeChannel.label}',
-            style: const TextStyle(color: GlukColors.text2, fontSize: 11),
+          child: DevChannelFooter(
+            russian: widget.strings.isRussian,
+            onChannelChanged: () =>
+                widget.auth.logout(revokeThisDevice: false),
           ),
         ),
         const SizedBox(height: 12),
