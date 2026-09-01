@@ -728,7 +728,7 @@ class DesktopVpnController extends ChangeNotifier {
       _cancelConnectDeadline();
       _cancelReconnect();
       _connectedSince ??= DateTime.now();
-      if (_publicIp == null) unawaited(_refreshPublicIp());
+      unawaited(_refreshPublicIp());
     }
 
     _setPhase(verdict.phase, detail: verdict.reason);
