@@ -6,6 +6,7 @@ import 'screens/onboarding_screen.dart';
 import 'screens/servers_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/connectivity_service.dart';
+import 'services/update_checker.dart';
 import 'state/auth_controller.dart';
 import 'state/channel_controller.dart';
 import 'state/vpn_controller.dart';
@@ -16,6 +17,7 @@ import 'widgets/glass.dart';
 import 'widgets/logo.dart';
 import 'widgets/nav_bar.dart';
 import 'widgets/page_background.dart';
+import 'widgets/update_banner.dart';
 
 class GlukVpnApp extends StatefulWidget {
   const GlukVpnApp({
@@ -25,6 +27,7 @@ class GlukVpnApp extends StatefulWidget {
     required this.channel,
     required this.motion,
     required this.connectivity,
+    required this.updates,
   });
 
   final AuthController auth;
@@ -32,6 +35,7 @@ class GlukVpnApp extends StatefulWidget {
   final ChannelController channel;
   final MotionController motion;
   final ConnectivityService connectivity;
+  final UpdateChecker updates;
 
   @override
   State<GlukVpnApp> createState() => _GlukVpnAppState();
@@ -46,6 +50,9 @@ class _GlukVpnAppState extends State<GlukVpnApp> {
     widget.channel.probeAll();
     widget.auth.bootstrap();
     widget.connectivity.start();
+    // First read now, then every four hours. A failed check is silent by
+    // design - an older build still works, so there is nothing to report.
+    widget.updates.start();
   }
 
   @override
@@ -61,6 +68,7 @@ class _GlukVpnAppState extends State<GlukVpnApp> {
         ChangeNotifierProvider<ConnectivityService>.value(
           value: widget.connectivity,
         ),
+        ChangeNotifierProvider<UpdateChecker>.value(value: widget.updates),
       ],
       child: MaterialApp(
         title: 'GlukVPN',
@@ -70,10 +78,37 @@ class _GlukVpnAppState extends State<GlukVpnApp> {
           // Picks up "Remove animations" from accessibility settings; the whole
           // app then holds its loops still.
           widget.motion.syncWithMediaQuery(context);
-          return _ConnectivityLayer(child: child ?? const SizedBox.shrink());
+          return _UpdateLayer(
+            child: _ConnectivityLayer(child: child ?? const SizedBox.shrink()),
+          );
         },
         home: const AuthGate(),
       ),
+    );
+  }
+}
+
+/// ROUND 10 (4.3): the update banner, above every screen including sign-in.
+///
+/// It shares the top strip with the offline banner and stands down while the
+/// network is gone. "You are offline" is the more useful of the two messages,
+/// and a download link is worth nothing at that exact moment.
+class _UpdateLayer extends StatelessWidget {
+  const _UpdateLayer({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final ConnectivityService connectivity =
+        context.watch<ConnectivityService>();
+    final UpdateChecker updates = context.watch<UpdateChecker>();
+    if (!connectivity.online || !updates.bannerVisible) return child;
+    return Stack(
+      children: <Widget>[
+        child,
+        const Positioned(left: 0, right: 0, top: 0, child: UpdateBanner()),
+      ],
     );
   }
 }

@@ -47,7 +47,32 @@
     return wanted && bases[wanted] ? wanted : fallback;
   }
 
-  var BASE = String((API.base || {})[pickChannel()] || "").replace(/\/+$/, "");
+  function trimBase(url) { return String(url || "").replace(/\/+$/, ""); }
+
+  var BASE = trimBase((API.base || {})[pickChannel()]);
+
+  /* ROUND 10 (2.1): регистрация всегда идёт на боевой контур.
+
+     Бета — закрытая среда со своей базой, саморегистрация там выключена,
+     и раньше страница честно рисовала заглушку «регистрация закрыта».
+     Но /login/?api=beta открывают не для того, чтобы читать заглушку:
+     единственный аккаунт, который вообще имеет смысл создавать, живёт на
+     prod. Поэтому канал страницы больше не решает, куда уйдёт регистрация
+     — только куда уйдёт вход.
+
+     Захардкоженный адрес — это запасной вариант на случай усечённого
+     конфига, а не источник истины: обычно берём его из API.base.prod. */
+  var PROD_BASE = trimBase((API.base || {}).prod) || "https://api.gluk.tech";
+
+  /* Ручки, которые обязаны попадать на prod независимо от ?api=beta и
+     sessionStorage: сама регистрация, опрос её статуса и /auth/config,
+     по которому решается, открыта ли регистрация вообще.
+     Восстановление пароля сюда НЕ входит осознанно — пароль меняют тому
+     аккаунту, в который потом будут входить, то есть на своём канале.  */
+  function baseFor(path) {
+    return /^\/api\/auth\/(register|config)\b/.test(path) ? PROD_BASE : BASE;
+  }
+
   var TIMEOUT = API.timeoutMs || 12000;
 
   function request(path, opts) {
@@ -65,7 +90,7 @@
       init.headers["content-type"] = "application/json";
       init.body = JSON.stringify(opts.body);
     }
-    return fetch(BASE + path, init).then(
+    return fetch(baseFor(path) + path, init).then(
       function (res) {
         clearTimeout(timer);
         return res.text().then(function (text) {
@@ -499,11 +524,11 @@
     });
   });
 
-  /* ROUND 9 (2.1): регистрация есть только на prod. Бета — закрытый контур
-     со своей базой: аккаунт, созданный там, на prod не работает.
-     Канал проверяем ДО запроса к серверу, чтобы не дать человеку
-     заполнять три шага впустую, если API вообще не ответит.        */
-  var CHANNEL = pickChannel();
+  /* ROUND 10 (2.1): здесь стояла проверка канала, закрывавшая форму на
+     бете. Она больше не нужна и вредна: запросы регистрации уходят на
+     prod сами (см. baseFor), так что на /login/?mode=register заглушки
+     не будет ни при каком ?api. Закрыть регистрацию теперь может только
+     сервер — выключенная саморегистрация или неработающий бот.        */
 
   function closeRegistration(why) {
     if (!form) return;
@@ -513,13 +538,6 @@
     if (text && why) text.textContent = why;
     notice.hidden = false;
     step("closed");
-  }
-
-  if (form && CHANNEL !== "prod") {
-    closeRegistration(t(
-      "Регистрация работает только на основном канале. Бета — закрытая тестовая среда, аккаунты в ней выдаются вручную.",
-      "Sign-up is only available on the production channel. Beta is a closed test environment; accounts there are issued by hand."
-    ));
   }
 
   /* Сервер — истина в последней инстанции: если регистрация закрыта

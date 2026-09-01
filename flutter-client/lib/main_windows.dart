@@ -50,11 +50,19 @@ Future<void> main(List<String> args) async {
   if (!SingleInstance.claim()) {
     final SettingsStore existing = SettingsStore(paths: paths);
     await existing.load();
+    // ROUND 10 (1.2): ask the running copy to raise its own window before
+    // reaching in from outside. Only it knows whether it is currently showing
+    // the tray panel or the full window, and someone who launched the
+    // shortcut again wants the full window.
+    SingleInstance.signalShowRequest();
     SingleInstance.surfaceRunningInstance(
       russian: DesktopStrings.resolve(existing.value.language).isRussian,
     );
     exit(0);
   }
+
+  // The winning copy listens for that request for the rest of its life.
+  SingleInstance.armShowRequests();
 
   await windowManager.ensureInitialized();
   dlog.write('boot', 'GlukVPN desktop starting (hidden=$startHidden)');
@@ -158,6 +166,10 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
   /// Watches the battery so animations can stand down on their own.
   final PowerMonitor _power = PowerMonitor();
 
+  /// Polls the single-instance "show yourself" event. A zero-timeout wait on
+  /// an already-open handle, so this costs nothing between requests.
+  Timer? _showRequests;
+
   DesktopStrings _strings = DesktopStrings.english;
   bool _ready = false;
   bool _splashDone = false;
@@ -219,6 +231,14 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
     await _window.attach(startHidden: widget.startHidden);
     await _tray.attach();
 
+    _showRequests = Timer.periodic(
+      const Duration(milliseconds: 400),
+      (_) {
+        if (!SingleInstance.consumeShowRequest()) return;
+        unawaited(_window.surfaceForSecondInstance());
+      },
+    );
+
     try {
       await _auth.bootstrap();
     } catch (e) {
@@ -269,6 +289,7 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
 
   @override
   void dispose() {
+    _showRequests?.cancel();
     _auth.removeListener(_onAuthChanged);
     _power.dispose();
     _window.dispose();

@@ -7,6 +7,7 @@ import 'services/api_client.dart';
 import 'services/connectivity_service.dart';
 import 'services/ping_service.dart';
 import 'services/secure_store.dart';
+import 'services/update_checker.dart';
 import 'services/vpn_service.dart';
 import 'state/auth_controller.dart';
 import 'state/channel_controller.dart';
@@ -39,6 +40,13 @@ Future<void> main() async {
   );
   final MotionController motion = MotionController();
 
+  // ROUND 10 (4.3): the phone reads the release manifest too now. The service
+  // has existed since round 4 but was only ever wired up on desktop, so an
+  // out-of-date APK had no way of saying so. The manifest is a static file, on
+  // purpose: a client is most likely to be stale exactly while the control
+  // server is being redeployed.
+  final UpdateChecker updates = UpdateChecker();
+
   final ChannelController channel = ChannelController(
     api: api,
     store: store,
@@ -60,6 +68,7 @@ Future<void> main() async {
       channel: channel,
       motion: motion,
       connectivity: connectivity,
+      updates: updates,
     ),
   );
 }

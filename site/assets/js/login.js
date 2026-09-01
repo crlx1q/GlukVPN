@@ -257,6 +257,37 @@
   var startMode = /[?&]mode=(register|recover)/.exec(window.location.search || "");
   place(startMode ? startMode[1] : "login");
 
+  /* ROUND 10 (2.1): регистрация всегда уходит на боевой контур — это
+     сделано в register.js. Вход же остаётся на выбранном канале, и вот
+     здесь человека легко подставить: он создаёт аккаунт на /login/?api=beta,
+     а потом на той же странице не может войти, потому что на бете такого
+     аккаунта нет. Поэтому на бете вкладка регистрации говорит об этом
+     прямо, вместо прежней заглушки «регистрация закрыта».             */
+  function betaActive() {
+    var wanted = "";
+    var m = /[?&]api=([^&]*)/.exec(location.search || "");
+    if (m) {
+      try { wanted = decodeURIComponent(m[1]).toLowerCase(); } catch (e) { wanted = ""; }
+    }
+    if (!wanted) {
+      try { wanted = sessionStorage.getItem("gluk.api") || ""; } catch (e) { wanted = ""; }
+    }
+    return wanted === "beta";
+  }
+
+  if (betaActive()) {
+    var regPane = document.querySelector('[data-auth-pane="register"]');
+    if (regPane && !regPane.querySelector("[data-reg-prod-note]")) {
+      var note = document.createElement("p");
+      note.className = "auth-msg is-on";
+      note.setAttribute("data-reg-prod-note", "");
+      note.textContent = document.documentElement.getAttribute("data-lang") === "en"
+        ? "The account is created on the main server, not on beta. Sign in there as well - without ?api=beta."
+        : "Аккаунт создаётся на основном сервере, а не на бете. Входить в него нужно там же — без ?api=beta.";
+      regPane.insertBefore(note, regPane.firstChild);
+    }
+  }
+
   /* Внутрикарточные переходы («Забыли пароль?», «Регистрация»)
      переключают режим, а не уводят на другую страницу. href остаётся
      рабочим — ссылка должна открываться и в новой вкладке, и без JS. */

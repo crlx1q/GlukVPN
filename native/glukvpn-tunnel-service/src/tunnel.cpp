@@ -385,7 +385,29 @@ void Tunnel::ReleaseNetworkLocks(const char* why) {
     // held, and both are idempotent.
     Wfp::Instance().DisableKillSwitch();
     SplitTunnel::Instance().Clear();
+    // DisableKillSwitch() deletes the permit filters together with the block
+    // filters, so the next adapter has to be whitelisted again from scratch.
+    permittedLuid_.store(0);
     Log::Info(std::string("Network locks released (") + why + ")");
+}
+
+void Tunnel::PermitTunnelInterface(uint64_t luid) {
+    if (luid == 0 || luid == permittedLuid_.load()) return;
+
+    // A permit filter only means anything while something is blocking, and
+    // opening a WFP session for nothing would leave a provider registered on
+    // machines that never use the kill switch.
+    if (!Wfp::Instance().killSwitchActive()) return;
+
+    std::string code, message;
+    if (Wfp::Instance().PermitInterface(luid, code, message)) {
+        permittedLuid_.store(luid);
+    } else {
+        // Leave permittedLuid_ at 0 so the next poll retries. If this keeps
+        // failing the user has a tunnel with no traffic, and the log is the
+        // only place that says why.
+        Log::Warn("WFP: the tunnel adapter could not be permitted: " + message);
+    }
 }
 
 bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
@@ -480,6 +502,7 @@ void Tunnel::Down() {
         // without internet if a later step throws.
         Wfp::Instance().DisableKillSwitch();
         SplitTunnel::Instance().Clear();
+        permittedLuid_.store(0);
 
         // Read by the worker thread, which stops waiting politely once it is
         // set and kills the data plane if it has not exited within 8 seconds.
@@ -532,6 +555,13 @@ void Tunnel::RefreshFromDriver(TunnelStatus& status) {
     // engine needs its LUID from that moment on, so the LUID is taken even
     // when the UAPI read itself has not succeeded yet.
     if (stats.adapterLuid) status.luid = stats.adapterLuid;
+
+    // The adapter exists from this moment on, so this is the earliest point
+    // where the kill switch can be told to let it through. Up() cannot do it:
+    // the worker process has not created the adapter yet when Up() returns,
+    // so there is no LUID to permit.
+    PermitTunnelInterface(status.luid);
+
     if (!read || !stats.valid) {
         // The adapter is gone while we believe we are up.
         if (status.state == TunnelState::Connected) {

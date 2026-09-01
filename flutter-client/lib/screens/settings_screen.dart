@@ -14,6 +14,7 @@ import '../theme/motion.dart';
 import '../theme/tokens.dart';
 import '../utils/format.dart' hide countryFlag;
 import '../widgets/glass.dart';
+import 'account_screen.dart';
 import 'devices_screen.dart';
 
 /// Account, channel and diagnostics.
@@ -26,8 +27,54 @@ import 'devices_screen.dart';
 ///  * the PROD/BETA switch is only offered while disconnected. Repointing the
 ///    app at another control plane mid-tunnel would leave a peer installed on a
 ///    node that the app can no longer talk to.
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  /// ROUND 10 (4.4): the hidden developer menu.
+  ///
+  /// Five taps on the version line inside three seconds reveal the Channel and
+  /// Diagnostics panels; five more hide them again. The tap count is not
+  /// persisted anywhere and dies with the screen - it is a door, not a setting.
+  /// The channel *choice* behind it is persisted, by ChannelController, because
+  /// a build that forgot which control plane it was pointed at on every restart
+  /// would be useless for testing.
+  ///
+  /// The gesture is a window rather than a plain counter: three stray taps a
+  /// minute apart must not eventually add up to an unlock.
+  static const int _tapsToUnlock = 5;
+  static const Duration _tapWindow = Duration(seconds: 3);
+
+  int _taps = 0;
+  DateTime? _firstTap;
+  bool _devUnlocked = false;
+
+  void _tapVersion() {
+    final DateTime now = DateTime.now();
+    final DateTime? started = _firstTap;
+    if (started == null || now.difference(started) > _tapWindow) {
+      _firstTap = now;
+      _taps = 1;
+      return;
+    }
+    _taps += 1;
+    if (_taps < _tapsToUnlock) return;
+    _taps = 0;
+    _firstTap = null;
+    setState(() => _devUnlocked = !_devUnlocked);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 2),
+        content: Text(
+          _devUnlocked ? 'Developer menu unlocked' : 'Developer menu hidden',
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -77,6 +124,19 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 20),
           const _SectionLabel('Account'),
           const SizedBox(height: 8),
+          // ROUND 10 (4.2): profile, plan and the sessions that are signed in
+          // right now, in one place instead of scattered across this screen.
+          _ActionTile(
+            icon: Icons.account_circle_outlined,
+            title: 'Account',
+            subtitle: 'Profile, subscription and the sessions signed in now',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (BuildContext context) => const AccountScreen(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           _ActionTile(
             icon: Icons.devices_other_rounded,
             title: 'My devices',
@@ -106,13 +166,15 @@ class SettingsScreen extends StatelessWidget {
           ),
           // Everything below this point is for internal builds. A release APK
           // talks to one control plane and shows none of it.
-          if (channel.canSwitchAs(user)) ...<Widget>[
+          if (channel.canSwitchAs(user) ||
+              (_devUnlocked && channel.canSwitch)) ...<Widget>[
             const SizedBox(height: 20),
             const _SectionLabel('Internal'),
             const SizedBox(height: 8),
             _ChannelPanel(channel: channel, vpn: vpn),
           ],
-          if (channel.canSwitchAs(user)) ...<Widget>[
+          if (channel.canSwitchAs(user) ||
+              (_devUnlocked && channel.canSwitch)) ...<Widget>[
             const SizedBox(height: 12),
             _DiagnosticsPanel(channel: channel, auth: auth),
           ],
@@ -125,11 +187,29 @@ class SettingsScreen extends StatelessWidget {
             style: text.bodySmall,
           ),
           const SizedBox(height: 8),
-          // The one line a release build keeps: what version answered.
-          Text(
-            'GlukVPN \u00b7 ${channel.versionOf(channel.active)?.version ?? '\u2014'}',
-            style: text.bodySmall?.copyWith(color: GlukColors.text2),
+          // The one line a release build keeps: what version answered - and,
+          // after five taps in three seconds, the way into the dev menu.
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _tapVersion,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Text(
+                'GlukVPN ${AppConfig.appVersion} \u00b7 '
+                '${channel.active.label} '
+                '${channel.versionOf(channel.active)?.version ?? '\u2014'}',
+                style: text.bodySmall?.copyWith(color: GlukColors.text2),
+              ),
+            ),
           ),
+          if (_devUnlocked && !channel.canSwitch) ...<Widget>[
+            const SizedBox(height: 6),
+            Text(
+              'Developer menu is on, but this build was compiled without the '
+              'beta channel, so there is nothing to switch to.',
+              style: text.bodySmall,
+            ),
+          ],
         ],
       ),
     );

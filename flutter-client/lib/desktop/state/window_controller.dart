@@ -119,16 +119,61 @@ class WindowController extends ChangeNotifier with WindowListener {
       }
     }
 
-    await windowManager.show();
-    await windowManager.focus();
+    await _surface();
     WindowFx.applyWindowChrome();
     _visible = true;
     notifyListeners();
   }
 
+  /// Puts the native window on screen whatever state Windows left it in.
+  ///
+  /// ROUND 10 (1.2). `show()` on its own is not enough, and that is exactly
+  /// how the window used to get stuck:
+  ///
+  ///   * a window the user minimised stays minimised - `show()` does not undo
+  ///     `SW_MINIMIZE`, only `restore()` does,
+  ///   * `focus()` is refused outright when the foreground window belongs to
+  ///     another process, so the tray click "worked", `_visible` flipped to
+  ///     true, and nothing appeared.
+  ///
+  /// Every path that is supposed to reveal the window goes through here.
+  Future<void> _surface() async {
+    try {
+      if (await windowManager.isMinimized()) {
+        await windowManager.restore();
+      }
+    } catch (e) {
+      dlog.warn('window', 'restore failed: $e');
+    }
+
+    await windowManager.show();
+    await windowManager.focus();
+
+    // Windows only hands the foreground to the process that already owns it.
+    // A brief topmost flip is the standard way to ask for it without the
+    // AttachThreadInput hack, and the mini panel is topmost anyway.
+    if (_mode == WindowMode.main) {
+      try {
+        await windowManager.setAlwaysOnTop(true);
+        await windowManager.setAlwaysOnTop(false);
+      } catch (_) {
+        // Cosmetic. It must never stop the window from appearing.
+      }
+    }
+  }
+
   /// Double left click on the tray icon.
   Future<void> openFromTray() async {
     dlog.write('tray', 'double click -> full window');
+    await showMain();
+  }
+
+  /// A second copy of GlukVPN was launched and asked us to come forward.
+  ///
+  /// Always the full window: the person double-clicked the desktop shortcut,
+  /// so a 320 px tray panel is not what they asked for.
+  Future<void> surfaceForSecondInstance() async {
+    dlog.write('single', 'show request from a second instance');
     await showMain();
   }
 
@@ -154,8 +199,7 @@ class WindowController extends ChangeNotifier with WindowListener {
     await _anchorNearTray(panel);
 
     _miniShownAt = DateTime.now();
-    await windowManager.show();
-    await windowManager.focus();
+    await _surface();
     // Small DWM radius and no native border: the panel is painted flat, so
     // there is exactly one rounded shape instead of a widget radius fighting
     // the window's own border. That double edge is what glowed at the sides.

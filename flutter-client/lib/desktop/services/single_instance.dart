@@ -26,6 +26,20 @@ class SingleInstance {
 
   static const String _mutexName = r'Global\GlukVPN.Desktop.SingleInstance';
 
+  /// Fallback scope for the guard.
+  ///
+  /// Creating an object in the `Global\` namespace needs SeCreateGlobalPrivilege,
+  /// which a normal desktop session does not have. When that is refused the
+  /// guard used to fail open and *every* copy considered itself the first, so
+  /// the lock silently did nothing. Per-session scope is the right answer
+  /// anyway: one client per logged-in user.
+  static const String _mutexNameLocal = r'Local\GlukVPN.Desktop.SingleInstance';
+
+  /// Auto-reset event a second copy sets to ask the running copy to show its
+  /// window. Session-scoped on purpose - the two processes are always in the
+  /// same session, and `Local\` never needs a privilege.
+  static const String _showEventName = r'Local\GlukVPN.Desktop.ShowWindow';
+
   /// Window class registered by every Flutter Windows runner.
   static const String _windowClass = 'FLUTTER_RUNNER_WIN32_WINDOW';
   static const String _windowTitle = 'GlukVPN';
@@ -35,6 +49,8 @@ class SingleInstance {
   static const int _swShow = 5;
   static const int _swRestore = 9;
 
+  static const int _waitObject0 = 0;
+
   static const int _mbIconInformation = 0x40;
   static const int _mbSetForeground = 0x00010000;
   static const int _mbTopmost = 0x00040000;
@@ -42,6 +58,9 @@ class SingleInstance {
   /// Kept for the lifetime of the process on purpose: closing the handle would
   /// release the lock and let a second copy in.
   static int _mutex = 0;
+
+  /// Held by the winning instance for as long as it runs.
+  static int _showEvent = 0;
 
   static bool get isOwner => _mutex != 0;
 
@@ -59,10 +78,25 @@ class SingleInstance {
 
       // GetLastError has to be read immediately after the call, so the name is
       // allocated and freed by hand instead of through an arena.
-      final Pointer<Utf16> name = _mutexName.toNativeUtf16();
-      final int handle = create(nullptr, 0, name);
-      final int error = lastError();
-      calloc.free(name);
+      int open(String scoped) {
+        final Pointer<Utf16> name = scoped.toNativeUtf16();
+        final int handle = create(nullptr, 0, name);
+        _lastCreateError = lastError();
+        calloc.free(name);
+        return handle;
+      }
+
+      int handle = open(_mutexName);
+      if (handle == 0) {
+        dlog.warn(
+          'single',
+          'Global mutex refused (error $_lastCreateError), falling back to '
+          'the session scope',
+        );
+        handle = open(_mutexNameLocal);
+      }
+
+      final int error = _lastCreateError;
 
       if (handle == 0) {
         dlog.warn('single', 'CreateMutexW failed, error $error');
@@ -81,6 +115,81 @@ class SingleInstance {
     } catch (e) {
       dlog.warn('single', 'instance guard unavailable: $e');
       return true;
+    }
+  }
+
+  static int _lastCreateError = 0;
+
+  /// Opens the "show yourself" event. Called once by the winning instance.
+  static void armShowRequests() {
+    _showEvent = _openShowEvent();
+    if (_showEvent == 0) {
+      dlog.warn('single', 'show-request event unavailable');
+    }
+  }
+
+  /// True when a second copy asked us to come forward since the last check.
+  ///
+  /// The event is auto-reset, so a successful wait consumes the request and
+  /// there is nothing to clear by hand. Zero timeout: this is polled from the
+  /// UI isolate and must never block a frame.
+  static bool consumeShowRequest() {
+    if (_showEvent == 0) return false;
+    try {
+      final DynamicLibrary kernel32 = DynamicLibrary.open('kernel32.dll');
+      final _WaitForSingleObject wait = kernel32.lookupFunction<
+          _WaitForSingleObjectNative, _WaitForSingleObject>(
+        'WaitForSingleObject',
+      );
+      return wait(_showEvent, 0) == _waitObject0;
+    } catch (e) {
+      dlog.warn('single', 'show-request poll failed: $e');
+      return false;
+    }
+  }
+
+  /// Asks the running copy to bring its own window up.
+  ///
+  /// Better than reaching in with ShowWindow from outside: only the running
+  /// copy knows whether it is currently a tray panel or the full window, and
+  /// someone who launched the shortcut again wants the full window.
+  static void signalShowRequest() {
+    final int handle = _openShowEvent();
+    if (handle == 0) return;
+    try {
+      final DynamicLibrary kernel32 = DynamicLibrary.open('kernel32.dll');
+      final _SetEvent set =
+          kernel32.lookupFunction<_SetEventNative, _SetEvent>('SetEvent');
+      final _CloseHandle close =
+          kernel32.lookupFunction<_CloseHandleNative, _CloseHandle>(
+        'CloseHandle',
+      );
+      set(handle);
+      close(handle);
+      dlog.write('single', 'asked the running instance to show its window');
+    } catch (e) {
+      dlog.warn('single', 'show request failed: $e');
+    }
+  }
+
+  static int _openShowEvent() {
+    try {
+      final DynamicLibrary kernel32 = DynamicLibrary.open('kernel32.dll');
+      final _CreateEventW create = kernel32
+          .lookupFunction<_CreateEventWNative, _CreateEventW>('CreateEventW');
+
+      return using<int>((Arena arena) {
+        // manualReset = 0 -> auto-reset, so one wait consumes one request.
+        return create(
+          nullptr,
+          0,
+          0,
+          _showEventName.toNativeUtf16(allocator: arena),
+        );
+      });
+    } catch (e) {
+      dlog.warn('single', 'CreateEventW failed: $e');
+      return 0;
     }
   }
 
@@ -173,6 +282,31 @@ typedef _CreateMutexW = int Function(
 
 typedef _GetLastErrorNative = Uint32 Function();
 typedef _GetLastError = int Function();
+
+typedef _CreateEventWNative = IntPtr Function(
+  Pointer<Void> attributes,
+  Int32 manualReset,
+  Int32 initialState,
+  Pointer<Utf16> name,
+);
+typedef _CreateEventW = int Function(
+  Pointer<Void> attributes,
+  int manualReset,
+  int initialState,
+  Pointer<Utf16> name,
+);
+
+typedef _SetEventNative = Int32 Function(IntPtr handle);
+typedef _SetEvent = int Function(int handle);
+
+typedef _CloseHandleNative = Int32 Function(IntPtr handle);
+typedef _CloseHandle = int Function(int handle);
+
+typedef _WaitForSingleObjectNative = Uint32 Function(
+  IntPtr handle,
+  Uint32 milliseconds,
+);
+typedef _WaitForSingleObject = int Function(int handle, int milliseconds);
 
 typedef _FindWindowWNative = IntPtr Function(
   Pointer<Utf16> className,

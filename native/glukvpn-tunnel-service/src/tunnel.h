@@ -114,6 +114,15 @@ private:
     void WorkerMain(std::wstring configPath);
     void RefreshFromDriver(TunnelStatus& status);
 
+    // Whitelists the Wintun adapter in WFP the moment it appears.
+    //
+    // Without this the kill switch blocks the tunnel it is protecting: the
+    // block-all filters match every connection, including the ones whose
+    // local interface *is* the tunnel, so a full-tunnel session with the kill
+    // switch armed had no internet at all. Only split_tunnel.cpp used to call
+    // it, which is why the fault only ever showed in all-apps mode.
+    void PermitTunnelInterface(uint64_t luid);
+
     // Drops the kill switch and the split routes. Takes no lock of its own,
     // so it is safe to call with or without mutex_ held, and safe to call
     // twice. "No tunnel" must always mean "working internet".
@@ -145,6 +154,11 @@ private:
     // Set once a handshake has been observed, so a later stale handshake is
     // reported as "lost" rather than "still starting".
     bool everHandshaked_ = false;
+
+    // LUID already whitelisted in WFP, so the filters are installed once per
+    // adapter instead of on every status poll. Atomic because the release
+    // path runs on the worker thread without mutex_.
+    std::atomic<uint64_t> permittedLuid_{0};
 };
 
 } // namespace gluk

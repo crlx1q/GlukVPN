@@ -221,6 +221,22 @@ bool Wfp::EnableKillSwitch(const std::vector<std::string>& endpointIps,
 
         ok &= addFilter(*kAuthConnectLayers.v4, FWP_ACTION_PERMIT,
                         kWeightPermitInfra, dhcp, L"GlukVPN permit DHCP");
+
+        // The lease renewal answer comes back to local port 68 and is matched
+        // at the receive layer, where block-all would otherwise eat it.
+        std::vector<FWPM_FILTER_CONDITION0> dhcpIn;
+        dhcpIn.push_back(protocolCondition);
+
+        FWPM_FILTER_CONDITION0 localPortCondition{};
+        localPortCondition.fieldKey = FWPM_CONDITION_IP_LOCAL_PORT;
+        localPortCondition.matchType = FWP_MATCH_EQUAL;
+        localPortCondition.conditionValue.type = FWP_UINT16;
+        localPortCondition.conditionValue.uint16 = 68;
+        dhcpIn.push_back(localPortCondition);
+
+        ok &= addFilter(*kAuthRecvLayers.v4, FWP_ACTION_PERMIT,
+                        kWeightPermitInfra, dhcpIn,
+                        L"GlukVPN permit DHCP (in)");
     }
 
     // 4. Allow UDP to the VPN endpoints, otherwise the handshake that is
@@ -248,6 +264,13 @@ bool Wfp::EnableKillSwitch(const std::vector<std::string>& endpointIps,
         ok &= addFilter(*kAuthConnectLayers.v4, FWP_ACTION_PERMIT,
                         kWeightPermitInfra, endpoint,
                         L"GlukVPN permit VPN endpoint");
+
+        // The handshake reply arrives before any tunnel exists. Without the
+        // inbound half the block-all filter at the receive layer swallows it
+        // and the tunnel can never come up while the kill switch is armed.
+        ok &= addFilter(*kAuthRecvLayers.v4, FWP_ACTION_PERMIT,
+                        kWeightPermitInfra, endpoint,
+                        L"GlukVPN permit VPN endpoint (in)");
     }
 
     // 5. Always allow GlukVPN's own binaries so the app can still reach the
@@ -309,12 +332,20 @@ bool Wfp::PermitInterface(unsigned long long luid, std::string& errorCode,
 
     HANDLE engine = static_cast<HANDLE>(engine_);
 
+    // FWP_VALUE0::uint64 is a *pointer* to the 64-bit value; WFP dereferences
+    // it while FwpmFilterAdd0 runs. It must therefore point at named storage
+    // that stays alive for every call in the loop below, not at a cast of the
+    // parameter. Keeping the value in its own UINT64 also removes the
+    // reinterpret_cast, which only ever hid what this line really does.
+    UINT64 luidValue = static_cast<UINT64>(luid);
+
     FWPM_FILTER_CONDITION0 condition{};
     condition.fieldKey = FWPM_CONDITION_IP_LOCAL_INTERFACE;
     condition.matchType = FWP_MATCH_EQUAL;
     condition.conditionValue.type = FWP_UINT64;
-    condition.conditionValue.uint64 = reinterpret_cast<UINT64*>(&luid);
+    condition.conditionValue.uint64 = &luidValue;
 
+    int added = 0;
     for (const GUID* layer : {kAuthConnectLayers.v4, kAuthConnectLayers.v6,
                               kAuthRecvLayers.v4, kAuthRecvLayers.v6}) {
         FWPM_FILTER0 filter{};
@@ -333,10 +364,24 @@ bool Wfp::PermitInterface(unsigned long long luid, std::string& errorCode,
         const DWORD status = FwpmFilterAdd0(engine, &filter, nullptr, &id);
         if (status == ERROR_SUCCESS) {
             killSwitchFilters_.push_back(id);
+            ++added;
         } else {
             Log::LastError("Permit-interface filter failed", status);
         }
     }
+
+    // Not cosmetic: if this fails while the kill switch is armed, every packet
+    // inside the tunnel is dropped and the user has no internet at all. The
+    // caller has to be able to see that.
+    if (added == 0) {
+        errorCode = "killswitch_failed";
+        errorMessage = "Cannot permit traffic on the tunnel adapter";
+        return false;
+    }
+
+    Log::Info("Tunnel interface permitted (luid " +
+              std::to_string(luidValue) + ", " + std::to_string(added) +
+              " filters)");
     return true;
 }
 

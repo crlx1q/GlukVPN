@@ -7,6 +7,7 @@ import '../theme/tokens.dart';
 import '../widgets/glass.dart';
 import '../widgets/logo.dart';
 import '../widgets/social_icons.dart';
+import 'register_screen.dart';
 
 /// Sign-in, rendered on top of the onboarding backdrop (see
 /// `onboarding_screen.dart`) so the planet stays behind the card instead of the
@@ -16,8 +17,11 @@ import '../widgets/social_icons.dart';
 /// email address on `POST /api/auth/login`, so the form does not ask the user
 /// to know which one they signed up with.
 ///
-/// Self-service registration is deliberately absent while verification is not
-/// in place; the screen simply does not advertise it.
+/// ROUND 10 (4.1): sign-up and password recovery now live in the app. They
+/// used to be a sentence pointing at the website, which is the same as not
+/// having them at all. The three-step flow (email, code, Telegram) is in
+/// `register_screen.dart` and talks to the production control plane whatever
+/// channel this build is on - beta has no accounts to create.
 class LoginView extends StatefulWidget {
   const LoginView({super.key, this.onBack});
 
@@ -190,6 +194,33 @@ class _LoginViewState extends State<LoginView> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            Center(
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                children: <Widget>[
+                  if (AppConfig.selfRegistrationEnabled)
+                    TextButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (BuildContext context) =>
+                              const RegisterScreen(),
+                        ),
+                      ),
+                      child: const Text('Create an account'),
+                    ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (BuildContext context) =>
+                            const RecoverScreen(),
+                      ),
+                    ),
+                    child: const Text('Forgot your password?'),
+                  ),
+                ],
+              ),
             ),
             // Nothing about channels, builds or deployments appears here. Sign
             // in is a product screen; the PROD/BETA switch and the version
