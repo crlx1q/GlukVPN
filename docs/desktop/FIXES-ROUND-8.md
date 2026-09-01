@@ -165,7 +165,7 @@ Windows и расширение открывают сайт по ссылке, �
 | Отдельный экран «Аккаунт» на телефоне | не сделано (на Windows уже есть) |
 | Смена пароля/почты и перепривязка Telegram в личном кабинете сайта | API готов (`/api/auth/password`, `/api/auth/email`, `/api/auth/telegram/link`), `site/assets/js/account.js` ещё не подключён |
 | Английские копии `/register/` и `/recover/` | не сделано |
-| Новые CSS-классы страниц регистрации | часть классов (`reg-steps`, `captcha`, `input--code`, `choice`) может отсутствовать в `auth.css` — страницы работают, но выглядят проще, чем задумано |
+| Новые CSS-классы страниц регистрации | **добавлены** в конец `site/assets/css/auth.css`: `auth-card--solo`, `reg-steps`, `captcha`, `input--code`, `auth-status`, `notice--warn`, `icon-badge--ok`, `mono`, `choice`. Только добавления — страница входа выглядит как раньше |
 | Тарифы Free / Basic / Pro | отдельная задача, как договаривались |
 
 ---
