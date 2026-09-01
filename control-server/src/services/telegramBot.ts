@@ -263,11 +263,11 @@ async function handleContact(message: TelegramMessage): Promise<void> {
 		phone_taken: "На этот номер уже зарегистрирован аккаунт. Воспользуйтесь входом или восстановлением пароля.",
 		telegram_taken: "Этот Telegram уже привязан к другому аккаунту.",
 	}
-	await sendTelegramMessage(
-		chatId,
-		(outcome.reason ? reasons[outcome.reason] : undefined) ?? reasons.unknown,
-		HIDE_KEYBOARD,
-	)
+	const text =
+		(outcome.reason ? reasons[outcome.reason] : undefined) ||
+		reasons.unknown ||
+		"Код не найден или уже истёк."
+	await sendTelegramMessage(chatId, text, HIDE_KEYBOARD)
 }
 
 async function handleMessage(message: TelegramMessage): Promise<void> {
