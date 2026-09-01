@@ -98,8 +98,7 @@ async function loadPending(email: string): Promise<PendingRegistration> {
  * now, which is why this re-checks instead of trusting one lookup.
  */
 async function uniqueUsername(email: string): Promise<string> {
-	let base = email
-		.split("@")[0]
+	let base = (email.split("@")[0] ?? "user")
 		.toLowerCase()
 		.replace(/[^a-z0-9._-]/g, "")
 		.slice(0, 20)

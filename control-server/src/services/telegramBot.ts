@@ -265,7 +265,7 @@ async function handleContact(message: TelegramMessage): Promise<void> {
 	}
 	await sendTelegramMessage(
 		chatId,
-		reasons[outcome.reason] ?? reasons.unknown,
+		(outcome.reason ? reasons[outcome.reason] : undefined) ?? reasons.unknown,
 		HIDE_KEYBOARD,
 	)
 }

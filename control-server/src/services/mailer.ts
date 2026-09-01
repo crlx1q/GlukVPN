@@ -47,7 +47,7 @@ export function mailFrom(): string {
 /** Pull the bare address out of `GlukVPN <noreply@gluk.tech>`. */
 function bareAddress(value: string): string {
 	const match = /<([^>]+)>/.exec(value)
-	return (match ? match[1] : value).trim()
+	return (match && match[1] ? match[1] : value).trim()
 }
 
 /**
