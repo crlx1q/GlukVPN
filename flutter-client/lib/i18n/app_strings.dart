@@ -38,7 +38,7 @@ enum AppLanguage {
 /// Every user-visible string on the phone, in one place per language.
 class AppStrings {
 	const AppStrings({
-		required this.code,
+		required this.localeCode,
 		required this.languageName,
 		// --- shared ---
 		required this.back,
@@ -211,12 +211,12 @@ class AppStrings {
 	});
 
 	/// BCP-47 language subtag, also used as the `Locale` code.
-	final String code;
+	final String localeCode;
 
 	/// Endonym, so the picker reads the same in either language.
 	final String languageName;
 
-	bool get isRussian => code == 'ru';
+	bool get isRussian => localeCode == 'ru';
 
 	// --- shared ---
 	final String back;
@@ -464,7 +464,7 @@ class AppStrings {
 	// -------------------------------------------------------------------------
 
 	static const AppStrings en = AppStrings(
-		code: 'en',
+		localeCode: 'en',
 		languageName: 'English',
 		back: 'Back',
 		cancel: 'Cancel',
@@ -678,7 +678,7 @@ class AppStrings {
 	);
 
 	static const AppStrings ru = AppStrings(
-		code: 'ru',
+		localeCode: 'ru',
 		languageName: 'Русский',
 		back: 'Назад',
 		cancel: 'Отмена',
@@ -906,7 +906,7 @@ class LocaleController extends ChangeNotifier {
 
 	AppStrings get strings => resolve(_preference);
 
-	Locale get locale => Locale(strings.code);
+	Locale get locale => Locale(strings.localeCode);
 
 	/// Label for the settings row: "Automatic (Русский)" is more useful than
 	/// "Automatic" on its own, because it says what automatic actually picked.
