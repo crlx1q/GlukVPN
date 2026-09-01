@@ -942,7 +942,7 @@ class _ChoiceChip extends StatelessWidget {
     return GlassPanel(
       radius: 999,
       onTap: onTap,
-      color: selected ? GlukColors.violet.withOpacity(0.18) : null,
+      color: selected ? GlukColors.violet.withOpacity(0.18) : Colors.transparent,
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
