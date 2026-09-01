@@ -43,7 +43,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -233,13 +233,13 @@ func run() error {
 // follow it - everything else here talks to wireguard-go, whose device/tun/ipc
 // surface has been stable for years.
 func configureInterface(luid winipcfg.LUID, cfg *tunnelConfig, mtu int) error {
-	addresses := make([]net.IPNet, 0, len(cfg.addresses))
+	addresses := make([]netip.Prefix, 0, len(cfg.addresses))
 	for _, raw := range cfg.addresses {
-		ip, prefix, err := net.ParseCIDR(raw)
+		prefix, err := netip.ParsePrefix(raw)
 		if err != nil {
 			return fmt.Errorf("bad Address %q in the tunnel config: %w", raw, err)
 		}
-		addresses = append(addresses, net.IPNet{IP: ip, Mask: prefix.Mask})
+		addresses = append(addresses, prefix)
 	}
 	if len(addresses) == 0 {
 		return errors.New("the tunnel config has no Address")
@@ -253,16 +253,16 @@ func configureInterface(luid winipcfg.LUID, cfg *tunnelConfig, mtu int) error {
 		routes := make([]*winipcfg.RouteData, 0, 4)
 		for i := range cfg.peers {
 			for _, raw := range cfg.peers[i].allowedIPs {
-				_, prefix, err := net.ParseCIDR(raw)
+				prefix, err := netip.ParsePrefix(raw)
 				if err != nil {
 					continue
 				}
-				nextHop := net.IPv4zero
-				if prefix.IP.To4() == nil {
-					nextHop = net.IPv6zero
+				nextHop := netip.IPv4Unspecified()
+				if prefix.Addr().Is6() {
+					nextHop = netip.IPv6Unspecified()
 				}
 				routes = append(routes, &winipcfg.RouteData{
-					Destination: *prefix,
+					Destination: prefix,
 					NextHop:     nextHop,
 					Metric:      0,
 				})
@@ -276,13 +276,13 @@ func configureInterface(luid winipcfg.LUID, cfg *tunnelConfig, mtu int) error {
 	}
 
 	if len(cfg.dns) > 0 {
-		var v4, v6 []net.IP
+		var v4, v6 []netip.Addr
 		for _, raw := range cfg.dns {
-			ip := net.ParseIP(raw)
-			if ip == nil {
+			ip, err := netip.ParseAddr(raw)
+			if err != nil {
 				continue
 			}
-			if ip.To4() != nil {
+			if ip.Is4() {
 				v4 = append(v4, ip)
 			} else {
 				v6 = append(v6, ip)
