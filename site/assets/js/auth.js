@@ -34,9 +34,7 @@
       try { wanted = sessionStorage.getItem("gluk.api") || ""; } catch (e) { wanted = ""; }
     }
     if (wanted && bases[wanted]) {
-      if (wanted !== fallback) {
-        try { sessionStorage.setItem("gluk.api", wanted); } catch (e) {}
-      }
+      try { sessionStorage.setItem("gluk.api", wanted); } catch (e) {}
       return wanted;
     }
     return fallback;
