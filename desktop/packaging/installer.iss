@@ -89,9 +89,11 @@ Source: "{#StageDir}\*"; DestDir: "{app}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs; \
     Excludes: "service\*"
 
-; Privileged tunnel service plus the two DLLs it loads at runtime: tunnel.dll
-; and the WHQL-signed wintun.dll. Nothing else has to be installed - that is
-; the whole point of the Wintun migration.
+; Privileged tunnel service plus the two files it needs at runtime:
+; glukvpn-wg.exe (our userspace wireguard-go data plane) and the WHQL-signed
+; wintun.dll. No kernel driver is installed at any point - that is the whole
+; point of round 7, and it is why the tunnel now comes up with Core Isolation
+; enabled.
 Source: "{#StageDir}\service\*"; DestDir: "{app}\service"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 

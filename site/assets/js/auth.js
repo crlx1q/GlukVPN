@@ -13,7 +13,36 @@
   var G = window.GLUK_CONFIG || {};
   var API = G.api || {};
   var AC = G.auth || {};
-  var CHANNEL = API.channel === "prod" ? "prod" : "beta";
+
+  /* Канал берётся из конфига — кроме одного случая. Страница /link/
+     обязана подтверждать вход на том же инстансе API, который выдал
+     ссылку: prod и beta — разные процессы с раздельной памятью и разными
+     ключами подписи, и код из prod на beta просто не существует — сервер
+     честно отвечает 404, а человек видит «ссылка устарела» через секунду
+     после её выдачи.
+
+     Здесь приходит имя канала, а не адрес: значение проходит через свой же
+     список API.base, поэтому параметром в URL нельзя увести страницу на
+     чужой сервер. Живёт только во вкладке, чтобы один бета-вход не
+     перевёл человека на бету навсегда.                                    */
+  function pickChannel() {
+    var fallback = API.channel === "prod" ? "prod" : "beta";
+    var bases = API.base || {};
+    var m = /[?&]api=([^&]*)/.exec(location.search || "");
+    var wanted = m ? decodeURIComponent(m[1]).toLowerCase() : "";
+    if (!wanted) {
+      try { wanted = sessionStorage.getItem("gluk.api") || ""; } catch (e) { wanted = ""; }
+    }
+    if (wanted && bases[wanted]) {
+      if (wanted !== fallback) {
+        try { sessionStorage.setItem("gluk.api", wanted); } catch (e) {}
+      }
+      return wanted;
+    }
+    return fallback;
+  }
+
+  var CHANNEL = pickChannel();
   var BASE = String((API.base || {})[CHANNEL] || "").replace(/\/+$/, "");
   var TIMEOUT = API.timeoutMs || 12000;
   var KEY = "gluk." + CHANNEL + ".refresh";

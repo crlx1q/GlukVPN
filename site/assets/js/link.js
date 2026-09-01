@@ -28,6 +28,21 @@
     return m ? decodeURIComponent(m[1]) : "";
   }
 
+  /* Ссылка несёт и имя инстанса API (?api=prod|beta). Его разбирает auth.js,
+     но его надо тащить за собой при уходе на /login/ и обратно, иначе
+     человек войдёт не в тот control plane и код снова окажется «неизвестным». */
+  function apiFromUrl() {
+    var m = /[?&]api=([^&]*)/.exec(location.search || "");
+    var v = m ? decodeURIComponent(m[1]).toLowerCase() : "";
+    return v === "prod" || v === "beta" ? v : "";
+  }
+
+  function withApi(url) {
+    var api = apiFromUrl();
+    if (!api) return url;
+    return url + (url.indexOf("?") === -1 ? "?" : "&") + "api=" + api;
+  }
+
   function normalize(raw) {
     var clean = String(raw || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
     if (clean.length <= 4) return clean;
@@ -101,7 +116,7 @@
 
   function renderGate() {
     show("gate");
-    var next = rootPath + "link/?code=" + encodeURIComponent(state.code);
+    var next = withApi(rootPath + "link/?code=" + encodeURIComponent(state.code));
     $("link-gate-text").innerHTML =
       esc(t(
         "Сначала войдите в аккаунт — именно он разрешает вход на устройстве.",

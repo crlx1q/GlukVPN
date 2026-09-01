@@ -353,16 +353,16 @@ class _DesktopAccountScreenState extends State<DesktopAccountScreen> {
               ),
 
             const SizedBox(height: 22),
-            // ROUND 6: no longer a full-width violet pill. "Sign out" is a
-            // destructive, rarely-used action and should not be the loudest
-            // control on the screen.
-            Align(
-              alignment: Alignment.centerLeft,
-              child: _DangerButton(
-                label: s.logout,
-                icon: Icons.logout_rounded,
-                onTap: _signOutHere,
-              ),
+            // ROUND 7: back to the pill it always was, just at desktop
+            // density. Sign-out is rare, but it is the one action people open
+            // this screen for, so hiding it in a quiet outline was a step back.
+            PrimaryPillButton(
+              label: s.logout,
+              icon: Icons.logout_rounded,
+              compact: true,
+              onPressed: () {
+                _signOutHere();
+              },
             ),
             const SizedBox(height: 10),
             Text(
@@ -846,51 +846,3 @@ class _DeviceRow extends StatelessWidget {
   }
 }
 
-/// Quiet, outlined, destructive. Not a primary pill.
-class _DangerButton extends StatelessWidget {
-  const _DangerButton({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final Future<void> Function() onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: GlukColors.danger.withOpacity(0.10),
-      borderRadius: BorderRadius.circular(999),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(999),
-        onTap: () => onTap(),
-        child: Container(
-          height: 36,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: GlukColors.danger.withOpacity(0.38)),
-          ),
-          alignment: Alignment.center,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(icon, size: 15, color: GlukColors.danger),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: GlukColors.danger,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

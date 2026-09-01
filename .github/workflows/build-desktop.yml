@@ -40,50 +40,37 @@ jobs:
         with:
           go-version: '^1.22'
 
-      # ROUND 6 - Wintun. Both DLLs: wintun.dll (WHQL-signed driver) and
-      # tunnel.dll (WireGuard's embeddable service, Wintun backend).
-      - name: Download and build tunnel dependencies
+      # ROUND 7 - userspace WireGuard. Two artefacts: wintun.dll (the
+      # WHQL-signed adapter) and glukvpn-wg.exe (our wireguard-go data plane).
+      # tunnel.dll is gone - it launches the WireGuardNT kernel driver, which
+      # Core Isolation refuses, and that is why the tunnel died after 1s.
+      - name: Build the tunnel data plane
         run: |
           $vendor = 'native\glukvpn-tunnel-service\vendor\amd64'
           New-Item -ItemType Directory -Force -Path $vendor | Out-Null
 
-          # 1. tunnel.dll from an official release zip. Its Wintun backend is
-          #    what makes the tunnel come up on WDAC / Memory-integrity
-          #    machines, where WireGuardNT is refused with ERROR_ACCESS_DENIED.
-          $paired = $false
-          foreach ($ver in @('0.5.3', '0.5.2', '0.4.9')) {
-            try {
-              Invoke-WebRequest -Uri "https://download.wireguard.com/windows-client/embeddable-dll-service-amd64-$ver.zip" -OutFile embed.zip -UseBasicParsing
-              Expand-Archive -Path embed.zip -DestinationPath embed -Force
-              foreach ($dll in @('tunnel.dll', 'wintun.dll')) {
-                $f = Get-ChildItem -Path embed -Filter $dll -Recurse | Select-Object -First 1
-                if ($f) { Copy-Item $f.FullName $vendor -Force }
-              }
-              if (Test-Path (Join-Path $vendor 'tunnel.dll')) { $paired = $true; Write-Host "matched DLL pair from release $ver"; break }
-            } catch { Write-Host "embeddable-dll-service $ver unavailable" }
-          }
-
-          # 2. wintun.dll: mandatory, straight from the official WHQL build.
+          # 1. wintun.dll: mandatory, straight from the official WHQL build.
           if (-not (Test-Path (Join-Path $vendor 'wintun.dll'))) {
             Invoke-WebRequest -Uri https://www.wintun.net/builds/wintun-0.14.1.zip -OutFile wintun.zip -UseBasicParsing
             Expand-Archive -Path wintun.zip -DestinationPath wintun -Force
             Copy-Item wintun\wintun\bin\amd64\wintun.dll $vendor -Force
           }
 
-          # 3. Last resort: build tunnel.dll from source (Wintun backend).
-          if (-not $paired) {
-          git clone --depth 1 https://git.zx2c4.com/wireguard-windows wg-windows
-          Push-Location wg-windows\embeddable-dll-service
-          $env:CGO_ENABLED = "1"
+          # 2. glukvpn-wg.exe: a plain `go build` with cgo off, so the runner
+          #    needs no mingw/gcc toolchain.
+          $dest = Join-Path (Resolve-Path $vendor) 'glukvpn-wg.exe'
+          Push-Location native\glukvpn-tunnel-service\go\glukvpn-wg
+          $env:CGO_ENABLED = "0"
           $env:GOOS = "windows"
           $env:GOARCH = "amd64"
-          $destDll = Join-Path (Resolve-Path "..\..\$vendor") 'tunnel.dll'
-          go build -buildmode=c-shared -ldflags="-w -s" -trimpath -o $destDll .
+          go mod tidy
+          if ($LASTEXITCODE -ne 0) { throw 'go mod tidy failed for the tunnel data plane' }
+          go build -ldflags="-w -s" -trimpath -o $dest .
+          if ($LASTEXITCODE -ne 0) { throw 'go build failed for the tunnel data plane' }
           Pop-Location
-          }
 
-          foreach ($dll in @('tunnel.dll', 'wintun.dll')) {
-            if (-not (Test-Path (Join-Path $vendor $dll))) { throw "$dll is missing from $vendor" }
+          foreach ($artifact in @('glukvpn-wg.exe', 'wintun.dll')) {
+            if (-not (Test-Path (Join-Path $vendor $artifact))) { throw "$artifact is missing from $vendor" }
           }
           Get-ChildItem $vendor | Format-Table Name, Length
         shell: pwsh

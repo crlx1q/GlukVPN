@@ -356,9 +356,11 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
                     onTap: (busy || _linkBusy) ? null : _signInWithLink,
                   ),
 
-                  // While the browser is open, the code is shown so the user
-                  // can check the page is confirming *this* window, and cancel
-                  // is always one click away.
+                  // While the browser is open: a spinner, one honest line of
+                  // status, and cancel. The code deliberately is not shown -
+                  // the link already carries it, so printing ABCD-EFGH here
+                  // only invites the user to think they have to do something
+                  // with it.
                   if (_linkBusy) ...<Widget>[
                     const SizedBox(height: 10),
                     Row(
@@ -379,8 +381,8 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
                             _linkCode == null
                                 ? (_ru ? 'Создаём ссылку…' : 'Creating a link…')
                                 : (_ru
-                                    ? 'Подтвердите код ${_linkCode!} в браузере'
-                                    : 'Confirm code ${_linkCode!} in the browser'),
+                                    ? 'Ожидание подтверждения входа в браузере…'
+                                    : 'Waiting for confirmation in your browser…'),
                             style: TextStyle(
                               color: GlukColors.text1,
                               fontSize: 12,
@@ -460,20 +462,15 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
                   ],
 
                   const SizedBox(height: 18),
-                  // ROUND 6: no longer full width. A submit button stretched
-                  // across the column made the form look like a phone screen;
-                  // at 178 px it reads as a desktop action and leaves the
-                  // column's rhythm intact.
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: SizedBox(
-                      width: 178,
-                      child: PrimaryPillButton(
-                        label: busy ? s.signingIn : s.signIn,
-                        busy: busy,
-                        onPressed: busy ? null : _submit,
-                      ),
-                    ),
+                  // ROUND 7: back to the full width of the form, the way it
+                  // was - a half-width pill floating on the left read as an
+                  // unfinished layout. Only the density changed: `compact`
+                  // takes ~12 px off the height and a step off the label.
+                  PrimaryPillButton(
+                    label: busy ? s.signingIn : s.signIn,
+                    busy: busy,
+                    compact: true,
+                    onPressed: busy ? null : _submit,
                   ),
 
                   const SizedBox(height: 20),

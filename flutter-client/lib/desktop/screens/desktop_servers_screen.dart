@@ -218,6 +218,9 @@ class _DesktopServersScreenState extends State<DesktopServersScreen> {
                         locked: !paid,
                         loadLabel: s.load,
                         offlineLabel: s.offline,
+                        // ROUND 7: the row localises its own geography label,
+                        // so it has to know which language the shell is in.
+                        russian: s.isRussian,
                         onTap: paid ? () => vpn.switchNode(node) : null,
                       );
                     },

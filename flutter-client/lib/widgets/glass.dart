@@ -236,12 +236,20 @@ class PrimaryPillButton extends StatelessWidget {
 		required this.onPressed,
 		this.icon = Icons.arrow_forward_rounded,
 		this.busy = false,
+		this.compact = false,
 	});
 
 	final String label;
 	final VoidCallback? onPressed;
 	final IconData icon;
 	final bool busy;
+
+	/// Desktop density. Same button, ~12 px shorter and a smaller label.
+	///
+	/// A phone-sized call to action looks oversized on a 1000 px window, but
+	/// shrinking the widget itself would change every mobile screen. The flag
+	/// keeps one button in one file and defaults to the mobile proportions.
+	final bool compact;
 
 	@override
 	Widget build(BuildContext context) {
@@ -256,7 +264,9 @@ class PrimaryPillButton extends StatelessWidget {
 				child: InkWell(
 					onTap: enabled ? onPressed : null,
 					child: Container(
-						padding: const EdgeInsets.fromLTRB(26, 6, 6, 6),
+						padding: compact
+								? const EdgeInsets.fromLTRB(18, 4, 4, 4)
+								: const EdgeInsets.fromLTRB(26, 6, 6, 6),
 						decoration: BoxDecoration(
 							borderRadius: BorderRadius.circular(999),
 							border: Border.all(color: GlukColors.stroke),
@@ -266,27 +276,28 @@ class PrimaryPillButton extends StatelessWidget {
 								Expanded(
 									child: Text(
 										label,
-										style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+										style: (compact ? text.titleSmall : text.titleMedium)
+												?.copyWith(fontWeight: FontWeight.w700),
 									),
 								),
 								Container(
-									width: 46,
-									height: 46,
+									width: compact ? 34 : 46,
+									height: compact ? 34 : 46,
 									alignment: Alignment.center,
 									decoration: const BoxDecoration(
 										gradient: GlukGradients.arrow,
 										shape: BoxShape.circle,
 									),
 									child: busy
-											? const SizedBox(
-													width: 18,
-													height: 18,
-													child: CircularProgressIndicator(
+											? SizedBox(
+													width: compact ? 14 : 18,
+													height: compact ? 14 : 18,
+													child: const CircularProgressIndicator(
 														strokeWidth: 2,
 														color: GlukColors.bg,
 													),
 												)
-											: Icon(icon, color: GlukColors.bg, size: 20),
+											: Icon(icon, color: GlukColors.bg, size: compact ? 16 : 20),
 								),
 							],
 						),

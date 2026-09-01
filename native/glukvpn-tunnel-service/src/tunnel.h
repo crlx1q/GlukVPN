@@ -2,17 +2,23 @@
 //
 // Implementation strategy
 // -----------------------
-// The tunnel itself is run by tunnel.dll from wireguard-windows, which exports
+// The tunnel is run by a separate process, glukvpn-wg.exe: a wireguard-go
+// build that implements WireGuard entirely in userspace on top of the
+// WHQL-signed wintun.dll. The service spawns it, watches it and stops it by
+// signalling the well-known event Global\WireGuard-Stop-<adapter>, exactly
+// like the official client.
 //
-//     BOOL WireGuardTunnelService(LPCWSTR confFile)
+// ROUND 7. This used to be tunnel.dll from wireguard-windows. That library is
+// not a WireGuard implementation — it is a launcher for the WireGuardNT kernel
+// driver, and it installs the unsigned wireguard.sys on first use. On any
+// machine with Core Isolation / Memory Integrity / WDAC enabled the kernel
+// refuses that driver, so the tunnel died after a second with ok=0, ran 1s.
+// Wintun needs no such exception, and userspace WireGuard is what Proton,
+// Mullvad and Tailscale ship on Windows for the same reason.
 //
-// That call blocks for the entire lifetime of the tunnel, so it runs on a
-// dedicated worker thread. Stopping is done by signalling the well-known
-// event  Global\WireGuard-Stop-<adapter>, exactly like the official client.
-//
-// This is the same code path the official WireGuard for Windows client uses,
-// which is why the resulting adapter behaves identically to it — including
-// showing up in Network Connections and ipconfig.
+// A child process rather than a DLL is deliberate: the Go build needs no cgo
+// toolchain, and a crash in the data plane cannot take the service with it.
+// The adapter still shows up in Network Connections and ipconfig.
 
 #pragma once
 
@@ -112,15 +118,23 @@ private:
     // so it is safe to call with or without mutex_ held, and safe to call
     // twice. "No tunnel" must always mean "working internet".
     void ReleaseNetworkLocks(const char* why);
-    bool LoadTunnelDll();
+
+    // Locates glukvpn-wg.exe and wintun.dll next to the service binary.
+    // Returns false when either is missing, which is the one failure the user
+    // can actually fix (reinstall).
+    bool ResolveWorkerPaths(std::wstring& exePath,
+                            std::wstring& wintunPath) const;
+
     std::wstring StopEventName() const;
 
     mutable std::mutex mutex_;
     std::thread worker_;
     std::atomic<bool> running_{false};
 
-    HMODULE tunnelDll_ = nullptr;
-    void* tunnelServiceFn_ = nullptr;
+    // Set by Down() before the stop event is signalled. The worker thread uses
+    // it to bound its wait: a data plane that ignores the stop event is killed
+    // rather than left owning the default route.
+    std::atomic<bool> stopRequested_{false};
 
     TunnelStatus status_;
     UpRequest request_;

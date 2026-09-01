@@ -60,12 +60,6 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
 
   String? _notice;
 
-  // Devices, loaded from GET /api/devices.
-  List<DeviceInfo>? _devices;
-  int _maxDevices = 0;
-  bool _devicesLoading = false;
-  String? _devicesError;
-
   bool _testingGateway = false;
   bool _restoringNetwork = false;
 
@@ -73,59 +67,11 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
 
   bool get _ru => widget.strings.isRussian;
 
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_loadDevices());
-  }
-
   Future<void> _patch(
     DesktopSettings Function(DesktopSettings s) mutate,
   ) async {
     await widget.settings.update(mutate);
     if (mounted) setState(() {});
-  }
-
-  Future<void> _loadDevices() async {
-    if (_devicesLoading) return;
-    setState(() {
-      _devicesLoading = true;
-      _devicesError = null;
-    });
-    try {
-      final DevicesResult result = await widget.vpn.api.devices();
-      if (!mounted) return;
-      setState(() {
-        _devices = result.devices;
-        _maxDevices = result.maxDevices;
-        _devicesLoading = false;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _devicesLoading = false;
-        _devicesError = _ru
-            ? 'Не удалось загрузить устройства'
-            : 'Could not load devices';
-      });
-    }
-  }
-
-  Future<void> _revokeDevice(DeviceInfo device) async {
-    try {
-      await widget.vpn.api.revokeDevice(device.id);
-      setState(() {
-        _notice = _ru
-            ? 'Устройство отключено. Статистика сохранена.'
-            : 'Device removed. Its history is kept.';
-      });
-      await _loadDevices();
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _notice = _ru ? 'Не удалось отключить устройство' : 'Could not remove it';
-      });
-    }
   }
 
   Future<void> _copyDiagnostics() async {
@@ -507,49 +453,11 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
           ],
         ),
 
-        // ---- 7. Account ---------------------------------------------------
-        _Section(
-          title: s.sectionAccount,
-          children: <Widget>[
-            _ProfileCard(auth: widget.auth, strings: s),
-            const SizedBox(height: 6),
-            _InfoTile(
-              label: s.plan,
-              value: widget.auth.subscription?.status ?? s.free,
-            ),
-            if (widget.auth.subscription?.expiresAt != null)
-              _InfoTile(
-                label: s.expires,
-                value: formatDateTime(widget.auth.subscription!.expiresAt!),
-              ),
-            if (widget.auth.user != null)
-              _InfoTile(
-                label: ru ? 'Одновременных сессий' : 'Concurrent sessions',
-                value: '${widget.auth.user!.maxConcurrentSessions}',
-              ),
-            const SizedBox(height: 10),
-            _DevicesBlock(
-              devices: _devices,
-              maxDevices: _maxDevices,
-              loading: _devicesLoading,
-              error: _devicesError,
-              ru: ru,
-              refreshTooltip: s.refresh,
-              onRefresh: _loadDevices,
-              onRevoke: _revokeDevice,
-            ),
-            Padding(
-              padding: const EdgeInsets.only(top: 14),
-              child: PrimaryPillButton(
-                label: s.logout,
-                onPressed: () async {
-                  await widget.vpn.disconnect(userInitiated: false);
-                  await widget.auth.logout();
-                },
-              ),
-            ),
-          ],
-        ),
+        // ROUND 7: no Account section here any more. Profile, subscription,
+        // devices and sign-out live on their own screen (DesktopAccountScreen,
+        // sidebar item 5) - the same split the extension already had. Keeping
+        // a second copy inside Settings meant two device lists that could
+        // disagree with each other.
 
         const SizedBox(height: 24),
         Center(

@@ -1,83 +1,92 @@
-# Vendored tunnel binaries (x64)
+# Data plane binaries (x64)
 
-Two DLLs must be placed in this folder before building. They are **not**
-committed to the repository because they are large signed binaries with their
-own release cadence, and shipping stale copies of a network driver is a bad
-idea.
+Two files live here. Neither is committed: one is a Microsoft-signed driver
+with its own release cadence, the other is built from source in this very
+repository.
 
 | File | Where it comes from | What it does |
 | --- | --- | --- |
-| `tunnel.dll` | wireguard-windows, `embeddable-dll-service`, built against the **wintun** backend | Exports `WireGuardTunnelService(LPCWSTR confFile)`. Runs the whole tunnel. |
-| `wintun.dll` | <https://www.wintun.net/> (official, Microsoft-WHQL signed) | The TUN adapter driver. Creates the virtual network interface. |
+| `glukvpn-wg.exe` | Built from `../../go/glukvpn-wg` (Go 1.22+, plain `go build`) | The whole WireGuard data plane, in userspace. |
+| `wintun.dll` | <https://www.wintun.net/> (official, Microsoft-WHQL signed) | The virtual network adapter. |
 
-## Why Wintun and not WireGuard-NT
+## Why there is no kernel driver here
 
-Round 6 replaced WireGuard-NT with Wintun, and this is the whole reason the
-desktop tunnel works at all on a modern machine.
+This is the fix for the bug that survived two rounds.
 
-WireGuard-NT is a kernel driver **without** a Microsoft WHQL signature. On
-Windows 10/11 with Core Isolation / Memory Integrity / WDAC enabled — which is
-the default on a lot of hardware — the kernel refuses to load it, and
-`WireGuardCreateAdapter` fails with `ERROR_ACCESS_DENIED (5)`. The service could
-only report `driver_unavailable`; no client-side setting could fix it.
+Round 6 replaced WireGuard-NT with Wintun and kept `tunnel.dll` from
+`wireguard-windows/embeddable-dll-service`. That did not help, and the reason
+is worth writing down: **`tunnel.dll` is not a WireGuard implementation.** It
+is a launcher for the WireGuard-NT *kernel* driver, and it installs
+`wireguard.sys` on first use. `wireguard.sys` carries no Microsoft WHQL
+signature, so on any machine with Core Isolation / Memory Integrity / WDAC
+enabled the kernel refuses to load it and the tunnel dies immediately:
 
-`wintun.dll` is WHQL-signed, so it loads under those policies. Every shipping
-consumer VPN (Proton, Mullvad, and others) uses it for exactly this reason.
+```
+Tunnel worker exited, ok=0, ran 1s
+```
 
-**The pair must match.** `tunnel.dll` speaks to one specific driver backend, so
-it has to be built against Wintun. A `tunnel.dll` built for WireGuard-NT will
-not work next to `wintun.dll`, and the failure looks like a worker that starts
-and dies in under a second.
+Shipping `wintun.dll` beside it changed nothing, because `tunnel.dll` never
+asked for Wintun.
 
-## How to fetch them
+Round 7 removes the kernel driver from the picture entirely. `glukvpn-wg.exe`
+is [wireguard-go](https://git.zx2c4.com/wireguard-go/): the protocol runs in
+userspace and the only thing it needs from the system is a virtual adapter,
+which is exactly what Wintun is - and Wintun **is** WHQL signed. Proton,
+Mullvad and Tailscale all ship this same architecture on Windows.
+
+There is no driver to install, no signing exception to request, and nothing
+for WDAC to object to.
+
+## How to produce them
 
 `desktop\packaging\build-all.ps1` does all of this automatically. Manually:
 
-1. **`wintun.dll`** — download
+1. **`wintun.dll`** - download
    <https://www.wintun.net/builds/wintun-0.14.1.zip> and take
    `wintun/bin/amd64/wintun.dll`.
-2. **`tunnel.dll`** — build it from source with the wintun backend (Go 1.22+):
 
+2. **`glukvpn-wg.exe`** - build it from this repository:
+
+   ```powershell
+   cd native\glukvpn-tunnel-service\go\glukvpn-wg
+   $env:CGO_ENABLED = "0"
+   $env:GOOS = "windows"
+   $env:GOARCH = "amd64"
+   go mod tidy
+   go build -ldflags="-w -s" -trimpath -o ..\..\vendor\amd64\glukvpn-wg.exe .
    ```
-   go build -buildmode=c-shared -o tunnel.dll golang.zx2c4.com/wireguard/windows/embeddable-dll-service
-   ```
+
+   `CGO_ENABLED=0` matters: it keeps the build to pure Go, so no mingw-w64 /
+   gcc toolchain is needed. (The old `-buildmode=c-shared` route did need one.)
 
 Drop both into this directory:
 
 ```
 native/glukvpn-tunnel-service/vendor/amd64/
-  tunnel.dll
+  glukvpn-wg.exe
   wintun.dll
 ```
 
-CMake copies them next to `GlukVpnTunnelService.exe` automatically. If they are
-missing you still get a successful build, but the service will answer every `up`
-request with `driver_unavailable`.
+CMake copies them next to `GlukVpnTunnelService.exe` automatically, and the
+installer picks them up from there. If they are missing you still get a
+successful build, but the service answers every `up` request with
+`driver_unavailable` and the client can never connect.
 
-## Why they are loaded dynamically
+## How the two halves talk
 
-`wireguard_nt.cpp` and `tunnel.cpp` resolve everything with
-`LoadLibraryEx(..., LOAD_WITH_ALTERED_SEARCH_PATH)` against an absolute path in
-the service directory. That means:
-
-- the service starts and reports a clean error when the DLLs are absent,
-  instead of failing to load at process start;
-- the DLL search path cannot be hijacked by dropping a rogue `wintun.dll`
-  into the working directory.
-
-Live statistics no longer come from a driver API. `wireguard_nt.cpp` talks to
-the standard WireGuard UAPI named pipe (`get=1`) and parses `rx_bytes`,
-`tx_bytes` and `last_handshake_time_sec` from the reply.
+- The service writes the `.conf` and spawns
+  `glukvpn-wg.exe <conf> --parent <service pid>`.
+- Stopping is the standard named event `Global\WireGuard-Stop-GlukVPN`.
+- Live statistics come from the standard WireGuard UAPI pipe,
+  `\\.\pipe\ProtectedPrefix\Administrators\WireGuard\GlukVPN`, which
+  `src/wireguard_nt.cpp` reads with a plain `get=1` transaction - the same
+  protocol `wg(8)` speaks on Linux.
+- `--parent` makes the worker exit if the service ever dies without calling
+  `Down()`, so an orphaned adapter can never keep the default route and leave
+  the machine without internet.
 
 ## Licensing
 
-Both components are MIT licensed by Jason A. Donenfeld / WireGuard LLC. Keep
-their license text in the installer's third-party notices. "WireGuard" and
-"Wintun" are registered trademarks — do not imply endorsement.
-
-## Do not check these in
-
-The repository `.gitignore` should keep `*.dll` out of this folder. If you need
-reproducible builds, pin the upstream version in
-`docs/desktop/BUILD-WINDOWS.md` and verify the SHA-256 in CI instead of
-committing the binaries.
+Wintun is distributed by WireGuard LLC under the GPLv2; it is redistributed
+here unmodified. wireguard-go is MIT licensed. "WireGuard" and "Wintun" are
+registered trademarks of Jason A. Donenfeld.

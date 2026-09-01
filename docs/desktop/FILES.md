@@ -112,10 +112,13 @@ transmitted `platform`, and `control-server` already validated it
 | `src/json.h` / `.cpp` | 4 211 / 11 336 | Dependency-free bounded JSON. |
 | `src/log.h` / `.cpp` | 1 024 / 3 992 | Rotating log with key scrubbing. |
 | `README.md` | — | Protocol reference and error codes. |
-| `vendor/amd64/README.md` | — | Where to get `tunnel.dll` and `wintun.dll`. |
+| `go/glukvpn-wg/main.go` | — | The data plane: wireguard-go in userspace over Wintun. |
+| `go/glukvpn-wg/go.mod` | — | Pinned Go module for the data plane. |
+| `vendor/amd64/README.md` | — | How to produce `glukvpn-wg.exe` and fetch `wintun.dll`. |
 
-No third-party source is vendored. The only external binaries are the two
-official WireGuard DLLs, which you download yourself.
+No third-party source is vendored. The only external binary is the official
+WHQL-signed `wintun.dll`; the data plane is built from `go/glukvpn-wg` in this
+repository.
 
 ## New — packaging, 4 files
 

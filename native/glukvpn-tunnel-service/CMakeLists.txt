@@ -74,29 +74,32 @@ if(MSVC)
 endif()
 
 # ---------------------------------------------------------------------------
-# Vendored WireGuard binaries
+# Data plane binaries
 # ---------------------------------------------------------------------------
-# tunnel.dll    from wireguard-windows (embeddable-dll-service), Wintun backend
-# wintun.dll    official WHQL-signed Wintun 0.14.1 - the only driver we ship.
-#               WireGuardNT was dropped in round 6: it is not WHQL signed, so
-#               Device Guard / WDAC / "Memory integrity" machines refused to
-#               create the adapter at all.
+# glukvpn-wg.exe  our own wireguard-go build (go/glukvpn-wg). Implements
+#                 WireGuard in userspace and is spawned by tunnel.cpp.
+# wintun.dll      official WHQL-signed Wintun 0.14.1 - the only driver we ship.
 #
-# These are NOT committed to the repository — see vendor/amd64/README.md for
-# the exact download and verification steps. The build copies whatever is
-# present next to the produced exe.
+# ROUND 7. tunnel.dll is gone. It came from wireguard-windows and was never a
+# WireGuard implementation: it launches the WireGuardNT kernel driver and
+# installs the unsigned wireguard.sys, which Core Isolation / WDAC refuses.
+# That is why the worker died with ok=0, ran 1s. Userspace WireGuard over
+# Wintun needs no kernel driver and no signing exception.
+#
+# Neither file is committed — see vendor/amd64/README.md for how to produce
+# them (desktop\packaging\build-all.ps1 does it automatically).
 set(GLUK_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vendor/amd64")
 
-foreach(dll tunnel.dll wintun.dll)
-    if(EXISTS "${GLUK_VENDOR_DIR}/${dll}")
+foreach(artifact glukvpn-wg.exe wintun.dll)
+    if(EXISTS "${GLUK_VENDOR_DIR}/${artifact}")
         add_custom_command(TARGET GlukVpnTunnelService POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${GLUK_VENDOR_DIR}/${dll}"
-                "$<TARGET_FILE_DIR:GlukVpnTunnelService>/${dll}"
-            COMMENT "Copying ${dll} next to the service")
+                "${GLUK_VENDOR_DIR}/${artifact}"
+                "$<TARGET_FILE_DIR:GlukVpnTunnelService>/${artifact}"
+            COMMENT "Copying ${artifact} next to the service")
     else()
         message(WARNING
-            "${dll} not found in ${GLUK_VENDOR_DIR}. "
+            "${artifact} not found in ${GLUK_VENDOR_DIR}. "
             "The service will build but cannot bring a tunnel up until it is placed there. "
             "See vendor/amd64/README.md.")
     endif()

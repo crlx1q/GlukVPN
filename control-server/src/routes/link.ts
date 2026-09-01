@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
+import { config } from "../config"
 import { writeAudit } from "../lib/audit"
 import { badRequest, forbidden, notFound } from "../lib/errors"
 import { clientIp, getAuthUser, requireUser } from "../middleware/auth"
@@ -76,8 +77,19 @@ export async function linkAuthRoutes(app: FastifyInstance): Promise<void> {
 				pollSecret: started.pollSecret,
 				// The client only ever has to open this. The code is in the query so
 				// the site can confirm without the user typing anything.
-				verifyUrl: `${siteBaseUrl()}/link?code=${encodeURIComponent(started.userCode)}`,
+				//
+				// `api` names the instance that owns this request. prod (:8081) and
+				// beta (:8082) are separate processes with separate memory, so a
+				// request started here can only be approved here - and the site
+				// defaults to whichever channel its config says. Without this the
+				// browser cheerfully asked the wrong server and the user got
+				// "this sign-in link is unknown or has expired" for a link that was
+				// seconds old. It is a channel name, not a URL: the site maps it
+				// through its own allowlist so the parameter cannot point the page
+				// at someone else's API.
+				verifyUrl: `${siteBaseUrl()}/link?code=${encodeURIComponent(started.userCode)}&api=${config.CHANNEL}`,
 				verifyUrlBase: `${siteBaseUrl()}/link`,
+				apiChannel: config.CHANNEL,
 				expiresAt: started.expiresAt.toISOString(),
 				intervalSec: started.intervalSec,
 			})

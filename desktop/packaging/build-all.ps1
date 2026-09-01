@@ -120,58 +120,28 @@ if (-not $SkipNative) {
     $vendor = Join-Path $NativeDir 'vendor\amd64'
     New-Item -ItemType Directory -Force -Path $vendor | Out-Null
 
-    # These two DLLs are the reason the client could not connect.
+    # The tunnel needs exactly two artefacts next to the service, and both are
+    # produced here. A missing one is fatal, never a warning.
     #
-    # ROUND 6 - Wintun. tunnel.cpp loads tunnel.dll (WireGuard's embeddable
-    # tunnel service, Wintun backend) and wintun.dll (the WHQL-signed
-    # driver) at runtime. When
-    # either is absent it returns driver_unavailable and the UI says
-    # "WireGuard driver files are missing". Nothing in the pipeline ever
-    # fetched tunnel.dll, and a missing file was only a warning, so every
-    # build shipped a client that looked fine and could never bring a tunnel
-    # up. Both are downloaded here, and a missing file is now fatal.
+    # ROUND 7 - userspace WireGuard. tunnel.cpp used to load tunnel.dll from
+    # wireguard-windows. That library is not a WireGuard implementation: it is
+    # a launcher for the WireGuardNT kernel driver and installs the unsigned
+    # wireguard.sys on first use. On a machine with Core Isolation / Memory
+    # Integrity / WDAC the kernel refuses that driver, so the worker died with
+    # ok=0, ran 1s. Shipping wintun.dll next to it changed nothing, because
+    # tunnel.dll never asked for Wintun.
+    #
+    # The data plane is now our own Go program, native\...\go\glukvpn-wg:
+    # wireguard-go speaking WireGuard in userspace on top of the WHQL-signed
+    # wintun.dll. No kernel driver and no signing exception - the same design
+    # Proton, Mullvad and Tailscale ship. It is a plain `go build` with cgo
+    # off, so no mingw/gcc toolchain is needed on the build machine either.
     $wgTemp = Join-Path $env:TEMP "glukvpn-wg-$PID"
     New-Item -ItemType Directory -Force -Path $wgTemp | Out-Null
 
-    # ROUND 6: WireGuardNT is gone. It is not WHQL signed, so on any machine
-    # with Device Guard / WDAC / "Memory integrity" switched on the kernel
-    # refuses WireGuardCreateAdapter with ERROR_ACCESS_DENIED (5) and the
-    # worker dies with ok=0, ran 0s - which is exactly what the diagnostics
-    # showed. Wintun is WHQL signed and needs no exception, which is why every
-    # shipping client (Proton, Mullvad, 7vpn) uses it.
-    #
-    # tunnel.dll still comes from wireguard-windows: its embeddable-dll-service
-    # already drives Wintun, and the release zip carries the matching pair.
-    $paired = $false
-    if (-not ((Test-Path (Join-Path $vendor 'tunnel.dll')) -and (Test-Path (Join-Path $vendor 'wintun.dll')))) {
-        $embedZip = Join-Path $wgTemp 'embeddable-dll-service.zip'
-        $embedDir = Join-Path $wgTemp 'embeddable'
-        foreach ($ver in @('0.5.3', '0.5.2', '0.4.9')) {
-            try {
-                Write-Note "Fetching matched tunnel.dll + wireguard.dll pair (embeddable-dll-service $ver)"
-                Invoke-WebRequest -Uri "https://download.wireguard.com/windows-client/embeddable-dll-service-amd64-$ver.zip" -OutFile $embedZip -UseBasicParsing
-                Expand-Archive -Path $embedZip -DestinationPath $embedDir -Force
-                foreach ($dll in @('tunnel.dll', 'wintun.dll')) {
-                    $found = Get-ChildItem -Path $embedDir -Filter $dll -Recurse |
-                        Sort-Object { if ($_.FullName -match 'amd64') { 0 } else { 1 } } |
-                        Select-Object -First 1
-                    if ($found) { Copy-Item $found.FullName $vendor -Force }
-                }
-                if (Test-Path (Join-Path $vendor 'tunnel.dll')) {
-                    $paired = $true
-                    Write-Note "  matched pair taken from release $ver"
-                    break
-                }
-            } catch {
-                Write-Note "  release $ver unavailable, trying an older one"
-            }
-        }
-    } else {
-        $paired = $true
-    }
-
-    # wintun.dll is never optional: it *is* the driver. 0.14.1 is the official
-    # WHQL-signed build and the exact file the commercial clients ship.
+    # 1. wintun.dll is never optional: it *is* the adapter. 0.14.1 is the
+    #    official WHQL-signed build and the exact file the commercial clients
+    #    ship.
     if (-not (Test-Path (Join-Path $vendor 'wintun.dll'))) {
         Write-Note 'Fetching wintun.dll (Wintun 0.14.1, WHQL signed)'
         $wintunZip = Join-Path $wgTemp 'wintun.zip'
@@ -184,26 +154,31 @@ if (-not $SkipNative) {
         Copy-Item $wintunDll.FullName $vendor -Force
     }
 
-    if (-not (Test-Path (Join-Path $vendor 'tunnel.dll'))) {
-        Write-Note 'Building tunnel.dll from wireguard-windows source (Wintun backend)'
-        $goCmd = Get-Command 'go' -ErrorAction SilentlyContinue
-        if ($goCmd) {
-            $wgWinDir = Join-Path $wgTemp 'wg-windows'
-            git clone --depth 1 https://git.zx2c4.com/wireguard-windows $wgWinDir
-            Push-Location (Join-Path $wgWinDir 'embeddable-dll-service')
-            $env:CGO_ENABLED = "1"
-            $env:GOOS = "windows"
-            $env:GOARCH = "amd64"
-            go build -buildmode=c-shared -ldflags="-w -s" -trimpath -o (Join-Path $vendor 'tunnel.dll') .
-            Pop-Location
-        }
+    # 2. glukvpn-wg.exe - the data plane itself.
+    $goSource = Join-Path $NativeDir 'go\glukvpn-wg'
+    $workerExe = Join-Path $vendor 'glukvpn-wg.exe'
+    if (-not (Get-Command 'go' -ErrorAction SilentlyContinue)) {
+        throw 'Go 1.22+ is required to build the tunnel data plane (glukvpn-wg.exe). Install it from https://go.dev/dl/ and run this script again.'
+    }
+    Write-Note 'Building glukvpn-wg.exe (wireguard-go, userspace over Wintun)'
+    Push-Location $goSource
+    try {
+        $env:CGO_ENABLED = "0"
+        $env:GOOS = "windows"
+        $env:GOARCH = "amd64"
+        & go mod tidy
+        if ($LASTEXITCODE -ne 0) { throw 'go mod tidy failed for the tunnel data plane.' }
+        & go build -ldflags="-w -s" -trimpath -o $workerExe .
+        if ($LASTEXITCODE -ne 0) { throw 'go build failed for the tunnel data plane.' }
+    } finally {
+        Pop-Location
     }
 
     Remove-Item $wgTemp -Recurse -Force -ErrorAction SilentlyContinue
 
-    foreach ($dll in @('tunnel.dll', 'wintun.dll')) {
-        if (-not (Test-Path (Join-Path $vendor $dll))) {
-            throw "$dll is missing from vendor\amd64 and could not be downloaded. Without it the client reports driver_unavailable and can never connect. See $vendor\README.md"
+    foreach ($artifact in @('glukvpn-wg.exe', 'wintun.dll')) {
+        if (-not (Test-Path (Join-Path $vendor $artifact))) {
+            throw "$artifact is missing from vendor\amd64 and could not be produced. Without it the client reports driver_unavailable and can never connect. See $vendor\README.md"
         }
     }
 
@@ -313,8 +288,8 @@ $serviceOut = Join-Path $NativeBuild $Configuration
 if (Test-Path $serviceOut) {
     Copy-Item (Join-Path $serviceOut 'GlukVpnTunnelService.exe') `
         (Join-Path $Stage 'service') -Force
-    foreach ($dll in @('tunnel.dll', 'wintun.dll')) {
-        $source = Join-Path $serviceOut $dll
+    foreach ($artifact in @('glukvpn-wg.exe', 'wintun.dll')) {
+        $source = Join-Path $serviceOut $artifact
         if (Test-Path $source) {
             Copy-Item $source (Join-Path $Stage 'service') -Force
         }

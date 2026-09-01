@@ -27,7 +27,7 @@ They are intentionally not committed. See
 
 | File | Source |
 | --- | --- |
-| `tunnel.dll` | Built from `golang.zx2c4.com/wireguard/windows/embeddable-dll-service` with the **wintun** backend (`go build -buildmode=c-shared`, Go 1.22+). `build-all.ps1` does this for you. |
+| `glukvpn-wg.exe` | Built from `native/glukvpn-tunnel-service/go/glukvpn-wg` — wireguard-go running in userspace. Plain `go build` with `CGO_ENABLED=0` (Go 1.22+), so no mingw/gcc is needed. `build-all.ps1` does this for you. |
 | `wintun.dll` | <https://www.wintun.net/builds/wintun-0.14.1.zip> → `wintun/bin/amd64/` |
 
 > Round 6 replaced WireGuard-NT with **Wintun**. WireGuard-NT is not
@@ -171,7 +171,7 @@ flutter build apk --debug
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| `driver_unavailable` on Connect | Missing `tunnel.dll` / `wintun.dll` | Step 2, then rebuild |
+| `driver_unavailable` on Connect | Missing `glukvpn-wg.exe` / `wintun.dll` | Step 2, then rebuild |
 | `service_unavailable` | Service not running | `sc query GlukVpnTunnel`, then `GlukVpnTunnelService.exe --start` |
 | `client_rejected` | UI running from outside the install directory | Expected during development — use `--console --allow-any-client` |
 | `protocol_mismatch` | Service and app built from different revisions | Rebuild both |

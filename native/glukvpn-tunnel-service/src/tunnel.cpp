@@ -14,9 +14,64 @@
 namespace gluk {
 namespace {
 
-// tunnel.dll from wireguard-windows (embeddable-dll-service).
-// Blocks until the tunnel stops.
-using WIREGUARD_TUNNEL_SERVICE_FUNC = BOOL(WINAPI*)(LPCWSTR confFile);
+// The data plane is a separate process: glukvpn-wg.exe, a wireguard-go build
+// that speaks WireGuard in userspace on top of the WHQL-signed wintun.dll.
+//
+// It replaces tunnel.dll from wireguard-windows, which was never a WireGuard
+// implementation at all - it is a launcher for the WireGuardNT kernel driver,
+// and it installs the unsigned wireguard.sys on first use. With Core Isolation
+// on, the kernel refuses that driver and the worker died after one second
+// (ok=0, ran 1s). Nothing in the new worker touches a kernel driver.
+constexpr wchar_t kWorkerExe[] = L"glukvpn-wg.exe";
+constexpr wchar_t kWintunDll[] = L"wintun.dll";
+
+bool FileExists(const std::wstring& path) {
+    const DWORD attributes = GetFileAttributesW(path.c_str());
+    return attributes != INVALID_FILE_ATTRIBUTES &&
+           !(attributes & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+// Last few hundred bytes of the worker log, flattened to one line. Without
+// this a failure reaches the UI as "the tunnel stopped"; with it the user gets
+// the actual sentence, e.g. "cannot resolve the server address".
+std::string ReadTail(const std::wstring& path, DWORD maxBytes) {
+    HANDLE file = CreateFileW(
+        path.c_str(), GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return {};
+
+    LARGE_INTEGER size{};
+    if (!GetFileSizeEx(file, &size)) {
+        CloseHandle(file);
+        return {};
+    }
+
+    DWORD want = maxBytes;
+    if (size.QuadPart < static_cast<LONGLONG>(want)) {
+        want = static_cast<DWORD>(size.QuadPart);
+    }
+
+    LARGE_INTEGER offset{};
+    offset.QuadPart = size.QuadPart - static_cast<LONGLONG>(want);
+    SetFilePointerEx(file, offset, nullptr, FILE_BEGIN);
+
+    std::string buffer(static_cast<size_t>(want), '\0');
+    DWORD read = 0;
+    if (want == 0 || !ReadFile(file, buffer.data(), want, &read, nullptr)) {
+        read = 0;
+    }
+    CloseHandle(file);
+    buffer.resize(read);
+
+    for (char& c : buffer) {
+        if (c == '\r' || c == '\n' || c == '\t') c = ' ';
+    }
+    const size_t begin = buffer.find_first_not_of(' ');
+    if (begin == std::string::npos) return {};
+    const size_t end = buffer.find_last_not_of(' ');
+    return buffer.substr(begin, end - begin + 1);
+}
 
 int64_t NowUnix() {
     return std::chrono::duration_cast<std::chrono::seconds>(
@@ -153,26 +208,12 @@ Tunnel& Tunnel::Instance() {
     return instance;
 }
 
-bool Tunnel::LoadTunnelDll() {
-    if (tunnelServiceFn_) return true;
-
-    const std::wstring path = AppData::ExecutableDir() + L"\\tunnel.dll";
-    tunnelDll_ = LoadLibraryExW(path.c_str(), nullptr,
-                                LOAD_WITH_ALTERED_SEARCH_PATH);
-    if (!tunnelDll_) {
-        Log::LastError("LoadLibrary(tunnel.dll) failed", GetLastError());
-        return false;
-    }
-
-    tunnelServiceFn_ = reinterpret_cast<void*>(
-        GetProcAddress(tunnelDll_, "WireGuardTunnelService"));
-    if (!tunnelServiceFn_) {
-        Log::Error("tunnel.dll does not export WireGuardTunnelService");
-        FreeLibrary(tunnelDll_);
-        tunnelDll_ = nullptr;
-        return false;
-    }
-    return true;
+bool Tunnel::ResolveWorkerPaths(std::wstring& exePath,
+                                std::wstring& wintunPath) const {
+    const std::wstring dir = AppData::ExecutableDir();
+    exePath = dir + L"\\" + kWorkerExe;
+    wintunPath = dir + L"\\" + kWintunDll;
+    return FileExists(exePath) && FileExists(wintunPath);
 }
 
 std::wstring Tunnel::StopEventName() const {
@@ -182,33 +223,125 @@ std::wstring Tunnel::StopEventName() const {
 }
 
 bool Tunnel::DriverReady() {
-    // ROUND 6: the pair is tunnel.dll + wintun.dll. WireGuardNT is gone - it is
-    // not WHQL signed, so on a machine with Device Guard / WDAC / "Memory
-    // integrity" the kernel rejects adapter creation with ERROR_ACCESS_DENIED
-    // and the worker died instantly. Wintun needs no exception at all.
-    //
-    // Both files are checked by actually loading them: a truncated or
-    // wrong-architecture download is far more common than a missing file, and
-    // only LoadLibrary catches that.
-    return LoadTunnelDll() && wg::Api::Instance().Load();
+    // ROUND 7: the pair is glukvpn-wg.exe + wintun.dll, and there is no kernel
+    // driver in the picture at all. Both files must sit next to the service.
+    std::wstring exePath;
+    std::wstring wintunPath;
+    if (!ResolveWorkerPaths(exePath, wintunPath)) {
+        Log::Error(
+            "glukvpn-wg.exe or wintun.dll is missing next to the service");
+        return false;
+    }
+
+    // Loading wintun here is only for the version string and to catch a
+    // truncated or wrong-architecture download early. It is not required for
+    // the tunnel: the worker process loads its own copy.
+    if (!wg::Api::Instance().Load()) {
+        Log::Warn("wintun.dll could not be loaded by the service; the worker "
+                  "will try on its own");
+    }
+    return true;
 }
 
 std::string Tunnel::DriverDescription() {
     const std::string version = wg::Api::Instance().Version();
-    return version.empty() ? std::string("wintun unavailable") : version;
+    return version.empty() ? std::string("wintun (userspace)")
+                           : version + " (userspace)";
 }
 
 void Tunnel::WorkerMain(std::wstring configPath) {
-    const auto fn =
-        reinterpret_cast<WIREGUARD_TUNNEL_SERVICE_FUNC>(tunnelServiceFn_);
+    std::wstring exePath;
+    std::wstring wintunPath;
+    const bool haveBinaries = ResolveWorkerPaths(exePath, wintunPath);
 
+    const std::wstring logPath = AppData::RunDir() + L"\\tunnel-worker.log";
     const int64_t startedAt = NowUnix();
-    Log::Info("Tunnel worker starting (driver " + DriverDescription() + ")");
-    // Blocks for the whole lifetime of the tunnel.
-    const BOOL ok = fn(configPath.c_str());
+
+    bool ok = false;
+    DWORD exitCode = 0;
+    std::string detail;
+
+    if (!haveBinaries) {
+        detail = "glukvpn-wg.exe or wintun.dll is missing next to the service";
+        Log::Error("Tunnel worker cannot start: " + detail);
+    } else {
+        Log::Info("Tunnel worker starting (" + DriverDescription() + ")");
+
+        // The worker inherits exactly one handle: the log file. Its stdout and
+        // stderr go straight into it, which cannot deadlock the way an unread
+        // pipe can when the child is chatty.
+        SECURITY_ATTRIBUTES sa{};
+        sa.nLength = sizeof(sa);
+        sa.bInheritHandle = TRUE;
+
+        HANDLE logFile = CreateFileW(
+            logPath.c_str(), FILE_APPEND_DATA,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, &sa,
+            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+
+        STARTUPINFOW si{};
+        si.cb = sizeof(si);
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+        if (logFile != INVALID_HANDLE_VALUE) {
+            si.dwFlags |= STARTF_USESTDHANDLES;
+            si.hStdInput = nullptr;
+            si.hStdOutput = logFile;
+            si.hStdError = logFile;
+        }
+
+        // --parent lets the worker tear the adapter down if this service ever
+        // dies without calling Down(). An orphaned tunnel owning the default
+        // route is exactly how a machine ends up with no internet at all.
+        std::wstring command = L"\"" + exePath + L"\" \"" + configPath +
+                               L"\" --parent " +
+                               std::to_wstring(GetCurrentProcessId());
+        const std::wstring workingDir = AppData::ExecutableDir();
+
+        PROCESS_INFORMATION pi{};
+        const BOOL spawned = CreateProcessW(
+            exePath.c_str(), command.data(), nullptr, nullptr,
+            logFile != INVALID_HANDLE_VALUE ? TRUE : FALSE, CREATE_NO_WINDOW,
+            nullptr, workingDir.c_str(), &si, &pi);
+
+        if (!spawned) {
+            const DWORD error = GetLastError();
+            Log::LastError("CreateProcess(glukvpn-wg.exe) failed", error);
+            detail = "the tunnel worker could not be started (Windows error " +
+                     std::to_string(error) + ")";
+        } else {
+            CloseHandle(pi.hThread);
+
+            // Wait, but never for ever. If a stop was asked for and the worker
+            // ignores it, the adapter is taken down by force instead of being
+            // left behind holding the default route.
+            int graceTicks = 0;
+            for (;;) {
+                const DWORD waited = WaitForSingleObject(pi.hProcess, 500);
+                if (waited != WAIT_TIMEOUT) break;
+                if (!stopRequested_.load()) continue;
+                if (++graceTicks < 16) continue;
+                Log::Warn("Tunnel worker ignored the stop event, terminating");
+                TerminateProcess(pi.hProcess, 1);
+                WaitForSingleObject(pi.hProcess, 3000);
+                break;
+            }
+
+            if (!GetExitCodeProcess(pi.hProcess, &exitCode)) exitCode = 1;
+            CloseHandle(pi.hProcess);
+            ok = exitCode == 0;
+        }
+
+        if (logFile != INVALID_HANDLE_VALUE) CloseHandle(logFile);
+    }
+
     const int64_t ranFor = NowUnix() - startedAt;
     Log::Info(std::string("Tunnel worker exited, ok=") + (ok ? "1" : "0") +
-              ", ran " + std::to_string(ranFor) + "s");
+              ", code=" + std::to_string(exitCode) + ", ran " +
+              std::to_string(ranFor) + "s");
+
+    if (!ok && detail.empty()) detail = ReadTail(logPath, 512);
+    if (!ok && !detail.empty()) Log::Error("Tunnel worker: " + detail);
 
     // No worker means no tunnel, and no tunnel must never mean "no internet".
     // The locks are dropped here and not only in Down(), because a tunnel that
@@ -223,26 +356,28 @@ void Tunnel::WorkerMain(std::wstring configPath) {
         if (!ok) {
             status_.state = TunnelState::Error;
             if (ranFor <= 5) {
-                // tunnel.dll never got as far as a working adapter. Since the
-                // Wintun migration the usual cause is a tunnel.dll built
-                // against a different Wintun release than the one shipped
-                // beside it, so the build takes both from one archive.
+                // The worker never got as far as a working adapter. The
+                // message now carries the worker's own last line, which is the
+                // difference between "it broke" and "wintun.dll is missing".
                 status_.errorCode = "tunnel_start_failed";
                 status_.errorMessage =
-                    "The tunnel could not be started (driver " +
-                    DriverDescription() +
-                    "). tunnel.dll must be built against Wintun and ship "
-                    "beside wintun.dll from the same release.";
+                    detail.empty()
+                        ? std::string("The tunnel could not be started.")
+                        : "The tunnel could not be started: " + detail;
             } else {
                 status_.errorCode = "tunnel_error";
                 status_.errorMessage =
-                    "WireGuard tunnel terminated unexpectedly";
+                    detail.empty()
+                        ? std::string(
+                              "WireGuard tunnel terminated unexpectedly")
+                        : "WireGuard tunnel stopped: " + detail;
             }
         } else {
             status_.state = TunnelState::Down;
         }
     }
     status_.killSwitchActive = false;
+    stopRequested_ = false;
 }
 
 void Tunnel::ReleaseNetworkLocks(const char* why) {
@@ -267,7 +402,8 @@ bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
     if (!DriverReady()) {
         errorCode = "driver_unavailable";
         errorMessage =
-            "tunnel.dll or wintun.dll is missing. Reinstall GlukVPN.";
+            "The tunnel worker (glukvpn-wg.exe) or wintun.dll is missing. "
+            "Reinstall GlukVPN.";
         status_.state = TunnelState::Error;
         status_.errorCode = errorCode;
         status_.errorMessage = errorMessage;
@@ -312,6 +448,7 @@ bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
     everHandshaked_ = false;
 
     running_ = true;
+    stopRequested_ = false;
     if (worker_.joinable()) worker_.join();
     worker_ = std::thread(&Tunnel::WorkerMain, this, configPath_);
 
@@ -344,6 +481,10 @@ void Tunnel::Down() {
         Wfp::Instance().DisableKillSwitch();
         SplitTunnel::Instance().Clear();
 
+        // Read by the worker thread, which stops waiting politely once it is
+        // set and kills the data plane if it has not exited within 8 seconds.
+        stopRequested_ = true;
+
         if (running_) {
             HANDLE stop = CreateEventW(nullptr, TRUE, FALSE,
                                        StopEventName().c_str());
@@ -369,7 +510,8 @@ void Tunnel::Down() {
     }
 
     if (worker.joinable()) {
-        // tunnel.dll unwinds quickly; do not hold the lock while waiting.
+        // The worker thread returns as soon as the data plane process does,
+        // and it is bounded by the grace timer. Do not hold the lock here.
         worker.join();
     }
 
@@ -493,14 +635,10 @@ bool Tunnel::SetSplit(SplitMode mode, const std::vector<std::string>& apps,
 }
 
 void Tunnel::Shutdown() {
+    // Down() already stops the data plane process and drops every filter.
+    // Nothing else is held open: the worker is a child process, not a DLL
+    // loaded into this one.
     Down();
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (tunnelDll_) {
-        FreeLibrary(tunnelDll_);
-        tunnelDll_ = nullptr;
-        tunnelServiceFn_ = nullptr;
-    }
 }
 
 } // namespace gluk

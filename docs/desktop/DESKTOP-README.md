@@ -13,10 +13,11 @@
 | Inno Setup 6 | Установщик (опционально) |
 | 7-Zip | Один exe-файл (опционально) |
 
-Плюс две DLL от WireGuard — их нельзя класть в git, поэтому скачай сам в
-`native\glukvpn-tunnel-service\vendor\amd64\`:
+Плюс два файла в `native\glukvpn-tunnel-service\vendor\amd64\` — в git их нет:
 
-- `tunnel.dll` — <https://download.wireguard.com/windows-client/> → `embeddable-dll-service/amd64/`
+- `glukvpn-wg.exe` — собирается из `native\glukvpn-tunnel-service\go\glukvpn-wg`
+  командой `go build` (Go 1.22+, `CGO_ENABLED=0`, mingw не нужен). Это наш
+  data plane: WireGuard целиком в userspace, без драйверов ядра
 - `wintun.dll` — <https://www.wintun.net/builds/wintun-0.14.1.zip> → `wintun/bin/amd64/`
   (WHQL-подписанный драйвер; WireGuard-NT больше не используется — его блокирует
   «Изоляция ядра»)

@@ -8,7 +8,7 @@ unelevated and the user sees exactly **one** UAC prompt — during installation.
 glukvpn.exe  (Flutter, user)          GlukVpnTunnelService.exe (LocalSystem)
       |                                          |
       |  \\.\pipe\GlukVPN.tunnel  (JSON lines)   |
-      |----------------------------------------->|  tunnel.dll  -> WireGuard adapter
+      |----------------------------------------->|  glukvpn-wg.exe -> wireguard-go
       |<-----------------------------------------|  wintun.dll   -> WHQL adapter
       |                                          |  UAPI pipe   -> handshake, bytes
                                                  |  WFP -> kill switch, per-app rules
@@ -40,7 +40,7 @@ cmake --build native\glukvpn-tunnel-service\build --config Release
 
 Output: `build\Release\GlukVpnTunnelService.exe`.
 
-Place `tunnel.dll` and `wintun.dll` in `vendor/amd64/` first — see the README
+Place `glukvpn-wg.exe` and `wintun.dll` in `vendor/amd64/` first — see the README
 there. CMake copies them next to the executable.
 
 ## Run it by hand
