@@ -42,7 +42,7 @@
   <link rel="stylesheet" href="/assets/css/app-ui.css?v=0.7.4">
   <link rel="stylesheet" href="/assets/css/utilities.css?v=0.7.4">
   <link rel="stylesheet" href="/assets/css/fx.css?v=0.7.4">
-  <link rel="stylesheet" href="/assets/css/auth.css?v=0.7.4">
+  <link rel="stylesheet" href="/assets/css/auth.css?v=0.9.0">
   <script src="/assets/js/config.js?v=0.7.4" defer></script>
   <script src="/assets/js/i18n.js?v=0.7.4" defer></script>
   <script src="/assets/js/world-dots.js?v=0.7.4" defer></script>
@@ -117,10 +117,15 @@
           <p class="auth-card__sub" data-auth-sub>Те же логин и пароль, что и в приложении GlukVPN.</p>
         </div>
 
-        <div class="auth-tabs" role="tablist" aria-label="Вход или регистрация">
+        <!-- РАУНД 9 (2.1): три режима одной карточки. Раньше вкладка
+             «Регистрация» была заглушкой со ссылкой на /register/, а «Забыли
+             пароль?» уводило на третью страницу: три разных адреса для одного
+             и того же действия — «получить доступ к аккаунту». -->
+        <div class="auth-tabs" role="tablist" aria-label="Вход, регистрация или восстановление доступа">
           <span class="auth-tabs__ind" data-auth-ind aria-hidden="true"></span>
           <button class="auth-tab is-active" type="button" role="tab" aria-selected="true" data-auth-tab="login">Вход</button>
           <button class="auth-tab" type="button" role="tab" aria-selected="false" data-auth-tab="register">Регистрация</button>
+          <button class="auth-tab" type="button" role="tab" aria-selected="false" data-auth-tab="recover">Восстановление</button>
         </div>
 
         <div class="auth-panes">
@@ -144,19 +149,175 @@
               </label>
               <button class="btn btn--primary btn--lg btn--block" type="submit">Войти</button>
               <p class="auth-msg" data-login-msg role="status" aria-live="polite"></p>
-              <p class="auth-hint"><a class="auth-link" href="/recover/">Забыли пароль?</a> — пришлём код на почту или в Telegram. Нет аккаунта? <a class="auth-link" href="/register/">Регистрация</a>.</p>
+              <p class="auth-hint"><a class="auth-link" href="/login/?mode=recover" data-auth-goto="recover">Забыли пароль?</a> — пришлём код на почту или в Telegram. Нет аккаунта? <a class="auth-link" href="/login/?mode=register" data-auth-goto="register">Регистрация</a>.</p>
             </form>
           </div>
 
           <div class="auth-pane" data-auth-pane="register" hidden>
-            <div class="auth-invite">
-              <span class="icon-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="8" cy="12" r="4" stroke="currentColor" stroke-width="1.6"/><path d="M12 12h8m-3 0v3m3-3v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
-              <h2 class="h3">Создать аккаунт</h2>
-              <p class="muted">Три шага: почта и пароль, шестизначный код из письма, подтверждение в Telegram. Один аккаунт работает на сайте, в Windows, на Android и в расширении.</p>
-              <a class="btn btn--primary btn--block" href="/register/">Перейти к регистрации</a>
+            <ol class="reg-steps" data-reg-progress data-at="form" aria-hidden="true">
+              <li class="reg-steps__item" data-for="form"><b>1</b><span>Почта</span></li>
+              <li class="reg-steps__item" data-for="code"><b>2</b><span>Код</span></li>
+              <li class="reg-steps__item" data-for="telegram"><b>3</b><span>Telegram</span></li>
+            </ol>
+
+            <!-- Шаг 1 — почта и пароль -->
+            <div data-reg-step="form">
+              <form class="form" data-reg-form novalidate>
+                <label class="field">
+                  <span class="field__label">Email</span>
+                  <span class="field__box">
+                    <input class="input" type="email" name="email" autocomplete="email" placeholder="you@example.com" required>
+                  </span>
+                </label>
+                <label class="field">
+                  <span class="field__label">Пароль</span>
+                  <span class="field__box">
+                    <input class="input" type="password" name="password" autocomplete="new-password" placeholder="Минимум 8 символов" required>
+                    <button class="pw-toggle" type="button" data-pw-toggle aria-label="Показать пароль">
+                      <span class="pw-toggle__ic pw-toggle__ic--off"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 3l18 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.6 6.3A9.6 9.6 0 0 1 12 6.2c4.6 0 8 3.3 9.3 5.8-.6 1.2-1.7 2.7-3.3 3.9M6.5 7.9C4.6 9.1 3.3 10.8 2.7 12c1.3 2.5 4.7 5.8 9.3 5.8 1.2 0 2.3-.2 3.3-.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+                      <span class="pw-toggle__ic pw-toggle__ic--on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3.1"/></svg></span>
+                    </button>
+                  </span>
+                </label>
+                <label class="field">
+                  <span class="field__label">Повторите пароль</span>
+                  <span class="field__box">
+                    <input class="input" type="password" name="password2" autocomplete="new-password" placeholder="Ещё раз" required>
+                  </span>
+                </label>
+                <!-- Слот капчи стоит над кнопкой, а не в конце формы:
+                     проверка — часть шага, а не сноска. register.js сам
+                     подпишет его и скроет, если капча на сервере выключена. -->
+                <div class="captcha" data-turnstile="register"></div>
+                <button class="btn btn--primary btn--lg btn--block" type="submit">Продолжить</button>
+                <p class="auth-msg" id="reg-msg" role="status" aria-live="polite"></p>
+                <p class="auth-hint">Продолжая, вы соглашаетесь с <a href="/terms/">условиями</a> и <a href="/privacy/">политикой конфиденциальности</a>.</p>
+              </form>
+            </div>
+
+            <!-- Шаг 2 — код из письма -->
+            <div data-reg-step="code" hidden>
+              <form class="form" data-reg-code-form novalidate>
+                <p class="auth-card__sub">Мы отправили код на <b id="reg-code-to"></b>. Он действует <span data-code-ttl>5</span> мин.</p>
+                <p class="notice notice--warn" id="reg-code-warn" hidden>Письмо отправить не удалось. Напишите в поддержку — подтвердим вручную.</p>
+                <label class="field">
+                  <span class="field__label">Код из письма</span>
+                  <span class="field__box">
+                    <input class="input input--code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" required>
+                  </span>
+                </label>
+                <button class="btn btn--primary btn--lg btn--block" type="submit">Подтвердить</button>
+                <p class="auth-msg" id="reg-code-msg" role="status" aria-live="polite"></p>
+                <button class="btn btn--ghost btn--block" type="button" id="reg-code-resend">Отправить код ещё раз</button>
+              </form>
+            </div>
+
+            <!-- Шаг 3 — Telegram -->
+            <div data-reg-step="telegram" hidden>
+              <div class="auth-invite">
+                <span class="icon-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg></span>
+                <h2 class="h3">Последний шаг — Telegram</h2>
+                <p class="muted">Откройте бота и нажмите «Поделиться контактом». Номер нужен только для того, чтобы на одного человека был один аккаунт; мы не звоним и не пишем на него.</p>
+                <a class="btn btn--primary btn--lg btn--block" id="reg-tg-open" href="#" target="_blank" rel="noopener">Открыть Telegram</a>
+                <p class="auth-hint">Если бот не открылся сам — найдите его в Telegram и отправьте код: <b class="mono" id="reg-tg-code"></b></p>
+                <p class="auth-status"><span class="spinner" aria-hidden="true"></span> Ждём подтверждения…</p>
+                <p class="auth-msg" id="reg-tg-msg" role="status" aria-live="polite"></p>
+              </div>
+            </div>
+
+            <!-- Готово -->
+            <div data-reg-step="done" hidden>
+              <div class="auth-invite">
+                <span class="icon-badge icon-badge--ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg></span>
+                <h2 class="h3">Аккаунт создан</h2>
+                <p class="muted">Ваш логин: <b class="mono" id="reg-done-login"></b>. Войти можно и по логину, и по почте — на сайте, в приложении и в расширении.</p>
+                <a class="btn btn--primary btn--lg btn--block" href="/login/" data-auth-goto="login">Войти</a>
+                <a class="btn btn--ghost btn--block" href="/download/">Скачать приложение</a>
+              </div>
+            </div>
+
+            <!-- Регистрация закрыта: либо канал не prod, либо сервер сказал
+                 selfRegistration:false, либо бот не настроен. Текст подменяет
+                 register.js — причина должна быть названа, а не угадана. -->
+            <div class="auth-invite" data-reg-step="closed" id="reg-closed" hidden>
+              <span class="icon-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg></span>
+              <h2 class="h3">Регистрация сейчас закрыта</h2>
+              <p class="muted" id="reg-closed-msg">Сейчас аккаунты выдаются вручную. Напишите нам — откроем доступ.</p>
               <a class="btn btn--ghost btn--block" href="https://t.me/glukvpn" data-telegram target="_blank" rel="noopener"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>Написать в Telegram</a>
               <a class="btn btn--ghost btn--block" href="mailto:support@gluk.tech" data-support-email><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.4" stroke="currentColor" stroke-width="1.6"/><path d="M4 7l8 5.6L20 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-fill-text>support@gluk.tech</span></a>
-              <p class="auth-hint">Уже есть аккаунт? Он подходит и для сайта — вернитесь на вкладку «Вход». <a class="auth-link" href="/recover/">Забыли пароль?</a></p>
+              <p class="auth-hint">Уже есть аккаунт? <a class="auth-link" href="/login/" data-auth-goto="login">Вернуться ко входу</a>. <a class="auth-link" href="/login/?mode=recover" data-auth-goto="recover">Забыли пароль?</a></p>
+            </div>
+          </div>
+          <div class="auth-pane" data-auth-pane="recover" hidden>
+            <!-- Шаг 1 — куда прислать код -->
+            <div data-reg-step="request">
+              <form class="form" data-rec-form novalidate>
+                <label class="field">
+                  <span class="field__label">Логин или email</span>
+                  <span class="field__box">
+                    <input class="input" type="text" name="identifier" autocomplete="username" placeholder="gluk_user" required>
+                  </span>
+                </label>
+
+                <fieldset class="choice">
+                  <legend class="field__label">Куда прислать код</legend>
+                  <label class="choice__opt">
+                    <input type="radio" name="channel" value="email" checked>
+                    <span>На почту</span>
+                  </label>
+                  <label class="choice__opt">
+                    <input type="radio" name="channel" value="telegram">
+                    <span>В Telegram</span>
+                  </label>
+                </fieldset>
+
+                <div class="captcha" data-turnstile="recover"></div>
+                <button class="btn btn--primary btn--lg btn--block" type="submit">Прислать код</button>
+                <p class="auth-msg" id="rec-msg" role="status" aria-live="polite"></p>
+                <p class="auth-hint">Если аккаунт существует, код придёт в течение минуты. Мы не сообщаем, зарегистрирован ли адрес — иначе этой формой можно было бы перебирать чужие почты.</p>
+              </form>
+            </div>
+
+            <!-- Шаг 2 — код и новый пароль -->
+            <div data-reg-step="reset" hidden>
+              <form class="form" data-rec-reset-form novalidate>
+                <p class="auth-card__sub" id="rec-where"></p>
+                <label class="field">
+                  <span class="field__label">Код подтверждения</span>
+                  <span class="field__box">
+                    <input class="input input--code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" required>
+                  </span>
+                </label>
+                <label class="field">
+                  <span class="field__label">Новый пароль</span>
+                  <span class="field__box">
+                    <input class="input" type="password" name="password" autocomplete="new-password" placeholder="Минимум 8 символов" required>
+                    <button class="pw-toggle" type="button" data-pw-toggle aria-label="Показать пароль">
+                      <span class="pw-toggle__ic pw-toggle__ic--off"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 3l18 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.6 6.3A9.6 9.6 0 0 1 12 6.2c4.6 0 8 3.3 9.3 5.8-.6 1.2-1.7 2.7-3.3 3.9M6.5 7.9C4.6 9.1 3.3 10.8 2.7 12c1.3 2.5 4.7 5.8 9.3 5.8 1.2 0 2.3-.2 3.3-.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+                      <span class="pw-toggle__ic pw-toggle__ic--on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3.1"/></svg></span>
+                    </button>
+                  </span>
+                </label>
+                <label class="field">
+                  <span class="field__label">Повторите пароль</span>
+                  <span class="field__box">
+                    <input class="input" type="password" name="password2" autocomplete="new-password" placeholder="Ещё раз" required>
+                  </span>
+                </label>
+                <button class="btn btn--primary btn--lg btn--block" type="submit">Сохранить пароль</button>
+                <p class="auth-msg" id="rec-reset-msg" role="status" aria-live="polite"></p>
+                <p class="auth-hint">После смены пароля все активные сессии завершаются — придётся войти заново на всех устройствах.</p>
+              </form>
+            </div>
+
+            <!-- Готово -->
+            <div data-reg-step="reset-done" hidden>
+              <div class="auth-invite">
+                <span class="icon-badge icon-badge--ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg></span>
+                <h2 class="h3">Пароль обновлён</h2>
+                <p class="muted">Теперь войдите с новым паролем — на сайте и во всех приложениях.</p>
+                <a class="btn btn--primary btn--lg btn--block" href="/login/" data-auth-goto="login">Войти</a>
+              </div>
             </div>
           </div>
         </div>
@@ -193,7 +354,11 @@
     </div>
   </section>
 
-  <script src="/assets/js/login.js?v=0.7.4" defer></script>
+  <!-- register.js ведёт три шага регистрации и восстановление, login.js — вход
+       и переключение вкладок. Оба работают на одной карточке и не делят
+       между собой ни одного элемента, кроме самих панелей. -->
+  <script src="/assets/js/register.js?v=0.9.0" defer></script>
+  <script src="/assets/js/login.js?v=0.9.0" defer></script>
 
   </main>
 

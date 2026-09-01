@@ -676,3 +676,81 @@
 .choice__opt:hover{border-color:rgba(139,92,246,.42);background:rgba(139,92,246,.07)}
 .choice__opt input{accent-color:#8b5cf6;margin:0}
 @media (max-width:560px){.reg-steps__item{font-size:10px}.input--code{font-size:19px;letter-spacing:.26em}.choice{flex-direction:column}}
+
+/* ---------------------------------------------------------------- round 9 --
+ * The captcha slot, and the three-mode /login/ card.
+ */
+
+/* The captcha was invisible in practice, and this is why: the slot reserved
+ * height but had no frame, no caption and no stacking context. So whenever
+ * Turnstile rendered nothing - an invisible-type sitekey, a blocked script, an
+ * unsupported `size` value - the box was indistinguishable from empty space,
+ * while the form still refused to submit with "complete the anti-bot check".
+ * The slot is now always a visible, labelled box: if the widget is missing,
+ * you can at least see that something is missing. */
+.captcha{position:relative;isolation:isolate;z-index:2;display:flex;align-items:center;justify-content:center;min-height:74px;margin:16px 0 6px;padding:10px;border:1px solid rgba(255,255,255,.12);border-radius:14px;background:rgba(255,255,255,.03)}
+.captcha[hidden]{display:none}
+.captcha__cap{display:block;margin:14px 0 -6px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:rgba(255,255,255,.46)}
+.captcha__note{margin:8px 0 0;font-size:12.5px;line-height:1.45;color:#f3d3a5}
+.captcha__note[hidden]{display:none}
+/* Turnstile's own iframe is 300x65 at size:normal. Clamp it so a narrow card
+ * shrinks it instead of letting it overflow the form silently. */
+.captcha iframe{max-width:100%}
+@media (max-width:400px){.captcha{padding:6px;min-height:70px}}
+
+/* Three tabs instead of two. The indicator is positioned from measurements in
+ * login.js now, so there is deliberately no fixed 50% width here: a hard-coded
+ * fraction is what sent it off the edge as soon as a third tab appeared. */
+.auth-tabs__ind{will-change:transform,width}
+.auth-tab{white-space:nowrap}
+@media (max-width:560px){.auth-tab{font-size:12.5px;padding-left:7px;padding-right:7px}}
+
+/* ==========================================================================
+   РАУНД 9 (2.2) — «Безопасность аккаунта» в кабинете /app/.
+   Формы лежат внутри dash-card, поэтому берут её типографику и отступы;
+   здесь только раскладка переключателей и рамка раскрытой формы, чтобы было
+   видно, где заканчивается карточка и начинается действие.
+   ========================================================================== */
+.sec-actions {
+  margin-top: 14px;
+}
+
+.sec-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sec-tabs .btn.is-active {
+  border-color: color-mix(in srgb, var(--brand, #7c5cf6) 55%, transparent);
+  background: color-mix(in srgb, var(--brand, #7c5cf6) 14%, transparent);
+  color: inherit;
+}
+
+.sec-form {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.sec-form[hidden] {
+  display: none;
+}
+
+.sec-form .field + .field {
+  margin-top: 10px;
+}
+
+.sec-form .btn {
+  margin-top: 12px;
+}
+
+.sec-form .auth-msg:empty {
+  display: none;
+}
+
+.sec-form .dash-note {
+  margin-bottom: 0;
+}

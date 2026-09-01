@@ -64,6 +64,24 @@ Future<void> main(List<String> args) async {
 
   final DesktopSettings saved = settings.value;
 
+  // ROUND 9 (1.3): restore the developer channel before anything touches the
+  // network.
+  //
+  // AppConfig.activeChannel is what ApiClient resolves its host from and what
+  // scopes SecureStore's keys, so restoring it late would bootstrap the
+  // session against one control plane and then move the host under it - which
+  // shows up as a working login that 401s on the first real request.
+  if (saved.channel == 'beta') {
+    if (AppConfig.setChannelOverride(AppChannel.beta)) {
+      dlog.write('boot', 'developer channel restored: beta');
+    } else {
+      // Compiled without ALLOW_BETA_CHANNEL. Forget the stored choice instead
+      // of keeping a preference that can never apply.
+      dlog.warn('boot', 'stored beta channel refused by this build');
+      await settings.save(saved.copyWith(channel: 'prod'));
+    }
+  }
+
   // The window is a fixed panel now, so a stored width and height would only
   // resurrect the old oversized geometry. Position is still restored.
   const Size windowSize = AppConfig.desktopDefaultSize;

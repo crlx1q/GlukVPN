@@ -66,7 +66,10 @@
   tabs.forEach(function (t) {
     t.addEventListener("click", function () { tab(t.getAttribute("data-auth-tab")); });
   });
-  if (/[?&]mode=register/.test(location.search)) tab("register");
+  /* ROUND 9 (2.1): три режима на одной странице. Восстановление больше не
+     отдельный лендинг: /login/?mode=recover открывает третью вкладку. */
+  var initialMode = /[?&]mode=(register|recover)/.exec(location.search || "");
+  if (initialMode) tab(initialMode[1]);
 
   /* показать пароль */
   var pw = document.querySelector("[data-pw-toggle]");
@@ -195,20 +198,35 @@
       t: "Создание аккаунта",
       s: "Почта и пароль, код из письма, подтверждение в Telegram — три шага.",
     },
+    recover: {
+      t: "Восстановление доступа",
+      s: "Пришлём код на почту или в Telegram — куда удобнее.",
+    },
   };
   var timer = null;
 
   function place(name) {
-    var i = name === "register" ? 1 : 0;
-    if (ind) ind.style.transform = "translateX(" + i * 100 + "%)";
+    if (!COPY[name]) name = "login";
     if (title && COPY[name]) title.textContent = COPY[name].t;
     if (sub && COPY[name]) sub.textContent = COPY[name].s;
 
+    var active = null;
     tabs.forEach(function (t) {
       var on = t.getAttribute("data-auth-tab") === name;
       t.classList.toggle("is-active", on);
       t.setAttribute("aria-selected", on ? "true" : "false");
+      if (on) active = t;
     });
+
+    /* ROUND 9: раньше индикатор ездил на translateX(i * 100%). Это верно
+       только для двух вкладок одинаковой ширины; с третьей
+       («Восстановление») он уезжал за край. Теперь позиция и ширина
+       берутся из измерений, поэтому вкладок может быть сколько угодно
+       и любой длины после перевода.                                    */
+    if (ind && active && active.offsetWidth) {
+      ind.style.width = active.offsetWidth + "px";
+      ind.style.transform = "translateX(" + active.offsetLeft + "px)";
+    }
 
     if (timer) window.clearTimeout(timer);
     panes.forEach(function (p) {
@@ -236,7 +254,35 @@
     });
   });
 
-  place(/[?&]mode=register/.test(window.location.search) ? "register" : "login");
+  var startMode = /[?&]mode=(register|recover)/.exec(window.location.search || "");
+  place(startMode ? startMode[1] : "login");
+
+  /* Внутрикарточные переходы («Забыли пароль?», «Регистрация»)
+     переключают режим, а не уводят на другую страницу. href остаётся
+     рабочим — ссылка должна открываться и в новой вкладке, и без JS. */
+  Array.prototype.forEach.call(document.querySelectorAll("[data-auth-goto]"), function (link) {
+    link.addEventListener("click", function (e) {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+      e.preventDefault();
+      var mode = link.getAttribute("data-auth-goto");
+      place(mode);
+      try {
+        history.replaceState(null, "", location.pathname + (mode === "login" ? "" : "?mode=" + mode));
+      } catch (err) {}
+    });
+  });
+
+  /* Ширина вкладки зависит от шрифта, а шрифт грузится позже скрипта. */
+  window.addEventListener("resize", function () {
+    var on = document.querySelector("[data-auth-tab].is-active");
+    if (on) place(on.getAttribute("data-auth-tab"));
+  });
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () {
+      var on = document.querySelector("[data-auth-tab].is-active");
+      if (on) place(on.getAttribute("data-auth-tab"));
+    });
+  }
 
   /* глаз: меняем иконку и подпись */
   var pw = document.querySelector("[data-pw-toggle]");

@@ -27,11 +27,17 @@ class DevChannelFooter extends StatefulWidget {
 	/// For admins and testers: skip the five clicks.
 	final bool alwaysVisible;
 
-	/// Called right after the channel changed. The session belongs to exactly one
-	/// control plane - a prod refresh token is meaningless on beta - so the caller
-	/// signs out. Leaving the old session in place produces 401s that look like a
-	/// broken account.
-	final Future<void> Function() onChannelChanged;
+	/// Called right after the channel changed, with the channel that was picked.
+	///
+	/// The session belongs to exactly one control plane - a prod refresh token is
+	/// meaningless on beta - so the caller signs out. Leaving the old session in
+	/// place produces 401s that look like a broken account.
+	///
+	/// ROUND 9 (1.3): the channel is passed out rather than read back from
+	/// AppConfig, because the caller also has to write it to settings.json. An
+	/// in-memory override alone was lost on restart, which is how a tester ended
+	/// up back on production without noticing.
+	final Future<void> Function(AppChannel channel) onChannelChanged;
 
 	@override
 	State<DevChannelFooter> createState() => _DevChannelFooterState();
@@ -68,7 +74,7 @@ class _DevChannelFooterState extends State<DevChannelFooter> {
 		if (!AppConfig.setChannelOverride(channel)) return;
 		setState(() => _busy = true);
 		try {
-			await widget.onChannelChanged();
+			await widget.onChannelChanged(channel);
 		} finally {
 			if (mounted) setState(() => _busy = false);
 		}

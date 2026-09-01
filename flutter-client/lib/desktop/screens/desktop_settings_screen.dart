@@ -468,8 +468,17 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
         Center(
           child: DevChannelFooter(
             russian: widget.strings.isRussian,
-            onChannelChanged: () =>
-                widget.auth.logout(revokeThisDevice: false),
+            // ROUND 9 (1.3): write the choice down before signing out.
+            //
+            // The switch used to only set an in-memory override, so the next
+            // launch was back on prod while the store still held a beta refresh
+            // token - a session that looks valid and 401s on the first request.
+            onChannelChanged: (AppChannel channel) async {
+              await widget.settings.update(
+                (DesktopSettings s) => s.copyWith(channel: channel.id),
+              );
+              await widget.auth.logout(revokeThisDevice: false);
+            },
           ),
         ),
         const SizedBox(height: 12),

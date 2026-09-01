@@ -600,6 +600,10 @@ class DesktopVpnController extends ChangeNotifier {
       _dataObserved = false;
       _activeSessionId = null;
       _session = null;
+      // ROUND 9 (1.2): the cached address belonged to the tunnel that just went
+      // away. Left in place it paints a German flag over a plain home
+      // connection until the next probe answers.
+      _publicIp = null;
 
       _setPhase(ConnectionPhase.disconnected, detail: 'down');
       if (userInitiated) _userMessage = null;
@@ -724,11 +728,32 @@ class DesktopVpnController extends ChangeNotifier {
       return;
     }
 
+    // ROUND 9 (1.2): the exit IP is re-read on every *entry* into CONNECTED,
+    // with no `_publicIp == null` guard.
+    //
+    // The old code only probed when the field was still empty, so the address
+    // captured while the tunnel was down survived the connect: the panel kept
+    // showing the home IP and, because the flag is derived from it, the home
+    // country. Re-reading it costs one request per connect.
+    //
+    // The delayed second read is not paranoia. The probe can win the race
+    // against the routes that were installed a moment ago and answer over the
+    // physical link, which looks exactly like a tunnel that is not carrying
+    // traffic.
+    final bool wasConnected = _phase.isConnected;
     if (verdict.phase == ConnectionPhase.connected) {
       _cancelConnectDeadline();
       _cancelReconnect();
       _connectedSince ??= DateTime.now();
-      unawaited(_refreshPublicIp());
+      if (!wasConnected) {
+        await _refreshPublicIp();
+        unawaited(
+          Future<void>.delayed(const Duration(seconds: 2), () async {
+            if (_disposed || !_phase.isConnected) return;
+            await _refreshPublicIp();
+          }),
+        );
+      }
     }
 
     _setPhase(verdict.phase, detail: verdict.reason);

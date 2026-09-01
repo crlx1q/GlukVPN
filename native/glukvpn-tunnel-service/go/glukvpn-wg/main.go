@@ -62,6 +62,15 @@ import (
 
 const defaultMTU = 1420
 
+// Resolvers used when the tunnel config carries no DNS line of its own.
+//
+// Leaving the physical adapter's resolver in charge is how a "connected" VPN
+// still leaks every lookup, and on Windows it is also how NCSI decides the
+// machine has no internet: the probe is an HTTP GET to a name, and the name is
+// resolved by whichever interface wins. Google and Cloudflare are the two the
+// round 9 spec asks for.
+var defaultDNS = []string{"8.8.8.8", "1.1.1.1"}
+
 // A stable adapter GUID.
 //
 // Without one, every reconnect asks Wintun for a brand new adapter and Windows
@@ -295,11 +304,15 @@ func configureInterface(luid winipcfg.LUID, cfg *tunnelConfig, mtu int) error {
 				if prefix.Addr().Is6() {
 					nextHop = netip.IPv6Unspecified()
 				}
-				routes = append(routes, &winipcfg.RouteData{
-					Destination: prefix,
-					NextHop:     nextHop,
-					Metric:      0,
-				})
+				// A default route is never installed as a default route.
+				// See splitDefaultRoute for why.
+				for _, dest := range splitDefaultRoute(prefix) {
+					routes = append(routes, &winipcfg.RouteData{
+						Destination: dest,
+						NextHop:     nextHop,
+						Metric:      0,
+					})
+				}
 			}
 		}
 		if len(routes) > 0 {
@@ -309,9 +322,13 @@ func configureInterface(luid winipcfg.LUID, cfg *tunnelConfig, mtu int) error {
 		}
 	}
 
-	if len(cfg.dns) > 0 {
+	dnsServers := cfg.dns
+	if len(dnsServers) == 0 {
+		dnsServers = defaultDNS
+	}
+	if len(dnsServers) > 0 {
 		var v4, v6 []netip.Addr
-		for _, raw := range cfg.dns {
+		for _, raw := range dnsServers {
 			ip, err := netip.ParseAddr(raw)
 			if err != nil {
 				continue
@@ -347,6 +364,41 @@ func configureInterface(luid winipcfg.LUID, cfg *tunnelConfig, mtu int) error {
 	}
 
 	return nil
+}
+
+// splitDefaultRoute turns a default route into the two halves every WireGuard
+// client on Windows has always used, and leaves every other prefix alone.
+//
+//	0.0.0.0/0  ->  0.0.0.0/1  +  128.0.0.0/1
+//	::/0       ->  ::/1       +  8000::/1
+//
+// Installing 0.0.0.0/0 on Wintun with metric 0 does send every packet into the
+// tunnel - and that is exactly the problem. Windows sees the interface's own
+// default gateway being taken over, so the Network Location Awareness service
+// re-runs the NCSI probe through a tunnel that has not finished its handshake,
+// the probe fails, and the tray icon says "No internet access". Some apps read
+// that flag rather than trying a socket, so they refuse to load at all even
+// though the tunnel works.
+//
+// Two /1 routes cover the identical address space and beat any /0 under
+// longest-prefix match, so all traffic still goes into the tunnel - but the
+// physical default route is never displaced, the network profile stays
+// "connected", and NCSI keeps answering. This is why Proton, Mullvad and
+// wireguard-windows all ship the same pair.
+func splitDefaultRoute(prefix netip.Prefix) []netip.Prefix {
+	if prefix.Bits() != 0 {
+		return []netip.Prefix{prefix}
+	}
+	if prefix.Addr().Is6() {
+		return []netip.Prefix{
+			netip.PrefixFrom(netip.IPv6Unspecified(), 1),
+			netip.PrefixFrom(netip.AddrFrom16([16]byte{0x80}), 1),
+		}
+	}
+	return []netip.Prefix{
+		netip.PrefixFrom(netip.IPv4Unspecified(), 1),
+		netip.PrefixFrom(netip.AddrFrom4([4]byte{128, 0, 0, 0}), 1),
+	}
 }
 
 // ---------------------------------------------------------- route pinning --

@@ -35,6 +35,7 @@ class DesktopSettings {
     this.windowY,
     this.lastNodeId,
     this.autoNodeSelection = true,
+    this.channel = 'prod',
   });
 
   /// Schema version of the stored file.
@@ -98,6 +99,16 @@ class DesktopSettings {
   final String? lastNodeId;
   final bool autoNodeSelection;
 
+  // --- Developer menu ---
+  /// Control plane this install talks to: `prod` or `beta`.
+  ///
+  /// ROUND 9 (1.3). Written by the hidden developer menu behind five clicks on
+  /// the version number. It has to outlive a restart: without it a tester
+  /// flips to beta, closes the app, and is quietly back on production the next
+  /// morning - while the store still holds a beta refresh token, which reads as
+  /// a broken account rather than as a channel mismatch.
+  final String channel;
+
   static const DesktopSettings defaults = DesktopSettings();
 
   /// True when the UI should hold still, whatever the reason.
@@ -110,6 +121,12 @@ class DesktopSettings {
     if (pauseAnimationsOnBattery && onBattery) return true;
     return false;
   }
+
+  /// Only two channels exist. Anything else - a typo, a value written by a
+  /// future build - resolves to prod and never to beta: a public install must
+  /// not be talked onto the test control plane by hand-editing a JSON file.
+  static String normalizeChannel(String? value) =>
+      value == 'beta' ? 'beta' : 'prod';
 
   /// WireGuard tolerates 1280..1500; anything else breaks path MTU.
   static int? clampMtu(int? value) {
@@ -143,6 +160,7 @@ class DesktopSettings {
     String? lastNodeId,
     bool clearLastNodeId = false,
     bool? autoNodeSelection,
+    String? channel,
   }) {
     return DesktopSettings(
       startWithWindows: startWithWindows ?? this.startWithWindows,
@@ -167,6 +185,7 @@ class DesktopSettings {
       windowY: windowY ?? this.windowY,
       lastNodeId: clearLastNodeId ? null : (lastNodeId ?? this.lastNodeId),
       autoNodeSelection: autoNodeSelection ?? this.autoNodeSelection,
+      channel: normalizeChannel(channel ?? this.channel),
     );
   }
 
@@ -193,6 +212,7 @@ class DesktopSettings {
         'windowY': windowY,
         'lastNodeId': lastNodeId,
         'autoNodeSelection': autoNodeSelection,
+        'channel': channel,
       };
 
   factory DesktopSettings.fromJson(Map<String, dynamic> json) {
@@ -253,6 +273,7 @@ class DesktopSettings {
       windowY: keepGeometry ? real('windowY') : null,
       lastNodeId: json['lastNodeId'] as String?,
       autoNodeSelection: flag('autoNodeSelection', true),
+      channel: normalizeChannel(json['channel'] as String?),
     );
   }
 }

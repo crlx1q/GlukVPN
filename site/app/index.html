@@ -42,7 +42,7 @@
   <link rel="stylesheet" href="/assets/css/app-ui.css?v=0.7.4">
   <link rel="stylesheet" href="/assets/css/utilities.css?v=0.7.4">
   <link rel="stylesheet" href="/assets/css/fx.css?v=0.7.4">
-  <link rel="stylesheet" href="/assets/css/auth.css?v=0.7.4">
+  <link rel="stylesheet" href="/assets/css/auth.css?v=0.9.0">
   <script src="/assets/js/config.js?v=0.7.4" defer></script>
   <script src="/assets/js/i18n.js?v=0.7.4" defer></script>
   <script src="/assets/js/world-dots.js?v=0.7.4" defer></script>
@@ -204,8 +204,62 @@
                 <div class="dash-row"><span>Лимит сессий</span><b data-d="sec-max-ses">—</b></div>
                 <div class="dash-row"><span>Способ регистрации</span><b data-d="sec-origin">—</b></div>
               </div>
+              <!-- РАУНД 9 (2.2): эндпоинты безопасности готовы с раунда 8, а в
+                   кабинете на их месте стояла ссылка «Сменить пароль» → /support/,
+                   то есть «напишите нам». Теперь это три реальных действия. -->
+              <div class="sec-actions" data-sec>
+                <div class="sec-tabs">
+                  <button class="btn btn--ghost btn--sm" type="button" data-sec-open="password">Сменить пароль</button>
+                  <button class="btn btn--ghost btn--sm" type="button" data-sec-open="email">Сменить почту</button>
+                  <button class="btn btn--ghost btn--sm" type="button" data-sec-open="telegram">Перепривязать Telegram</button>
+                </div>
+
+                <form class="form sec-form" data-sec-form="password" hidden novalidate>
+                  <label class="field">
+                    <span class="field__label">Текущий пароль</span>
+                    <span class="field__box"><input class="input" type="password" name="currentPassword" autocomplete="current-password" required></span>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Новый пароль</span>
+                    <span class="field__box"><input class="input" type="password" name="password" autocomplete="new-password" placeholder="Минимум 8 символов" required></span>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Повторите новый пароль</span>
+                    <span class="field__box"><input class="input" type="password" name="password2" autocomplete="new-password" required></span>
+                  </label>
+                  <button class="btn btn--primary btn--sm" type="submit">Сохранить пароль</button>
+                  <p class="auth-msg" data-sec-msg="password" role="status" aria-live="polite"></p>
+                  <p class="dash-note">После смены пароля все сессии завершаются — войти заново придётся на всех устройствах.</p>
+                </form>
+
+                <form class="form sec-form" data-sec-form="email" hidden novalidate>
+                  <label class="field">
+                    <span class="field__label">Новая почта</span>
+                    <span class="field__box"><input class="input" type="email" name="email" autocomplete="email" placeholder="you@example.com" required></span>
+                  </label>
+                  <!-- Сервер на POST /api/auth/email просит только новый адрес:
+                       владение доказывает код из письма, а не текущий пароль.
+                       Лишнее поле здесь выглядело бы требованием, которого нет. -->
+                  <!-- Поле кода появляется только после того, как сервер сказал,
+                       что код отправлен: пустая графа «код» до письма выглядит
+                       как требование его угадать. -->
+                  <label class="field" data-sec-code hidden>
+                    <span class="field__label">Код из письма</span>
+                    <span class="field__box"><input class="input input--code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"></span>
+                  </label>
+                  <button class="btn btn--primary btn--sm" type="submit">Прислать код</button>
+                  <p class="auth-msg" data-sec-msg="email" role="status" aria-live="polite"></p>
+                </form>
+
+                <div class="sec-form" data-sec-form="telegram" hidden>
+                  <p class="dash-note">Перепривязка нужна, если сменился аккаунт Telegram. Бот попросит поделиться контактом заново.</p>
+                  <button class="btn btn--primary btn--sm" type="button" data-sec-tg>Получить ссылку на бота</button>
+                  <p class="auth-msg" data-sec-msg="telegram" role="status" aria-live="polite"></p>
+                  <p class="dash-note" data-sec-tg-out hidden>Откройте <a class="auth-link" data-sec-tg-link href="#" target="_blank" rel="noopener">бота</a> и отправьте код <b class="mono" data-sec-tg-code></b>.</p>
+                </div>
+              </div>
+
               <div class="dash-cta">
-                <a class="btn btn--ghost btn--sm" href="/support/">Сменить пароль</a>
                 <button class="btn btn--ghost btn--sm" type="button" data-dash-logout>Выйти на этом устройстве</button>
               </div>
             </article>
@@ -265,6 +319,8 @@
   </section>
 
   <script src="/assets/js/app.js?v=0.7.4" defer></script>
+  <!-- РАУНД 9 (2.2): блок «Безопасность аккаунта» живёт в account.js. -->
+  <script src="/assets/js/account.js?v=0.9.0" defer></script>
 
   </main>
 

@@ -139,14 +139,76 @@
     return captchaLoading;
   }
 
+  /* ROUND 9: капчу было не видно. Причина не одна, поэтому закрываем все:
+     size:"flexible" — сравнительно новый режим, и если он не поддержан,
+     виджет не рисуется вовсе; без appearance:"always" ключ типа
+     invisible тоже не даёт ничего видимого; а ошибка рендера нигде не
+     показывалась. Теперь слот подписан, виджет явно видимый, а любой
+     сбой пишется текстом рядом.                                        */
+  function captchaNote(key, text) {
+    var host = document.querySelector('[data-turnstile="' + key + '"]');
+    if (!host || !host.parentNode) return;
+    var note = host.parentNode.querySelector('[data-captcha-note="' + key + '"]');
+    if (!note) {
+      note = document.createElement("p");
+      note.className = "captcha__note";
+      note.setAttribute("data-captcha-note", key);
+      host.parentNode.insertBefore(note, host.nextSibling);
+    }
+    note.textContent = text || "";
+    note.hidden = !text;
+  }
+
+  /* Подпись над слотом. Ставится из JS, а не в разметке, чтобы при
+     выключенной капче не оставалось подписанного пустого места.  */
+  function labelCaptchaSlots() {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-turnstile]"), function (host) {
+      var prev = host.previousElementSibling;
+      if (prev && prev.className === "captcha__cap") return;
+      var cap = document.createElement("span");
+      cap.className = "captcha__cap";
+      cap.textContent = t("Проверка, что вы человек", "Quick check that you are human");
+      if (host.parentNode) host.parentNode.insertBefore(cap, host);
+    });
+  }
+
+  function hideCaptchaSlots() {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-turnstile]"), function (host) {
+      host.hidden = true;
+    });
+  }
+
   function mountCaptcha(key) {
     var host = document.querySelector('[data-turnstile="' + key + '"]');
     if (!host || !window.turnstile || widgets[key] !== undefined) return;
-    widgets[key] = window.turnstile.render(host, {
-      sitekey: TS.siteKey,
-      theme: "dark",
-      size: "flexible"
-    });
+    try {
+      widgets[key] = window.turnstile.render(host, {
+        sitekey: TS.siteKey,
+        theme: "dark",
+        size: "normal",
+        appearance: "always",
+        callback: function () { captchaNote(key, ""); },
+        "expired-callback": function () {
+          captchaNote(key, t(
+            "Проверка устарела — пройдите её заново.",
+            "The check expired - please do it again."
+          ));
+        },
+        "error-callback": function () {
+          /* Сервер при недоступности Cloudflare пропускает проверку,
+             так что это предупреждение, а не тупик.                     */
+          captchaNote(key, t(
+            "Проверка не отвечает. Можно продолжать — сервер проверит запрос сам.",
+            "The check is not responding. You can continue - the server verifies the request as well."
+          ));
+        }
+      });
+    } catch (e) {
+      captchaNote(key, t(
+        "Не удалось показать проверку. Попробуйте обновить страницу.",
+        "The check could not be displayed. Try reloading the page."
+      ));
+    }
   }
 
   function captchaToken(key) {
@@ -161,11 +223,24 @@
 
   /* -------------------------------------------------------------------- шаги */
 
+  /* Шаги живут в двух разных контекстах: на отдельных страницах это вся
+     карточка, а на объединённой /login/ — внутри своей вкладки. Поэтому
+     переключаем только соседей в пределах одной панели: иначе step("code")
+     в регистрации гасит первый шаг восстановления, и вкладка
+     «Восстановление» открывается пустой.                                */
+  function scopeOf(node) {
+    if (!node || !node.closest) return document;
+    return node.closest("[data-auth-pane]") || document;
+  }
+
   function step(name) {
-    Array.prototype.forEach.call(document.querySelectorAll("[data-reg-step]"), function (node) {
+    var target = document.querySelector('[data-reg-step="' + name + '"]');
+    if (!target) return;
+    var scope = scopeOf(target);
+    Array.prototype.forEach.call(scope.querySelectorAll("[data-reg-step]"), function (node) {
       node.hidden = node.getAttribute("data-reg-step") !== name;
     });
-    var bar = document.querySelector("[data-reg-progress]");
+    var bar = scope.querySelector("[data-reg-progress]");
     if (bar) bar.setAttribute("data-at", name);
   }
 
@@ -407,6 +482,10 @@
 
   /* Показать всё, что пароль показывает — такая же механика, как на /login/. */
   Array.prototype.forEach.call(document.querySelectorAll("[data-pw-toggle]"), function (btn) {
+    /* ROUND 9: на объединённой /login/ у формы входа есть свой обработчик
+       в login.js. Два обработчика на одной кнопке меняют type дважды, то
+       есть визуально не меняют вовсе.                                  */
+    if (btn.closest && btn.closest("[data-login-form]")) return;
     btn.addEventListener("click", function () {
       var input = btn.parentNode ? btn.parentNode.querySelector("input") : null;
       if (!input) return;
@@ -420,16 +499,42 @@
     });
   });
 
+  /* ROUND 9 (2.1): регистрация есть только на prod. Бета — закрытый контур
+     со своей базой: аккаунт, созданный там, на prod не работает.
+     Канал проверяем ДО запроса к серверу, чтобы не дать человеку
+     заполнять три шага впустую, если API вообще не ответит.        */
+  var CHANNEL = pickChannel();
+
+  function closeRegistration(why) {
+    if (!form) return;
+    var notice = $("reg-closed");
+    if (!notice) return;
+    var text = $("reg-closed-msg");
+    if (text && why) text.textContent = why;
+    notice.hidden = false;
+    step("closed");
+  }
+
+  if (form && CHANNEL !== "prod") {
+    closeRegistration(t(
+      "Регистрация работает только на основном канале. Бета — закрытая тестовая среда, аккаунты в ней выдаются вручную.",
+      "Sign-up is only available on the production channel. Beta is a closed test environment; accounts there are issued by hand."
+    ));
+  }
+
   /* Сервер — истина в последней инстанции: если регистрация закрыта
      или бот не настроен, честнее сказать это сразу, а не на шаге 3. */
   request("/api/auth/config").then(
     function (json) {
       var closed = json && json.selfRegistration === false;
       var noBot = json && json.telegram && json.telegram.enabled === false;
-      var notice = $("reg-closed");
-      if ((closed || noBot) && notice && form) {
-        notice.hidden = false;
-        step("closed");
+      if (noBot && !closed) {
+        closeRegistration(t(
+          "Подтверждение в Telegram сейчас недоступно, поэтому регистрация закрыта. Напишите нам — откроем доступ вручную.",
+          "Telegram confirmation is unavailable right now, so sign-up is closed. Message us and we will open access by hand."
+        ));
+      } else if (closed) {
+        closeRegistration("");
       }
       var ttl = json && json.codeTtlMinutes;
       if (ttl) {
@@ -441,11 +546,28 @@
     function () { /* Нет связи — пусть человек попробует; ошибка придёт по делу. */ }
   );
 
-  loadCaptcha().then(function (ok) {
-    if (!ok) return;
-    mountCaptcha("register");
-    mountCaptcha("recover");
-  });
+  if (captchaWanted()) {
+    labelCaptchaSlots();
+    loadCaptcha().then(function (ok) {
+      if (!ok) {
+        captchaNote("register", t(
+          "Проверка не загрузилась — возможно, её блокирует расширение. Пробуйте продолжить или отключите блокировщик.",
+          "The check did not load - an extension may be blocking it. Try continuing anyway, or disable the blocker."
+        ));
+        captchaNote("recover", t(
+          "Проверка не загрузилась — возможно, её блокирует расширение. Пробуйте продолжить или отключите блокировщик.",
+          "The check did not load - an extension may be blocking it. Try continuing anyway, or disable the blocker."
+        ));
+        return;
+      }
+      mountCaptcha("register");
+      mountCaptcha("recover");
+    });
+  } else {
+    /* Капча выключена (нет ключа) — подписанная рамка без виджета
+       выглядит как поломка, поэтому убираем слот целиком.        */
+    hideCaptchaSlots();
+  }
 
   window.addEventListener("beforeunload", stopPolling);
 })();
