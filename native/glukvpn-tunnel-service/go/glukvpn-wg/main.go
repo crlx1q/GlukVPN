@@ -358,32 +358,30 @@ type pinnedRoute struct {
 	nextHop     netip.Addr
 }
 
-// physicalGateway finds the default route that is not ours: the interface and
-// next hop this machine was already using to reach the internet.
-//
-// Ranking by route metric plus interface metric is how Windows itself picks
-// between candidates, and it matters on any laptop with Wi-Fi and Ethernet up
-// at the same time - pinning the tunnel's own packets to the wrong link would
-// simply move the outage rather than fix it.
-func physicalGateway(
+type physicalHop struct {
+	luid    winipcfg.LUID
+	nextHop netip.Addr
+}
+
+// allPhysicalGateways finds every physical interface that holds a default route,
+// returning (LUID, nextHop) pairs. In dual-homed laptops with Wi-Fi and Ethernet
+// both connected, pinning only the lowest-metric interface breaks connectivity
+// if the lowest-metric link has no internet route to the endpoint.
+func allPhysicalGateways(
 	exclude winipcfg.LUID,
 	family winipcfg.AddressFamily,
-) (winipcfg.LUID, netip.Addr, bool) {
+) []physicalHop {
 	rows, err := winipcfg.GetIPForwardTable2(family)
 	if err != nil {
 		logf("cannot read the routing table: %v", err)
-		return 0, netip.Addr{}, false
+		return nil
 	}
 
-	var (
-		bestLUID    winipcfg.LUID
-		bestNextHop netip.Addr
-		bestMetric  uint32
-		found       bool
-	)
+	var hops []physicalHop
+	seen := make(map[winipcfg.LUID]bool)
 	for i := range rows {
 		row := &rows[i]
-		if row.InterfaceLUID == exclude {
+		if row.InterfaceLUID == exclude || seen[row.InterfaceLUID] {
 			continue
 		}
 		// Bits() == 0 is 0.0.0.0/0 or ::/0 - a default route and nothing else.
@@ -394,22 +392,14 @@ func physicalGateway(
 		if !nextHop.IsValid() || nextHop.IsUnspecified() {
 			continue
 		}
-		metric := row.Metric
-		if iface, ifaceErr := row.InterfaceLUID.IPInterface(family); ifaceErr == nil {
-			metric += iface.Metric
-		}
-		if !found || metric < bestMetric {
-			bestLUID = row.InterfaceLUID
-			bestNextHop = nextHop
-			bestMetric = metric
-			found = true
-		}
+		seen[row.InterfaceLUID] = true
+		hops = append(hops, physicalHop{luid: row.InterfaceLUID, nextHop: nextHop})
 	}
-	return bestLUID, bestNextHop, found
+	return hops
 }
 
 // pinEndpointRoutes installs a /32 (or /128) route to each peer endpoint via
-// the physical gateway, and reports what it managed to add so the caller can
+// all physical default gateways, and reports what it managed to add so the caller can
 // undo exactly that and nothing more.
 func pinEndpointRoutes(tunnelLUID winipcfg.LUID, endpoints []netip.Addr) []pinnedRoute {
 	if len(endpoints) == 0 {
@@ -426,29 +416,31 @@ func pinEndpointRoutes(tunnelLUID winipcfg.LUID, endpoints []netip.Addr) []pinne
 			bits = 128
 		}
 
-		gatewayLUID, nextHop, ok := physicalGateway(tunnelLUID, family)
-		if !ok {
+		gateways := allPhysicalGateways(tunnelLUID, family)
+		if len(gateways) == 0 {
 			logf("no physical default route found, not pinning %v", endpoint)
 			continue
 		}
 
 		destination := netip.PrefixFrom(endpoint, bits)
-		if err := gatewayLUID.AddRoute(destination, nextHop, 0); err != nil {
-			// A leftover from a previous run is the state we wanted anyway, so
-			// it is a success - but it is not ours to delete on the way out.
-			if errors.Is(err, windows.ERROR_OBJECT_ALREADY_EXISTS) {
-				logf("route to %v via %v was already pinned", endpoint, nextHop)
+		for _, gw := range gateways {
+			if err := gw.luid.AddRoute(destination, gw.nextHop, 0); err != nil {
+				// A leftover from a previous run is the state we wanted anyway, so
+				// it is a success - but it is not ours to delete on the way out.
+				if errors.Is(err, windows.ERROR_OBJECT_ALREADY_EXISTS) {
+					logf("route to %v via %v was already pinned", endpoint, gw.nextHop)
+					continue
+				}
+				logf("could not pin a route to %v via %v: %v", endpoint, gw.nextHop, err)
 				continue
 			}
-			logf("could not pin a route to %v via %v: %v", endpoint, nextHop, err)
-			continue
+			logf("pinned %v/%d via the physical gateway %v (LUID %v)", endpoint, bits, gw.nextHop, gw.luid)
+			pinned = append(pinned, pinnedRoute{
+				luid:        gw.luid,
+				destination: destination,
+				nextHop:     gw.nextHop,
+			})
 		}
-		logf("pinned %v/%d via the physical gateway %v", endpoint, bits, nextHop)
-		pinned = append(pinned, pinnedRoute{
-			luid:        gatewayLUID,
-			destination: destination,
-			nextHop:     nextHop,
-		})
 	}
 	return pinned
 }
