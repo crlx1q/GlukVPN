@@ -150,36 +150,58 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
 		})
 	})
 
-	// Self-service revoke: closes the session, drops the peer, kills refresh tokens.
+	// Sign a device out and REMOVE it.
+	//
+	// ROUND 6: this used to flip the row to REVOKED and keep it forever, which is
+	// how one account ended up showing 48 devices - every reinstall left a
+	// tombstone the user could not clear, and the UI had to explain the
+	// difference between "revoked" and "gone". A device is a session, not a
+	// permanent asset: signing it out deletes it, and the next sign-in registers
+	// it again. Sessions and refresh tokens both cascade from the row, so the
+	// delete cannot leave a live tunnel or a usable token behind.
 	app.delete("/api/devices/:id", { preHandler: requireUser }, async (request, reply) => {
 		const parsed = IdParams.safeParse(request.params)
 		if (!parsed.success) throw badRequest("Invalid device id")
 		const { user } = getAuthUser(request)
 
 		const device = await prisma.device.findUnique({ where: { id: parsed.data.id } })
-		if (!device || device.userId !== user.id) throw notFound("Device not found")
+		// Already gone is a success: the caller wanted it off the list.
+		if (!device) return reply.send({ ok: true, alreadyRemoved: true, closedSessions: 0 })
+		if (device.userId !== user.id) throw notFound("Device not found")
 
-		if (device.status === "REVOKED") {
-			return reply.send({ ok: true, alreadyRevoked: true, closedSessions: 0 })
-		}
-
+		// Order matters: close the tunnel and kill the tokens while the row still
+		// exists, so a node can be told to drop the peer before the record goes.
 		const closedSessions = await closeSessionsForDevice(device.id, "device_revoked")
-		await prisma.device.update({
-			where: { id: device.id },
-			data: { status: "REVOKED", revokedAt: new Date() },
-		})
 		const revokedTokens = await revokeRefreshTokens({
 			userId: user.id,
 			deviceId: device.id,
 		})
 
+		// Audit first: the log row references the device, and writing it after the
+		// delete would either fail or lose the reference.
 		await writeAudit({
-			action: "device.revoke",
+			action: "device.remove",
 			userId: user.id,
 			deviceId: device.id,
 			ip: clientIp(request),
 			metadata: { by: "user", closedSessions, revokedTokens },
 		})
-		return reply.send({ ok: true, closedSessions, revokedTokens })
+
+		let removed = true
+		try {
+			await prisma.device.delete({ where: { id: device.id } })
+		} catch {
+			// A foreign key outside this transaction's control (retained audit
+			// history) can refuse the delete. Never fail the user's request over
+			// bookkeeping - fall back to the old REVOKED marker, which the clients
+			// still filter out of the active list.
+			removed = false
+			await prisma.device.update({
+				where: { id: device.id },
+				data: { status: "REVOKED", revokedAt: new Date() },
+			})
+		}
+
+		return reply.send({ ok: true, removed, closedSessions, revokedTokens })
 	})
 }

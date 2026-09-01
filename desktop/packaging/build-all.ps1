@@ -122,8 +122,9 @@ if (-not $SkipNative) {
 
     # These two DLLs are the reason the client could not connect.
     #
-    # tunnel.cpp loads wireguard.dll (WireGuardNT, the kernel driver) and
-    # tunnel.dll (WireGuard's embeddable tunnel service) at runtime. When
+    # ROUND 6 - Wintun. tunnel.cpp loads tunnel.dll (WireGuard's embeddable
+    # tunnel service, Wintun backend) and wintun.dll (the WHQL-signed
+    # driver) at runtime. When
     # either is absent it returns driver_unavailable and the UI says
     # "WireGuard driver files are missing". Nothing in the pipeline ever
     # fetched tunnel.dll, and a missing file was only a warning, so every
@@ -132,13 +133,17 @@ if (-not $SkipNative) {
     $wgTemp = Join-Path $env:TEMP "glukvpn-wg-$PID"
     New-Item -ItemType Directory -Force -Path $wgTemp | Out-Null
 
-    # ROUND 5: the two DLLs are a MATCHED PAIR. tunnel.dll speaks exactly one
-    # wireguard.dll ABI. Round 4 shipped wireguard.dll from wireguard-nt-1.1.zip
-    # next to a tunnel.dll built from git master, and the mismatch made
-    # WireGuardTunnelService() bail out roughly a second after start, which the
-    # service reported as tunnel_error. Take both from the same release zip.
+    # ROUND 6: WireGuardNT is gone. It is not WHQL signed, so on any machine
+    # with Device Guard / WDAC / "Memory integrity" switched on the kernel
+    # refuses WireGuardCreateAdapter with ERROR_ACCESS_DENIED (5) and the
+    # worker dies with ok=0, ran 0s - which is exactly what the diagnostics
+    # showed. Wintun is WHQL signed and needs no exception, which is why every
+    # shipping client (Proton, Mullvad, 7vpn) uses it.
+    #
+    # tunnel.dll still comes from wireguard-windows: its embeddable-dll-service
+    # already drives Wintun, and the release zip carries the matching pair.
     $paired = $false
-    if (-not ((Test-Path (Join-Path $vendor 'tunnel.dll')) -and (Test-Path (Join-Path $vendor 'wireguard.dll')))) {
+    if (-not ((Test-Path (Join-Path $vendor 'tunnel.dll')) -and (Test-Path (Join-Path $vendor 'wintun.dll')))) {
         $embedZip = Join-Path $wgTemp 'embeddable-dll-service.zip'
         $embedDir = Join-Path $wgTemp 'embeddable'
         foreach ($ver in @('0.5.3', '0.5.2', '0.4.9')) {
@@ -146,7 +151,7 @@ if (-not $SkipNative) {
                 Write-Note "Fetching matched tunnel.dll + wireguard.dll pair (embeddable-dll-service $ver)"
                 Invoke-WebRequest -Uri "https://download.wireguard.com/windows-client/embeddable-dll-service-amd64-$ver.zip" -OutFile $embedZip -UseBasicParsing
                 Expand-Archive -Path $embedZip -DestinationPath $embedDir -Force
-                foreach ($dll in @('tunnel.dll', 'wireguard.dll')) {
+                foreach ($dll in @('tunnel.dll', 'wintun.dll')) {
                     $found = Get-ChildItem -Path $embedDir -Filter $dll -Recurse |
                         Sort-Object { if ($_.FullName -match 'amd64') { 0 } else { 1 } } |
                         Select-Object -First 1
@@ -165,20 +170,22 @@ if (-not $SkipNative) {
         $paired = $true
     }
 
-    if (-not (Test-Path (Join-Path $vendor 'wireguard.dll'))) {
-        Write-Note 'Fetching wireguard.dll (WireGuardNT 1.1 fallback)'
-        $ntZip = Join-Path $wgTemp 'wireguard-nt.zip'
-        Invoke-WebRequest -Uri 'https://download.wireguard.com/wireguard-nt/wireguard-nt-1.1.zip' -OutFile $ntZip -UseBasicParsing
-        Expand-Archive -Path $ntZip -DestinationPath (Join-Path $wgTemp 'wg-nt') -Force
-        $ntDll = Get-ChildItem -Path (Join-Path $wgTemp 'wg-nt') -Filter 'wireguard.dll' -Recurse |
+    # wintun.dll is never optional: it *is* the driver. 0.14.1 is the official
+    # WHQL-signed build and the exact file the commercial clients ship.
+    if (-not (Test-Path (Join-Path $vendor 'wintun.dll'))) {
+        Write-Note 'Fetching wintun.dll (Wintun 0.14.1, WHQL signed)'
+        $wintunZip = Join-Path $wgTemp 'wintun.zip'
+        Invoke-WebRequest -Uri 'https://www.wintun.net/builds/wintun-0.14.1.zip' -OutFile $wintunZip -UseBasicParsing
+        Expand-Archive -Path $wintunZip -DestinationPath (Join-Path $wgTemp 'wintun') -Force
+        $wintunDll = Get-ChildItem -Path (Join-Path $wgTemp 'wintun') -Filter 'wintun.dll' -Recurse |
             Where-Object { $_.FullName -match 'amd64' } |
             Select-Object -First 1
-        if (-not $ntDll) { throw 'wireguard.dll (amd64) was not found inside wireguard-nt-1.1.zip.' }
-        Copy-Item $ntDll.FullName $vendor -Force
+        if (-not $wintunDll) { throw 'wintun.dll (amd64) was not found inside wintun-0.14.1.zip.' }
+        Copy-Item $wintunDll.FullName $vendor -Force
     }
 
     if (-not (Test-Path (Join-Path $vendor 'tunnel.dll'))) {
-        Write-Note 'Building tunnel.dll from wireguard-windows (UNMATCHED fallback - may cause tunnel_start_failed)'
+        Write-Note 'Building tunnel.dll from wireguard-windows source (Wintun backend)'
         $goCmd = Get-Command 'go' -ErrorAction SilentlyContinue
         if ($goCmd) {
             $wgWinDir = Join-Path $wgTemp 'wg-windows'
@@ -194,7 +201,7 @@ if (-not $SkipNative) {
 
     Remove-Item $wgTemp -Recurse -Force -ErrorAction SilentlyContinue
 
-    foreach ($dll in @('tunnel.dll', 'wireguard.dll')) {
+    foreach ($dll in @('tunnel.dll', 'wintun.dll')) {
         if (-not (Test-Path (Join-Path $vendor $dll))) {
             throw "$dll is missing from vendor\amd64 and could not be downloaded. Without it the client reports driver_unavailable and can never connect. See $vendor\README.md"
         }
@@ -306,7 +313,7 @@ $serviceOut = Join-Path $NativeBuild $Configuration
 if (Test-Path $serviceOut) {
     Copy-Item (Join-Path $serviceOut 'GlukVpnTunnelService.exe') `
         (Join-Path $Stage 'service') -Force
-    foreach ($dll in @('tunnel.dll', 'wireguard.dll')) {
+    foreach ($dll in @('tunnel.dll', 'wintun.dll')) {
         $source = Join-Path $serviceOut $dll
         if (Test-Path $source) {
             Copy-Item $source (Join-Path $Stage 'service') -Force

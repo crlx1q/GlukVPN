@@ -313,7 +313,17 @@ class _MapBackdrop extends StatelessWidget {
                           zoom: view.zoom,
                           focus: view.focus,
                           dotOpacity: 0.58,
-                          driftDegrees: drift * 360,
+                          // ROUND 6: the map used to scroll one way for ever,
+                          // like a marquee. Folding the 0 -> 1 drift into a
+                          // triangle wave makes it travel out and then back,
+                          // which is what the desktop client already does and
+                          // what reads as a living map instead of a ticker.
+                          driftDegrees:
+                              (((drift <= 0.5
+                                              ? drift * 2
+                                              : (1 - drift) * 2) *
+                                          24) -
+                                      12),
                           selfPoint: selfPoint,
                           serverPoint: serverPoint,
                           nodePoints: fleet,

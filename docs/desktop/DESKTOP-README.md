@@ -17,7 +17,9 @@
 `native\glukvpn-tunnel-service\vendor\amd64\`:
 
 - `tunnel.dll` — <https://download.wireguard.com/windows-client/> → `embeddable-dll-service/amd64/`
-- `wireguard.dll` — <https://download.wireguard.com/wireguard-nt/> → `bin/amd64/`
+- `wintun.dll` — <https://www.wintun.net/builds/wintun-0.14.1.zip> → `wintun/bin/amd64/`
+  (WHQL-подписанный драйвер; WireGuard-NT больше не используется — его блокирует
+  «Изоляция ядра»)
 
 Без них сборка пройдёт, но Connect будет отвечать `driver_unavailable`.
 

@@ -182,12 +182,20 @@ std::wstring Tunnel::StopEventName() const {
 }
 
 bool Tunnel::DriverReady() {
-    return wg::Api::Instance().Load() && LoadTunnelDll();
+    // ROUND 6: the pair is tunnel.dll + wintun.dll. WireGuardNT is gone - it is
+    // not WHQL signed, so on a machine with Device Guard / WDAC / "Memory
+    // integrity" the kernel rejects adapter creation with ERROR_ACCESS_DENIED
+    // and the worker died instantly. Wintun needs no exception at all.
+    //
+    // Both files are checked by actually loading them: a truncated or
+    // wrong-architecture download is far more common than a missing file, and
+    // only LoadLibrary catches that.
+    return LoadTunnelDll() && wg::Api::Instance().Load();
 }
 
 std::string Tunnel::DriverDescription() {
     const std::string version = wg::Api::Instance().Version();
-    return version.empty() ? std::string("unavailable") : version;
+    return version.empty() ? std::string("wintun unavailable") : version;
 }
 
 void Tunnel::WorkerMain(std::wstring configPath) {
@@ -215,16 +223,16 @@ void Tunnel::WorkerMain(std::wstring configPath) {
         if (!ok) {
             status_.state = TunnelState::Error;
             if (ranFor <= 5) {
-                // tunnel.dll never got as far as a working adapter. In
-                // practice this is a wireguard.dll / tunnel.dll pair from two
-                // different WireGuard releases, which is why the build now
-                // takes both files out of the same archive.
+                // tunnel.dll never got as far as a working adapter. Since the
+                // Wintun migration the usual cause is a tunnel.dll built
+                // against a different Wintun release than the one shipped
+                // beside it, so the build takes both from one archive.
                 status_.errorCode = "tunnel_start_failed";
                 status_.errorMessage =
-                    "WireGuard could not start the tunnel (driver " +
+                    "The tunnel could not be started (driver " +
                     DriverDescription() +
-                    "). wireguard.dll and tunnel.dll must come from the same "
-                    "WireGuard release.";
+                    "). tunnel.dll must be built against Wintun and ship "
+                    "beside wintun.dll from the same release.";
             } else {
                 status_.errorCode = "tunnel_error";
                 status_.errorMessage =
@@ -259,7 +267,7 @@ bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
     if (!DriverReady()) {
         errorCode = "driver_unavailable";
         errorMessage =
-            "WireGuard driver files are missing. Reinstall GlukVPN.";
+            "tunnel.dll or wintun.dll is missing. Reinstall GlukVPN.";
         status_.state = TunnelState::Error;
         status_.errorCode = errorCode;
         status_.errorMessage = errorMessage;
@@ -377,7 +385,12 @@ void Tunnel::RefreshFromDriver(TunnelStatus& status) {
     if (status.state == TunnelState::Down) return;
 
     wg::PeerStats stats;
-    if (!wg::ReadPeerStats(adapter_, stats) || !stats.valid) {
+    const bool read = wg::ReadPeerStats(adapter_, stats);
+    // Wintun publishes the adapter before the first handshake, and the split
+    // engine needs its LUID from that moment on, so the LUID is taken even
+    // when the UAPI read itself has not succeeded yet.
+    if (stats.adapterLuid) status.luid = stats.adapterLuid;
+    if (!read || !stats.valid) {
         // The adapter is gone while we believe we are up.
         if (status.state == TunnelState::Connected) {
             status.state = TunnelState::Lost;

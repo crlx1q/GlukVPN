@@ -220,6 +220,13 @@ class _WorldStageState extends State<WorldStage>
                 arcProgress: _arcProgress(),
                 arcPhase: _arc.value,
                 orbitalPhase: _orbit.value,
+                // ROUND 6: the ribbons used to be pinned to 30% of the card's
+                // height while the power button sits dead centre, so they flew
+                // *above* the button instead of around it. Anchoring them on
+                // the button - and sizing them to the button rather than to the
+                // card - is what makes them read as orbits.
+                orbitalAnchor: const Offset(0.5, 0.5),
+                orbitalRadius: 152,
                 pulse: _pulse.value,
                 connected: connected,
               );

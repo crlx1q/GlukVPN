@@ -76,15 +76,18 @@ endif()
 # ---------------------------------------------------------------------------
 # Vendored WireGuard binaries
 # ---------------------------------------------------------------------------
-# tunnel.dll    from wireguard-windows (embeddable-dll-service)
-# wireguard.dll WireGuardNT driver loader
+# tunnel.dll    from wireguard-windows (embeddable-dll-service), Wintun backend
+# wintun.dll    official WHQL-signed Wintun 0.14.1 - the only driver we ship.
+#               WireGuardNT was dropped in round 6: it is not WHQL signed, so
+#               Device Guard / WDAC / "Memory integrity" machines refused to
+#               create the adapter at all.
 #
 # These are NOT committed to the repository — see vendor/amd64/README.md for
 # the exact download and verification steps. The build copies whatever is
 # present next to the produced exe.
 set(GLUK_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vendor/amd64")
 
-foreach(dll tunnel.dll wireguard.dll)
+foreach(dll tunnel.dll wintun.dll)
     if(EXISTS "${GLUK_VENDOR_DIR}/${dll}")
         add_custom_command(TARGET GlukVpnTunnelService POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different

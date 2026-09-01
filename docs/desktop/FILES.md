@@ -112,7 +112,7 @@ transmitted `platform`, and `control-server` already validated it
 | `src/json.h` / `.cpp` | 4 211 / 11 336 | Dependency-free bounded JSON. |
 | `src/log.h` / `.cpp` | 1 024 / 3 992 | Rotating log with key scrubbing. |
 | `README.md` | — | Protocol reference and error codes. |
-| `vendor/amd64/README.md` | — | Where to get `tunnel.dll` and `wireguard.dll`. |
+| `vendor/amd64/README.md` | — | Where to get `tunnel.dll` and `wintun.dll`. |
 
 No third-party source is vendored. The only external binaries are the two
 official WireGuard DLLs, which you download yourself.

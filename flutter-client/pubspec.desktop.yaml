@@ -31,6 +31,7 @@ dependencies:
   dart_ping: ^9.0.1
   google_fonts: ^6.2.1
   battery_plus: ^6.0.2
+  flutter_svg: ^2.0.10+1 # official Google / Telegram marks (pure Dart)
 
   # wireguard_flutter is Android-only. It stays in the dependency list so the
   # shared services/vpn_service.dart keeps compiling, but it is never used on
@@ -56,4 +57,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/
+    - assets/brands/
     - assets/tray/

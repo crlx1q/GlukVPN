@@ -40,6 +40,8 @@ class DottedWorld extends StatelessWidget {
 		this.arcProgress = 0,
 		this.arcPhase = 0,
 		this.orbitalPhase = 0,
+		this.orbitalAnchor = const Offset(0.5, 0.30),
+		this.orbitalRadius,
 		this.showcase = 0,
 		this.showcaseSeconds = 0,
 		this.pulse = 0,
@@ -107,6 +109,20 @@ class DottedWorld extends StatelessWidget {
 	/// 0..1 - travel of the light along the orbital threads.
 	final double orbitalPhase;
 
+	/// Where the orbital threads are centred on the **flat** map, in fractions
+	/// of the paint size. Ignored as [globeness] reaches 1, where the planet's
+	/// own centre takes over.
+	///
+	/// The default keeps them in the upper third, which is what the phone's
+	/// composition wants. The desktop map card overrides it to the middle so the
+	/// ribbons ring the power button instead of flying above it.
+	final Offset orbitalAnchor;
+
+	/// Radius of the outer thread on the flat map, in pixels. Null sizes it from
+	/// the viewport, which is right when the threads decorate the whole scene and
+	/// wrong when they are meant to hug one specific control.
+	final double? orbitalRadius;
+
 	/// 0..1 - how strongly the showcase scene is drawn: people scattered over the
 	/// world, exit nodes, and threads that come up and drop again.
 	///
@@ -147,6 +163,8 @@ class DottedWorld extends StatelessWidget {
 					arcProgress: arcProgress.clamp(0.0, 1.0),
 					arcPhase: arcPhase,
 					orbitalPhase: orbitalPhase,
+					orbitalAnchor: orbitalAnchor,
+					orbitalRadius: orbitalRadius,
 					showcase: showcase.clamp(0.0, 1.0),
 					showcaseSeconds: showcaseSeconds,
 					pulse: pulse,
@@ -177,6 +195,8 @@ class _DottedWorldPainter extends CustomPainter {
 		required this.arcProgress,
 		required this.arcPhase,
 		required this.orbitalPhase,
+		required this.orbitalAnchor,
+		required this.orbitalRadius,
 		required this.showcase,
 		required this.showcaseSeconds,
 		required this.pulse,
@@ -200,6 +220,8 @@ class _DottedWorldPainter extends CustomPainter {
 	final double arcProgress;
 	final double arcPhase;
 	final double orbitalPhase;
+	final Offset orbitalAnchor;
+	final double? orbitalRadius;
 	final double showcase;
 	final double showcaseSeconds;
 	final double pulse;
@@ -579,14 +601,22 @@ class _DottedWorldPainter extends CustomPainter {
 	/// the third. Tying them to the globe keeps the same relationship at every
 	/// camera distance, which is the whole point of orbits.
 	void _paintOrbitals(Canvas canvas, Size size, Offset globeCentre, double radius) {
-		// On the flat map there is no sphere to orbit, so the threads are anchored
-		// to the upper third of the scene, where the composition's mass is.
+		// On the flat map there is no sphere to orbit, so the threads follow
+		// [orbitalAnchor]. This used to be hard-coded to the upper third, which is
+		// right on the phone but wrong on the desktop map card, where the power
+		// button sits dead centre: the ribbons flew above the button instead of
+		// around it.
 		final anchor = Offset.lerp(
-			Offset(size.width * 0.5, size.height * 0.30),
+			Offset(size.width * orbitalAnchor.dx, size.height * orbitalAnchor.dy),
 			globeCentre,
 			globeness,
 		)!;
-		final base = ui.lerpDouble(size.shortestSide * 0.36, radius * 1.16, globeness)!;
+		// Sizing from the viewport only makes sense while the threads decorate the
+		// whole scene. When they are meant to hug a control, that control's radius
+		// is the only number that keeps the relationship stable as the window
+		// changes shape.
+		final flatBase = orbitalRadius ?? size.shortestSide * 0.36;
+		final base = ui.lerpDouble(flatBase, radius * 1.16, globeness)!;
 
 		// Once the planet is wider than the screen its orbits are off-canvas, and
 		// all that is left on screen are two arcs cutting across the corners. Fade
@@ -943,6 +973,8 @@ class _DottedWorldPainter extends CustomPainter {
 			old.arcProgress != arcProgress ||
 			old.arcPhase != arcPhase ||
 			old.orbitalPhase != orbitalPhase ||
+			old.orbitalAnchor != orbitalAnchor ||
+			old.orbitalRadius != orbitalRadius ||
 			old.showcase != showcase ||
 			old.showcaseSeconds != showcaseSeconds ||
 			old.pulse != pulse ||

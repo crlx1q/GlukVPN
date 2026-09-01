@@ -9,7 +9,8 @@ glukvpn.exe  (Flutter, user)          GlukVpnTunnelService.exe (LocalSystem)
       |                                          |
       |  \\.\pipe\GlukVPN.tunnel  (JSON lines)   |
       |----------------------------------------->|  tunnel.dll  -> WireGuard adapter
-      |<-----------------------------------------|  wireguard.dll -> handshake, bytes
+      |<-----------------------------------------|  wintun.dll   -> WHQL adapter
+      |                                          |  UAPI pipe   -> handshake, bytes
                                                  |  WFP -> kill switch, per-app rules
                                                  |  iphlpapi -> bypass routes
 ```
@@ -22,7 +23,7 @@ glukvpn.exe  (Flutter, user)          GlukVpnTunnelService.exe (LocalSystem)
 | `service.{h,cpp}` | SCM registration, start/stop, failure actions. |
 | `pipe_server.{h,cpp}` | Named pipe, DACL, JSON dispatch, client verification. |
 | `tunnel.{h,cpp}` | Tunnel lifecycle, config preparation, state machine. |
-| `wireguard_nt.{h,cpp}` | Dynamic binding to `wireguard.dll` for live stats. |
+| `wireguard_nt.{h,cpp}` | Loads `wintun.dll` and reads live stats over the WireGuard UAPI pipe. |
 | `wfp.{h,cpp}` | Kill switch and per-application filters. |
 | `split_tunnel.{h,cpp}` | Split-tunnelling modes, bypass routes. |
 | `appdata.{h,cpp}` | `%PROGRAMDATA%` paths, ACLs, DPAPI, secret shredding. |
@@ -39,7 +40,7 @@ cmake --build native\glukvpn-tunnel-service\build --config Release
 
 Output: `build\Release\GlukVpnTunnelService.exe`.
 
-Place `tunnel.dll` and `wireguard.dll` in `vendor/amd64/` first — see the README
+Place `tunnel.dll` and `wintun.dll` in `vendor/amd64/` first — see the README
 there. CMake copies them next to the executable.
 
 ## Run it by hand

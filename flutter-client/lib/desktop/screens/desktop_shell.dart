@@ -13,6 +13,7 @@ import '../state/window_controller.dart';
 import '../theme/desktop_theme.dart';
 import '../widgets/desktop_sidebar.dart';
 import '../widgets/window_title_bar.dart';
+import 'desktop_account_screen.dart';
 import 'desktop_home_screen.dart';
 import 'desktop_servers_screen.dart';
 import 'desktop_settings_screen.dart';
@@ -55,6 +56,12 @@ class DesktopShellState extends State<DesktopShell> {
   static const int _stats = 2;
   static const int _settingsTab = 3;
 
+  /// Deliberately past the end of the sidebar's item list: Account is reached
+  /// by clicking the account card at the bottom of the rail, not by a fifth nav
+  /// pill. The sidebar highlights nothing while this page is open, which is
+  /// correct - the card itself is the affordance.
+  static const int _accountTab = 4;
+
   int _index = _home;
 
   @override
@@ -72,6 +79,13 @@ class DesktopShellState extends State<DesktopShell> {
   void openServers() {
     if (!mounted) return;
     setState(() => _index = _servers);
+  }
+
+  /// ROUND 6: the account card used to open Settings and leave the user to find
+  /// the Account section at the bottom of six others. It now opens the account.
+  void openAccount() {
+    if (!mounted) return;
+    setState(() => _index = _accountTab);
   }
 
   /// One switch, plus the laptop's own opinion.
@@ -136,7 +150,7 @@ class DesktopShellState extends State<DesktopShell> {
                 userName: name,
                 userIdLabel: widget.auth.user?.publicIdLabel,
                 statusColor: _statusColor,
-                onAccountTap: openSettings,
+                onAccountTap: openAccount,
                 items: <SidebarItem>[
                   SidebarItem(
                     icon: Icons.vpn_lock_rounded,
@@ -215,6 +229,18 @@ class DesktopShellState extends State<DesktopShell> {
           ),
           child: DesktopStatsScreen(
             usage: widget.vpn.usage,
+            strings: widget.strings,
+          ),
+        );
+      case _accountTab:
+        return Padding(
+          padding: const EdgeInsets.only(
+            right: DesktopTokens.pagePadding,
+            bottom: DesktopTokens.pagePadding,
+          ),
+          child: DesktopAccountScreen(
+            auth: widget.auth,
+            vpn: widget.vpn,
             strings: widget.strings,
           ),
         );

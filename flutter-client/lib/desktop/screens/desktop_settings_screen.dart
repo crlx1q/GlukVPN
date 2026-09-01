@@ -384,7 +384,7 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
             ),
             _InfoTile(
               label: ru ? 'Протокол' : 'Protocol',
-              value: 'WireGuard · NT',
+              value: 'WireGuard · Wintun',
             ),
             _InfoTile(
               label: ru ? 'Сетевой адаптер' : 'Network adapter',
@@ -1124,6 +1124,24 @@ class _SplitSectionState extends State<_SplitSection> {
     }
   }
 
+  /// ROUND 6: app search. A real PC lists 150+ installed programs, and
+  /// scrolling a 260 px box to find "Steam" is not a workflow.
+  String _query = '';
+
+  List<InstalledApp> _visibleApps() {
+    final List<InstalledApp> all = _apps ?? const <InstalledApp>[];
+    final String q = _query.trim().toLowerCase();
+    if (q.isEmpty) return all;
+    // Matched against the display name *and* the executable: people search for
+    // "Chrome" and for "chrome.exe" about equally often.
+    return all
+        .where((InstalledApp a) =>
+            a.displayName.toLowerCase().contains(q) ||
+            a.fileName.toLowerCase().contains(q) ||
+            a.exePath.toLowerCase().contains(q))
+        .toList();
+  }
+
   Future<void> _toggleApp(InstalledApp app, bool selected) async {
     final current = List<String>.from(widget.settings.value.splitApps);
     final key = app.exePath;
@@ -1153,6 +1171,8 @@ class _SplitSectionState extends State<_SplitSection> {
     final value = widget.settings.value;
     final selected =
         value.splitApps.map((String e) => e.toLowerCase()).toSet();
+    final bool ru = s.isRussian;
+    final List<InstalledApp> visible = _visibleApps();
 
     return _Section(
       title: s.sectionSplit,
@@ -1205,6 +1225,62 @@ class _SplitSectionState extends State<_SplitSection> {
                 ),
             ],
           ),
+          // The search box only appears once the list is long enough to need
+          // it; on a machine with six apps it would just be clutter.
+          if ((_apps?.length ?? 0) > 8) ...<Widget>[
+            const SizedBox(height: 6),
+            TextField(
+              onChanged: (String v) => setState(() => _query = v),
+              style: const TextStyle(color: GlukColors.text0, fontSize: 13),
+              decoration: InputDecoration(
+                isDense: true,
+                filled: true,
+                fillColor: DesktopTokens.card,
+                hintText: ru ? 'Поиск приложения…' : 'Search apps…',
+                hintStyle: const TextStyle(
+                  color: GlukColors.text2,
+                  fontSize: 13,
+                ),
+                prefixIcon: const Icon(
+                  Icons.search_rounded,
+                  size: 17,
+                  color: GlukColors.text2,
+                ),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: ru ? 'Очистить' : 'Clear',
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          size: 16,
+                          color: GlukColors.text2,
+                        ),
+                        onPressed: () => setState(() => _query = ''),
+                      ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius:
+                      BorderRadius.circular(DesktopTokens.innerRadius),
+                  borderSide: const BorderSide(color: DesktopTokens.hairline),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius:
+                      BorderRadius.circular(DesktopTokens.innerRadius),
+                  borderSide: const BorderSide(color: DesktopTokens.hairline),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius:
+                      BorderRadius.circular(DesktopTokens.innerRadius),
+                  borderSide: BorderSide(
+                    color: GlukColors.violet.withOpacity(0.6),
+                  ),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           if (_apps == null && !_loading)
             TextButton(
@@ -1216,9 +1292,9 @@ class _SplitSectionState extends State<_SplitSection> {
               constraints: const BoxConstraints(maxHeight: 260),
               child: ListView.builder(
                 shrinkWrap: true,
-                itemCount: _apps?.length ?? 0,
+                itemCount: visible.length,
                 itemBuilder: (BuildContext context, int index) {
-                  final app = _apps![index];
+                  final app = visible[index];
                   final checked = selected.contains(app.exePath.toLowerCase());
                   return CheckboxListTile(
                     dense: true,

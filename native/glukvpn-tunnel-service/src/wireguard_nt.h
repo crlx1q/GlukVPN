@@ -1,11 +1,22 @@
-// Thin dynamic binding to wireguard.dll (WireGuardNT).
+// Live tunnel telemetry for GlukVPN.
 //
-// tunnel.dll brings the tunnel up and owns the data plane. This wrapper is
-// only used to *read* live state — most importantly the last handshake
-// timestamp, which is the single fact that proves the tunnel really works.
+// ROUND 6 - Wintun migration.
 //
-// Everything is resolved at runtime with GetProcAddress so the service still
-// starts (and can report driver_unavailable cleanly) when the DLL is missing.
+// This file used to be a thin binding to wireguard.dll (WireGuardNT): it
+// opened the adapter and read the peer table with WireGuardGetConfiguration().
+// That is exactly the path Windows refuses to serve on a machine with Device
+// Guard / WDAC / "Memory integrity" enabled - WireGuardNT is not WHQL signed,
+// so adapter creation comes back with ERROR_ACCESS_DENIED (5) and the worker
+// dies with `ok=0, ran 0s`.
+//
+// Wintun *is* WHQL signed, which is why every shipping VPN client uses it.
+// Wintun has no configuration API of its own, so the live counters now come
+// from WireGuard's own UAPI instead: tunnel.dll publishes one named pipe per
+// adapter and speaks the same `get=1` protocol as wg(8) on Linux. No driver
+// handle, no privileged adapter open, nothing for WDAC to object to.
+//
+// The namespace and the ReadPeerStats() signature are unchanged on purpose -
+// Tunnel does not care where the numbers come from.
 
 #pragma once
 
@@ -27,18 +38,23 @@ struct PeerStats {
     std::string vpnIp;
 };
 
-// Loads wireguard.dll from the service directory. Idempotent.
+// Wintun presence check plus the UAPI reader. Idempotent.
 class Api {
 public:
     static Api& Instance();
 
+    // True when a usable wintun.dll sits next to the service binary.
     bool Load();
     bool loaded() const { return loaded_; }
 
-    // Human-readable driver version, or an empty string when unavailable.
+    // "wintun 0.14" once the driver is actually running, "wintun" before the
+    // first adapter exists. Never empty when Load() succeeded.
     std::string Version();
 
-    // Opens the adapter created by tunnel.dll and reads its configuration.
+    // Reads rx/tx and the last handshake over the adapter's UAPI pipe. Also
+    // fills adapterLuid from the interface table, which works as soon as the
+    // adapter exists - the split-tunnel engine needs it before the first
+    // handshake.
     bool ReadPeerStats(const std::wstring& adapterName, PeerStats& out);
 
 private:
@@ -48,11 +64,6 @@ private:
     bool loaded_ = false;
     bool attempted_ = false;
 
-    // WireGuardNT exports we care about.
-    void* openAdapter_ = nullptr;
-    void* closeAdapter_ = nullptr;
-    void* getConfiguration_ = nullptr;
-    void* getAdapterLuid_ = nullptr;
     void* getRunningDriverVersion_ = nullptr;
 };
 

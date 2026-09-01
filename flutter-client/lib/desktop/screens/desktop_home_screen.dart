@@ -257,7 +257,7 @@ class _MapCard extends StatelessWidget {
                     height: c.maxHeight,
                     // Fills the card instead of leaving empty bands above and
                     // below a thin strip of dots.
-                    zoomBoost: 1.35,
+                    zoomBoost: 1.62,
                   );
                 },
               ),

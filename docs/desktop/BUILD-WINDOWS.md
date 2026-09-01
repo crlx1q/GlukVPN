@@ -27,8 +27,14 @@ They are intentionally not committed. See
 
 | File | Source |
 | --- | --- |
-| `tunnel.dll` | <https://download.wireguard.com/windows-client/> → `embeddable-dll-service/amd64/` |
-| `wireguard.dll` | <https://download.wireguard.com/wireguard-nt/> → `bin/amd64/` |
+| `tunnel.dll` | Built from `golang.zx2c4.com/wireguard/windows/embeddable-dll-service` with the **wintun** backend (`go build -buildmode=c-shared`, Go 1.22+). `build-all.ps1` does this for you. |
+| `wintun.dll` | <https://www.wintun.net/builds/wintun-0.14.1.zip> → `wintun/bin/amd64/` |
+
+> Round 6 replaced WireGuard-NT with **Wintun**. WireGuard-NT is not
+> WHQL-signed, so on a PC with Core Isolation / Memory Integrity / WDAC enabled
+> the kernel refuses `WireGuardCreateAdapter` with `ERROR_ACCESS_DENIED (5)` and
+> the tunnel can never come up. `wintun.dll` is Microsoft-WHQL signed, which is
+> why every shipping VPN uses it.
 
 Put both in `native\glukvpn-tunnel-service\vendor\amd64\`.
 
@@ -165,7 +171,7 @@ flutter build apk --debug
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| `driver_unavailable` on Connect | Missing `tunnel.dll` / `wireguard.dll` | Step 2, then rebuild |
+| `driver_unavailable` on Connect | Missing `tunnel.dll` / `wintun.dll` | Step 2, then rebuild |
 | `service_unavailable` | Service not running | `sc query GlukVpnTunnel`, then `GlukVpnTunnelService.exe --start` |
 | `client_rejected` | UI running from outside the install directory | Expected during development — use `--console --allow-any-client` |
 | `protocol_mismatch` | Service and app built from different revisions | Rebuild both |

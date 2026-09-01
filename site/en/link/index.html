@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en" data-base="/en/" data-lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Confirm sign-in — GlukVPN</title>
+  <meta name="description" content="Confirm a GlukVPN app sign-in on your device.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0a0714">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&amp;display=swap">
+  <link rel="stylesheet" href="/assets/css/fonts.css?v=0.7.4">
+  <link rel="stylesheet" href="/assets/css/tokens.css?v=0.7.4">
+  <link rel="stylesheet" href="/assets/css/base.css?v=0.7.4">
+  <link rel="stylesheet" href="/assets/css/components.css?v=0.7.4">
+  <link rel="stylesheet" href="/assets/css/utilities.css?v=0.7.4">
+  <link rel="stylesheet" href="/assets/css/auth.css?v=0.7.4">
+  <script src="/assets/js/config.js?v=0.7.4" defer></script>
+  <script src="/assets/js/i18n.js?v=0.7.4" defer></script>
+  <script src="/assets/js/ui.js?v=0.7.4" defer></script>
+  <script src="/assets/js/auth.js?v=0.7.4" defer></script>
+  <script src="/assets/js/link.js?v=0.7.4" defer></script>
+  <style>
+    /* Transactional page: one card, two buttons, no marketing. Styles are
+       local so it cannot break when the rest of the site is restyled. */
+    .linkwrap {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .linkcard {
+      width: 100%;
+      max-width: 460px;
+      background: #0c0916;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 22px;
+      padding: 28px;
+      text-align: center;
+    }
+    .linkcard__logo {
+      width: 54px;
+      height: 54px;
+      border-radius: 16px;
+      margin: 0 auto 16px;
+      display: block;
+    }
+    .linkcard__title {
+      font-size: 21px;
+      font-weight: 800;
+      margin: 0 0 8px;
+      color: #f5f3fb;
+    }
+    .linkcard__text {
+      font-size: 14px;
+      line-height: 1.5;
+      color: #9994ab;
+      margin: 0 0 18px;
+    }
+    .linkfacts {
+      text-align: left;
+      background: #120e1e;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin: 0 0 18px;
+    }
+    .linkfacts__row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 5px 0;
+      font-size: 13.5px;
+    }
+    .linkfacts__row span { color: #5c5770; }
+    .linkfacts__row b { color: #f5f3fb; font-weight: 700; }
+    .linkcode {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 2px;
+    }
+    .linkactions {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .linkbtn {
+      appearance: none;
+      border-radius: 999px;
+      padding: 12px 22px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .linkbtn--go {
+      background: linear-gradient(135deg, #8b5cf6, #6d4de0);
+      color: #fff;
+    }
+    .linkbtn--no {
+      background: transparent;
+      color: #9994ab;
+      border-color: rgba(255, 255, 255, 0.14);
+    }
+    .linkbtn[disabled] { opacity: 0.55; cursor: default; }
+    .linkinput {
+      width: 100%;
+      background: #120e1e;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+      color: #f5f3fb;
+      font-size: 16px;
+      letter-spacing: 3px;
+      text-align: center;
+      padding: 13px 14px;
+      margin: 0 0 14px;
+    }
+    .linknote { font-size: 12px; color: #5c5770; margin: 16px 0 0; }
+  </style>
+</head>
+<body>
+  <main class="linkwrap" id="main">
+    <div class="linkcard">
+      <img class="linkcard__logo" src="/assets/img/logo-128.png" alt="GlukVPN" width="54" height="54">
+
+      <section id="link-gate">
+        <h1 class="linkcard__title">Confirm sign-in</h1>
+        <p class="linkcard__text" id="link-gate-text">Loading…</p>
+      </section>
+
+      <section id="link-ask" hidden>
+        <h1 class="linkcard__title">Enter the code</h1>
+        <p class="linkcard__text">The code is shown in the app you are signing in from.</p>
+        <form id="link-ask-form" novalidate>
+          <input class="linkinput" id="link-ask-input" type="text" inputmode="latin"
+                 autocomplete="one-time-code" placeholder="XXXX-XXXX" maxlength="12"
+                 aria-label="Confirmation code">
+          <div class="linkactions">
+            <button class="linkbtn linkbtn--go" type="submit">Continue</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="link-confirm" hidden>
+        <h1 class="linkcard__title">Sign in on this device?</h1>
+        <p class="linkcard__text">
+          Check that the details below match what the app is showing.
+          If you did not start this, decline the request.
+        </p>
+        <div class="linkfacts">
+          <div class="linkfacts__row"><span>App</span><b id="link-client">—</b></div>
+          <div class="linkfacts__row"><span>Device</span><b id="link-device">—</b></div>
+          <div class="linkfacts__row"><span>Code</span><b class="linkcode" id="link-code-shown">—</b></div>
+        </div>
+        <div class="linkactions">
+          <button class="linkbtn linkbtn--go" type="button" id="link-approve">Sign in</button>
+          <button class="linkbtn linkbtn--no" type="button" id="link-deny">This wasn&#39;t me</button>
+        </div>
+        <p class="linknote">No password needs to be typed in the app.</p>
+      </section>
+
+      <section id="link-done" hidden>
+        <h1 class="linkcard__title" id="link-done-title">Done</h1>
+        <p class="linkcard__text" id="link-done-text"></p>
+        <div class="linkactions">
+          <a class="linkbtn linkbtn--no" href="/en/app/">Account</a>
+        </div>
+      </section>
+
+      <section id="link-fail" hidden></section>
+    </div>
+  </main>
+</body>
+</html>

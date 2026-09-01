@@ -361,6 +361,56 @@ class ApiClient {
     return AuthUser.fromJson(_map(json['user']));
   }
 
+  // --- sign in by link -----------------------------------------------------
+
+  /// Starts a link sign-in and returns everything needed to show a
+  /// "confirm it in your browser" state.
+  ///
+  /// This is the device-authorization grant - the same flow GeForce NOW and
+  /// every console app uses. Note the two separate secrets: `verifyUrl` goes
+  /// to the browser and on its own proves nothing, while `pollSecret` never
+  /// leaves this process and is the only thing that can collect the tokens.
+  Future<LinkAuthStart> linkStart({
+    required String client,
+    String? deviceName,
+  }) async =>
+      LinkAuthStart.fromJson(
+        await _request(
+          'POST',
+          '/api/auth/link/start',
+          body: <String, dynamic>{
+            'client': client,
+            if (deviceName != null && deviceName.isNotEmpty)
+              'deviceName': deviceName,
+          },
+          authenticated: false,
+        ),
+      );
+
+  /// Asks whether the link has been confirmed yet.
+  ///
+  /// Every outcome is a normal 200 - waiting is a state, not a failure. On
+  /// approval the tokens are adopted here, so the session is live the moment
+  /// this returns.
+  Future<LinkAuthPoll> linkPoll({
+    required String requestId,
+    required String pollSecret,
+  }) async {
+    final Map<String, dynamic> json = await _request(
+      'POST',
+      '/api/auth/link/poll',
+      body: <String, dynamic>{
+        'requestId': requestId,
+        'pollSecret': pollSecret,
+      },
+      authenticated: false,
+    );
+    final LinkAuthPoll poll = LinkAuthPoll.fromJson(json);
+    final LoginResult? result = poll.result;
+    if (result != null) setTokens(result.tokens);
+    return poll;
+  }
+
   // --- nodes ---------------------------------------------------------------
 
   Future<List<VpnNodeInfo>> nodes() async {
@@ -401,8 +451,16 @@ class ApiClient {
   Future<DevicesResult> devices() async =>
       DevicesResult.fromJson(await _request('GET', '/api/devices'));
 
-  Future<void> revokeDevice(String deviceId) =>
+  /// Signs a device out and **removes** it from the account.
+  ///
+  /// Round 6 changed the server from a tombstone to a real delete, so the list
+  /// only ever shows machines that are actually signed in. [revokeDevice] is
+  /// kept as a thin alias because the phone, the desktop UI and the tests all
+  /// call it, and renaming every call site at once is how regressions happen.
+  Future<void> removeDevice(String deviceId) =>
       _request('DELETE', '/api/devices/$deviceId');
+
+  Future<void> revokeDevice(String deviceId) => removeDevice(deviceId);
 
   // --- vpn -----------------------------------------------------------------
 

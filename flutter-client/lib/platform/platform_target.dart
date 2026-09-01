@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, Process, ProcessResult;
 
 /// Which platform implementation is active.
 ///
@@ -28,6 +28,58 @@ String get devicePlatformTag {
     case PlatformTarget.other:
       return 'unknown';
   }
+}
+
+/// The machine's own name, as its owner knows it: "ALISHER-PC", "Pixel 7".
+///
+/// ROUND 6: the device list used to read "Windows · Desktop" for every PC and
+/// "Android · Phone" for every phone, which is useless the moment an account
+/// has two of either - you cannot tell which row to sign out.
+///
+/// Deliberately no new dependency for this. Windows exposes the computer name
+/// through `dart:io`, and on Android `getprop` is part of the platform, so both
+/// answers come from the OS itself. Any failure falls back to the old generic
+/// label rather than blocking registration - a device that cannot name itself
+/// must still be able to sign in.
+Future<String> resolvePhysicalDeviceName() async {
+	try {
+		switch (currentPlatformTarget) {
+			case PlatformTarget.windows:
+			case PlatformTarget.other:
+				final String host = Platform.localHostname.trim();
+				if (host.isNotEmpty && host.toLowerCase() != 'localhost') {
+					return _tidyDeviceName(host);
+				}
+				return suggestedDeviceLabel;
+			case PlatformTarget.android:
+				final String model = await _getprop('ro.product.model');
+				if (model.isEmpty) return suggestedDeviceLabel;
+				final String brand = await _getprop('ro.product.brand');
+				// "Pixel 7" already contains the brand; "SM-S911B" does not.
+				final bool redundant = brand.isEmpty ||
+						model.toLowerCase().startsWith(brand.toLowerCase());
+				final String label = redundant
+						? model
+						: '${brand[0].toUpperCase()}${brand.substring(1)} $model';
+				return _tidyDeviceName(label);
+		}
+	} catch (_) {
+		// Sandboxed shell, missing binary, locked-down OEM build - all fine.
+	}
+	return suggestedDeviceLabel;
+}
+
+Future<String> _getprop(String key) async {
+	final ProcessResult result = await Process.run('getprop', <String>[key]);
+	return result.stdout.toString().trim();
+}
+
+/// The control server caps `deviceName` at 64 characters, so trim rather than
+/// let registration fail validation on a long hostname.
+String _tidyDeviceName(String raw) {
+	final String clean = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+	if (clean.isEmpty) return suggestedDeviceLabel;
+	return clean.length <= 64 ? clean : clean.substring(0, 64).trim();
 }
 
 /// Human readable device name suggestion, e.g. "Windows · Desktop".

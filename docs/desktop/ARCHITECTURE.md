@@ -26,7 +26,8 @@ Windows; only the VPN implementation is platform-specific.
                                     | GlukVpnTunnelService.exe   |
                                     | (LocalSystem, C++20)       |
                                     |  tunnel.dll  -> WireGuard  |
-                                    |  wireguard.dll -> stats    |
+                                    |  wintun.dll   -> WHQL      |
+                                    |  UAPI pipe    -> stats     |
                                     |  WFP -> kill switch, apps  |
                                     |  iphlpapi -> routes        |
                                     +----------------------------+

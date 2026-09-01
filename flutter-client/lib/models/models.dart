@@ -674,6 +674,84 @@ class VpnStatusInfo {
   final DateTime? serverTime;
 }
 
+/// What the server hands back when a client starts a link sign-in.
+///
+/// Deliberately two secrets. [userCode] rides in a URL and identifies nothing
+/// but a pending request; [pollSecret] stays in the process that started the
+/// flow and is the only thing that can turn approval into tokens. That split is
+/// what makes it safe to hand the link to a browser.
+class LinkAuthStart {
+  const LinkAuthStart({
+    required this.requestId,
+    required this.userCode,
+    required this.pollSecret,
+    required this.verifyUrl,
+    required this.expiresAt,
+    required this.intervalSec,
+  });
+
+  factory LinkAuthStart.fromJson(Map<String, dynamic> json) => LinkAuthStart(
+        requestId: (json['requestId'] ?? '').toString(),
+        userCode: (json['userCode'] ?? '').toString(),
+        pollSecret: (json['pollSecret'] ?? '').toString(),
+        verifyUrl: (json['verifyUrl'] ?? '').toString(),
+        expiresAt: DateTime.tryParse((json['expiresAt'] ?? '').toString()) ??
+            DateTime.now().add(const Duration(minutes: 10)),
+        intervalSec: (json['intervalSec'] as num?)?.toInt() ?? 2,
+      );
+
+  final String requestId;
+
+  /// Shown to the user so they can check the browser is confirming *their*
+  /// request. Not a credential.
+  final String userCode;
+
+  /// Never shown, never logged, never put in a URL.
+  final String pollSecret;
+  final String verifyUrl;
+  final DateTime expiresAt;
+  final int intervalSec;
+
+  bool get isValid =>
+      requestId.isNotEmpty && pollSecret.isNotEmpty && verifyUrl.isNotEmpty;
+}
+
+enum LinkAuthStatus { pending, approved, denied, expired, slowDown, unknown }
+
+/// One answer to "has the user confirmed the link yet?".
+class LinkAuthPoll {
+  const LinkAuthPoll({required this.status, this.result, this.retryAfterSec});
+
+  factory LinkAuthPoll.fromJson(Map<String, dynamic> json) {
+    LinkAuthStatus parse(String raw) {
+      if (raw == 'approved') return LinkAuthStatus.approved;
+      if (raw == 'pending') return LinkAuthStatus.pending;
+      if (raw == 'denied') return LinkAuthStatus.denied;
+      if (raw == 'expired') return LinkAuthStatus.expired;
+      if (raw == 'slow_down') return LinkAuthStatus.slowDown;
+      return LinkAuthStatus.unknown;
+    }
+
+    final LinkAuthStatus status = parse((json['status'] ?? 'unknown').toString());
+    return LinkAuthPoll(
+      status: status,
+      // An approved payload is byte-for-byte a login response, so the same
+      // parser handles both paths and the two cannot drift apart.
+      result:
+          status == LinkAuthStatus.approved ? LoginResult.fromJson(json) : null,
+      retryAfterSec: (json['intervalSec'] as num?)?.toInt(),
+    );
+  }
+
+  final LinkAuthStatus status;
+  final LoginResult? result;
+  final int? retryAfterSec;
+
+  bool get approved => status == LinkAuthStatus.approved;
+  bool get waiting =>
+      status == LinkAuthStatus.pending || status == LinkAuthStatus.slowDown;
+}
+
 class LoginResult {
   const LoginResult({required this.tokens, required this.user, this.subscription});
 

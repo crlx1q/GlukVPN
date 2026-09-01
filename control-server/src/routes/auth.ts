@@ -13,6 +13,7 @@ import {
 import { clientIp, getAuthUser, requireUser } from "../middleware/auth"
 import { prisma } from "../prisma"
 import { refreshUserOrigin } from "../services/geo"
+import { closeSessionsForDevice } from "../services/sessions"
 import { checkLoginThrottle, recordLoginAttempt } from "../services/loginThrottle"
 import {
 	consumeCode,
@@ -218,7 +219,38 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 				ip: clientIp(request),
 				metadata: { allDevices, revokedTokens: revoked },
 			})
-			return reply.send({ ok: true, revokedTokens: revoked })
+			// Devices are no longer kept as tombstones. Signing out deletes the
+			// row, so an account cannot accumulate dozens of dead entries and the
+			// device limit always reflects machines that are actually signed in.
+			// Sessions and refresh tokens cascade off the device, so nothing can
+			// outlive the record.
+			let removedDevices = 0
+			try {
+				if (allDevices) {
+					const wiped = await prisma.device.deleteMany({
+						where: { userId: user.id },
+					})
+					removedDevices = wiped.count
+				} else if (device) {
+					// Close the tunnel while the row still exists, so the node is
+					// told to drop the peer before the record disappears.
+					await closeSessionsForDevice(device.id, "device_revoked")
+					await prisma.device.delete({ where: { id: device.id } })
+					removedDevices = 1
+				}
+			} catch (err) {
+				// A foreign key outside this transaction can refuse the delete.
+				// Falling back to REVOKED still leaves the tokens useless, which is
+				// the part that matters for security.
+				request.log.warn({ err }, "logout could not delete device rows")
+				const marked = await prisma.device.updateMany({
+					where: allDevices ? { userId: user.id } : { id: device?.id ?? "" },
+					data: { status: "REVOKED", revokedAt: new Date() },
+				})
+				removedDevices = marked.count
+			}
+
+			return reply.send({ ok: true, revokedTokens: revoked, removedDevices })
 		},
 	)
 

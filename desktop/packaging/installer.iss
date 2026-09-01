@@ -89,7 +89,9 @@ Source: "{#StageDir}\*"; DestDir: "{app}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs; \
     Excludes: "service\*"
 
-; Privileged tunnel service and the WireGuard DLLs it loads.
+; Privileged tunnel service plus the two DLLs it loads at runtime: tunnel.dll
+; and the WHQL-signed wintun.dll. Nothing else has to be installed - that is
+; the whole point of the Wintun migration.
 Source: "{#StageDir}\service\*"; DestDir: "{app}\service"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 

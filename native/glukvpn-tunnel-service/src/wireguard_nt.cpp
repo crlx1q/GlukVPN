@@ -1,10 +1,13 @@
 #include "wireguard_nt.h"
 
 #include <winsock2.h>
-#include <ifdef.h>
 #include <ws2tcpip.h>
+#include <ifdef.h>
+#include <iphlpapi.h>
+#include <netioapi.h>
 
-#include <vector>
+#include <cstdio>
+#include <string>
 
 #include "appdata.h"
 #include "log.h"
@@ -12,86 +15,75 @@
 namespace gluk::wg {
 namespace {
 
-// ---------------------------------------------------------------------------
-// WireGuardNT structures, mirrored from wireguard.h in wireguard-windows.
-// ---------------------------------------------------------------------------
+using WINTUN_GET_RUNNING_DRIVER_VERSION_FUNC = DWORD(WINAPI*)(void);
 
-typedef void* WIREGUARD_ADAPTER_HANDLE;
+// tunnel.dll publishes one UAPI pipe per adapter. wireguard-windows has used
+// the "Administrators" prefix since 0.3; older embeddable builds used
+// "Servers". Both are tried so a vendored DLL from either era works, and the
+// unprefixed name is kept as a last resort for local test builds.
+const wchar_t* const kPipePrefixes[] = {
+    L"\\\\.\\pipe\\ProtectedPrefix\\Administrators\\WireGuard\\",
+    L"\\\\.\\pipe\\ProtectedPrefix\\Servers\\WireGuard\\",
+    L"\\\\.\\pipe\\WireGuard\\",
+};
 
-typedef enum {
-    WIREGUARD_INTERFACE_HAS_PUBLIC_KEY = 1 << 0,
-    WIREGUARD_INTERFACE_HAS_PRIVATE_KEY = 1 << 1,
-    WIREGUARD_INTERFACE_HAS_LISTEN_PORT = 1 << 2,
-    WIREGUARD_INTERFACE_REPLACE_PEERS = 1 << 3
-} WIREGUARD_INTERFACE_FLAG;
+HANDLE OpenUapiPipe(const std::wstring& adapterName) {
+    for (const wchar_t* prefix : kPipePrefixes) {
+        const std::wstring path = std::wstring(prefix) + adapterName;
 
-typedef enum {
-    WIREGUARD_PEER_HAS_PUBLIC_KEY = 1 << 0,
-    WIREGUARD_PEER_HAS_PRESHARED_KEY = 1 << 1,
-    WIREGUARD_PEER_HAS_PERSISTENT_KEEPALIVE = 1 << 2,
-    WIREGUARD_PEER_HAS_ENDPOINT = 1 << 3,
-    WIREGUARD_PEER_REPLACE_ALLOWED_IPS = 1 << 5,
-    WIREGUARD_PEER_REMOVE = 1 << 6,
-    WIREGUARD_PEER_UPDATE_ONLY = 1 << 7
-} WIREGUARD_PEER_FLAG;
+        HANDLE pipe = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0,
+                                  nullptr, OPEN_EXISTING, 0, nullptr);
+        if (pipe != INVALID_HANDLE_VALUE) return pipe;
 
-#pragma pack(push, 8)
+        // Another reader is mid-transaction. The service polls every couple of
+        // seconds, so a short wait is always cheaper than missing a sample.
+        if (GetLastError() == ERROR_PIPE_BUSY &&
+            WaitNamedPipeW(path.c_str(), 200)) {
+            pipe = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0,
+                               nullptr, OPEN_EXISTING, 0, nullptr);
+            if (pipe != INVALID_HANDLE_VALUE) return pipe;
+        }
+    }
+    return INVALID_HANDLE_VALUE;
+}
 
-typedef struct {
-    DWORD Flags;
-    DWORD ListenPort;
-    BYTE PrivateKey[32];
-    BYTE PublicKey[32];
-    DWORD PeersCount;
-} WIREGUARD_INTERFACE;
+bool WriteAll(HANDLE pipe, const char* data, DWORD size) {
+    DWORD offset = 0;
+    while (offset < size) {
+        DWORD written = 0;
+        if (!WriteFile(pipe, data + offset, size - offset, &written, nullptr)) {
+            return false;
+        }
+        if (written == 0) return false;
+        offset += written;
+    }
+    return true;
+}
 
-typedef union {
-    SOCKADDR Addr;
-    SOCKADDR_IN Ipv4;
-    SOCKADDR_IN6 Ipv6;
-} WIREGUARD_ALLOWED_IP_ENDPOINT;
+// A UAPI transaction ends with a blank line after `errno=`. ERROR_BROKEN_PIPE
+// is the other normal ending, because tunnel.dll closes the handle itself.
+std::string ReadAll(HANDLE pipe) {
+    std::string out;
+    char buffer[2048];
+    for (;;) {
+        DWORD read = 0;
+        if (!ReadFile(pipe, buffer, sizeof(buffer), &read, nullptr)) break;
+        if (read == 0) break;
+        out.append(buffer, read);
+        if (out.size() >= 4 && out.compare(out.size() - 2, 2, "\n\n") == 0) break;
+        // Never let the other side of a pipe decide how much memory we use.
+        if (out.size() > (1u << 20)) break;
+    }
+    return out;
+}
 
-typedef struct {
-    DWORD Flags;
-    DWORD Reserved;
-    BYTE PublicKey[32];
-    BYTE PresharedKey[32];
-    WORD PersistentKeepalive;
-    WIREGUARD_ALLOWED_IP_ENDPOINT Endpoint;
-    DWORD64 TxBytes;
-    DWORD64 RxBytes;
-    DWORD64 LastHandshake; // 100ns intervals since 1601-01-01 (UTC)
-    DWORD AllowedIPsCount;
-} WIREGUARD_PEER;
-
-typedef struct {
-    union {
-        IN_ADDR V4;
-        IN6_ADDR V6;
-    } Address;
-    ADDRESS_FAMILY AddressFamily;
-    BYTE Cidr;
-} WIREGUARD_ALLOWED_IP;
-
-#pragma pack(pop)
-
-using WIREGUARD_OPEN_ADAPTER_FUNC =
-    WIREGUARD_ADAPTER_HANDLE(WINAPI*)(LPCWSTR Name);
-using WIREGUARD_CLOSE_ADAPTER_FUNC =
-    void(WINAPI*)(WIREGUARD_ADAPTER_HANDLE Adapter);
-using WIREGUARD_GET_CONFIGURATION_FUNC =
-    BOOL(WINAPI*)(WIREGUARD_ADAPTER_HANDLE Adapter,
-                  WIREGUARD_INTERFACE* Interface, DWORD* Bytes);
-using WIREGUARD_GET_ADAPTER_LUID_FUNC =
-    void(WINAPI*)(WIREGUARD_ADAPTER_HANDLE Adapter, NET_LUID* Luid);
-using WIREGUARD_GET_RUNNING_DRIVER_VERSION_FUNC = DWORD(WINAPI*)(void);
-
-// FILETIME epoch (1601) to Unix epoch (1970), in 100ns ticks.
-constexpr uint64_t kEpochDeltaTicks = 116444736000000000ULL;
-
-int64_t FiletimeTicksToUnix(uint64_t ticks) {
-    if (ticks <= kEpochDeltaTicks) return 0;
-    return static_cast<int64_t>((ticks - kEpochDeltaTicks) / 10000000ULL);
+uint64_t ParseU64(const std::string& text) {
+    uint64_t value = 0;
+    for (const char c : text) {
+        if (c < '0' || c > '9') break;
+        value = value * 10 + static_cast<uint64_t>(c - '0');
+    }
+    return value;
 }
 
 } // namespace
@@ -107,123 +99,114 @@ bool Api::Load() {
     attempted_ = true;
 
     // Load strictly from the service directory. Never let the DLL search path
-    // pick up an attacker-supplied wireguard.dll from the working directory.
-    const std::wstring path = AppData::ExecutableDir() + L"\\wireguard.dll";
+    // pick up an attacker-supplied wintun.dll from the working directory.
+    const std::wstring path = AppData::ExecutableDir() + L"\\wintun.dll";
     module_ = LoadLibraryExW(path.c_str(), nullptr,
                              LOAD_WITH_ALTERED_SEARCH_PATH);
     if (!module_) {
-        Log::LastError("LoadLibrary(wireguard.dll) failed", GetLastError());
+        Log::LastError("LoadLibrary(wintun.dll) failed", GetLastError());
         return false;
     }
 
-    openAdapter_ = reinterpret_cast<void*>(
-        GetProcAddress(module_, "WireGuardOpenAdapter"));
-    closeAdapter_ = reinterpret_cast<void*>(
-        GetProcAddress(module_, "WireGuardCloseAdapter"));
-    getConfiguration_ = reinterpret_cast<void*>(
-        GetProcAddress(module_, "WireGuardGetConfiguration"));
-    getAdapterLuid_ = reinterpret_cast<void*>(
-        GetProcAddress(module_, "WireGuardGetAdapterLUID"));
-    getRunningDriverVersion_ = reinterpret_cast<void*>(
-        GetProcAddress(module_, "WireGuardGetRunningDriverVersion"));
-
-    if (!openAdapter_ || !closeAdapter_ || !getConfiguration_) {
-        Log::Error("wireguard.dll is missing required exports");
+    // A DLL that cannot create an adapter is not Wintun, whatever its name.
+    if (!GetProcAddress(module_, "WintunCreateAdapter")) {
+        Log::Error("wintun.dll is missing required exports");
         FreeLibrary(module_);
         module_ = nullptr;
         return false;
     }
 
+    getRunningDriverVersion_ = reinterpret_cast<void*>(
+        GetProcAddress(module_, "WintunGetRunningDriverVersion"));
+
     loaded_ = true;
-    Log::Info("wireguard.dll loaded");
+    Log::Info("wintun.dll loaded");
     return true;
 }
 
 std::string Api::Version() {
-    if (!Load() || !getRunningDriverVersion_) return {};
+    if (!Load()) return {};
+    if (!getRunningDriverVersion_) return "wintun";
 
-    const auto fn = reinterpret_cast<WIREGUARD_GET_RUNNING_DRIVER_VERSION_FUNC>(
+    const auto fn = reinterpret_cast<WINTUN_GET_RUNNING_DRIVER_VERSION_FUNC>(
         getRunningDriverVersion_);
     const DWORD version = fn();
-    if (version == 0) return {};
+    // Zero is expected before the first adapter exists: Wintun is loaded on
+    // demand by tunnel.dll, not at boot. That is not an error.
+    if (version == 0) return "wintun";
 
     char buffer[32];
-    wsprintfA(buffer, "WireGuardNT %u.%u", (version >> 16) & 0xFFFF,
-              version & 0xFFFF);
+    std::snprintf(buffer, sizeof(buffer), "wintun %u.%u",
+                  static_cast<unsigned>((version >> 16) & 0xFFFF),
+                  static_cast<unsigned>(version & 0xFFFF));
     return buffer;
 }
 
 bool Api::ReadPeerStats(const std::wstring& adapterName, PeerStats& out) {
-    if (!Load()) return false;
+    // The LUID comes from the interface table, so it is available as soon as
+    // Wintun has created the adapter - before any handshake. The split-tunnel
+    // engine needs it at that point, so it is filled even when the UAPI read
+    // below fails.
+    NET_LUID luid{};
+    if (ConvertInterfaceAliasToLuid(adapterName.c_str(), &luid) == NO_ERROR) {
+        out.adapterLuid = luid.Value;
+    }
 
-    const auto open =
-        reinterpret_cast<WIREGUARD_OPEN_ADAPTER_FUNC>(openAdapter_);
-    const auto close =
-        reinterpret_cast<WIREGUARD_CLOSE_ADAPTER_FUNC>(closeAdapter_);
-    const auto getConfig =
-        reinterpret_cast<WIREGUARD_GET_CONFIGURATION_FUNC>(getConfiguration_);
-
-    WIREGUARD_ADAPTER_HANDLE adapter = open(adapterName.c_str());
-    if (!adapter) {
+    HANDLE pipe = OpenUapiPipe(adapterName);
+    if (pipe == INVALID_HANDLE_VALUE) {
         // Normal while the tunnel is down; not worth logging every poll.
         return false;
     }
 
-    if (getAdapterLuid_) {
-        const auto getLuid =
-            reinterpret_cast<WIREGUARD_GET_ADAPTER_LUID_FUNC>(getAdapterLuid_);
-        NET_LUID luid{};
-        getLuid(adapter, &luid);
-        out.adapterLuid = luid.Value;
-    }
-
-    // Ask once for the size, then read into a correctly sized buffer.
-    DWORD bytes = 0;
-    getConfig(adapter, nullptr, &bytes);
-    if (bytes == 0) {
-        close(adapter);
+    static const char kGet[] = "get=1\n\n";
+    if (!WriteAll(pipe, kGet, sizeof(kGet) - 1)) {
+        Log::LastError("UAPI write failed", GetLastError());
+        CloseHandle(pipe);
         return false;
     }
 
-    std::vector<BYTE> buffer(bytes);
-    if (!getConfig(adapter,
-                   reinterpret_cast<WIREGUARD_INTERFACE*>(buffer.data()),
-                   &bytes)) {
-        Log::LastError("WireGuardGetConfiguration failed", GetLastError());
-        close(adapter);
-        return false;
-    }
+    const std::string response = ReadAll(pipe);
+    CloseHandle(pipe);
+    if (response.empty()) return false;
 
-    const auto* iface =
-        reinterpret_cast<const WIREGUARD_INTERFACE*>(buffer.data());
+    bool sawPeer = false;
+    size_t position = 0;
+    while (position < response.size()) {
+        size_t lineEnd = response.find('\n', position);
+        if (lineEnd == std::string::npos) lineEnd = response.size();
+        std::string line = response.substr(position, lineEnd - position);
+        position = lineEnd + 1;
 
-    // Walk the variable-length peer/allowed-ip chain that follows the header.
-    const BYTE* cursor = buffer.data() + sizeof(WIREGUARD_INTERFACE);
-    const BYTE* end = buffer.data() + bytes;
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        const size_t eq = line.find('=');
+        if (eq == std::string::npos) continue;
 
-    for (DWORD p = 0; p < iface->PeersCount; ++p) {
-        if (cursor + sizeof(WIREGUARD_PEER) > end) break;
+        const std::string key = line.substr(0, eq);
+        const std::string value = line.substr(eq + 1);
 
-        const auto* peer = reinterpret_cast<const WIREGUARD_PEER*>(cursor);
-        cursor += sizeof(WIREGUARD_PEER);
-
-        // GlukVPN tunnels have exactly one peer; take the freshest handshake.
-        const int64_t handshake = FiletimeTicksToUnix(peer->LastHandshake);
-        if (handshake > out.lastHandshakeUnix) {
-            out.lastHandshakeUnix = handshake;
+        if (key == "public_key") {
+            // The interface block reports private_key; only peers carry a
+            // public one, so this is how a peer section is recognised.
+            sawPeer = true;
+        } else if (key == "rx_bytes") {
+            out.rxBytes += ParseU64(value);
+        } else if (key == "tx_bytes") {
+            out.txBytes += ParseU64(value);
+        } else if (key == "last_handshake_time_sec") {
+            const int64_t seconds = static_cast<int64_t>(ParseU64(value));
+            if (seconds > out.lastHandshakeUnix) out.lastHandshakeUnix = seconds;
+        } else if (key == "errno" && value != "0") {
+            Log::Error("UAPI get returned errno=" + value);
+            return false;
         }
-        out.rxBytes += peer->RxBytes;
-        out.txBytes += peer->TxBytes;
-
-        const DWORD allowedCount = peer->AllowedIPsCount;
-        const size_t skip =
-            static_cast<size_t>(allowedCount) * sizeof(WIREGUARD_ALLOWED_IP);
-        if (cursor + skip > end) break;
-        cursor += skip;
     }
+
+    // An adapter with no peer means tunnel.dll is still configuring it. Report
+    // that as "not readable yet" so the phase machine keeps waiting instead of
+    // declaring a connection that cannot carry traffic.
+    if (!sawPeer) return false;
 
     out.valid = true;
-    close(adapter);
     return true;
 }
 

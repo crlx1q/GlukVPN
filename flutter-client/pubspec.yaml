@@ -39,6 +39,11 @@ dependencies:
   # instead of burning frames in power-saving mode.
   battery_plus: ^6.0.2
 
+  # Renders the official Google and Telegram marks from assets/brands/*.svg.
+  # Pure Dart, so it adds no native plugin to the Android or Windows build -
+  # which is why it is safe to share between the two pubspecs.
+  flutter_svg: ^2.0.10+1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -53,3 +58,6 @@ flutter:
     # The world map is not an asset: it is a 2 KB bitmask decoded at runtime
     # (lib/data/world_map_data.dart).
     - assets/
+    # Subdirectories are not covered by the line above, so brand artwork has to
+    # be declared explicitly.
+    - assets/brands/

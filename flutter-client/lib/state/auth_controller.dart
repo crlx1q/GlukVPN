@@ -9,6 +9,11 @@ import '../services/wg_keys.dart';
 
 enum AuthStage { unknown, restoring, unauthenticated, authenticated }
 
+/// How a link sign-in ended. Distinct from a plain bool because "the user said
+/// no in the browser", "the link ran out" and "the network died" need different
+/// words on screen.
+enum LinkSignInOutcome { signedIn, denied, expired, cancelled, failed }
+
 /// Owns the account session and this device's WireGuard identity.
 ///
 /// Key invariant: the private key is generated here, stored in [SecureStore],
@@ -207,12 +212,108 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  /// Signs in by link, so this client never has to own a password field.
+  ///
+  /// The device-authorization grant, same as GeForce NOW: the server issues a
+  /// request, [onStarted] fires so the caller can open the browser and show the
+  /// code, and this method polls until the user confirms. The desktop client and
+  /// the extension both call it, which is what replaces the three different
+  /// improvised sign-in paths with one.
+  ///
+  /// Cancellation is cooperative through [isCancelled]: a user who changes their
+  /// mind must not leave a poll running for the link's full ten minutes.
+  Future<LinkSignInOutcome> signInWithLink({
+    required String client,
+    required void Function(LinkAuthStart start) onStarted,
+    bool Function()? isCancelled,
+  }) async {
+    bool cancelled() => isCancelled?.call() ?? false;
+
+    _error = null;
+    _busy = true;
+    notifyListeners();
+    try {
+      final LinkAuthStart start = await _api.linkStart(
+        client: client,
+        // Named up front so the confirmation page can say *which* machine is
+        // asking. Confirming a request you cannot identify is not consent.
+        deviceName: await resolvePhysicalDeviceName(),
+      );
+      if (!start.isValid) {
+        _error = 'The server did not return a sign-in link.';
+        return LinkSignInOutcome.failed;
+      }
+      onStarted(start);
+
+      Duration wait = Duration(seconds: start.intervalSec.clamp(1, 10));
+      while (DateTime.now().isBefore(start.expiresAt)) {
+        if (cancelled()) return LinkSignInOutcome.cancelled;
+        await Future<void>.delayed(wait);
+        if (cancelled()) return LinkSignInOutcome.cancelled;
+
+        final LinkAuthPoll poll = await _api.linkPoll(
+          requestId: start.requestId,
+          pollSecret: start.pollSecret,
+        );
+
+        // The server asks for back-pressure rather than punishing the client,
+        // so honour it instead of hammering on at the original interval.
+        if (poll.status == LinkAuthStatus.slowDown) {
+          wait += const Duration(seconds: 1);
+          continue;
+        }
+        if (poll.status == LinkAuthStatus.pending) continue;
+        if (poll.status == LinkAuthStatus.denied) {
+          _error = 'The sign-in request was declined in the browser.';
+          return LinkSignInOutcome.denied;
+        }
+        if (poll.status != LinkAuthStatus.approved) {
+          _error = 'This sign-in link is no longer valid. Please try again.';
+          return LinkSignInOutcome.expired;
+        }
+
+        final LoginResult? result = poll.result;
+        if (result == null) {
+          _error = 'The link was approved but no session came back.';
+          return LinkSignInOutcome.failed;
+        }
+
+        // From here the flow is identical to a password login, deliberately:
+        // one code path owns "what it means to become signed in".
+        _user = result.user;
+        _subscription = result.subscription;
+        _unconfirmed = false;
+        _connectivity?.reportSuccess();
+        await _store.writeUsername(result.user.username);
+        await ensureDeviceRegistered();
+        _stage = AuthStage.authenticated;
+        return LinkSignInOutcome.signedIn;
+      }
+      _error = 'The sign-in link expired. Please try again.';
+      return LinkSignInOutcome.expired;
+    } on ApiException catch (error) {
+      if (error.isNetwork) _connectivity?.reportNetworkFailure();
+      _error = error.message;
+      return LinkSignInOutcome.failed;
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
+  }
+
   /// Ensures this install has a WireGuard key pair and a registered device.
   ///
   /// Idempotent: re-registering the same public key returns the existing device
   /// row and simply re-issues device-scoped tokens.
   Future<void> ensureDeviceRegistered({bool forceNewKeys = false}) async {
-    final String deviceName = _deviceName ?? await _store.ensureDeviceName();
+    // ROUND 6: the row in the account's device list should say what this
+    // machine is actually called, not "Windows · Desktop" for every PC. The
+    // resolver already falls back to the generic label, so this cannot end up
+    // empty and block registration.
+    final String physical = await resolvePhysicalDeviceName();
+    final String deviceName = physical.isNotEmpty
+        ? physical
+        : (_deviceName ?? await _store.ensureDeviceName());
     _deviceName = deviceName;
 
     String? privateKey = forceNewKeys ? null : await _store.readWgPrivateKey();

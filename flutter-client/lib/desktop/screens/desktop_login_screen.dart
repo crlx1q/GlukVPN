@@ -169,16 +169,88 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
     return e.message;
   }
 
-  Future<void> _openSite() async {
-    try {
-      await launchUrl(Uri.parse(_siteUrl), mode: LaunchMode.externalApplication);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _localError =
-            _ru ? 'Не удалось открыть браузер.' : 'Could not open the browser.';
-      });
+  // ROUND 6: link sign-in state, kept next to the flow it belongs to.
+  bool _linkBusy = false;
+  bool _linkCancelled = false;
+  String? _linkCode;
+
+  /// Signs in through the website without a password field in this window.
+  ///
+  /// Replaces the old "open vpn.gluk.tech and hope" jump. The server issues a
+  /// one-time request, the browser confirms it against the session that is
+  /// already signed in there, and this window collects the tokens. The Chrome
+  /// extension calls the same three endpoints, so there is now one sign-in
+  /// system instead of three improvised ones.
+  Future<void> _signInWithLink() async {
+    if (_linkBusy) return;
+    setState(() {
+      _linkBusy = true;
+      _linkCancelled = false;
+      _linkCode = null;
+      _localError = null;
+    });
+
+    bool started = false;
+    final outcome = await widget.auth.signInWithLink(
+      client: 'windows',
+      isCancelled: () => _linkCancelled || !mounted,
+      onStarted: (start) async {
+        started = true;
+        if (!mounted) return;
+        setState(() => _linkCode = start.userCode);
+        try {
+          await launchUrl(
+            Uri.parse(start.verifyUrl),
+            mode: LaunchMode.externalApplication,
+          );
+        } catch (_) {
+          if (!mounted) return;
+          setState(() {
+            _localError = _ru
+                ? 'Не удалось открыть браузер. Откройте вручную: ${start.verifyUrl}'
+                : 'Could not open the browser. Open this manually: ${start.verifyUrl}';
+          });
+        }
+      },
+    );
+
+    // The link could not even be created - an older control server, or no
+    // network. Opening the plain site keeps the previous behaviour instead of
+    // dead-ending the user on an error line.
+    if (!started && outcome == LinkSignInOutcome.failed) {
+      try {
+        await launchUrl(
+          Uri.parse(_siteUrl),
+          mode: LaunchMode.externalApplication,
+        );
+      } catch (_) {
+        // Nothing more to try; the error line below already explains it.
+      }
     }
+
+    if (!mounted) return;
+    setState(() {
+      _linkBusy = false;
+      _linkCode = null;
+      if (outcome == LinkSignInOutcome.signedIn ||
+          outcome == LinkSignInOutcome.cancelled) {
+        _localError = null;
+      } else {
+        _localError = widget.auth.error ??
+            (_ru
+                ? 'Вход по ссылке не завершён.'
+                : 'The link sign-in did not complete.');
+      }
+    });
+  }
+
+  void _cancelLink() {
+    if (!_linkBusy) return;
+    setState(() {
+      _linkCancelled = true;
+      _linkBusy = false;
+      _linkCode = null;
+    });
   }
 
   @override
@@ -274,14 +346,67 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
                   // path for an account that already has a browser session.
                   _OutlineButton(
                     icon: Icons.language_rounded,
-                    label: _ru ? 'Войти через сайт' : 'Continue on the website',
-                    onTap: busy ? null : _openSite,
+                    label: _linkBusy
+                        ? (_ru
+                            ? 'Ждём подтверждения…'
+                            : 'Waiting for confirmation…')
+                        : (_ru
+                            ? 'Войти через сайт'
+                            : 'Continue on the website'),
+                    onTap: (busy || _linkBusy) ? null : _signInWithLink,
                   ),
+
+                  // While the browser is open, the code is shown so the user
+                  // can check the page is confirming *this* window, and cancel
+                  // is always one click away.
+                  if (_linkBusy) ...<Widget>[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: <Widget>[
+                        SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.6,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              GlukColors.violetLight,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _linkCode == null
+                                ? (_ru ? 'Создаём ссылку…' : 'Creating a link…')
+                                : (_ru
+                                    ? 'Подтвердите код ${_linkCode!} в браузере'
+                                    : 'Confirm code ${_linkCode!} in the browser'),
+                            style: TextStyle(
+                              color: GlukColors.text1,
+                              fontSize: 12,
+                              fontFamilyFallback: DesktopTokens.fontFallback,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _cancelLink,
+                          child: Text(
+                            _ru ? 'Отмена' : 'Cancel',
+                            style: const TextStyle(
+                              color: GlukColors.text2,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+
                   const SizedBox(height: 8),
                   Text(
                     _ru
-                        ? 'Откроется vpn.gluk.tech. Логин и пароль оттуда работают и здесь.'
-                        : 'Opens vpn.gluk.tech. The same credentials work here.',
+                        ? 'Подтвердите вход в браузере — пароль здесь вводить не нужно.'
+                        : 'Confirm the sign-in in your browser. No password needed here.',
                     style: TextStyle(
                       color: GlukColors.text2,
                       fontSize: 11.5,
@@ -335,10 +460,20 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
                   ],
 
                   const SizedBox(height: 18),
-                  PrimaryPillButton(
-                    label: busy ? s.signingIn : s.signIn,
-                    busy: busy,
-                    onPressed: busy ? null : _submit,
+                  // ROUND 6: no longer full width. A submit button stretched
+                  // across the column made the form look like a phone screen;
+                  // at 178 px it reads as a desktop action and leaves the
+                  // column's rhythm intact.
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: SizedBox(
+                      width: 178,
+                      child: PrimaryPillButton(
+                        label: busy ? s.signingIn : s.signIn,
+                        busy: busy,
+                        onPressed: busy ? null : _submit,
+                      ),
+                    ),
                   ),
 
                   const SizedBox(height: 20),
@@ -427,14 +562,15 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
                         globeness: 1,
                         rotationDegrees: _spin.value * 360,
                         centreLatitude: 14,
-                        // ROUND 5: significantly bigger and shifted left, as
-                        // asked. The globe was anchored dead centre at zoom
-                        // 1.02, so it read as a small ball floating in a large
-                        // violet panel. 1.72 fills the panel, and an anchor at
-                        // 0.33 pushes its centre left so it bleeds off the
-                        // panel edge the way the Cloudflare reference does.
-                        globeAnchor: const Offset(0.33, 0.56),
-                        zoom: 1.72,
+                        // ROUND 6: bigger again. 1.72 still left violet
+                        // margin above and below the planet, so it read as a
+                        // ball inside a box. At 2.08 it bleeds off three edges
+                        // and reads as a piece of a world instead. The anchor
+                        // moves with it: holding the centre at 0.30 keeps the
+                        // populated half - and the connection arcs - inside
+                        // the panel rather than pushing them out of frame.
+                        globeAnchor: const Offset(0.30, 0.57),
+                        zoom: 2.08,
                         dotOpacity: 0.72,
                         orbitalPhase: _spin.value,
                         pulse: _spin.value,
@@ -648,7 +784,7 @@ class _OutlineButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
         child: Container(
-          height: 46,
+          height: 42,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
             color: const Color(0xFF141020),
@@ -695,7 +831,7 @@ class _SocialButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Widget body = Container(
-      height: 44,
+      height: 40,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
         color: const Color(0xFF120E1E),
