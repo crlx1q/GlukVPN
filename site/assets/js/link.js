@@ -117,13 +117,14 @@
   function renderGate() {
     show("gate");
     var next = withApi(rootPath + "link/?code=" + encodeURIComponent(state.code));
+    var loginUrl = withApi(rootPath + "login/");
+    var href = loginUrl + (loginUrl.indexOf("?") === -1 ? "?" : "&") + "next=" + encodeURIComponent(next);
     $("link-gate-text").innerHTML =
       esc(t(
         "Сначала войдите в аккаунт — именно он разрешает вход на устройстве.",
         "Sign in first — your account is what authorises the device."
       )) +
-      '<br><a class="btn btn--primary" href="' + esc(rootPath) + "login/?next=" +
-      encodeURIComponent(next) + '">' + esc(t("Войти", "Sign in")) + "</a>";
+      '<br><a class="btn btn--primary" href="' + esc(href) + '">' + esc(t("Войти", "Sign in")) + "</a>";
   }
 
   function answer(approve) {

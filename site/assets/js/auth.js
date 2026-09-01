@@ -31,6 +31,14 @@
     var m = /[?&]api=([^&]*)/.exec(location.search || "");
     var wanted = m ? decodeURIComponent(m[1]).toLowerCase() : "";
     if (!wanted) {
+      var n = /[?&]next=([^&]*)/.exec(location.search || "");
+      if (n) {
+        var nextDecoded = decodeURIComponent(n[1]);
+        var m2 = /[?&]api=([^&]*)/.exec(nextDecoded || "");
+        if (m2) wanted = decodeURIComponent(m2[1]).toLowerCase();
+      }
+    }
+    if (!wanted) {
       try { wanted = sessionStorage.getItem("gluk.api") || ""; } catch (e) { wanted = ""; }
     }
     if (wanted && bases[wanted]) {
