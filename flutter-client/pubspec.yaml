@@ -44,6 +44,12 @@ dependencies:
   # which is why it is safe to share between the two pubspecs.
   flutter_svg: ^2.0.10+1
 
+  # ROUND 11: opens the Telegram bot for sign-in and for the last step of
+  # sign-up, and the download page from the update banner. Until now those
+  # places copied a URL to the clipboard and asked the user to paste it into
+  # a browser, which is not a flow, it is an apology.
+  url_launcher: ^6.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

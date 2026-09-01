@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'app.dart';
 import 'config.dart';
+import 'i18n/app_strings.dart';
 import 'services/api_client.dart';
 import 'services/connectivity_service.dart';
 import 'services/ping_service.dart';
@@ -47,6 +48,10 @@ Future<void> main() async {
   // server is being redeployed.
   final UpdateChecker updates = UpdateChecker();
 
+  // ROUND 11: interface language. Not channel-scoped and not tied to a
+  // session - it belongs to the person holding the phone.
+  final LocaleController locale = LocaleController(store: store);
+
   final ChannelController channel = ChannelController(
     api: api,
     store: store,
@@ -61,6 +66,10 @@ Future<void> main() async {
   // session, device id and WireGuard key pair are even visible.
   await channel.restore();
 
+  // Before the first frame, so the app never flashes English at somebody who
+  // chose Russian last time.
+  await locale.restore();
+
   runApp(
     GlukVpnApp(
       auth: auth,
@@ -69,6 +78,7 @@ Future<void> main() async {
       motion: motion,
       connectivity: connectivity,
       updates: updates,
+      locale: locale,
     ),
   );
 }

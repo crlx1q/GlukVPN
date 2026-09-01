@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../config.dart';
+import '../i18n/app_strings.dart';
 import '../models/models.dart';
 import '../services/api_client.dart';
 import '../state/auth_controller.dart';
@@ -35,49 +36,60 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  /// ROUND 10 (4.4): the hidden developer menu.
+  /// ROUND 11: the five-tap "developer menu" is gone.
   ///
-  /// Five taps on the version line inside three seconds reveal the Channel and
-  /// Diagnostics panels; five more hide them again. The tap count is not
-  /// persisted anywhere and dies with the screen - it is a door, not a setting.
-  /// The channel *choice* behind it is persisted, by ChannelController, because
-  /// a build that forgot which control plane it was pointed at on every restart
-  /// would be useless for testing.
+  /// It was the wrong shape for what it guarded. Switching control plane is an
+  /// admin capability - the beta plane refuses everyone else anyway - so a
+  /// secret gesture only meant a normal user could uncover a switch that would
+  /// then fail on them, while an admin had to know the trick to find a control
+  /// they are entitled to. The rule is now the same one the browser extension
+  /// and the desktop client use: `channel.canSwitchAs(user)`, which is simply
+  /// "this account is an admin". No taps, no hidden state, one rule everywhere.
+
+  /// ROUND 11: the language picker.
   ///
-  /// The gesture is a window rather than a plain counter: three stray taps a
-  /// minute apart must not eventually add up to an unlock.
-  static const int _tapsToUnlock = 5;
-  static const Duration _tapWindow = Duration(seconds: 3);
-
-  int _taps = 0;
-  DateTime? _firstTap;
-  bool _devUnlocked = false;
-
-  void _tapVersion() {
-    final DateTime now = DateTime.now();
-    final DateTime? started = _firstTap;
-    if (started == null || now.difference(started) > _tapWindow) {
-      _firstTap = now;
-      _taps = 1;
-      return;
-    }
-    _taps += 1;
-    if (_taps < _tapsToUnlock) return;
-    _taps = 0;
-    _firstTap = null;
-    setState(() => _devUnlocked = !_devUnlocked);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        duration: const Duration(seconds: 2),
-        content: Text(
-          _devUnlocked ? 'Developer menu unlocked' : 'Developer menu hidden',
-        ),
+  /// Three choices, not two. "System" has to exist and has to be the default,
+  /// because the app should follow the phone for anyone who never opens this
+  /// row. Picking a language explicitly pins it, so a Russian phone can run the
+  /// app in English and the other way round.
+  Future<void> _pickLanguage(LocaleController locale) async {
+    final AppStrings s = context.strings;
+    final AppLanguage? picked = await showDialog<AppLanguage>(
+      context: context,
+      builder: (BuildContext context) => SimpleDialog(
+        title: Text(s.language),
+        children: <Widget>[
+          for (final AppLanguage option in AppLanguage.values)
+            RadioListTile<AppLanguage>(
+              value: option,
+              groupValue: locale.preference,
+              title: Text(_languageLabel(option, s)),
+              onChanged: (AppLanguage? value) =>
+                  Navigator.of(context).pop(value),
+            ),
+        ],
       ),
     );
+    if (picked != null) await locale.select(picked);
+  }
+
+  /// The two real languages are written in their own language - a person
+  /// looking for Russian is looking for "\u0420\u0443\u0441\u0441\u043a\u0438\u0439", not for "Russian".
+  static String _languageLabel(AppLanguage option, AppStrings s) {
+    switch (option) {
+      case AppLanguage.system:
+        return s.languageAuto;
+      case AppLanguage.english:
+        return 'English';
+      case AppLanguage.russian:
+        return '\u0420\u0443\u0441\u0441\u043a\u0438\u0439';
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
+    final LocaleController locale = context.watch<LocaleController>();
     final TextTheme text = Theme.of(context).textTheme;
     final AuthController auth = context.watch<AuthController>();
     final ChannelController channel = context.watch<ChannelController>();
@@ -93,7 +105,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Text('Settings', style: text.headlineSmall),
+              Text(s.settings, style: text.headlineSmall),
               const Spacer(),
               CircleIconButton(
                 icon: Icons.refresh_rounded,
@@ -101,7 +113,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   auth.refreshMe();
                   channel.probeAll();
                 },
-                tooltip: 'Refresh',
+                tooltip: s.refresh,
               ),
             ],
           ),
@@ -122,14 +134,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             maxSessions: user?.maxConcurrentSessions ?? 1,
           ),
           const SizedBox(height: 20),
-          const _SectionLabel('Account'),
+          _SectionLabel(s.account),
           const SizedBox(height: 8),
           // ROUND 10 (4.2): profile, plan and the sessions that are signed in
           // right now, in one place instead of scattered across this screen.
           _ActionTile(
             icon: Icons.account_circle_outlined,
-            title: 'Account',
-            subtitle: 'Profile, subscription and the sessions signed in now',
+            title: s.account,
+            subtitle: s.accountTileSubtitle,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (BuildContext context) => const AccountScreen(),
@@ -139,9 +151,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 8),
           _ActionTile(
             icon: Icons.devices_other_rounded,
-            title: 'My devices',
-            subtitle: 'This device: ${auth.deviceName ?? 'not registered yet'}'
-                ' \u00b7 up to ${user?.maxDevices ?? 3} on the plan',
+            title: s.myDevices,
+            subtitle: '${s.thisDevice}: '
+                '${auth.deviceName ?? s.notRegisteredYet}'
+                ' \u00b7 ${s.upTo} ${user?.maxDevices ?? 3} ${s.devicesShort}',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (BuildContext context) => const DevicesScreen(),
@@ -153,28 +166,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: motion.reduceMotion
                 ? Icons.battery_saver_rounded
                 : Icons.animation_rounded,
-            title: 'Animations',
+            title: s.animations,
             subtitle: motion.reduceMotion
                 ? 'Paused to save power (${motion.reduceMotionReason}). '
                     'Buttons still show their progress.'
-                : 'Full motion',
+                : s.fullMotion,
             trailing: _Pill(
-              label: motion.reduceMotion ? 'reduced' : 'full',
+              label: motion.reduceMotion ? s.reduced : s.full,
               tone:
                   motion.reduceMotion ? GlukColors.amber : GlukColors.connected,
             ),
           ),
-          // Everything below this point is for internal builds. A release APK
-          // talks to one control plane and shows none of it.
-          if (channel.canSwitchAs(user) ||
-              (_devUnlocked && channel.canSwitch)) ...<Widget>[
+          const SizedBox(height: 8),
+          // ROUND 11: language. Sits with Animations rather than under
+          // "Internal", because it is a normal preference, not a build switch.
+          _ActionTile(
+            icon: Icons.translate_rounded,
+            title: s.language,
+            subtitle: locale.preferenceLabel,
+            trailing: _Pill(
+              label: s.code.toUpperCase(),
+              tone: GlukColors.violetLight,
+            ),
+            onTap: () => _pickLanguage(locale),
+          ),
+          // Admins only, on every client. A normal account sees PROD and
+          // nothing about channels, because that is all it is allowed to use.
+          if (channel.canSwitchAs(user)) ...<Widget>[
             const SizedBox(height: 20),
-            const _SectionLabel('Internal'),
+            _SectionLabel(s.internal),
             const SizedBox(height: 8),
             _ChannelPanel(channel: channel, vpn: vpn),
-          ],
-          if (channel.canSwitchAs(user) ||
-              (_devUnlocked && channel.canSwitch)) ...<Widget>[
             const SizedBox(height: 12),
             _DiagnosticsPanel(channel: channel, auth: auth),
           ],
@@ -187,29 +209,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: text.bodySmall,
           ),
           const SizedBox(height: 8),
-          // The one line a release build keeps: what version answered - and,
-          // after five taps in three seconds, the way into the dev menu.
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _tapVersion,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Text(
-                'GlukVPN ${AppConfig.appVersion} \u00b7 '
-                '${channel.active.label} '
-                '${channel.versionOf(channel.active)?.version ?? '\u2014'}',
-                style: text.bodySmall?.copyWith(color: GlukColors.text2),
-              ),
+          // The one line a release build keeps: what version answered. It is
+          // plain text now - tapping it five times does nothing.
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Text(
+              'GlukVPN ${AppConfig.appVersion} \u00b7 '
+              '${channel.active.label} '
+              '${channel.versionOf(channel.active)?.version ?? '\u2014'}',
+              style: text.bodySmall?.copyWith(color: GlukColors.text2),
             ),
           ),
-          if (_devUnlocked && !channel.canSwitch) ...<Widget>[
-            const SizedBox(height: 6),
-            Text(
-              'Developer menu is on, but this build was compiled without the '
-              'beta channel, so there is nothing to switch to.',
-              style: text.bodySmall,
-            ),
-          ],
         ],
       ),
     );

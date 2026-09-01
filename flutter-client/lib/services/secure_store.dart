@@ -78,6 +78,11 @@ class SecureStore {
   /// channel is known.
   static const String _kActiveChannel = 'active_channel';
 
+  /// ROUND 11: the interface language. Also not channel-scoped - the language
+  /// belongs to the person holding the phone, not to a control plane, and it
+  /// must survive a sign-out. That is also why it is not in [_allKeys].
+  static const String _kLanguage = 'language';
+
   /// All base keys, used by the per-channel [wipe].
   static const List<String> _allKeys = <String>[
     _kRefreshToken,
@@ -113,6 +118,18 @@ class SecureStore {
 
   Future<void> writeActiveChannel(String channelId) =>
       _storage.write(key: _kActiveChannel, value: channelId);
+
+  // --- interface language --------------------------------------------------
+
+  /// `null` means "never chosen", which resolves to the phone's own language.
+  Future<String?> readLanguage() async {
+    final String? value = await _storage.read(key: _kLanguage);
+    if (value == null || value.isEmpty) return null;
+    return value;
+  }
+
+  Future<void> writeLanguage(String id) =>
+      _storage.write(key: _kLanguage, value: id);
 
   // --- session -------------------------------------------------------------
 

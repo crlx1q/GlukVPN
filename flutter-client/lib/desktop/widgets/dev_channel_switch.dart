@@ -3,14 +3,18 @@ import 'package:flutter/material.dart';
 import '../../config.dart';
 import '../../theme/tokens.dart';
 
-/// The version line at the bottom of Settings, and the developer menu hidden
-/// behind it.
+/// The version line at the bottom of Settings, and the channel switch under it.
 ///
 /// Ordinary users must never see a channel switch. Pointing a normal install at
 /// beta hands them a control plane full of test data and half-finished nodes,
-/// and nothing on screen would explain why their VPN suddenly behaves oddly. So
-/// the switch sits behind five clicks on the version number, and is open from
-/// the start only in internal builds.
+/// and nothing on screen would explain why their VPN suddenly behaves oddly.
+///
+/// ROUND 11: it used to hide behind five clicks on the version number. That was
+/// the wrong control. A secret gesture is not a permission - it let a normal
+/// user uncover a switch the beta plane would then refuse them, while an admin
+/// had to know the trick to reach something they are entitled to. The rule is
+/// now the same one the phone and the browser extension use: admins see it,
+/// nobody else does.
 ///
 /// The switch is deliberately symmetric: it stays reachable while beta is
 /// active. A one-way door would mean the only way back to prod is a reinstall.
@@ -19,12 +23,17 @@ class DevChannelFooter extends StatefulWidget {
 		super.key,
 		required this.russian,
 		required this.onChannelChanged,
+		this.isAdmin = false,
 		this.alwaysVisible = false,
 	});
 
 	final bool russian;
 
-	/// For admins and testers: skip the five clicks.
+	/// The signed-in account is an admin. This is the only thing that reveals
+	/// the switch in a shipped build.
+	final bool isAdmin;
+
+	/// Escape hatch for internal builds and tests; not used in production.
 	final bool alwaysVisible;
 
 	/// Called right after the channel changed, with the channel that was picked.
@@ -44,29 +53,10 @@ class DevChannelFooter extends StatefulWidget {
 }
 
 class _DevChannelFooterState extends State<DevChannelFooter> {
-	static const int _tapsToOpen = 5;
-	/// Long enough to be deliberate, short enough that idle clicking on the
-	/// version number never opens it by accident.
-	static const Duration _tapWindow = Duration(seconds: 3);
-
-	int _taps = 0;
-	DateTime? _firstTap;
-	bool _open = false;
 	bool _busy = false;
 
 	bool get _visible =>
-			_open || widget.alwaysVisible || AppConfig.internalBuild;
-
-	void _countTap() {
-		if (_visible) return;
-		final DateTime now = DateTime.now();
-		if (_firstTap == null || now.difference(_firstTap!) > _tapWindow) {
-			_firstTap = now;
-			_taps = 0;
-		}
-		_taps++;
-		if (_taps >= _tapsToOpen) setState(() => _open = true);
-	}
+			widget.isAdmin || widget.alwaysVisible || AppConfig.internalBuild;
 
 	Future<void> _select(AppChannel channel) async {
 		if (_busy || channel == AppConfig.activeChannel) return;
@@ -86,14 +76,10 @@ class _DevChannelFooterState extends State<DevChannelFooter> {
 		return Column(
 			mainAxisSize: MainAxisSize.min,
 			children: <Widget>[
-				GestureDetector(
-					behavior: HitTestBehavior.opaque,
-					onTap: _countTap,
-					child: Text(
-						'GlukVPN Desktop ${AppConfig.appVersion} · '
-						'${AppConfig.activeChannel.label}',
-						style: const TextStyle(color: GlukColors.text2, fontSize: 11),
-					),
+				Text(
+					'GlukVPN Desktop ${AppConfig.appVersion} · '
+					'${AppConfig.activeChannel.label}',
+					style: const TextStyle(color: GlukColors.text2, fontSize: 11),
 				),
 				if (_visible) ...<Widget>[
 					const SizedBox(height: 10),

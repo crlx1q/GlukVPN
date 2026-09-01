@@ -461,13 +461,18 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
         // disagree with each other.
 
         const SizedBox(height: 24),
-        // ROUND 8: the version line is also the door to the developer menu.
-        // Five clicks reveal the Prod/Beta switch; ordinary users only ever see
-        // the version number, which is the point - a normal install pointed at
-        // beta looks broken and nothing on screen would explain why.
+        // ROUND 11: the Prod/Beta switch is a permission, not a secret.
+        //
+        // It used to hide behind five clicks on the version line. That control
+        // was wrong in both directions: a normal user could uncover a switch
+        // the beta plane would then refuse them, and an admin had to know the
+        // trick to reach something they are entitled to. Now it renders for
+        // admins and is absent for everyone else - the same rule the phone and
+        // the browser extension use.
         Center(
           child: DevChannelFooter(
             russian: widget.strings.isRussian,
+            isAdmin: widget.auth.user?.isAdmin ?? false,
             // ROUND 9 (1.3): write the choice down before signing out.
             //
             // The switch used to only set an in-memory override, so the next

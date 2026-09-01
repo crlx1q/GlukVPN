@@ -126,7 +126,12 @@ class AppConfig {
 	/// Sign-in providers that are visible but not wired up yet. Telegram
 	/// verification and Google sign-in are planned; the buttons are rendered
 	/// disabled rather than hidden so the layout matches the final design.
-	static const bool telegramSignInEnabled = false;
+	/// ROUND 11: on. The button now runs the device-authorization grant against
+	/// the Telegram bot (`/start login-<CODE>`), so it is a real sign-in path
+	/// rather than a placeholder. Turn it off only if the control plane is
+	/// deployed without TELEGRAM_BOT_TOKEN - the server then returns no
+	/// telegramUrl and the flow falls back to confirming on the website.
+	static const bool telegramSignInEnabled = true;
 	static const bool googleSignInEnabled = false;
 
 	/// Self-service registration. ROUND 8: on. The control server now runs the

@@ -51,10 +51,28 @@
             android:value="2" />
     </application>
 
+    <!--
+      Android 11+ package visibility. Without a matching <intent> entry here,
+      url_launcher's canLaunchUrl/launchUrl cannot see the app that would
+      handle the link and simply reports failure - which is how "open the
+      Telegram bot" silently turns back into "copy this to the clipboard".
+
+      ROUND 11 adds the two schemes the app actually opens: https (the bot deep
+      link, the download page, the confirmation page) and tg (Telegram's own
+      scheme, so an installed client is preferred over the web preview).
+    -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tg" />
         </intent>
     </queries>
 </manifest>

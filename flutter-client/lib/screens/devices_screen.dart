@@ -1,13 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../i18n/app_strings.dart';
 import '../models/models.dart';
 import '../services/api_client.dart';
 import '../state/auth_controller.dart';
 import '../state/vpn_controller.dart';
-import '../utils/format.dart';
-import '../widgets/common.dart';
+import '../theme/tokens.dart';
+import '../utils/format.dart' hide countryFlag;
+import '../widgets/glass.dart';
+import '../widgets/page_background.dart';
 
+/// Every device registered against the account, with a way to end any of them.
+///
+/// ROUND 11: this screen and the Account screen were showing the same list in
+/// two different designs - a raw `Card` with four `KeyValueRow`s here, and a
+/// far better glass row over there. The good one won and moved in; Account has
+/// stopped listing devices at all and now links here instead. One list, one
+/// design, one place to revoke from.
 class DevicesScreen extends StatefulWidget {
   const DevicesScreen({super.key});
 
@@ -50,26 +60,25 @@ class _DevicesScreenState extends State<DevicesScreen> {
   }
 
   Future<void> _revoke(DeviceInfo device) async {
+    final AppStrings s = context.strings;
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
-        title: Text('Revoke ${device.deviceName}?'),
+        backgroundColor: GlukColors.bg,
+        title: Text(s.revokeDeviceTitle(
+          device.deviceName.isEmpty ? s.thisDevice : device.deviceName,
+        )),
         content: Text(
-          device.isCurrent
-              ? 'This is the phone you are using. Its session is closed, the '
-                'WireGuard peer is removed from the node and a new key pair is '
-                'registered on the next connect.'
-              : 'Any active session for this device is closed and its WireGuard '
-                'peer is removed from the node.',
+          device.isCurrent ? s.revokeCurrentBody : s.revokeOtherBody,
         ),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
+            child: Text(s.cancel),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Revoke'),
+            child: Text(s.revoke),
           ),
         ],
       ),
@@ -80,20 +89,13 @@ class _DevicesScreenState extends State<DevicesScreen> {
     final VpnController vpn = context.read<VpnController>();
     setState(() => _revokingId = device.id);
     try {
-      // Bring the local tunnel down first so the phone does not keep a dead
-      // interface up after the peer disappears on the node.
-      if (device.isCurrent && vpn.isConnected) {
-        await vpn.disconnect();
-      }
+      // Local tunnel first: leaving a dead interface up after the peer is gone
+      // looks exactly like "the VPN broke".
+      if (device.isCurrent && vpn.isConnected) await vpn.disconnect();
       await auth.revokeDevice(device.id);
+      if (device.isCurrent && mounted) await auth.ensureDeviceRegistered();
       if (!mounted) return;
       await _load();
-      if (!mounted) return;
-      if (device.isCurrent) {
-        await auth.ensureDeviceRegistered();
-        if (!mounted) return;
-        await _load();
-      }
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() => _error = error.message);
@@ -104,72 +106,106 @@ class _DevicesScreenState extends State<DevicesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final List<DeviceInfo> devices = _result?.devices ?? const <DeviceInfo>[];
-    final int active = devices.where((DeviceInfo d) => d.isActive).length;
+    final AppStrings s = context.strings;
+    final TextTheme text = Theme.of(context).textTheme;
+    final List<DeviceInfo> all = _result?.devices ?? const <DeviceInfo>[];
+    final List<DeviceInfo> active =
+        all.where((DeviceInfo device) => device.isActive).toList();
+    final List<DeviceInfo> revoked =
+        all.where((DeviceInfo device) => !device.isActive).toList();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Devices'),
-        actions: <Widget>[
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Reload',
-            onPressed: _loading ? null : _load,
+      backgroundColor: GlukColors.pageBg,
+      body: PageBackground(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(
+            title: Text(s.devices),
+            backgroundColor: Colors.transparent,
+            actions: <Widget>[
+              IconButton(
+                icon: const Icon(Icons.refresh_rounded),
+                tooltip: s.reload,
+                onPressed: _loading ? null : _load,
+              ),
+            ],
           ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-          children: <Widget>[
-            if (_error != null)
-              MessageBanner(
-                message: _error!,
-                isError: true,
-                onDismiss: () => setState(() => _error = null),
-              ),
-            if (_loading && devices.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 40),
-                child: Center(child: CircularProgressIndicator()),
-              ),
-            if (_result != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  '$active of ${_result!.maxDevices} device slots in use',
-                  style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          body: RefreshIndicator(
+            onRefresh: _load,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+              children: <Widget>[
+                if (_error != null) ...<Widget>[
+                  InkWell(
+                    onTap: () => setState(() => _error = null),
+                    child: InlineNotice(message: _error!),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        _result == null
+                            ? ''
+                            : s.slotsInUse(active.length, _result!.maxDevices),
+                        style: text.labelMedium,
+                      ),
+                    ),
+                    if (_loading)
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 1.6),
+                      ),
+                  ],
                 ),
-              ),
-            for (final DeviceInfo device in devices)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _DeviceCard(
-                  device: device,
-                  revoking: _revokingId == device.id,
-                  onRevoke: _revokingId == null ? () => _revoke(device) : null,
-                ),
-              ),
-            if (!_loading && devices.isEmpty && _error == null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 40),
-                child: Text(
-                  'No devices registered.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
-                ),
-              ),
-          ],
+                const SizedBox(height: 10),
+                if (active.isEmpty && !_loading)
+                  Text(s.noDevicesRegistered, style: text.bodySmall),
+                for (final DeviceInfo device in active) ...<Widget>[
+                  SessionRow(
+                    device: device,
+                    revoking: _revokingId == device.id,
+                    onRevoke:
+                        _revokingId == null ? () => _revoke(device) : null,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                if (revoked.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 12),
+                  Text(s.revoked.toUpperCase(), style: text.labelMedium),
+                  const SizedBox(height: 8),
+                  for (final DeviceInfo device in revoked) ...<Widget>[
+                    SessionRow(device: device, revoking: false),
+                    const SizedBox(height: 8),
+                  ],
+                ],
+                const SizedBox(height: 16),
+                Text(s.revokeNotice, style: text.bodySmall),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-class _DeviceCard extends StatelessWidget {
-  const _DeviceCard({required this.device, required this.revoking, this.onRevoke});
+/// One registered device, presented as the session it carries.
+///
+/// ROUND 11: moved here from `account_screen.dart` and made public, because it
+/// is the design that should have been on this screen all along. A platform
+/// disc, the name, one plain-language line about what the device is doing right
+/// now, and the technical detail underneath in small type - rather than four
+/// label/value rows that make a phone look like a database record.
+class SessionRow extends StatelessWidget {
+  const SessionRow({
+    super.key,
+    required this.device,
+    required this.revoking,
+    this.onRevoke,
+  });
 
   final DeviceInfo device;
   final bool revoking;
@@ -177,77 +213,132 @@ class _DeviceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final AppStrings s = context.strings;
+    final TextTheme text = Theme.of(context).textTheme;
+    final bool live = device.connected;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
+    return GlassPanel(
+      radius: GlukSizes.cellRadius,
+      padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: (live ? GlukColors.connected : GlukColors.violet)
+                  .withOpacity(0.16),
+            ),
+            child: Icon(
+              iconFor(device.platform),
+              size: 16,
+              color: live ? GlukColors.connected : GlukColors.violetLight,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Icon(
-                  Icons.smartphone_outlined,
-                  color: device.isActive ? scheme.primary : scheme.onSurfaceVariant,
+                Row(
+                  children: <Widget>[
+                    Flexible(
+                      child: Text(
+                        device.deviceName.isEmpty
+                            ? s.unknownPlatform
+                            : device.deviceName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: text.titleMedium,
+                      ),
+                    ),
+                    if (device.isCurrent) ...<Widget>[
+                      const SizedBox(width: 8),
+                      TonePill(
+                        label: s.thisDevice,
+                        tone: GlukColors.violetLight,
+                      ),
+                    ],
+                  ],
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    device.deviceName,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                  ),
-                ),
-                if (device.connected) ...<Widget>[
-                  const StatusDot(online: true),
-                  const SizedBox(width: 6),
-                ],
+                const SizedBox(height: 3),
                 Text(
-                  device.isActive ? device.status.toLowerCase() : 'revoked',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: device.isActive ? scheme.primary : scheme.error,
-                  ),
+                  live
+                      ? s.connectedVia(device.connectedNodeName ?? '\u2014')
+                      : device.isActive
+                          ? '${s.signedIn} \u00b7 ${s.lastSeen} '
+                              '${formatRelative(device.lastSeen)}'
+                          : s.revoked,
+                  style: text.bodySmall,
+                ),
+                Text(
+                  '${device.platform ?? s.unknownPlatform} \u00b7 '
+                  '${s.registeredOn} ${formatDateTime(device.createdAt)}',
+                  style: text.bodySmall?.copyWith(fontSize: 10.5),
                 ),
               ],
             ),
-            if (device.isCurrent)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  'this device',
-                  style: TextStyle(fontSize: 11, color: scheme.primary),
-                ),
-              ),
-            const SizedBox(height: 10),
-            KeyValueRow(label: 'Platform', value: device.platform ?? '--'),
-            KeyValueRow(label: 'Registered', value: formatDateTime(device.createdAt)),
-            KeyValueRow(label: 'Last seen', value: formatRelative(device.lastSeen)),
-            KeyValueRow(
-              label: 'Session',
-              value: device.connected
-                  ? 'connected via ${device.connectedNodeName ?? 'node'}'
-                  : 'not connected',
+          ),
+          if (device.isActive && onRevoke != null)
+            TextButton(
+              onPressed: revoking ? null : onRevoke,
+              style: TextButton.styleFrom(foregroundColor: GlukColors.danger),
+              child: revoking
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(s.revoke),
             ),
-            if (device.isActive)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: revoking ? null : onRevoke,
-                  icon: revoking
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.block, size: 18),
-                  label: Text(revoking ? 'Revoking...' : 'Revoke'),
-                  style: TextButton.styleFrom(foregroundColor: scheme.error),
-                ),
-              ),
-          ],
-        ),
+        ],
+      ),
+    );
+  }
+
+  /// Windows, the browser extension and a phone must be tellable apart at a
+  /// glance - that is the whole reason the platform is recorded at all.
+  static IconData iconFor(String? platform) {
+    final String value = (platform ?? '').toLowerCase();
+    if (value.contains('windows')) return Icons.desktop_windows_rounded;
+    if (value.contains('chrome') || value.contains('extension')) {
+      return Icons.extension_rounded;
+    }
+    if (value.contains('android') || value.contains('ios')) {
+      return Icons.smartphone_rounded;
+    }
+    return Icons.devices_other_rounded;
+  }
+}
+
+/// A status word, not a database enum: lower case, tinted, pill-shaped.
+///
+/// Public and shared by Devices, Account and Settings, which each had their own
+/// private copy of exactly these fifteen lines.
+class TonePill extends StatelessWidget {
+  const TonePill({super.key, required this.label, required this.tone});
+
+  final String label;
+  final Color tone;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(
+        color: tone.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: tone.withOpacity(0.40)),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context)
+            .textTheme
+            .labelSmall
+            ?.copyWith(color: tone, fontSize: 10),
       ),
     );
   }

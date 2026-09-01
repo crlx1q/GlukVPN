@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'i18n/app_strings.dart';
 import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/servers_screen.dart';
@@ -28,6 +29,7 @@ class GlukVpnApp extends StatefulWidget {
     required this.motion,
     required this.connectivity,
     required this.updates,
+    required this.locale,
   });
 
   final AuthController auth;
@@ -36,6 +38,7 @@ class GlukVpnApp extends StatefulWidget {
   final MotionController motion;
   final ConnectivityService connectivity;
   final UpdateChecker updates;
+  final LocaleController locale;
 
   @override
   State<GlukVpnApp> createState() => _GlukVpnAppState();
@@ -69,11 +72,19 @@ class _GlukVpnAppState extends State<GlukVpnApp> {
           value: widget.connectivity,
         ),
         ChangeNotifierProvider<UpdateChecker>.value(value: widget.updates),
+        ChangeNotifierProvider<LocaleController>.value(value: widget.locale),
       ],
-      child: MaterialApp(
+      // Watched here rather than inside MaterialApp so that changing the
+      // language rebuilds every route at once, including the ones already on
+      // the navigator stack.
+      child: Consumer<LocaleController>(
+        builder: (BuildContext context, LocaleController locale, Widget? _) =>
+            MaterialApp(
         title: 'GlukVPN',
         debugShowCheckedModeBanner: false,
         theme: GlukTheme.build(),
+        locale: locale.locale,
+        supportedLocales: const <Locale>[Locale('en'), Locale('ru')],
         builder: (BuildContext context, Widget? child) {
           // Picks up "Remove animations" from accessibility settings; the whole
           // app then holds its loops still.
@@ -83,6 +94,7 @@ class _GlukVpnAppState extends State<GlukVpnApp> {
           );
         },
         home: const AuthGate(),
+        ),
       ),
     );
   }
@@ -161,6 +173,7 @@ class _OfflineBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final ConnectivityService connectivity = context.watch<ConnectivityService>();
     final TextTheme text = Theme.of(context).textTheme;
+    final bool russian = context.strings.isRussian;
     return SafeArea(
       bottom: false,
       child: Padding(
@@ -181,7 +194,9 @@ class _OfflineBanner extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  connectivity.checking ? 'Reconnecting...' : "You're offline",
+                  connectivity.checking
+                      ? (russian ? 'Переподключение…' : 'Reconnecting…')
+                      : (russian ? 'Нет соединения' : "You're offline"),
                   style: text.bodyMedium,
                 ),
               ),
@@ -189,7 +204,7 @@ class _OfflineBanner extends StatelessWidget {
                 onPressed: connectivity.checking
                     ? null
                     : () => _retryConnection(context),
-                child: const Text('Retry'),
+                child: Text(russian ? 'Повторить' : 'Retry'),
               ),
             ],
           ),
@@ -206,6 +221,7 @@ class _OfflineScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final ConnectivityService connectivity = context.watch<ConnectivityService>();
     final TextTheme text = Theme.of(context).textTheme;
+    final bool russian = context.strings.isRussian;
     return Container(
       color: GlukColors.pageBg,
       child: SafeArea(
@@ -235,20 +251,23 @@ class _OfflineScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 22),
                 Text(
-                  'No internet connection',
+                  russian ? 'Нет подключения к интернету' : 'No internet connection',
                   style: text.headlineSmall,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Check your Wi-Fi or mobile data. Everything continues as soon '
-                  'as you are back online.',
+                  russian
+                      ? 'Проверьте Wi-Fi или мобильные данные. Как только связь '
+                          'вернётся, всё продолжится само.'
+                      : 'Check your Wi-Fi or mobile data. Everything continues '
+                          'as soon as you are back online.',
                   style: text.bodyMedium,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 26),
                 PrimaryPillButton(
-                  label: 'Retry',
+                  label: russian ? 'Повторить' : 'Retry',
                   busy: connectivity.checking,
                   onPressed: connectivity.checking
                       ? null
@@ -338,7 +357,12 @@ class SplashView extends StatelessWidget {
             const SizedBox(height: 20),
             Text('GlukVPN', style: text.titleLarge),
             const SizedBox(height: 6),
-            Text('Securing your connection', style: text.bodySmall),
+            Text(
+              context.strings.isRussian
+                  ? 'Защищаем соединение'
+                  : 'Securing your connection',
+              style: text.bodySmall,
+            ),
             const SizedBox(height: 26),
             const SizedBox(
               width: 120,

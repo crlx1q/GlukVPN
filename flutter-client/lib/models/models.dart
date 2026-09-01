@@ -686,6 +686,7 @@ class LinkAuthStart {
     required this.userCode,
     required this.pollSecret,
     required this.verifyUrl,
+    required this.telegramUrl,
     required this.expiresAt,
     required this.intervalSec,
   });
@@ -695,6 +696,7 @@ class LinkAuthStart {
         userCode: (json['userCode'] ?? '').toString(),
         pollSecret: (json['pollSecret'] ?? '').toString(),
         verifyUrl: (json['verifyUrl'] ?? '').toString(),
+        telegramUrl: (json['telegramUrl'] ?? '').toString(),
         expiresAt: DateTime.tryParse((json['expiresAt'] ?? '').toString()) ??
             DateTime.now().add(const Duration(minutes: 10)),
         intervalSec: (json['intervalSec'] as num?)?.toInt() ?? 2,
@@ -709,11 +711,25 @@ class LinkAuthStart {
   /// Never shown, never logged, never put in a URL.
   final String pollSecret;
   final String verifyUrl;
+
+  /// ROUND 11: `https://t.me/<bot>?start=login-XXXXXXXX`, present only when the
+  /// control plane has a Telegram bot configured.
+  ///
+  /// The bot confirms the request in the same chat that already proved this
+  /// person's phone number at sign-up, so it is a stronger second factor than
+  /// a browser session - and it is one tap instead of a trip through a login
+  /// page. When it is empty the clients fall back to [verifyUrl].
+  final String telegramUrl;
   final DateTime expiresAt;
   final int intervalSec;
 
   bool get isValid =>
       requestId.isNotEmpty && pollSecret.isNotEmpty && verifyUrl.isNotEmpty;
+
+  /// Where to send the user. Telegram when the server offered it.
+  String get confirmUrl => telegramUrl.isNotEmpty ? telegramUrl : verifyUrl;
+
+  bool get confirmsInTelegram => telegramUrl.isNotEmpty;
 }
 
 enum LinkAuthStatus { pending, approved, denied, expired, slowDown, unknown }

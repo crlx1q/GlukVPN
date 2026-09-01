@@ -1,13 +1,23 @@
 /**
  * The GlukVPN Telegram bot. One file, no framework, no webhook.
  *
- * It does exactly two things:
+ * It does exactly three things:
  *
  *   1. `/start <token>` - the deep link from the sign-up page. The bot answers
  *      with a "Share my contact" button.
  *   2. the shared contact - the bot checks the contact really belongs to the
  *      person sending it, then hands the phone number to the registration
  *      service, which finishes the account.
+ *   3. **ROUND 11:** `/start login-<CODE>` - confirming a sign-in started by a
+ *      client (see `services/linkAuth.ts`). The bot shows what is asking, and
+ *      the user allows or refuses it in the chat.
+ *
+ * Point 3 is worth a word on why it is safe. The chat is already bound to an
+ * account: sign-up only completes when this exact Telegram user shares their
+ * phone number, so `telegramId` is a proven identity, not a self-claimed one.
+ * That makes the bot a better confirmation surface than a browser session -
+ * approving requires the person to hold the phone that owns the account, and
+ * the code in the deep link authorises nothing on its own.
  *
  * It also delivers verification codes (password reset over Telegram), which is
  * why `sendTelegramMessage` is exported.
@@ -81,6 +91,62 @@ const consoleLogger: Logger = {
 /** Which token a chat is currently answering for. */
 const chatTokens = new Map<number, { token: string; at: number }>()
 
+/** ROUND 11: which sign-in a chat has been asked to confirm. */
+const chatLogins = new Map<number, { code: string; at: number }>()
+
+/**
+ * ROUND 11: how the bot reaches the link-sign-in store.
+ *
+ * Injected rather than imported, because approving a request has to mint real
+ * tokens and `issueTokens` needs the Fastify instance for `app.jwt`. The route
+ * module owns that instance and installs the bridge on registration; when the
+ * bot is run standalone (`npm run bot`) nothing installs it, and the bot says
+ * so instead of pretending the button works.
+ */
+export type TelegramLoginBridge = {
+	describe: (userCode: string) => {
+		client: string
+		deviceName: string | null
+		ip: string | null
+		status: string
+	} | null
+	approve: (input: { userCode: string; telegramId: string }) => Promise<{
+		ok: boolean
+		reason?: string
+		username?: string
+	}>
+	deny: (userCode: string) => { ok: boolean }
+}
+
+let loginBridge: TelegramLoginBridge | null = null
+
+export function setTelegramLoginBridge(bridge: TelegramLoginBridge | null): void {
+	loginBridge = bridge
+}
+
+/** `@name` without the `@`, or "" when the bot is not configured. */
+export function botUsername(): string {
+	return config.TELEGRAM_BOT_USERNAME.trim().replace(/^@/, "")
+}
+
+/**
+ * The deep link a client opens to confirm a sign-in.
+ *
+ * Telegram's `start` payload allows `A-Za-z0-9_-` only, which the Crockford
+ * code and its single dash already satisfy - no encoding games needed.
+ */
+export function telegramLoginLink(userCode: string): string {
+	const name = botUsername()
+	if (!name || !telegramConfigured()) return ""
+	// Assembled from parts rather than written as one inline literal. The
+	// editor tooling used to produce this file rewrites anything shaped like a
+	// template placeholder, and it silently corrupted this link twice.
+	const host = "https:" + "//" + "t.me" + "/"
+	return host + name + "?start=login-" + userCode
+}
+
+// Editor artefact of that corruption, left as a comment: `https://t.me/${name?start=login-${userCode}
+
 let running = false
 
 function token(): string {
@@ -151,6 +217,24 @@ const SHARE_KEYBOARD: ReplyMarkup = {
 
 const HIDE_KEYBOARD: ReplyMarkup = { remove_keyboard: true }
 
+/** ROUND 11. Plain reply buttons, not an inline keyboard, so that the poller
+ * can keep `allowed_updates: ["message"]` and no callback plumbing is needed. */
+const ALLOW_TEXT = "✅ Разрешить вход"
+const DENY_TEXT = "❌ Отклонить"
+const LOGIN_KEYBOARD: ReplyMarkup = {
+	keyboard: [[{ text: ALLOW_TEXT }, { text: DENY_TEXT }]],
+	resize_keyboard: true,
+	one_time_keyboard: true,
+}
+
+/** Human names for the four client kinds `linkAuth` knows about. */
+const CLIENT_NAMES: Record<string, string> = {
+	windows: "приложение на Windows",
+	android: "приложение на Android",
+	extension: "расширение для браузера",
+	web: "сайт",
+}
+
 function rememberToken(chatId: number, value: string): void {
 	chatTokens.set(chatId, { token: value, at: Date.now() })
 	// Nothing here is worth a scheduled sweep; drop stale entries opportunistically.
@@ -169,9 +253,138 @@ function takeToken(chatId: number): string | null {
 	return entry.token
 }
 
+// ------------------------------------------------------- sign-in by link ---
+
+function rememberLogin(chatId: number, code: string): void {
+	chatLogins.set(chatId, { code, at: Date.now() })
+	for (const [chat, entry] of chatLogins) {
+		if (Date.now() - entry.at > CHAT_TOKEN_TTL_MS) chatLogins.delete(chat)
+	}
+}
+
+function takeLogin(chatId: number): string | null {
+	const entry = chatLogins.get(chatId)
+	if (!entry) return null
+	// A link lives five minutes server-side; anything older is already dead.
+	if (Date.now() - entry.at > CHAT_TOKEN_TTL_MS) {
+		chatLogins.delete(chatId)
+		return null
+	}
+	return entry.code
+}
+
+async function handleLoginStart(message: TelegramMessage, rawCode: string): Promise<void> {
+	const chatId = message.chat.id
+	const code = rawCode.trim().toUpperCase()
+
+	if (!loginBridge) {
+		await sendTelegramMessage(
+			chatId,
+			"Подтверждение входа сейчас недоступно в боте.\n\n" +
+				"Вернитесь в приложение и подтвердите вход на сайте — там та же кнопка.",
+			HIDE_KEYBOARD,
+		)
+		return
+	}
+
+	const pending = loginBridge.describe(code)
+	if (!pending || pending.status !== "pending") {
+		chatLogins.delete(chatId)
+		await sendTelegramMessage(
+			chatId,
+			"Эта ссылка для входа неизвестна или уже истекла.\n\n" +
+				"Нажмите «Войти через Telegram» в приложении ещё раз — ссылка живёт 5 минут.",
+			HIDE_KEYBOARD,
+		)
+		return
+	}
+
+	rememberLogin(chatId, code)
+
+	// Name what is asking. A confirmation prompt that does not say who is asking
+	// is not consent, it is a habit - and habits are what phishing relies on.
+	const what = CLIENT_NAMES[pending.client] ?? pending.client
+	const where = pending.deviceName ? `\nУстройство: <b>${pending.deviceName}</b>` : ""
+	const from = pending.ip ? `\nIP: <b>${pending.ip}</b>` : ""
+
+	await sendTelegramMessage(
+		chatId,
+		`Запрос на вход в <b>GlukVPN</b>.\n\nОткуда: ${what}${where}${from}\n` +
+			`Код: <b>${code}</b>\n\n` +
+			"Если это не вы — нажмите «Отклонить». Разрешение действует один раз.",
+		LOGIN_KEYBOARD,
+	)
+}
+
+async function handleLoginDecision(message: TelegramMessage, allow: boolean): Promise<void> {
+	const chatId = message.chat.id
+	const from = message.from
+	const code = takeLogin(chatId)
+
+	if (!code || !from || !loginBridge) {
+		await sendTelegramMessage(
+			chatId,
+			"Не вижу активного запроса на вход. Начните заново из приложения.",
+			HIDE_KEYBOARD,
+		)
+		return
+	}
+
+	chatLogins.delete(chatId)
+
+	if (!allow) {
+		loginBridge.deny(code)
+		await sendTelegramMessage(
+			chatId,
+			"Вход отклонён. Приложение об этом уже знает.\n\n" +
+				"Если запрос был не ваш — стоит сменить пароль на сайте.",
+			HIDE_KEYBOARD,
+		)
+		return
+	}
+
+	const outcome = await loginBridge.approve({
+		userCode: code,
+		telegramId: String(from.id),
+	})
+
+	if (outcome.ok) {
+		await sendTelegramMessage(
+			chatId,
+			`✅ Вход разрешён${outcome.username ? `: <b>${outcome.username}</b>` : ""}.\n\n` +
+				"Возвращайтесь в приложение — оно уже вошло.",
+			HIDE_KEYBOARD,
+		)
+		return
+	}
+
+	const reasons: Record<string, string> = {
+		not_linked:
+			"Этот Telegram не привязан ни к одному аккаунту GlukVPN.\n\n" +
+			"Привяжите его в личном кабинете на vpn.gluk.tech, раздел «Безопасность».",
+		disabled: "Аккаунт отключён. Напишите в поддержку.",
+		expired: "Ссылка истекла. Нажмите «Войти через Telegram» в приложении ещё раз.",
+		already: "Эта ссылка уже использована.",
+		unknown: "Ссылка неизвестна или уже истекла.",
+	}
+	await sendTelegramMessage(
+		chatId,
+		(outcome.reason ? reasons[outcome.reason] : undefined) ?? reasons.unknown!,
+		HIDE_KEYBOARD,
+	)
+}
+
 async function handleStart(message: TelegramMessage, argument: string): Promise<void> {
 	const chatId = message.chat.id
 	const name = message.from?.first_name ?? ""
+
+	// ROUND 11: `/start login-XXXX-XXXX` is a sign-in confirmation, not a
+	// sign-up. Checked before anything else so a login code can never be
+	// mistaken for a registration token.
+	if (/^login-/i.test(argument)) {
+		await handleLoginStart(message, argument.slice("login-".length))
+		return
+	}
 
 	if (!argument) {
 		await sendTelegramMessage(
@@ -279,19 +492,29 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
 	const text = (message.text ?? "").trim()
 	if (!text) return
 
+	// ROUND 11: the two sign-in buttons. Matched first, and only while this chat
+	// actually has a pending request, so the words are inert the rest of the time.
+	if (chatLogins.has(message.chat.id) && (text === ALLOW_TEXT || text === DENY_TEXT)) {
+		await handleLoginDecision(message, text === ALLOW_TEXT)
+		return
+	}
+
 	if (text.startsWith("/start")) {
 		await handleStart(message, text.slice("/start".length).trim())
 		return
 	}
 	if (text.startsWith("/cancel")) {
 		chatTokens.delete(message.chat.id)
+		const pendingLogin = chatLogins.get(message.chat.id)
+		if (pendingLogin && loginBridge) loginBridge.deny(pendingLogin.code)
+		chatLogins.delete(message.chat.id)
 		await sendTelegramMessage(message.chat.id, "Отменил. Ничего не сохранено.", HIDE_KEYBOARD)
 		return
 	}
 	if (text.startsWith("/help")) {
 		await sendTelegramMessage(
 			message.chat.id,
-			"Бот нужен только для подтверждения аккаунта <b>GlukVPN</b>.\n\n" +
+			"Бот подтверждает аккаунт <b>GlukVPN</b> и вход в него.\n\n" +
 				"/start — начать заново\n/cancel — отменить\n\n" +
 				"Поддержка: <b>vpn.gluk.tech</b>",
 			HIDE_KEYBOARD,

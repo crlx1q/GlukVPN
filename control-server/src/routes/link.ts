@@ -1,3 +1,4 @@
+import type { User } from "@prisma/client"
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 import { config } from "../config"
@@ -5,6 +6,7 @@ import { writeAudit } from "../lib/audit"
 import { badRequest, forbidden, notFound } from "../lib/errors"
 import { clientIp, getAuthUser, requireUser } from "../middleware/auth"
 import { prisma } from "../prisma"
+import type { LinkTokenPayload } from "../services/linkAuth"
 import {
 	approveLink,
 	denyLink,
@@ -13,6 +15,7 @@ import {
 	pollLink,
 	startLink,
 } from "../services/linkAuth"
+import { setTelegramLoginBridge, telegramLoginLink } from "../services/telegramBot"
 import { issueTokens } from "../services/tokens"
 
 /**
@@ -52,7 +55,108 @@ function siteBaseUrl(): string {
 	return raw.replace(/\/+$/, "")
 }
 
+/**
+ * Builds the credentials that `approveLink` hands to the waiting client.
+ *
+ * ROUND 11: there are now two approvers - the website and the Telegram bot -
+ * and a session minted by one has to be byte-for-byte the same shape as a
+ * session minted by the other. One function is what guarantees that; two
+ * copies would be a drift waiting to happen.
+ *
+ * Account-scoped, exactly like `/api/auth/login`: the client upgrades to
+ * device-scoped tokens itself with `/api/devices/register`, so the device row
+ * is created by the machine that will actually use it.
+ */
+async function mintLinkTokens(
+	app: FastifyInstance,
+	user: User,
+): Promise<LinkTokenPayload> {
+	const tokens = await issueTokens(app, user, null)
+	const subscription = await prisma.subscription.findFirst({
+		where: { userId: user.id },
+		orderBy: { expiresAt: "desc" },
+	})
+	return {
+		tokenType: "Bearer",
+		accessToken: tokens.accessToken,
+		expiresIn: tokens.accessTokenExpiresInSec,
+		refreshToken: tokens.refreshToken,
+		refreshTokenExpiresAt: tokens.refreshTokenExpiresAt.toISOString(),
+		user: {
+			id: user.id,
+			publicId: user.publicId,
+			username: user.username,
+			email: user.email,
+			emailVerified: user.emailVerifiedAt !== null,
+			isAdmin: user.isAdmin,
+			status: user.status,
+			maxDevices: user.maxDevices,
+			maxConcurrentSessions: user.maxSessions,
+			origin: {
+				country: user.lastCountry,
+				countryCode: user.lastCountryCode,
+				region: user.lastRegion,
+			},
+		},
+		subscription: subscription
+			? {
+					status: subscription.status,
+					expiresAt: subscription.expiresAt.toISOString(),
+				}
+			: null,
+	}
+}
+
 export async function linkAuthRoutes(app: FastifyInstance): Promise<void> {
+	// ROUND 11: let the Telegram bot approve a sign-in.
+	//
+	// Installed here because approving mints tokens and `issueTokens` needs
+	// `app.jwt`, which only this scope has. The bot module holds nothing but the
+	// callbacks, so running it standalone simply leaves the feature off instead
+	// of half-working.
+	//
+	// The identity check is `telegramId`, not the code: a chat is only bound to
+	// an account after that exact Telegram user shared their phone number at
+	// sign-up. Somebody who intercepts a deep link therefore still cannot
+	// approve it - they would have to be the linked account.
+	setTelegramLoginBridge({
+		describe: (userCode: string) => {
+			const record = describeLink(userCode)
+			if (!record) return null
+			return {
+				client: record.client,
+				deviceName: record.deviceName,
+				ip: record.ip,
+				status: record.status,
+			}
+		},
+		approve: async ({ userCode, telegramId }) => {
+			const user = await prisma.user.findFirst({ where: { telegramId } })
+			if (!user) return { ok: false, reason: "not_linked" }
+			if (user.status !== "ACTIVE") return { ok: false, reason: "disabled" }
+
+			const outcome = approveLink({
+				userCode,
+				userId: user.id,
+				tokens: await mintLinkTokens(app, user),
+			})
+			if (!outcome.ok) return { ok: false, reason: outcome.reason }
+
+			await writeAudit({
+				action: "auth.link.approved",
+				userId: user.id,
+				ip: null,
+				metadata: {
+					via: "telegram",
+					client: outcome.record.client,
+					deviceName: outcome.record.deviceName,
+				},
+			})
+			return { ok: true, username: user.username }
+		},
+		deny: (userCode: string) => ({ ok: denyLink(userCode).ok }),
+	})
+
 	// ------------------------------- client side ----------------------------
 
 	app.post(
@@ -89,6 +193,12 @@ export async function linkAuthRoutes(app: FastifyInstance): Promise<void> {
 				// at someone else's API.
 				verifyUrl: `${siteBaseUrl()}/link?code=${encodeURIComponent(started.userCode)}&api=${config.CHANNEL}`,
 				verifyUrlBase: `${siteBaseUrl()}/link`,
+				// ROUND 11: the preferred route when the bot is configured. The
+				// chat already proved this person's phone number at sign-up, so
+				// confirming there is both stronger and one tap shorter than
+				// sending them through a web login. Empty when there is no bot,
+				// and the clients fall back to verifyUrl.
+				telegramUrl: telegramLoginLink(started.userCode),
 				apiChannel: config.CHANNEL,
 				expiresAt: started.expiresAt.toISOString(),
 				intervalSec: started.intervalSec,
@@ -146,47 +256,10 @@ export async function linkAuthRoutes(app: FastifyInstance): Promise<void> {
 			const pending = describeLink(code)
 			if (!pending) throw notFound("This sign-in link is unknown or has expired")
 
-			// Account-scoped tokens, exactly like /api/auth/login. The client turns
-			// them into device-scoped tokens with /api/devices/register, so the
-			// device row is created by the machine that will actually use it.
-			const tokens = await issueTokens(app, user, null)
-			const subscription = await prisma.subscription.findFirst({
-				where: { userId: user.id },
-				orderBy: { expiresAt: "desc" },
-			})
-
 			const outcome = approveLink({
 				userCode: code,
 				userId: user.id,
-				tokens: {
-					tokenType: "Bearer",
-					accessToken: tokens.accessToken,
-					expiresIn: tokens.accessTokenExpiresInSec,
-					refreshToken: tokens.refreshToken,
-					refreshTokenExpiresAt: tokens.refreshTokenExpiresAt.toISOString(),
-					user: {
-						id: user.id,
-						publicId: user.publicId,
-						username: user.username,
-						email: user.email,
-						emailVerified: user.emailVerifiedAt !== null,
-						isAdmin: user.isAdmin,
-						status: user.status,
-						maxDevices: user.maxDevices,
-						maxConcurrentSessions: user.maxSessions,
-						origin: {
-							country: user.lastCountry,
-							countryCode: user.lastCountryCode,
-							region: user.lastRegion,
-						},
-					},
-					subscription: subscription
-						? {
-								status: subscription.status,
-								expiresAt: subscription.expiresAt.toISOString(),
-							}
-						: null,
-				},
+				tokens: await mintLinkTokens(app, user),
 			})
 
 			if (!outcome.ok) {

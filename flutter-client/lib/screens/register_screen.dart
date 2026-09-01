@@ -4,14 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../config.dart';
+import '../i18n/app_strings.dart';
 import '../services/api_client.dart';
+import '../services/link_opener.dart';
 import '../services/register_api.dart';
 import '../theme/tokens.dart';
 import '../widgets/glass.dart';
 import '../widgets/logo.dart';
+import '../widgets/page_background.dart';
 
-/// ROUND 10 (4.1): sign-up on the phone, in the same three steps the website
-/// uses.
+/// Sign-up on the phone, in the same three steps the website uses.
 ///
 ///   1. email + password
 ///   2. the six-digit code from the email
@@ -19,14 +21,23 @@ import '../widgets/logo.dart';
 ///
 /// The order is not decoration. A code proves the address exists, and addresses
 /// are free and infinite. A phone number handed over through Telegram's own
-/// "share contact" button is not. Until now the phone had no sign-up at all and
-/// pointed people at the website; that is exactly the kind of gap that makes an
-/// app feel like a shell around a browser.
+/// "share contact" button is not.
 ///
-/// There is no captcha here. Turnstile has no Flutter widget, and shipping a
-/// WebView for one checkbox would be worse than the problem: the server treats
-/// a missing token the same way it does for the desktop client, and the rate
-/// limits on `/api/auth/register/*` still apply.
+/// ROUND 11, two corrections to how round 10 shipped this:
+///
+///  * **It looked like a different app.** Sign-in renders over the wave
+///    backdrop with a 56 px mark; this screen used a flat `pageBg` Scaffold and
+///    a 48 px one. Same widgets, different room. Both now use [_AuthShell],
+///    which *is* the sign-in layout, so the two cannot drift apart again.
+///  * **The Telegram step asked for two copy-paste operations.** It handed over
+///    a link and a code and left the user to move them somewhere by hand. The
+///    link now opens the bot directly, with the deep link already carrying the
+///    code; copying is what happens when the launch fails, not the design.
+///
+/// There is still no captcha here. Turnstile has no Flutter widget, and
+/// shipping a WebView for one checkbox would be worse than the problem: the
+/// server treats a missing token the way it does for the desktop client, and
+/// the rate limits on `/api/auth/register/*` still apply.
 enum _RegStep { form, code, telegram, done, closed }
 
 class RegisterScreen extends StatefulWidget {
@@ -81,23 +92,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _loadConfig() async {
     final RegisterConfig config = await _api.config();
     if (!mounted) return;
+    final AppStrings s = context.strings;
     setState(() {
       _codeTtl = config.codeTtlMinutes;
       if (config.open) return;
       _step = _RegStep.closed;
-      _closedReason = config.selfRegistration
-          ? 'Telegram confirmation is unavailable right now, so sign-up is '
-              'closed. Message us and we will open access by hand.'
-          : 'Sign-up is closed at the moment. Message us and we will open '
-              'access by hand.';
+      // Name the reason. "Closed" without a why is what makes people email
+      // support to ask whether it is them or us.
+      _closedReason =
+          config.selfRegistration ? s.signUpClosedTelegram : s.signUpClosed;
     });
   }
 
   void _fail(Object error) {
+    if (!mounted) return;
     final String message = error is ApiException
         ? error.message
-        : 'Something went wrong. Please try again.';
-    if (!mounted) return;
+        : context.strings.somethingWentWrong;
     setState(() {
       _error = message;
       _busy = false;
@@ -137,7 +148,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (_busy) return;
     final String code = _code.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (code.length != 6) {
-      setState(() => _error = 'The code is 6 digits.');
+      setState(() => _error = context.strings.codeIsSixDigits);
       return;
     }
     FocusScope.of(context).unfocus();
@@ -158,6 +169,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _step = _RegStep.telegram;
       });
       _startPolling();
+      // ROUND 11: straight into the bot. The deep link already carries the
+      // code, so there is nothing left for the user to transcribe.
+      await _openBot();
     } catch (error) {
       _fail(error);
     }
@@ -172,7 +186,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       await _api.resend(_email.text.trim());
       if (!mounted) return;
-      setState(() => _notice = 'A new code has been sent.');
+      setState(() => _notice = context.strings.emailCodeSent);
     } catch (error) {
       _fail(error);
     }
@@ -185,6 +199,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   // --- step 3 ---------------------------------------------------------------
 
+  Future<void> _openBot() async {
+    final String url = _handoff?.url ?? '';
+    if (url.isEmpty || !mounted) return;
+    await LinkOpener.openOrCopy(
+      context,
+      url,
+      failureMessage: context.strings.telegramCannotOpen,
+    );
+  }
+
   /// The bot talks to the server, not to this app, so the only thing the phone
   /// can do is ask whether it happened yet. Bounded on purpose: a screen left
   /// open overnight must not poll the API forever.
@@ -195,8 +219,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return timer.cancel();
       if (_polls > 200) {
         timer.cancel();
-        setState(() => _notice = 'Stopped checking. Reopen this screen if you '
-            'already confirmed in Telegram.');
+        setState(() => _notice = context.strings.stoppedChecking);
         return;
       }
       _polls += 1;
@@ -223,37 +246,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
   // --- validation -----------------------------------------------------------
 
   String? _validateEmail(String? value) {
+    final AppStrings s = context.strings;
     final String text = (value ?? '').trim();
-    if (text.isEmpty) return 'Enter your email address';
+    if (text.isEmpty) return s.enterEmail;
     final int at = text.indexOf('@');
     final bool ok = at > 0 &&
         text.length > at + 3 &&
         text.indexOf('.', at) > at + 1 &&
         !text.contains(' ');
-    return ok ? null : 'Enter a valid email address';
+    return ok ? null : s.enterValidEmail;
   }
 
   String? _validatePassword(String? value) {
     final String text = value ?? '';
     if (text.length < AppConfig.minPasswordLength) {
-      return 'At least ${AppConfig.minPasswordLength} characters';
+      return context.strings.atLeastChars(AppConfig.minPasswordLength);
     }
     return null;
   }
 
-  String? _validateRepeat(String? value) {
-    if ((value ?? '') != _password.text) return 'The passwords do not match';
-    return null;
-  }
+  String? _validateRepeat(String? value) =>
+      (value ?? '') == _password.text ? null : context.strings.passwordsDoNotMatch;
 
   @override
   Widget build(BuildContext context) {
-    return _AuthScaffold(
-      title: 'Create an account',
-      subtitle: _step == _RegStep.closed
-          ? 'Sign-up is not available right now.'
-          : 'Email and password, a code from the email, then a confirmation '
-              'in Telegram \u2014 three steps.',
+    final AppStrings s = context.strings;
+    return _AuthShell(
+      title: s.createAccountTitle,
+      subtitle:
+          _step == _RegStep.closed ? s.signUpClosed : s.registerSubtitle,
       progress: switch (_step) {
         _RegStep.form => 1,
         _RegStep.code => 2,
@@ -265,16 +286,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
       notice: _notice,
       onDismissError: () => setState(() => _error = null),
       children: switch (_step) {
-        _RegStep.form => _formStep(context),
-        _RegStep.code => _codeStep(context),
-        _RegStep.telegram => _telegramStep(context),
-        _RegStep.done => _doneStep(context),
-        _RegStep.closed => _closedStep(context),
+        _RegStep.form => _formStep(context, s),
+        _RegStep.code => _codeStep(context, s),
+        _RegStep.telegram => _telegramStep(context, s),
+        _RegStep.done => _doneStep(context, s),
+        _RegStep.closed => _closedStep(context, s),
       },
     );
   }
 
-  List<Widget> _formStep(BuildContext context) {
+  List<Widget> _formStep(BuildContext context, AppStrings s) {
+    final TextTheme text = Theme.of(context).textTheme;
     return <Widget>[
       Form(
         key: _form,
@@ -287,9 +309,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
               enableSuggestions: false,
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                prefixIcon: Icon(Icons.alternate_email_rounded),
+              style: text.bodyLarge,
+              decoration: InputDecoration(
+                labelText: s.email,
+                prefixIcon: const Icon(Icons.alternate_email_rounded),
               ),
               validator: _validateEmail,
             ),
@@ -300,14 +323,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
               autocorrect: false,
               enableSuggestions: false,
               textInputAction: TextInputAction.next,
+              style: text.bodyLarge,
               decoration: InputDecoration(
-                labelText: 'Password',
+                labelText: s.password,
                 prefixIcon: const Icon(Icons.lock_outline_rounded),
                 suffixIcon: IconButton(
                   icon: Icon(_obscure
                       ? Icons.visibility_outlined
                       : Icons.visibility_off_outlined),
-                  tooltip: _obscure ? 'Show password' : 'Hide password',
+                  tooltip: _obscure ? s.showPassword : s.hidePassword,
                   onPressed: () => setState(() => _obscure = !_obscure),
                 ),
               ),
@@ -320,9 +344,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
               autocorrect: false,
               enableSuggestions: false,
               textInputAction: TextInputAction.done,
-              decoration: const InputDecoration(
-                labelText: 'Repeat the password',
-                prefixIcon: Icon(Icons.lock_reset_rounded),
+              style: text.bodyLarge,
+              decoration: InputDecoration(
+                labelText: s.repeatPassword,
+                prefixIcon: const Icon(Icons.lock_reset_rounded),
               ),
               validator: _validateRepeat,
               onFieldSubmitted: (_) => _start(),
@@ -330,34 +355,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ],
         ),
       ),
-      const SizedBox(height: 20),
+      const SizedBox(height: 22),
       PrimaryPillButton(
-        label: 'Continue',
+        label: s.continueLabel,
         busy: _busy,
         onPressed: _busy ? null : _start,
       ),
       const SizedBox(height: 14),
-      _Hint(
-        'The account is always created on the main GlukVPN servers, even if '
-        'this build is pointed at beta.',
-      ),
+      _Hint(s.termsNotice),
+      const SizedBox(height: 6),
+      _Hint(s.registrationAlwaysProd),
     ];
   }
 
-  List<Widget> _codeStep(BuildContext context) {
+  List<Widget> _codeStep(BuildContext context, AppStrings s) {
     final TextTheme text = Theme.of(context).textTheme;
     return <Widget>[
-      Text('We sent a 6-digit code to', style: text.bodyMedium),
+      Text(s.weSentACodeTo, style: text.bodyMedium),
       const SizedBox(height: 2),
       Text(_email.text.trim(), style: text.titleMedium),
       const SizedBox(height: 4),
-      Text('It is valid for $_codeTtl minutes.', style: text.bodySmall),
+      Text(s.codeValidFor(_codeTtl), style: text.bodySmall),
       if (!_mailDelivered) ...<Widget>[
         const SizedBox(height: 12),
-        const InlineNotice(
-          message: 'The email could not be sent. Try Resend, or write to '
-              'support if it keeps failing.',
-        ),
+        InlineNotice(message: s.mailNotDelivered, tone: GlukColors.amber),
       ],
       const SizedBox(height: 18),
       TextFormField(
@@ -365,31 +386,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
         keyboardType: TextInputType.number,
         textInputAction: TextInputAction.done,
         maxLength: 6,
-        decoration: const InputDecoration(
-          labelText: 'Code from the email',
+        style: text.bodyLarge,
+        decoration: InputDecoration(
+          labelText: s.codeFromEmail,
           counterText: '',
-          prefixIcon: Icon(Icons.pin_rounded),
+          prefixIcon: const Icon(Icons.pin_rounded),
         ),
         onFieldSubmitted: (_) => _verify(),
       ),
       const SizedBox(height: 18),
       PrimaryPillButton(
-        label: 'Confirm',
+        label: s.confirm,
         busy: _busy,
         onPressed: _busy ? null : _verify,
       ),
       const SizedBox(height: 8),
-      Align(
-        alignment: Alignment.center,
+      Center(
         child: TextButton(
           onPressed: _resendCooling ? null : _resend,
-          child: Text(_resendCooling ? 'Code sent \u2014 wait 30 s' : 'Resend'),
+          child: Text(_resendCooling ? s.resendIn(30) : s.resend),
         ),
       ),
     ];
   }
 
-  List<Widget> _telegramStep(BuildContext context) {
+  List<Widget> _telegramStep(BuildContext context, AppStrings s) {
     final TextTheme text = Theme.of(context).textTheme;
     final TelegramHandoff handoff =
         _handoff ?? const TelegramHandoff(url: '', code: '');
@@ -397,30 +418,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
         handoff.botHandle.isEmpty ? '@glukvpnbot' : handoff.botHandle;
 
     return <Widget>[
-      Text('Email confirmed.', style: text.titleMedium),
+      Text(s.emailConfirmed, style: text.titleMedium),
       const SizedBox(height: 6),
-      Text(
-        'Last step: open $handle in Telegram and press the button that shares '
-        'your contact. That is what tells one real person apart from a hundred '
-        'throwaway addresses.',
-        style: text.bodyMedium,
+      Text(s.openBotAndShareContact(handle), style: text.bodyMedium),
+      const SizedBox(height: 20),
+      PrimaryPillButton(
+        label: s.openTelegram,
+        icon: Icons.open_in_new_rounded,
+        onPressed: handoff.url.isEmpty ? null : _openBot,
       ),
-      const SizedBox(height: 16),
-      if (handoff.url.isNotEmpty)
-        _CopyRow(
-          label: 'Link to the bot',
-          value: handoff.url,
-          onCopy: () => _copy(handoff.url, 'Link copied'),
-        ),
       if (handoff.code.isNotEmpty) ...<Widget>[
-        const SizedBox(height: 10),
+        const SizedBox(height: 16),
+        Text(s.telegramFallbackHint, style: text.bodySmall),
+        const SizedBox(height: 8),
         _CopyRow(
-          label: 'Code for the bot',
+          label: s.codeForBot,
           value: handoff.code,
-          onCopy: () => _copy(handoff.code, 'Code copied'),
+          onCopy: () => _copy(handoff.code, s.copied),
         ),
       ],
-      const SizedBox(height: 18),
+      const SizedBox(height: 20),
       Row(
         children: <Widget>[
           const SizedBox(
@@ -430,58 +447,51 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              'Waiting for the confirmation. This screen updates by itself.',
-              style: text.bodySmall,
-            ),
+            child: Text(s.waitingForConfirmation, style: text.bodySmall),
           ),
         ],
       ),
     ];
   }
 
-  List<Widget> _doneStep(BuildContext context) {
+  List<Widget> _doneStep(BuildContext context, AppStrings s) {
     final TextTheme text = Theme.of(context).textTheme;
     return <Widget>[
       const Icon(Icons.check_circle_rounded,
           size: 42, color: GlukColors.connected),
       const SizedBox(height: 14),
-      Text('The account is ready', style: text.headlineSmall),
-      const SizedBox(height: 6),
+      Text(s.accountReady, style: text.headlineSmall),
+      const SizedBox(height: 10),
       if (_username.isNotEmpty)
         _CopyRow(
-          label: 'Your username',
+          label: s.yourUsername,
           value: _username,
-          onCopy: () => _copy(_username, 'Username copied'),
+          onCopy: () => _copy(_username, s.copied),
         ),
-      const SizedBox(height: 8),
-      Text(
-        'Sign in with this username or with your email address \u2014 either '
-        'one works.',
-        style: text.bodySmall,
-      ),
-      const SizedBox(height: 20),
+      const SizedBox(height: 10),
+      Text(s.signInWithEither, style: text.bodySmall),
+      const SizedBox(height: 22),
       PrimaryPillButton(
-        label: 'Go to sign in',
+        label: s.goToSignIn,
         onPressed: () => Navigator.of(context).pop(),
       ),
     ];
   }
 
-  List<Widget> _closedStep(BuildContext context) {
+  List<Widget> _closedStep(BuildContext context, AppStrings s) {
     return <Widget>[
-      InlineNotice(message: _closedReason),
-      const SizedBox(height: 18),
+      InlineNotice(message: _closedReason, tone: GlukColors.amber),
+      const SizedBox(height: 20),
       PrimaryPillButton(
-        label: 'Back',
+        label: s.back,
         onPressed: () => Navigator.of(context).pop(),
       ),
     ];
   }
 }
 
-/// ROUND 10 (4.1): password recovery, the other half of the sign-in screen that
-/// only existed on the website.
+/// Password recovery, the other half of the sign-in screen that only existed
+/// on the website until round 10.
 enum _RecStep { request, reset, done }
 
 class RecoverScreen extends StatefulWidget {
@@ -522,7 +532,7 @@ class _RecoverScreenState extends State<RecoverScreen> {
     setState(() {
       _error = error is ApiException
           ? error.message
-          : 'Something went wrong. Please try again.';
+          : context.strings.somethingWentWrong;
       _busy = false;
     });
   }
@@ -531,7 +541,7 @@ class _RecoverScreenState extends State<RecoverScreen> {
     if (_busy) return;
     final String id = _identifier.text.trim();
     if (id.length < 3) {
-      setState(() => _error = 'Enter your username or email');
+      setState(() => _error = context.strings.enterUsernameOrEmail);
       return;
     }
     FocusScope.of(context).unfocus();
@@ -558,7 +568,7 @@ class _RecoverScreenState extends State<RecoverScreen> {
     if (!(_form.currentState?.validate() ?? false)) return;
     final String code = _code.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (code.length != 6) {
-      setState(() => _error = 'The code is 6 digits.');
+      setState(() => _error = context.strings.codeIsSixDigits);
       return;
     }
     FocusScope.of(context).unfocus();
@@ -584,10 +594,10 @@ class _RecoverScreenState extends State<RecoverScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return _AuthScaffold(
-      title: 'Recover access',
-      subtitle: 'We send a code to your email or to Telegram \u2014 whichever '
-          'is easier.',
+    final AppStrings s = context.strings;
+    return _AuthShell(
+      title: s.recoverTitle,
+      subtitle: s.recoverSubtitle,
       progress: switch (_step) {
         _RecStep.request => 1,
         _RecStep.reset => 2,
@@ -597,14 +607,15 @@ class _RecoverScreenState extends State<RecoverScreen> {
       error: _error,
       onDismissError: () => setState(() => _error = null),
       children: switch (_step) {
-        _RecStep.request => _requestStep(context),
-        _RecStep.reset => _resetStep(context),
-        _RecStep.done => _doneStep(context),
+        _RecStep.request => _requestStep(context, s),
+        _RecStep.reset => _resetStep(context, s),
+        _RecStep.done => _doneStep(context, s),
       },
     );
   }
 
-  List<Widget> _requestStep(BuildContext context) {
+  List<Widget> _requestStep(BuildContext context, AppStrings s) {
+    final TextTheme text = Theme.of(context).textTheme;
     return <Widget>[
       TextFormField(
         controller: _identifier,
@@ -612,39 +623,34 @@ class _RecoverScreenState extends State<RecoverScreen> {
         enableSuggestions: false,
         keyboardType: TextInputType.emailAddress,
         textInputAction: TextInputAction.done,
-        decoration: const InputDecoration(
-          labelText: 'Username or email',
-          prefixIcon: Icon(Icons.person_outline_rounded),
+        style: text.bodyLarge,
+        decoration: InputDecoration(
+          labelText: s.usernameOrEmail,
+          prefixIcon: const Icon(Icons.person_outline_rounded),
         ),
         onFieldSubmitted: (_) => _request(),
       ),
-      const SizedBox(height: 14),
+      const SizedBox(height: 16),
+      Text(s.whereToSendCode, style: text.labelMedium),
+      const SizedBox(height: 8),
       _ChannelChoice(
         value: _channel,
         onChanged: (String next) => setState(() => _channel = next),
       ),
-      const SizedBox(height: 20),
+      const SizedBox(height: 22),
       PrimaryPillButton(
-        label: 'Send the code',
+        label: s.sendTheCode,
         busy: _busy,
         onPressed: _busy ? null : _request,
-      ),
-      const SizedBox(height: 14),
-      _Hint(
-        'The code goes to the account on the channel this build is using '
-        '(${AppConfig.activeChannel.label}). A password belongs to the account '
-        'you actually sign in to.',
       ),
     ];
   }
 
-  List<Widget> _resetStep(BuildContext context) {
+  List<Widget> _resetStep(BuildContext context, AppStrings s) {
     final TextTheme text = Theme.of(context).textTheme;
     return <Widget>[
       Text(
-        _sentTo == 'telegram'
-            ? 'The code was sent to Telegram.'
-            : 'The code was sent by email.',
+        _sentTo == 'telegram' ? s.codeSentByTelegram : s.codeSentByEmail,
         style: text.bodyMedium,
       ),
       const SizedBox(height: 18),
@@ -656,10 +662,11 @@ class _RecoverScreenState extends State<RecoverScreen> {
               controller: _code,
               keyboardType: TextInputType.number,
               maxLength: 6,
-              decoration: const InputDecoration(
-                labelText: 'Code',
+              style: text.bodyLarge,
+              decoration: InputDecoration(
+                labelText: s.code,
                 counterText: '',
-                prefixIcon: Icon(Icons.pin_rounded),
+                prefixIcon: const Icon(Icons.pin_rounded),
               ),
             ),
             const SizedBox(height: 8),
@@ -668,23 +675,22 @@ class _RecoverScreenState extends State<RecoverScreen> {
               obscureText: _obscure,
               autocorrect: false,
               enableSuggestions: false,
+              style: text.bodyLarge,
               decoration: InputDecoration(
-                labelText: 'New password',
+                labelText: s.newPassword,
                 prefixIcon: const Icon(Icons.lock_outline_rounded),
                 suffixIcon: IconButton(
                   icon: Icon(_obscure
                       ? Icons.visibility_outlined
                       : Icons.visibility_off_outlined),
-                  tooltip: _obscure ? 'Show password' : 'Hide password',
+                  tooltip: _obscure ? s.showPassword : s.hidePassword,
                   onPressed: () => setState(() => _obscure = !_obscure),
                 ),
               ),
-              validator: (String? value) {
-                if ((value ?? '').length < AppConfig.minPasswordLength) {
-                  return 'At least ${AppConfig.minPasswordLength} characters';
-                }
-                return null;
-              },
+              validator: (String? value) =>
+                  (value ?? '').length < AppConfig.minPasswordLength
+                      ? s.atLeastChars(AppConfig.minPasswordLength)
+                      : null,
             ),
             const SizedBox(height: 14),
             TextFormField(
@@ -692,42 +698,40 @@ class _RecoverScreenState extends State<RecoverScreen> {
               obscureText: _obscure,
               autocorrect: false,
               enableSuggestions: false,
-              decoration: const InputDecoration(
-                labelText: 'Repeat the password',
-                prefixIcon: Icon(Icons.lock_reset_rounded),
+              style: text.bodyLarge,
+              decoration: InputDecoration(
+                labelText: s.repeatPassword,
+                prefixIcon: const Icon(Icons.lock_reset_rounded),
               ),
-              validator: (String? value) =>
-                  (value ?? '') == _password.text ? null : 'The passwords do not match',
+              validator: (String? value) => (value ?? '') == _password.text
+                  ? null
+                  : s.passwordsDoNotMatch,
               onFieldSubmitted: (_) => _reset(),
             ),
           ],
         ),
       ),
-      const SizedBox(height: 20),
+      const SizedBox(height: 22),
       PrimaryPillButton(
-        label: 'Save the password',
+        label: s.savePasswordLabel,
         busy: _busy,
         onPressed: _busy ? null : _reset,
       ),
     ];
   }
 
-  List<Widget> _doneStep(BuildContext context) {
+  List<Widget> _doneStep(BuildContext context, AppStrings s) {
     final TextTheme text = Theme.of(context).textTheme;
     return <Widget>[
       const Icon(Icons.check_circle_rounded,
           size: 42, color: GlukColors.connected),
       const SizedBox(height: 14),
-      Text('The password is changed', style: text.headlineSmall),
+      Text(s.passwordChanged, style: text.headlineSmall),
       const SizedBox(height: 6),
-      Text(
-        'Every other session was signed out, so anybody who had the old '
-        'password is out too.',
-        style: text.bodySmall,
-      ),
-      const SizedBox(height: 20),
+      Text(s.passwordChangedBody, style: text.bodySmall),
+      const SizedBox(height: 22),
       PrimaryPillButton(
-        label: 'Go to sign in',
+        label: s.goToSignIn,
         onPressed: () => Navigator.of(context).pop(),
       ),
     ];
@@ -736,11 +740,16 @@ class _RecoverScreenState extends State<RecoverScreen> {
 
 // --- shared chrome ----------------------------------------------------------
 
-/// One frame for both flows: back arrow, mark, title, step dots, error slot.
-/// Written once so registration and recovery cannot drift apart visually the
-/// way the two website pages did before round 9 merged them.
-class _AuthScaffold extends StatelessWidget {
-  const _AuthScaffold({
+/// The sign-in layout, reused verbatim.
+///
+/// Every measurement here is copied from `LoginView`: the wave backdrop, the
+/// 24/16/24/28 padding, the 56 px mark, `headlineMedium` over `bodyMedium`, and
+/// the same keyboard-inset handling. That is the whole point of the widget -
+/// registration and recovery are not new screens, they are the same screen with
+/// different fields, and they should be indistinguishable until the form
+/// starts.
+class _AuthShell extends StatelessWidget {
+  const _AuthShell({
     required this.title,
     required this.subtitle,
     required this.progress,
@@ -766,47 +775,49 @@ class _AuthScaffold extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: GlukColors.pageBg,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(
-            24,
-            16,
-            24,
-            28 + MediaQuery.viewInsetsOf(context).bottom,
-          ),
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              CircleIconButton(
-                icon: Icons.arrow_back_rounded,
-                tooltip: 'Back',
-                onTap: () => Navigator.of(context).maybePop(),
-              ),
-              const SizedBox(height: 22),
-              const GlukLogo(size: 48),
-              const SizedBox(height: 16),
-              Text(title, style: text.headlineMedium),
-              const SizedBox(height: 6),
-              Text(subtitle, style: text.bodyMedium),
-              if (progress > 0) ...<Widget>[
-                const SizedBox(height: 16),
-                _StepDots(at: progress, of: steps),
-              ],
-              const SizedBox(height: 22),
-              if (error != null) ...<Widget>[
-                InkWell(
-                  onTap: onDismissError,
-                  child: InlineNotice(message: error!),
+      body: PageBackground(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              24,
+              16,
+              24,
+              28 + MediaQuery.viewInsetsOf(context).bottom,
+            ),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                CircleIconButton(
+                  icon: Icons.arrow_back_rounded,
+                  tooltip: context.strings.back,
+                  onTap: () => Navigator.of(context).maybePop(),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 26),
+                const GlukLogo(size: 56),
+                const SizedBox(height: 18),
+                Text(title, style: text.headlineMedium),
+                const SizedBox(height: 6),
+                Text(subtitle, style: text.bodyMedium),
+                if (progress > 0) ...<Widget>[
+                  const SizedBox(height: 18),
+                  _StepDots(at: progress, of: steps),
+                ],
+                const SizedBox(height: 24),
+                if (error != null) ...<Widget>[
+                  InkWell(
+                    onTap: onDismissError,
+                    child: InlineNotice(message: error!),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                if (notice != null) ...<Widget>[
+                  InlineNotice(message: notice!, tone: GlukColors.violetLight),
+                  const SizedBox(height: 14),
+                ],
+                ...children,
               ],
-              if (notice != null) ...<Widget>[
-                _Hint(notice!),
-                const SizedBox(height: 14),
-              ],
-              ...children,
-            ],
+            ),
           ),
         ),
       ),
@@ -843,7 +854,7 @@ class _StepDots extends StatelessWidget {
   }
 }
 
-/// A value worth copying, with the button next to it. Codes and links are
+/// A value worth copying, with the button next to it. Codes and usernames are
 /// exactly the things people fat-finger when they have to retype them.
 class _CopyRow extends StatelessWidget {
   const _CopyRow({
@@ -882,7 +893,7 @@ class _CopyRow extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.copy_rounded, size: 17),
             color: GlukColors.text2,
-            tooltip: 'Copy',
+            tooltip: context.strings.copy,
             onPressed: onCopy,
           ),
         ],
@@ -899,11 +910,12 @@ class _ChannelChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
     return Row(
       children: <Widget>[
         Expanded(
           child: _ChoiceChip(
-            label: 'Email',
+            label: s.email,
             icon: Icons.mail_outline_rounded,
             selected: value == 'email',
             onTap: () => onChanged('email'),
@@ -912,7 +924,7 @@ class _ChannelChoice extends StatelessWidget {
         const SizedBox(width: 10),
         Expanded(
           child: _ChoiceChip(
-            label: 'Telegram',
+            label: s.telegram,
             icon: Icons.send_rounded,
             selected: value == 'telegram',
             onTap: () => onChanged('telegram'),
@@ -942,7 +954,7 @@ class _ChoiceChip extends StatelessWidget {
     return GlassPanel(
       radius: 999,
       onTap: onTap,
-      color: selected ? GlukColors.violet.withOpacity(0.18) : Colors.transparent,
+      color: selected ? GlukColors.violet.withOpacity(0.18) : GlukColors.cell,
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -971,7 +983,6 @@ class _Hint extends StatelessWidget {
   final String text;
 
   @override
-  Widget build(BuildContext context) {
-    return Text(text, style: Theme.of(context).textTheme.bodySmall);
-  }
+  Widget build(BuildContext context) =>
+      Text(text, style: Theme.of(context).textTheme.bodySmall);
 }
