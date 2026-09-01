@@ -263,7 +263,10 @@ class WindowController extends ChangeNotifier with WindowListener {
   Future<void> _persistGeometry() async {
     if (_mode != WindowMode.main) return;
     try {
+      final bool isMinimized = await windowManager.isMinimized();
+      if (isMinimized) return;
       final Rect bounds = await windowManager.getBounds();
+      if (bounds.left < -10000 || bounds.top < -10000) return;
       await _settings.update(
         (DesktopSettings s) => s.copyWith(
           windowWidth: bounds.width,

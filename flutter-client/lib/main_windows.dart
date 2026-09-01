@@ -103,13 +103,18 @@ Future<void> main(List<String> args) async {
       skipTaskbar: false,
       titleBarStyle: TitleBarStyle.hidden,
       windowButtonVisibility: false,
-      title: 'GlukVPN',
     ),
     () async {
-      if (saved.windowX != null && saved.windowY != null) {
+      final bool hasValidPosition = saved.windowX != null &&
+          saved.windowY != null &&
+          saved.windowX! > -10000 &&
+          saved.windowY! > -10000;
+      if (hasValidPosition) {
         await windowManager.setPosition(
           Offset(saved.windowX!, saved.windowY!),
         );
+      } else {
+        await windowManager.center();
       }
       // The window cannot be resized or maximised: the composition is designed
       // for exactly one size, and stretching it is what left empty bands above
