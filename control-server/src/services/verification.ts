@@ -22,6 +22,7 @@ import { config } from "../config"
 import { hashSecret } from "../lib/crypto"
 import { badRequest, tooManyRequests } from "../lib/errors"
 import { prisma } from "../prisma"
+import { codeMail, type CodeMailKind } from "./mailTemplate"
 
 const CODE_DIGITS = 6
 
@@ -106,7 +107,12 @@ export async function issueCode(params: {
 
 	if (params.deliver === false) return { expiresAt, delivered: true }
 
-	const delivered = await deliver(params.channel ?? "EMAIL", destination, code)
+	const delivered = await deliver(
+		params.channel ?? "EMAIL",
+		destination,
+		code,
+		params.purpose,
+	)
 	return { expiresAt, delivered }
 }
 
@@ -122,10 +128,35 @@ function ttlMinutes(): number {
  * journal is not a safe place for either, and "just for debugging" is how
  * one-time codes end up permanently readable in a log file.
  */
+/**
+ * Which wording the mail should use.
+ *
+ * The digits are the same in every flow, so this only picks the sentence that
+ * explains *why* the code arrived - and that sentence is the whole security
+ * value of the message. "Someone asked to change your password" is what makes
+ * an unexpected code alarming instead of merely puzzling.
+ *
+ * TELEGRAM_LINK falls through to the default on purpose: that flow delivers
+ * over Telegram, so it never reaches the mail template at all.
+ */
+function mailKindFor(purpose: VerificationPurpose): CodeMailKind {
+	switch (purpose) {
+		case "EMAIL_CHANGE":
+			return "emailChange"
+		case "PASSWORD_RESET":
+			return "passwordReset"
+		case "DEVICE_CONFIRM":
+			return "deviceConfirm"
+		default:
+			return "register"
+	}
+}
+
 async function deliver(
 	channel: VerificationChannel,
 	destination: string,
 	code: string,
+	purpose: VerificationPurpose,
 ): Promise<boolean> {
 	if (channel === "TELEGRAM") {
 		// Required lazily: telegramBot -> registration -> verification would
@@ -143,14 +174,19 @@ async function deliver(
 
 	const { sendMail } = require("./mailer") as typeof import("./mailer")
 	try {
+		// ROUND 12: the card, not four lines of text. codeMail() also owns the
+		// subject, because leading with the digits is what lets a phone show the
+		// code in the notification without the mail being opened at all.
+		const rendered = codeMail({
+			code,
+			ttlMinutes: ttlMinutes(),
+			kind: mailKindFor(purpose),
+		})
 		await sendMail({
 			to: destination,
-			subject: `GlukVPN: \u043a\u043e\u0434 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u044f ${code}`,
-			text:
-				`\u041a\u043e\u0434 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u044f GlukVPN: ${code}\n\n` +
-				`\u0414\u0435\u0439\u0441\u0442\u0432\u0443\u0435\u0442 ${ttlMinutes()} \u043c\u0438\u043d\u0443\u0442.\n\n` +
-				`\u0415\u0441\u043b\u0438 \u0432\u044b \u043d\u0435 \u0437\u0430\u043f\u0440\u0430\u0448\u0438\u0432\u0430\u043b\u0438 \u043a\u043e\u0434, \u043f\u0440\u043e\u0441\u0442\u043e \u0443\u0434\u0430\u043b\u0438\u0442\u0435 \u044d\u0442\u043e \u043f\u0438\u0441\u044c\u043c\u043e \u2014 \u0431\u0435\u0437 \u043d\u0435\u0433\u043e \u043d\u0438\u0447\u0435\u0433\u043e\n` +
-				`\u043d\u0435 \u043f\u0440\u043e\u0438\u0437\u043e\u0439\u0434\u0451\u0442.\n\n\u2014 GlukVPN, vpn.gluk.tech`,
+			subject: rendered.subject,
+			text: rendered.text,
+			html: rendered.html,
 		})
 		return true
 	} catch {

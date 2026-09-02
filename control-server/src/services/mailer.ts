@@ -193,8 +193,17 @@ function encodeBody(value: string): string {
 export type MailMessage = {
 	to: string
 	subject: string
-	/** Plain text. HTML is deliberately not supported: a code needs no markup. */
+	/**
+	 * Plain text, always required. It is what text-only clients show, what
+	 * screen readers read, and what spam filters score - an HTML-only message
+	 * looks like bulk mail to most of them.
+	 */
 	text: string
+	/**
+	 * Optional HTML alternative (ROUND 12). When present the message goes out
+	 * as multipart/alternative.
+	 */
+	html?: string
 }
 
 /**
@@ -247,6 +256,12 @@ export async function sendMail(message: MailMessage): Promise<void> {
 		await connection.command(`RCPT TO:<${envelopeTo}>`, [2])
 		await connection.command("DATA", [3])
 
+		// A boundary that also occurred inside the body would split the message
+		// in the wrong place, so it carries randomness rather than being a fixed
+		// string. Base64 parts can never contain it, but the header is built once
+		// and reused for both, so this stays honest if a future part is not.
+		const boundary = `gluk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+
 		const headers = [
 			`From: ${from.includes("<") ? from : `GlukVPN <${from}>`}`,
 			`To: <${envelopeTo}>`,
@@ -254,12 +269,35 @@ export async function sendMail(message: MailMessage): Promise<void> {
 			`Date: ${new Date().toUTCString()}`,
 			`Message-ID: <${Date.now().toString(36)}.${Math.random().toString(36).slice(2)}@${envelopeFrom.split("@")[1] ?? "gluk.tech"}>`,
 			"MIME-Version: 1.0",
-			'Content-Type: text/plain; charset="UTF-8"',
-			"Content-Transfer-Encoding: base64",
+			...(message.html
+				? [`Content-Type: multipart/alternative; boundary="${boundary}"`]
+				: [
+						'Content-Type: text/plain; charset="UTF-8"',
+						"Content-Transfer-Encoding: base64",
+					]),
 			"Auto-Submitted: auto-generated",
 		].join("\r\n")
 
-		connection.write(`${headers}\r\n\r\n${encodeBody(message.text)}\r\n.`)
+		// Plain text first, HTML second. Clients render the *last* part they
+		// understand, so this order is what makes a text client show text and
+		// everything else show the card.
+		const body = message.html
+			? [
+					`--${boundary}`,
+					'Content-Type: text/plain; charset="UTF-8"',
+					"Content-Transfer-Encoding: base64",
+					"",
+					encodeBody(message.text),
+					`--${boundary}`,
+					'Content-Type: text/html; charset="UTF-8"',
+					"Content-Transfer-Encoding: base64",
+					"",
+					encodeBody(message.html),
+					`--${boundary}--`,
+				].join("\r\n")
+			: encodeBody(message.text)
+
+		connection.write(`${headers}\r\n\r\n${body}\r\n.`)
 		const accepted = await connection.read()
 		if (Math.floor(accepted.code / 100) !== 2) {
 			throw new Error(`SMTP refused the message: ${accepted.code} ${accepted.text}`)
