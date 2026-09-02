@@ -90,7 +90,26 @@ jobs:
       - name: Build release APK
         run: |
           set -euo pipefail
-          flutter build apk --release --dart-define=API_BASE_URL="$API_BASE_URL" --dart-define=ALLOW_BETA_CHANNEL="$ALLOW_BETA_CHANNEL"
+          # ROUND 12: every published client points at PROD, whatever branch it
+          # was built from. Shipping a beta-wired APK is what produced "I cannot
+          # sign in on my phone": beta is a separate deployment with a separate
+          # database, the account simply is not there, and the switch that would
+          # have moved the app back was hidden from non-admins in round 11.
+          case "$API_BASE_URL" in
+            *beta-api*) API_BASE_URL="https://api.gluk.tech" ;;
+          esac
+          # Beta must still be compiled in, or the in-app switch cannot exist
+          # even for an administrator - which is why the PC and the phone show
+          # no channel control at all on this branch. The job-level
+          # ALLOW_BETA_CHANNEL is superseded by this line.
+          #
+          # The version code has to grow on every build. Android compares it
+          # before anything else: an equal code makes the install a silent
+          # no-op, a lower one is refused outright. The run number is monotonic.
+          flutter build apk --release \
+            --build-number="$GITHUB_RUN_NUMBER" \
+            --dart-define=API_BASE_URL="$API_BASE_URL" \
+            --dart-define=ALLOW_BETA_CHANNEL=true
 
       - name: Sign with the release keystore
         if: env.HAS_KEYSTORE == 'true'
@@ -116,12 +135,23 @@ jobs:
           "$BUILD_TOOLS/apksigner" verify --print-certs glukvpn-release.apk
           rm -f /tmp/release.jks /tmp/glukvpn-aligned.apk
 
-      - name: Keep the Flutter-signed APK (no keystore configured)
+      - name: Debug-key build (no keystore configured)
         if: env.HAS_KEYSTORE != 'true'
         run: |
           set -euo pipefail
-          cp build/app/outputs/flutter-apk/app-release.apk glukvpn-release.apk
-          echo "::warning::ANDROID_KEYSTORE_BASE64 is not set, APK signed with Flutter debug key."
+          # This is the whole "app not installed" bug, and it is a signing
+          # problem, not an Android quirk. With no keystore, `flutter build apk
+          # --release` falls back to the debug key - and the debug key is
+          # generated per machine, so a fresh CI runner invents a new one on
+          # every run. Android refuses to replace an installed app with a build
+          # signed by a different key, so each release could only be installed
+          # by deleting the previous one and losing its data.
+          #
+          # The artefact is named so it cannot be handed to a user by accident,
+          # and the release publish step below is skipped entirely.
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            glukvpn-DEBUGKEY-do-not-distribute.apk
+          echo "::error::No ANDROID_KEYSTORE_BASE64 secret. This APK is signed with a throwaway debug key and can never upgrade an existing install. Create one keystore, add the four ANDROID_* secrets, re-run - see docs/desktop/FIXES-ROUND-12.md."
 
       - name: APK fingerprint
         run: |
@@ -132,13 +162,18 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: glukvpn-apk
-          path: flutter-client/glukvpn-release.apk
+          # Matches both the signed build and the debug-key one, so a run that
+          # is missing its secrets still uploads something inspectable.
+          path: flutter-client/glukvpn-*.apk
           if-no-files-found: error
 
       - name: Parse Version
         id: version
         run: |
-          VERSION=$(grep '^version:' flutter-client/pubspec.yaml | sed 's/version: //')
+          # Every run step already starts in flutter-client (defaults.run), so
+          # the old flutter-client/pubspec.yaml path matched nothing and the tag
+          # came out as "android-v-build<n>".
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //')
           echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
           if [ "${{ github.ref }}" = "refs/heads/beta" ]; then
             echo "CHANNEL=beta" >> $GITHUB_ENV
@@ -147,6 +182,8 @@ jobs:
           fi
 
       - name: Publish release
+        # Never publish an APK that cannot upgrade the one already installed.
+        if: env.HAS_KEYSTORE == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-v${{ env.APP_VERSION }}-build${{ github.run_number }}

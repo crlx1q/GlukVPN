@@ -229,10 +229,19 @@ if (-not $SkipFlutter) {
                 "--dart-define=GLUK_CHANNEL=$Channel",
                 "--dart-define=GLUK_INTERNAL=$($Internal.IsPresent.ToString().ToLower())"
             )
-            if ($Channel -eq 'prod' -and -not $Internal) {
-                # Public builds must not expose the BETA switch.
-                $defines += '--dart-define=ALLOW_BETA_CHANNEL=false'
-            }
+            # ROUND 12: beta stays compiled in, on every build.
+            #
+            # Public builds used to pass ALLOW_BETA_CHANNEL=false, and that is
+            # why the PC appears to have no channel control: the switch is
+            # drawn for an administrator, but AppConfig.setChannelOverride
+            # refuses beta outright in such a build, so clicking it does
+            # nothing and explains nothing.
+            #
+            # Deciding who may see the switch is the admin gate's job
+            # (ChannelController.canSwitchAs), not the compiler's. A normal
+            # user still never sees it, and the beta control plane refuses
+            # non-admin accounts on its own, so shipping the capability
+            # exposes nothing.
 
             $buildMode = if ($Configuration -eq 'Debug') { '--debug' } else { '--release' }
 

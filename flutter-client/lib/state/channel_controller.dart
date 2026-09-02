@@ -63,6 +63,27 @@ class ChannelController extends ChangeNotifier {
   /// screen means the phone, the PC and the diagnostics panel all agree.
   bool canSwitchAs(AuthUser? user) => canSwitch && (user?.isAdmin ?? false);
 
+  /// ROUND 12: nobody stays on BETA without an admin session.
+  ///
+  /// Round 11 hid the channel switch from non-admins and left a trap behind. A
+  /// device moved to BETA by an earlier build kept talking to the beta plane
+  /// for ever, and the control that would have moved it back was no longer on
+  /// screen. Beta is a separate deployment with its own database, so the
+  /// account is not there at all: the whole thing reads as "my password stopped
+  /// working", with nothing to suggest the app is asking the wrong server.
+  ///
+  /// Signed out counts as "not an admin" on purpose - a login screen pointed
+  /// at beta can only ever refuse the person typing into it.
+  ///
+  /// Safe to call repeatedly: once the channel is PROD this returns at once,
+  /// so the [switchTo] callback re-running bootstrap cannot loop.
+  Future<void> demoteIfNotAdmin(AuthUser? user) async {
+    if (!_active.isBeta) return;
+    if (user?.isAdmin ?? false) return;
+    debugPrint('channel: beta is admin-only, moving back to prod');
+    await switchTo(AppChannel.prod);
+  }
+
   /// Version reported by `GET /api/version`, or null if never probed / down.
   ChannelVersion? versionOf(AppChannel channel) => _versions[channel];
 

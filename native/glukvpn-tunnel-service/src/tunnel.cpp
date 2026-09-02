@@ -31,6 +31,64 @@ bool FileExists(const std::wstring& path) {
            !(attributes & FILE_ATTRIBUTE_DIRECTORY);
 }
 
+// ROUND 12: sweep leftover GlukVPN adapters before a new one is created.
+//
+// Wintun deletes its adapter when the worker closes it cleanly, but a crash, a
+// kill or a power cut leaves the network device registered. Windows will not
+// reuse a friendly name that still exists, so the next start becomes
+// "GlukVPN 2", then "GlukVPN 3", and eventually the "GlukVPN 11" the user is
+// staring at.
+//
+// The leftovers are not only cosmetic. Each ghost keeps its own routes and DNS
+// registration, and the resolver can still hand traffic to an interface that
+// no longer forwards anything - a plausible reason the PC has no internet
+// while the tunnel reports itself up.
+//
+// Two deliberate choices: only devices whose status is not OK are removed, so
+// the adapter of a live session can never be swept away; and the sweep runs
+// synchronously *before* the worker starts, because a sweep racing with
+// adapter creation could delete the new device while it is still coming up.
+void PurgeGhostAdapters() {
+    // pnputil needs an instance id, and enumerating the Net class from C++
+    // means pulling in SetupAPI for a job that runs once per connect.
+    // PowerShell is the documented route and keeps the service dependency-free.
+    std::wstring command =
+        L"powershell.exe -NoProfile -NonInteractive -Command \""
+        L"Get-PnpDevice -Class Net -FriendlyName 'GlukVPN*' "
+        L"| Where-Object { $_.Status -ne 'OK' } "
+        L"| ForEach-Object { pnputil /remove-device $_.InstanceId }\"";
+
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+
+    PROCESS_INFORMATION pi{};
+    const BOOL spawned =
+        CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE,
+                       CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+    if (!spawned) {
+        Log::Warn("Ghost adapter sweep could not start, error " +
+                  std::to_string(GetLastError()));
+        return;
+    }
+
+    // Bounded on purpose: a stuck sweep must not become a tunnel that never
+    // connects. Twenty seconds is far more than a handful of device removals
+    // needs, and the tunnel comes up regardless of the outcome.
+    if (WaitForSingleObject(pi.hProcess, 20000) == WAIT_TIMEOUT) {
+        Log::Warn("Ghost adapter sweep timed out after 20s, continuing");
+        TerminateProcess(pi.hProcess, 1);
+    } else {
+        DWORD exitCode = 0;
+        GetExitCodeProcess(pi.hProcess, &exitCode);
+        Log::Info("Ghost adapter sweep finished, exit " +
+                  std::to_string(exitCode));
+    }
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+}
+
 // Last few hundred bytes of the worker log, flattened to one line. Without
 // this a failure reaches the UI as "the tunnel stopped"; with it the user gets
 // the actual sentence, e.g. "cannot resolve the server address".
@@ -266,6 +324,11 @@ void Tunnel::WorkerMain(std::wstring configPath) {
         Log::Error("Tunnel worker cannot start: " + detail);
     } else {
         Log::Info("Tunnel worker starting (" + DriverDescription() + ")");
+
+        // Before the worker creates its adapter, never after - see the comment
+        // on PurgeGhostAdapters. This is what stops the adapter name creeping
+        // towards "GlukVPN 11".
+        PurgeGhostAdapters();
 
         // The worker inherits exactly one handle: the log file. Its stdout and
         // stderr go straight into it, which cannot deadlock the way an unread

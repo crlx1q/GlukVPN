@@ -151,10 +151,13 @@ class AppConfig {
 	static const String _buildChannel =
 			String.fromEnvironment('GLUK_CHANNEL', defaultValue: 'prod');
 
-	/// Set by the hidden developer menu (five clicks on the version number).
-	/// `null` means "whatever this build was compiled for".
+	/// Set by the channel switch in Settings, which is shown to administrators
+	/// only. `null` means "whatever this build was compiled for".
 	///
-	/// Ordinary users never see a channel switch, so this stays null for them.
+	/// ROUND 12: the five-click gesture that used to set this is gone from every
+	/// client. Ordinary users have no channel switch at all, so this stays null
+	/// for them - and a non-admin session that inherited beta from an older
+	/// build is moved back to prod at startup.
 	static AppChannel? _channelOverride;
 
 	static AppChannel? get channelOverride => _channelOverride;

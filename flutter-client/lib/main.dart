@@ -66,6 +66,22 @@ Future<void> main() async {
   // session, device id and WireGuard key pair are even visible.
   await channel.restore();
 
+  // ROUND 12: "the phone stayed on beta and I cannot sign in".
+  //
+  // The channel is restored from storage before anybody is identified, so a
+  // device left on BETA by an earlier build wakes up pointed at a control
+  // plane where its account does not exist. Round 11 then hid the switch from
+  // non-admins, which removed the only way back from inside the app.
+  //
+  // Resolve the stored session once, and if it does not belong to an admin -
+  // or there is no session at all - return to PROD before the first frame.
+  // The extra bootstrap only runs on this rare beta path; the normal one still
+  // happens in AuthGate.
+  if (channel.isBeta) {
+    await auth.bootstrap();
+    await channel.demoteIfNotAdmin(auth.user);
+  }
+
   // Before the first frame, so the app never flashes English at somebody who
   // chose Russian last time.
   await locale.restore();

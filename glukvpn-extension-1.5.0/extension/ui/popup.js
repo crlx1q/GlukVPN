@@ -92,12 +92,6 @@ let deviceFailure = ''
 let devicePage = 0
 // ROUND 9 (block 4.3): which bucket #seg-devices is showing.
 let deviceFilter = 'all'
-// ROUND 9 (block 4.2): five taps on the version number unlock the channel
-// switch, for this popup session only. Nothing is persisted on purpose - a
-// developer menu that stays open forever becomes a support problem.
-let devUnlocked = false
-let versionTaps = 0
-let versionFirstTap = 0
 let loginMode = 'site'
 let connectWatchdog = null
 let localPhase = null
@@ -758,15 +752,29 @@ function renderSettings() {
 	const isAdmin = Boolean(
 		state?.runtime?.user?.isAdmin ?? state?.user?.isAdmin ?? false,
 	)
-	// ROUND 9 (block 4.2): admins see it, and so does anyone who has tapped the
-	// version number five times. The beta control plane still refuses non-admin
-	// accounts, so this only ever exposes a switch that fails honestly - and the
-	// tester who needs it no longer has to edit storage by hand.
-	const channelVisible = isAdmin || devUnlocked
+	// ROUND 12: the five-tap gesture is gone here too.
+	//
+	// It was deleted from the phone and the PC in round 11, but this folder was
+	// gitignored, so the "developer menu" that was supposed to disappear was
+	// still five clicks away in the extension. A gesture is not a permission: it
+	// let a normal account uncover a switch the beta plane then refuses, while an
+	// admin had to know a trick to reach a control they are entitled to.
+	const channelVisible = isAdmin
 	const channelField = $('field-channel')
 	if (channelField) {
 		channelField.classList.toggle('hidden', !channelVisible)
 		channelField.hidden = !channelVisible
+	}
+	// The developer block behind the switch is for the same audience: it holds
+	// the API host and site host overrides. Hiding the switch but leaving those
+	// rows on screen would only move the foot-gun one line down - a normal user
+	// who edits "Control API" ends up with a client that talks to nothing, and
+	// no way to tell that they are the reason.
+	for (const id of ['btn-devmode', 'dev-body']) {
+		const node = $(id)
+		if (!node) continue
+		node.classList.toggle('hidden', !channelVisible)
+		node.hidden = !channelVisible
 	}
 	setValue('s-channel', channelVisible ? (settings.channel ?? 'prod') : 'prod')
 	setValue('s-api-base', settings.apiBase?.[settings.channel ?? 'prod'] ?? '')
@@ -1532,36 +1540,6 @@ function openSite(path) {
 	openUrl(base + path)
 }
 
-/**
- * ROUND 9 (block 4.2): five taps on the version number open the developer menu.
- *
- * The same gesture as the Windows client, for the same reason: a channel switch
- * on display for everyone is a support ticket, and a channel switch that only
- * exists in storage is unusable for the tester who needs it.
- */
-function onVersionTap() {
-	const now = Date.now()
-	// Long enough to be deliberate, short enough that idle clicking on a version
-	// number never opens it by accident.
-	if (now - versionFirstTap > 3000) {
-		versionFirstTap = now
-		versionTaps = 0
-	}
-	versionTaps += 1
-	if (versionTaps < 5) return
-	versionTaps = 0
-	devUnlocked = true
-	advancedOpen = true
-	devModeOpen = true
-	setDisclosure('btn-advanced', 'advanced-body', true)
-	setDisclosure('btn-devmode', 'dev-body', true)
-	renderSettings()
-	banner('set-banner', t('dev.channelHint'), { kind: 'info', title: t('dev.title') })
-	try {
-		$('field-channel')?.scrollIntoView({ block: 'nearest' })
-	} catch {}
-}
-
 function ownVersion() {
 	try {
 		return String(chrome.runtime.getManifest().version ?? '')
@@ -1722,8 +1700,6 @@ function wire() {
 	// ROUND 9 (block 4.1)
 	$('btn-register')?.addEventListener('click', () => openSite('/login/?mode=register'))
 	$('btn-forgot')?.addEventListener('click', () => openSite('/login/?mode=recover'))
-	// ROUND 9 (block 4.2)
-	$('btn-version')?.addEventListener('click', onVersionTap)
 	$('seg-login')?.addEventListener('click', (event) => {
 		const button = event.target.closest('button')
 		if (!button) return
@@ -1796,9 +1772,10 @@ async function boot() {
 	await refreshState()
 	paintIcons()
 	if (!nodes.length) ensureNodes()
-	// ROUND 9: the version line doubles as the developer-menu door, so it has to
-	// carry the real manifest version rather than a hard-coded string that goes
-	// stale on the next release.
+	// The version line carries the real manifest version rather than a hard-coded
+	// string that goes stale on the next release. ROUND 12: it is no longer a door
+	// to anything - the developer block is admin-gated instead of hidden behind a
+	// gesture.
 	const versionButton = $('btn-version')
 	if (versionButton) versionButton.textContent = 'GlukVPN ' + (ownVersion() || '\u2014')
 	// Fire and forget: an update notice must never delay the popup.

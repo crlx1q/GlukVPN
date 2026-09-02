@@ -301,13 +301,13 @@
 					<button class="btn btn-ghost" id="btn-reset" type="button" data-i18n="settings.reset">Сбросить</button>
 				</div>
 
-				<!-- ROUND 9 (block 4.2): the version line is also the door to the
-				     developer menu - five clicks reveal the Prod/Beta switch, the same
-				     gesture the Windows client uses. Ordinary users only ever see a
-				     version number, which is the point: a normal install pointed at
-				     beta looks broken and nothing on screen would explain why. -->
+				<!-- ROUND 12: a version number, and nothing else. The five-click
+				     gesture that used to reveal the Prod/Beta switch is gone - the
+				     switch is simply shown to administrators. A button would keep
+				     inviting the click and answer with nothing, so this is a plain
+				     span; popup.js still writes the manifest version into it. -->
 				<div class="dev-footer">
-					<button class="ver-btn" id="btn-version" type="button">GlukVPN</button>
+					<span class="ver-btn" id="btn-version">GlukVPN</span>
 				</div>
 			</div>
 		</section>
