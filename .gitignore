@@ -62,15 +62,24 @@ tmp/
 # ---- Local reference material / downloads (not part of the product) ----
 # These sit in the repo root on the dev machine only. If any of them is still
 # tracked, drop it from the index without deleting it from disk:
-#   git rm -r --cached wg.msi wg-extracted2 browser-proxy.tar.gz logo.png glukvpn-extension-1.5.0
+#   git rm -r --cached wg.msi wg-extracted2 browser-proxy.tar.gz logo.png
 wg.msi
 wg-extracted2/
 browser-proxy.tar.gz
 /logo.png
-glukvpn-extension-1.5.0/
+
+# glukvpn-extension-1.5.0/ used to be ignored here. That was a mistake: the
+# browser extension is a shipped client, not reference material. Ignoring it
+# hid it from repo-wide search, which is why the duplicated "linked to your
+# account" banner survived several rounds of cleanup - the file could not be
+# found, only guessed at.
 
 # ---- Desktop build output ----
 dist/stage/
 GlukVPN-Setup-*.exe
+# Archives are build output, never sources. A committed zip is a second copy of
+# files that already live in the tree, and it starts rotting the moment those
+# files change - while still looking authoritative to whoever downloads it.
+*.zip
 *.ico.bak
 pubspec.android.bak

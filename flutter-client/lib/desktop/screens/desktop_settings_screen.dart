@@ -349,25 +349,30 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
                 value: AppConfig.activeChannel.label,
               ),
 
-            // The extension's "for developers" disclosure, read-only.
-            //
-            // The extension lets you retype the API host because a browser
-            // extension has no installer to fix a wrong value. Here the same
-            // information is shown but never editable: an editable endpoint on
-            // a desktop VPN client is a phishing vector, and the brief is
-            // explicit that no user-facing API URL field may exist.
-            _InfoTile(
-              label: ru ? 'Сервер управления' : 'Control API',
-              value: AppConfig.activeBaseUrl,
-            ),
             _InfoTile(
               label: ru ? 'Личный кабинет' : 'Web dashboard',
               value: 'vpn.gluk.tech',
             ),
-            _InfoTile(
-              label: ru ? 'Служба' : 'Service',
-              value: AppConfig.tunnelServiceName,
-            ),
+
+            // ROUND 12: the developer disclosure is admins only.
+            //
+            // The API host and the service name answer questions an ordinary
+            // user never asks. Showing the endpoint is also mildly harmful:
+            // it teaches people that "GlukVPN talks to this address" is a
+            // normal thing to read - and a phishing build needs exactly that
+            // belief to pass a glance. Neither value was ever editable here
+            // (an editable endpoint on a VPN client is a hijack waiting to
+            // happen); support gets both from the activity log instead.
+            if (widget.auth.user?.isAdmin ?? false) ...<Widget>[
+              _InfoTile(
+                label: ru ? 'Сервер управления' : 'Control API',
+                value: AppConfig.activeBaseUrl,
+              ),
+              _InfoTile(
+                label: ru ? 'Служба' : 'Service',
+                value: AppConfig.tunnelServiceName,
+              ),
+            ],
             _ActionTile(
               label: ru ? 'Проверить сервер' : 'Test the server',
               subtitle: ru
@@ -406,53 +411,65 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
           ],
         ),
 
-        // ---- 6. Diagnostics (every build) --------------------------------
-        _Section(
-          title: ru ? 'Диагностика' : 'Diagnostics',
-          children: <Widget>[
-            _InfoTile(
-              label: ru ? 'Служба туннеля' : 'Tunnel service',
-              value: widget.vpn.serviceReady
-                  ? (ru ? 'работает' : 'running')
-                  : (widget.vpn.serviceProblem ?? s.dash),
-            ),
-            _InfoTile(
-              label: ru ? 'Серверов доступно' : 'Servers available',
-              value: '${widget.vpn.userVisibleNodes.length}',
-            ),
-            _ActionTile(
-              label: ru ? 'Журнал работы' : 'Activity log',
-              subtitle: ru
-                  ? 'Полный отчёт для поддержки: состояние, узлы, последние '
-                      'события. Ключи и пароли в него не попадают.'
-                  : 'Full support report: state, nodes, recent events. Never '
-                      'contains keys or passwords.',
-              buttonLabel: ru ? 'Копировать' : 'Copy',
-              onPressed: _copyDiagnostics,
-            ),
-            _ActionTile(
-              label: ru ? 'Восстановить интернет' : 'Restore internet access',
-              subtitle: ru
-                  ? 'Снимает kill switch и маршруты, если туннель упал и сеть '
-                      'осталась заблокированной'
-                  : 'Releases the kill switch and routes if a dead tunnel left '
-                      'the network blocked',
-              buttonLabel: ru ? 'Снять блокировку' : 'Release',
-              busy: _restoringNetwork,
-              onPressed: _restoreInternet,
-            ),
-            if (!widget.vpn.serviceReady)
-              _ActionTile(
-                label: ru ? 'Восстановить службу' : 'Repair the service',
-                subtitle: ru
-                    ? 'Переустановит и запустит службу туннеля'
-                    : 'Reinstalls and starts the tunnel service',
-                buttonLabel: ru ? 'Восстановить' : 'Repair',
-                busy: widget.vpn.serviceRepairing,
-                onPressed: () => widget.vpn.repairService(),
+        // ---- 6. Diagnostics (admins only) --------------------------------
+        //
+        // ROUND 12: hidden from ordinary users on request. Every row here is
+        // written for whoever debugs the tunnel - service state, node count, a
+        // log dump, a manual kill-switch release. The release row is the one
+        // that made this urgent: a user pressing "Release" while connected
+        // would quietly tear down their own protection and never learn that
+        // they had done it.
+        //
+        // Nobody loses a way out of a stuck network by this: Down() already
+        // clears the kill switch on its own (ROUND 10), so the manual release
+        // is a fallback for a case the service now handles itself.
+        if (widget.auth.user?.isAdmin ?? false)
+          _Section(
+            title: ru ? 'Диагностика' : 'Diagnostics',
+            children: <Widget>[
+              _InfoTile(
+                label: ru ? 'Служба туннеля' : 'Tunnel service',
+                value: widget.vpn.serviceReady
+                    ? (ru ? 'работает' : 'running')
+                    : (widget.vpn.serviceProblem ?? s.dash),
               ),
-          ],
-        ),
+              _InfoTile(
+                label: ru ? 'Серверов доступно' : 'Servers available',
+                value: '${widget.vpn.userVisibleNodes.length}',
+              ),
+              _ActionTile(
+                label: ru ? 'Журнал работы' : 'Activity log',
+                subtitle: ru
+                    ? 'Полный отчёт для поддержки: состояние, узлы, последние '
+                          'события. Ключи и пароли в него не попадают.'
+                    : 'Full support report: state, nodes, recent events. Never '
+                          'contains keys or passwords.',
+                buttonLabel: ru ? 'Копировать' : 'Copy',
+                onPressed: _copyDiagnostics,
+              ),
+              _ActionTile(
+                label: ru ? 'Восстановить интернет' : 'Restore internet access',
+                subtitle: ru
+                    ? 'Снимает kill switch и маршруты, если туннель упал и сеть '
+                          'осталась заблокированной'
+                    : 'Releases the kill switch and routes if a dead tunnel '
+                          'left the network blocked',
+                buttonLabel: ru ? 'Снять блокировку' : 'Release',
+                busy: _restoringNetwork,
+                onPressed: _restoreInternet,
+              ),
+              if (!widget.vpn.serviceReady)
+                _ActionTile(
+                  label: ru ? 'Восстановить службу' : 'Repair the service',
+                  subtitle: ru
+                      ? 'Переустановит и запустит службу туннеля'
+                      : 'Reinstalls and starts the tunnel service',
+                  buttonLabel: ru ? 'Восстановить' : 'Repair',
+                  busy: widget.vpn.serviceRepairing,
+                  onPressed: () => widget.vpn.repairService(),
+                ),
+            ],
+          ),
 
         // ROUND 7: no Account section here any more. Profile, subscription,
         // devices and sign-out live on their own screen (DesktopAccountScreen,
