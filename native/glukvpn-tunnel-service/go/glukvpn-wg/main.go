@@ -283,7 +283,15 @@ func run() error {
 	}
 
 	logf("tunnel %q is up", name)
+
+	// ROUND 18: let the tunnel report where packets die instead of leaving it
+	// to be guessed at from the outside. Both helpers only read and log.
+	stopDiagnostics := make(chan struct{})
+	go watchTunnelTraffic(dev, stopDiagnostics)
+	go probeThroughTunnel(cfg)
+
 	waitForStop(name, opts.parentPID, dev)
+	close(stopDiagnostics)
 	logf("tunnel %q is going down", name)
 	dev.Close()
 	return nil
@@ -485,12 +493,16 @@ type pinnedRoute struct {
 type physicalHop struct {
 	luid    winipcfg.LUID
 	nextHop netip.Addr
+	metric  uint32
 }
 
-// allPhysicalGateways finds every physical interface that holds a default route,
-// returning (LUID, nextHop) pairs. In dual-homed laptops with Wi-Fi and Ethernet
-// both connected, pinning only the lowest-metric interface breaks connectivity
-// if the lowest-metric link has no internet route to the endpoint.
+// allPhysicalGateways finds every physical interface that holds a default
+// route, ordered the way Windows itself ranks them: cheapest first.
+//
+// metric is the sum Windows uses when it picks a path - the interface metric
+// plus the route metric - so hops[0] is the gateway an ordinary socket would
+// have used. Callers that must choose exactly one path take that one; the
+// IPv6 leak check still needs to see the whole list.
 func allPhysicalGateways(
 	exclude winipcfg.LUID,
 	family winipcfg.AddressFamily,
@@ -501,11 +513,23 @@ func allPhysicalGateways(
 		return nil
 	}
 
+	ifaceMetric := make(map[winipcfg.LUID]uint32)
+	metricOf := func(target winipcfg.LUID) uint32 {
+		if metric, cached := ifaceMetric[target]; cached {
+			return metric
+		}
+		metric := uint32(0)
+		if iface, ifaceErr := target.IPInterface(family); ifaceErr == nil {
+			metric = iface.Metric
+		}
+		ifaceMetric[target] = metric
+		return metric
+	}
+
 	var hops []physicalHop
-	seen := make(map[winipcfg.LUID]bool)
 	for i := range rows {
 		row := &rows[i]
-		if row.InterfaceLUID == exclude || seen[row.InterfaceLUID] {
+		if row.InterfaceLUID == exclude {
 			continue
 		}
 		// Bits() == 0 is 0.0.0.0/0 or ::/0 - a default route and nothing else.
@@ -516,15 +540,63 @@ func allPhysicalGateways(
 		if !nextHop.IsValid() || nextHop.IsUnspecified() {
 			continue
 		}
-		seen[row.InterfaceLUID] = true
-		hops = append(hops, physicalHop{luid: row.InterfaceLUID, nextHop: nextHop})
+		hop := physicalHop{
+			luid:    row.InterfaceLUID,
+			nextHop: nextHop,
+			metric:  row.Metric + metricOf(row.InterfaceLUID),
+		}
+
+		// One entry per interface, keeping its cheapest default route.
+		known := false
+		for j := range hops {
+			if hops[j].luid != hop.luid {
+				continue
+			}
+			known = true
+			if hop.metric < hops[j].metric {
+				hops[j] = hop
+			}
+			break
+		}
+		if !known {
+			hops = append(hops, hop)
+		}
+	}
+
+	// Cheapest first. Two or three entries at most, so the simplest sort that
+	// is obviously correct is the right one.
+	for i := 1; i < len(hops); i++ {
+		for j := i; j > 0 && hops[j].metric < hops[j-1].metric; j-- {
+			hops[j], hops[j-1] = hops[j-1], hops[j]
+		}
 	}
 	return hops
 }
 
 // pinEndpointRoutes installs a /32 (or /128) route to each peer endpoint via
-// all physical default gateways, and reports what it managed to add so the caller can
-// undo exactly that and nothing more.
+// the single physical gateway Windows itself would have used, and reports what
+// it managed to add so the caller can undo exactly that and nothing more.
+//
+// ROUND 18: this used to pin the endpoint through *every* physical default
+// gateway. On a dual-homed machine - this user has Ethernet 192.168.100.1 and
+// Wi-Fi 192.168.3.1 up at the same time - that installs two equal-cost host
+// routes to the same endpoint, and Windows then spreads the tunnel's own UDP
+// across both. Whatever leaves through the link that has no real path to the
+// node is simply lost. That is why the log kept showing
+//
+//	Handshake did not complete after 5 seconds, retrying (try 2)
+//
+// on an otherwise healthy network: about half of the outer packets went into a
+// hole. A handshake survives that, because it retries until one gets through -
+// which is exactly why every connect ends with "tunnel is up" - but a TCP
+// stream does not survive it, so the tunnel reports itself healthy while
+// almost nothing crosses it.
+//
+// Pinning one gateway is not a compromise. With no pin at all Windows would
+// send that UDP through its lowest-metric default route anyway; the pin exists
+// only to stop the tunnel's own /1 routes from swallowing it. So it has to
+// reproduce the choice Windows makes, not invent paths Windows would never
+// have taken.
 func pinEndpointRoutes(tunnelLUID winipcfg.LUID, endpoints []netip.Addr) []pinnedRoute {
 	if len(endpoints) == 0 {
 		logf("no peer endpoint address to pin; the tunnel may loop back on itself")
@@ -548,22 +620,29 @@ func pinEndpointRoutes(tunnelLUID winipcfg.LUID, endpoints []netip.Addr) []pinne
 
 		destination := netip.PrefixFrom(endpoint, bits)
 		for _, gw := range gateways {
+			logf("endpoint path candidate: %v via %v (LUID %v, metric %d)", endpoint, gw.nextHop, gw.luid, gw.metric)
+		}
+
+		// The list is already cheapest-first; this walks it only so that a
+		// gateway which refuses the route does not leave the endpoint unpinned.
+		for _, gw := range gateways {
 			if err := gw.luid.AddRoute(destination, gw.nextHop, 0); err != nil {
 				// A leftover from a previous run is the state we wanted anyway, so
 				// it is a success - but it is not ours to delete on the way out.
 				if errors.Is(err, windows.ERROR_OBJECT_ALREADY_EXISTS) {
 					logf("route to %v via %v was already pinned", endpoint, gw.nextHop)
-					continue
+					break
 				}
 				logf("could not pin a route to %v via %v: %v", endpoint, gw.nextHop, err)
 				continue
 			}
-			logf("pinned %v/%d via the physical gateway %v (LUID %v)", endpoint, bits, gw.nextHop, gw.luid)
+			logf("pinned %v/%d via the physical gateway %v (LUID %v, metric %d), leaving %d other gateway(s) unpinned on purpose", endpoint, bits, gw.nextHop, gw.luid, gw.metric, len(gateways)-1)
 			pinned = append(pinned, pinnedRoute{
 				luid:        gw.luid,
 				destination: destination,
 				nextHop:     gw.nextHop,
 			})
+			break
 		}
 	}
 	return pinned
@@ -623,6 +702,138 @@ func (c *tunnelConfig) endpointAddrs() []netip.Addr {
 		}
 	}
 	return out
+}
+
+// ----------------------------------------------------------- diagnostics ---
+
+// watchTunnelTraffic reports the byte counters, and says so out loud when they
+// tell an unambiguous story.
+//
+// "tunnel is up" only means the handshake completed. These two numbers are the
+// difference between a tunnel that carries traffic and one that merely exists,
+// and no earlier log line in this project ever showed them.
+func watchTunnelTraffic(dev *device.Device, stop <-chan struct{}) {
+	const (
+		firstReport = 15 * time.Second
+		thenEvery   = 30 * time.Second
+		// Keepalives and a handshake are a few hundred bytes. A quarter of a
+		// megabyte out means real application traffic went in.
+		clearlySending  = 250 * 1024
+		clearlyAnswered = 32 * 1024
+	)
+
+	timer := time.NewTimer(firstReport)
+	defer timer.Stop()
+
+	saidSomething := false
+	for {
+		select {
+		case <-stop:
+			return
+		case <-timer.C:
+		}
+		timer.Reset(thenEvery)
+
+		tx, rx, ok := peerTransfer(dev)
+		if !ok {
+			continue
+		}
+		logf("traffic: %d bytes out, %d bytes in", tx, rx)
+		if saidSomething {
+			continue
+		}
+		if tx >= clearlySending && rx < clearlyAnswered {
+			logf("WARNING: Windows has pushed %d bytes into the tunnel and the node has answered with %d. The node completes handshakes but does not forward - check net.ipv4.ip_forward, the MASQUERADE rule for the tunnel subnet, and that the FORWARD rules sit above any REJECT rule", tx, rx)
+			saidSomething = true
+		}
+	}
+}
+
+// peerTransfer totals the rx/tx counters straight out of the data plane, using
+// the same UAPI text the service already parses for the tray.
+func peerTransfer(dev *device.Device) (tx uint64, rx uint64, ok bool) {
+	text, err := dev.IpcGet()
+	if err != nil {
+		logf("cannot read the tunnel counters: %v", err)
+		return 0, 0, false
+	}
+	for _, line := range strings.Split(text, "\n") {
+		key, value, found := strings.Cut(strings.TrimSpace(line), "=")
+		if !found {
+			continue
+		}
+		number, convErr := strconv.ParseUint(value, 10, 64)
+		if convErr != nil {
+			continue
+		}
+		switch key {
+		case "tx_bytes":
+			tx += number
+		case "rx_bytes":
+			rx += number
+		}
+	}
+	return tx, rx, true
+}
+
+// probeThroughTunnel answers the one question a log full of successful
+// handshakes cannot: does anything actually cross this tunnel?
+//
+// Three checks, in the order that isolates the fault:
+//
+//   - a TCP connection to 1.1.1.1:443 involves no DNS at all, so it either
+//     proves the whole path works - routes, encryption, the node's NAT - or
+//     proves it does not;
+//   - the same against the node's own address inside the tunnel separates "the
+//     node never sees us" from "the node sees us but will not route onward";
+//   - a name lookup last, because it is the only one of the three that can
+//     fail while the tunnel itself is perfectly healthy.
+func probeThroughTunnel(cfg *tunnelConfig) {
+	// Windows needs a moment to act on the routes we have just installed.
+	time.Sleep(4 * time.Second)
+
+	probeTCP("the internet by raw IP", "1.1.1.1:443")
+	if gateway, ok := tunnelGateway(cfg); ok {
+		probeTCP("the node inside the tunnel", net.JoinHostPort(gateway.String(), "53"))
+	}
+
+	started := time.Now()
+	addrs, err := net.LookupHost("ya.ru")
+	took := time.Since(started).Round(time.Millisecond)
+	if err != nil {
+		logf("probe: resolving ya.ru FAILED after %v: %v", took, err)
+		return
+	}
+	logf("probe: resolving ya.ru returned %v after %v", addrs, took)
+}
+
+func probeTCP(what string, address string) {
+	started := time.Now()
+	conn, err := net.DialTimeout("tcp", address, 6*time.Second)
+	took := time.Since(started).Round(time.Millisecond)
+	if err != nil {
+		logf("probe: reaching %s at %s FAILED after %v: %v", what, address, took, err)
+		return
+	}
+	_ = conn.Close()
+	logf("probe: reaching %s at %s succeeded in %v", what, address, took)
+}
+
+// tunnelGateway works out the node's address inside the tunnel: the first host
+// of our own tunnel subnet, so 10.8.0.1 for a 10.8.0.x/24 lease. That is a
+// convention rather than a guarantee, so a failure here is only ever a hint.
+func tunnelGateway(cfg *tunnelConfig) (netip.Addr, bool) {
+	for _, raw := range cfg.addresses {
+		prefix, err := netip.ParsePrefix(raw)
+		if err != nil || !prefix.Addr().Is4() || prefix.Bits() >= 31 {
+			continue
+		}
+		first := prefix.Masked().Addr().Next()
+		if first.IsValid() && first != prefix.Addr() {
+			return first, true
+		}
+	}
+	return netip.Addr{}, false
 }
 
 // ------------------------------------------------------------------ stop ---
