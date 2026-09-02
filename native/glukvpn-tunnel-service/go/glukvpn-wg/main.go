@@ -231,7 +231,11 @@ func run() error {
 		Errorf:   func(format string, args ...any) { logf("wg error: "+format, args...) },
 	}
 
-	dev := device.NewDevice(tunDevice, conn.NewDefaultBind(), logger)
+	// ROUND 19: hold on to the bind. Its UDP socket has to be tied to the
+	// physical interface once the tunnel's own routes are in place - see
+	// bindOutsideTheTunnel for why a routing table entry is not enough.
+	bind := conn.NewDefaultBind()
+	dev := device.NewDevice(tunDevice, bind, logger)
 
 	if err := dev.IpcSet(uapiText); err != nil {
 		dev.Close()
@@ -256,7 +260,11 @@ func run() error {
 	// so the outer packets keep using Wi-Fi/Ethernet while everything else
 	// goes into the tunnel. Order matters: the escape hatch has to exist
 	// before the trap does.
-	pinned := pinEndpointRoutes(luid, cfg.endpointAddrs())
+	// Resolved once, on purpose: endpointAddrs talks to DNS, and once the
+	// default route sits on the tunnel a second lookup could block for as long
+	// as the resolver takes to give up.
+	endpoints := cfg.endpointAddrs()
+	pinned := pinEndpointRoutes(luid, endpoints)
 	defer unpinEndpointRoutes(pinned)
 
 	if err := configureInterface(luid, cfg, mtu); err != nil {
@@ -282,6 +290,13 @@ func run() error {
 		}()
 	}
 
+	// ROUND 19: the tunnel's own encrypted UDP has to leave through the
+	// physical NIC, never through the tunnel it just created. The pinned /32
+	// says so in the routing table; this says so in the socket itself, which is
+	// what the official Windows client relies on.
+	bindOutsideTheTunnel(bind, luid)
+	logEndpointPathDecision(luid, endpoints)
+
 	logf("tunnel %q is up", name)
 
 	// ROUND 18: let the tunnel report where packets die instead of leaving it
@@ -289,6 +304,7 @@ func run() error {
 	stopDiagnostics := make(chan struct{})
 	go watchTunnelTraffic(dev, stopDiagnostics)
 	go probeThroughTunnel(cfg)
+	go keepSocketOutsideTheTunnel(bind, luid, stopDiagnostics)
 
 	waitForStop(name, opts.parentPID, dev)
 	close(stopDiagnostics)
@@ -494,6 +510,7 @@ type physicalHop struct {
 	luid    winipcfg.LUID
 	nextHop netip.Addr
 	metric  uint32
+	index   uint32
 }
 
 // allPhysicalGateways finds every physical interface that holds a default
@@ -544,6 +561,7 @@ func allPhysicalGateways(
 			luid:    row.InterfaceLUID,
 			nextHop: nextHop,
 			metric:  row.Metric + metricOf(row.InterfaceLUID),
+			index:   row.InterfaceIndex,
 		}
 
 		// One entry per interface, keeping its cheapest default route.
@@ -837,6 +855,171 @@ func tunnelGateway(cfg *tunnelConfig) (netip.Addr, bool) {
 }
 
 // ------------------------------------------------------------------ stop ---
+
+// socketBinder is the part of wireguard-go's conn.Bind that can tie the
+// tunnel's own UDP socket to a single physical interface.
+//
+// It is declared here rather than imported so this file keeps compiling
+// against any wireguard-go version: both Windows binds - WinRingBind and the
+// StdNetBind it falls back to - implement exactly these two methods.
+type socketBinder interface {
+	BindSocketToInterface4(interfaceIndex uint32, blackhole bool) error
+	BindSocketToInterface6(interfaceIndex uint32, blackhole bool) error
+}
+
+type familyBinder struct {
+	name   string
+	family winipcfg.AddressFamily
+	bindTo func(interfaceIndex uint32, blackhole bool) error
+}
+
+// bindOutsideTheTunnel ties the tunnel's own UDP socket to the physical
+// interface with IP_UNICAST_IF, which is how the official WireGuard client for
+// Windows keeps a full-tunnel configuration from eating its own packets.
+//
+// ROUND 19: the pinned host route is not enough on its own. A route only
+// decides anything while it is the best match in a table Windows keeps
+// re-evaluating - every adapter that comes or goes, every metric change, every
+// DHCP renew reshuffles it. With 0.0.0.0/1 and 128.0.0.0/1 on the tunnel at
+// metric 0, any moment in which our /32 is missing or outranked sends our own
+// outer UDP into the tunnel, and the data plane then encapsulates its own
+// encapsulation. The counters in the log have exactly that shape: tens of
+// kilobytes a second in *both* directions on an idle machine, while the node
+// never sees a packet whose inner source is our tunnel address, and every
+// application stalls even though the handshake completed.
+//
+// IP_UNICAST_IF takes the routing table out of the decision for good: the
+// socket leaves through the interface named here and nowhere else.
+//
+// blackhole is the deliberate other half. With no physical default route for a
+// family, dropping our own outer packets is correct - the only path left for
+// them would be the tunnel itself.
+func bindOutsideTheTunnel(bind conn.Bind, tunnelLUID winipcfg.LUID) {
+	binder, ok := bind.(socketBinder)
+	if !ok {
+		logf("WARNING: this wireguard-go build cannot bind its socket to an interface, so only the pinned host route protects the outer packets")
+		return
+	}
+
+	families := []familyBinder{
+		{"IPv4", winipcfg.AddressFamily(windows.AF_INET), binder.BindSocketToInterface4},
+		{"IPv6", winipcfg.AddressFamily(windows.AF_INET6), binder.BindSocketToInterface6},
+	}
+	for _, entry := range families {
+		hops := allPhysicalGateways(tunnelLUID, entry.family)
+		if len(hops) == 0 {
+			if err := entry.bindTo(0, true); err != nil {
+				logf("could not blackhole the %s socket: %v", entry.name, err)
+				continue
+			}
+			logf("no physical %s default route, so our own %s packets are dropped rather than sent into the tunnel", entry.name, entry.name)
+			continue
+		}
+		hop := hops[0]
+		if err := entry.bindTo(hop.index, false); err != nil {
+			logf("could not bind the %s socket to interface index %d: %v", entry.name, hop.index, err)
+			continue
+		}
+		logf("socket bound outside the tunnel: %s leaves via interface index %d (gateway %v, LUID %v, metric %d)", entry.name, hop.index, hop.nextHop, hop.luid, hop.metric)
+	}
+}
+
+// keepSocketOutsideTheTunnel re-binds the socket when Windows changes its mind
+// about the best physical path.
+//
+// The official client watches for route changes with a callback; polling every
+// few seconds is a fraction of the code for almost all of the benefit, and it
+// covers the case that actually bites a laptop - unplugging Ethernet, or Wi-Fi
+// reconnecting, while the tunnel is up.
+func keepSocketOutsideTheTunnel(bind conn.Bind, tunnelLUID winipcfg.LUID, stop <-chan struct{}) {
+	const checkEvery = 5 * time.Second
+
+	ticker := time.NewTicker(checkEvery)
+	defer ticker.Stop()
+
+	v4 := winipcfg.AddressFamily(windows.AF_INET)
+	last := bestPhysicalIndex(tunnelLUID, v4)
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			current := bestPhysicalIndex(tunnelLUID, v4)
+			if current == last {
+				continue
+			}
+			last = current
+			logf("the physical default route changed, re-binding the socket outside the tunnel")
+			bindOutsideTheTunnel(bind, tunnelLUID)
+		}
+	}
+}
+
+// bestPhysicalIndex returns the interface index of the cheapest physical
+// default route, or 0 when there is none.
+func bestPhysicalIndex(tunnelLUID winipcfg.LUID, family winipcfg.AddressFamily) uint32 {
+	hops := allPhysicalGateways(tunnelLUID, family)
+	if len(hops) == 0 {
+		return 0
+	}
+	return hops[0].index
+}
+
+// logEndpointPathDecision reports which route Windows itself would choose for
+// each peer endpoint, so the log answers the loop question outright instead of
+// leaving it to be inferred from byte counters.
+//
+// Windows compares the longest matching prefix first and only then the lowest
+// metric, so that is the order used here.
+func logEndpointPathDecision(tunnelLUID winipcfg.LUID, endpoints []netip.Addr) {
+	for _, endpoint := range endpoints {
+		family := winipcfg.AddressFamily(windows.AF_INET)
+		if endpoint.Is6() {
+			family = winipcfg.AddressFamily(windows.AF_INET6)
+		}
+		rows, err := winipcfg.GetIPForwardTable2(family)
+		if err != nil {
+			logf("cannot read the routing table to check the path to %v: %v", endpoint, err)
+			continue
+		}
+
+		bestBits := -1
+		bestMetric := uint32(0)
+		bestLUID := winipcfg.LUID(0)
+		bestHop := netip.Addr{}
+		for i := range rows {
+			row := &rows[i]
+			prefix := row.DestinationPrefix.Prefix()
+			if !prefix.Contains(endpoint) {
+				continue
+			}
+			metric := row.Metric
+			if iface, ifaceErr := row.InterfaceLUID.IPInterface(family); ifaceErr == nil {
+				metric += iface.Metric
+			}
+			if prefix.Bits() < bestBits {
+				continue
+			}
+			if prefix.Bits() == bestBits && metric >= bestMetric {
+				continue
+			}
+			bestBits = prefix.Bits()
+			bestMetric = metric
+			bestLUID = row.InterfaceLUID
+			bestHop = row.NextHop.Addr()
+		}
+
+		if bestBits < 0 {
+			logf("WARNING: Windows has no route at all to %v", endpoint)
+			continue
+		}
+		if bestLUID == tunnelLUID {
+			logf("WARNING: Windows would send our own packets for %v into the tunnel (prefix /%d, metric %d). That is the routing loop, and the socket binding is what stops it", endpoint, bestBits, bestMetric)
+			continue
+		}
+		logf("endpoint path decision: %v leaves via %v on LUID %v (prefix /%d, metric %d)", endpoint, bestHop, bestLUID, bestBits, bestMetric)
+	}
+}
 
 func waitForStop(name string, parentPID int, dev *device.Device) {
 	handles := make([]windows.Handle, 0, 2)
