@@ -26,6 +26,14 @@ dependencies:
   # ---- shared with Android -------------------------------------------------
   http: ^1.2.2
   provider: ^6.1.2
+
+  # ROUND 17: kept in step with pubspec.yaml. app.dart imports
+  # flutter_localizations, and even though the Windows entry point is
+  # lib/main_windows.dart, the two entry points share lib/ - a package missing
+  # here would break the desktop build the moment anything on the Windows path
+  # touched app.dart.
+  flutter_localizations:
+    sdk: flutter
   flutter_secure_storage: ^9.2.2
   cryptography: ^2.7.0
   dart_ping: ^9.0.1

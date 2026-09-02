@@ -121,11 +121,16 @@
              «Регистрация» была заглушкой со ссылкой на /register/, а «Забыли
              пароль?» уводило на третью страницу: три разных адреса для одного
              и того же действия — «получить доступ к аккаунту». -->
-        <div class="auth-tabs" role="tablist" aria-label="Вход, регистрация или восстановление доступа">
+        <div class="auth-tabs auth-tabs--pair" role="tablist" aria-label="Вход или регистрация">
           <span class="auth-tabs__ind" data-auth-ind aria-hidden="true"></span>
           <button class="auth-tab is-active" type="button" role="tab" aria-selected="true" data-auth-tab="login">Вход</button>
           <button class="auth-tab" type="button" role="tab" aria-selected="false" data-auth-tab="register">Регистрация</button>
-          <button class="auth-tab" type="button" role="tab" aria-selected="false" data-auth-tab="recover">Восстановление</button>
+          <!-- РАУНД 17: восстановление больше не третья вкладка. Оно
+               не равноправный способ войти, а аварийный выход, и попадать туда
+               надо только через «Забыли пароль?». Кнопка остаётся в DOM —
+               login.js находит её по data-auth-tab и без неё не смог бы открыть
+               панель по ссылке и по ?mode=recover. Скрыта только визуально. -->
+          <button class="auth-tab" type="button" role="tab" aria-selected="false" data-auth-tab="recover" hidden>Восстановление</button>
         </div>
 
         <div class="auth-panes">
@@ -154,7 +159,13 @@
           </div>
 
           <div class="auth-pane" data-auth-pane="register" hidden>
-            <ol class="reg-steps" data-reg-progress data-at="form" aria-hidden="true">
+            <!-- РАУНД 17: полоска «1 Почта / 2 Код / 3 Telegram» убрана. На
+                 узком экране она ломалась в слитное «1Почта2Код3Telegram», а
+                 телеграм-шаг виден из заголовка формы и без счётчика.
+                 Элемент оставлен в разметке: register.js пишет в него
+                 data-at на каждом шаге, и удаление узла уронило бы скрипт
+                 посередине регистрации. -->
+            <ol class="reg-steps" data-reg-progress data-at="form" aria-hidden="true" hidden>
               <li class="reg-steps__item" data-for="form"><b>1</b><span>Почта</span></li>
               <li class="reg-steps__item" data-for="code"><b>2</b><span>Код</span></li>
               <li class="reg-steps__item" data-for="telegram"><b>3</b><span>Telegram</span></li>
@@ -331,18 +342,35 @@
       </div>
 
       <aside class="auth-aside">
-        <div class="auth-aside__card">
-          <div class="auth-aside__head">
-            <span class="auth-aside__title">Карта подключений</span>
-            <span class="auth-aside__badge"><i class="acs-dot"></i>Сеть онлайн</span>
+        <!-- РАУНД 17: вместо «Карты подключений» — та же композиция, что в
+             окне входа Windows-клиента: заголовок, подзаголовок, планета и три
+             строки о продукте. Планета — градиенты в CSS, а не картинка и не
+             canvas: панель ничего не грузит, ничего не считает каждый кадр и
+             одинаково выглядит на любом экране. -->
+        <div class="auth-aside__card auth-hero">
+          <div class="auth-hero__copy">
+            <h2 class="auth-hero__title">Своя сеть, свои правила</h2>
+            <p class="auth-hero__sub">WireGuard, свои узлы и системный туннель Windows — без прокси в браузере.</p>
           </div>
-          <div class="auth-aside__stage">
-            <canvas class="auth-aside__map" data-network-map width="960" height="540"></canvas>
+          <div class="auth-hero__stage" aria-hidden="true">
+            <span class="auth-hero__glow"></span>
+            <span class="auth-hero__globe"></span>
+            <span class="auth-hero__orbit auth-hero__orbit--a"></span>
+            <span class="auth-hero__orbit auth-hero__orbit--b"></span>
           </div>
-          <ul class="auth-aside__stats">
-            <li><b data-count="3">3</b><span>региона онлайн</span></li>
-            <li><b data-count="24" data-count-suffix=" мс">24 мс</b><span>лучший отклик</span></li>
-            <li><b data-count="99" data-count-suffix=",9 %">99,9 %</b><span>доступность</span></li>
+          <ul class="auth-hero__list">
+            <li class="auth-hero__row">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="13" height="9.5" rx="1.8" stroke="currentColor" stroke-width="1.6"/><rect x="16" y="9" width="5.5" height="10.5" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M6 17.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              <span>Телефон, компьютер и браузер в одном аккаунте</span>
+            </li>
+            <li class="auth-hero__row">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 13.5l4-6 4 4 3.5-5.5 3 4.5 3.5-2.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 19.5h18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              <span>Автовыбор узла по пингу и загрузке</span>
+            </li>
+            <li class="auth-hero__row">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l7 3v5.2c0 4.3-2.9 8.2-7 9.8-4.1-1.6-7-5.5-7-9.8V6l7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.2 12.2l2 2 3.6-3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span>Kill switch и раздельное туннелирование</span>
+            </li>
           </ul>
         </div>
         <ul class="auth-marks">

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'i18n/app_strings.dart';
@@ -85,6 +86,22 @@ class _GlukVpnAppState extends State<GlukVpnApp> {
         theme: GlukTheme.build(),
         locale: locale.locale,
         supportedLocales: const <Locale>[Locale('en'), Locale('ru')],
+        // ROUND 17: the fix for the grey box on the phone's sign-in screen.
+        //
+        // "ru" was listed as supported while nothing in the tree could supply
+        // MaterialLocalizations for it: DefaultMaterialLocalizations covers
+        // English only. Localizations then resolved to ru with no material
+        // strings, and TextField/Tooltip/IconButton throw outright when they
+        // cannot find them. Release builds render a thrown widget as an empty
+        // grey rectangle, so the whole form disappeared behind one.
+        //
+        // Adding a Material ancestor in round 12 could not have helped - the
+        // missing ancestor was Localizations, not Material.
+        localizationsDelegates: const <LocalizationsDelegate<Object>>[
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
         builder: (BuildContext context, Widget? child) {
           // Picks up "Remove animations" from accessibility settings; the whole
           // app then holds its loops still.

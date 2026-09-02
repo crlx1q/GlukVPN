@@ -754,3 +754,54 @@
 .sec-form .dash-note {
   margin-bottom: 0;
 }
+
+/* ---------------------------------------------------------------------------
+   РАУНД 17 — вход и регистрация
+   --------------------------------------------------------------------------- */
+
+/* Вкладка «Восстановление» и полоска шагов остались в разметке ради скриптов,
+   но рисоваться не должны. Без этих двух правил атрибут hidden бесполезен: у
+   обоих элементов есть собственный display (flex/grid), а он сильнее hidden. */
+.auth-tabs .auth-tab[hidden]{display:none}
+.reg-steps[hidden]{display:none}
+
+/* Полоса вкладок теперь на два элемента, а не на три. */
+.auth-tabs--pair{grid-template-columns:1fr 1fr}
+
+/* Правая панель — та же композиция, что в окне входа Windows-клиента. */
+.auth-hero{display:grid;gap:22px;align-content:start;position:relative;overflow:hidden}
+.auth-hero__copy{position:relative;z-index:2}
+.auth-hero__title{margin:0 0 10px;font-size:clamp(24px,2.4vw,32px);line-height:1.14;font-weight:680;letter-spacing:-.01em}
+.auth-hero__sub{margin:0;max-width:34ch;font-size:14px;line-height:1.6;color:var(--text-2,rgba(255,255,255,.62))}
+
+/* Планета: диск, подсветка и две орбиты — только градиенты. Ни одного байта
+   картинки и ни одного кадра canvas, поэтому панель ничего не грузит и не
+   считает. aspect-ratio держит круг круглым на любой ширине. */
+.auth-hero__stage{position:relative;height:clamp(190px,22vw,268px);margin:2px -8px -6px}
+.auth-hero__glow,
+.auth-hero__globe,
+.auth-hero__orbit{position:absolute;top:50%;left:50%;aspect-ratio:1;border-radius:50%}
+.auth-hero__glow{width:118%;transform:translate(-50%,-50%);background:radial-gradient(circle at 50% 50%,rgba(124,92,246,.40),rgba(124,92,246,.10) 46%,transparent 68%)}
+.auth-hero__globe{
+  width:min(72%,232px);transform:translate(-50%,-50%);
+  background:
+    radial-gradient(circle at 30% 26%,rgba(255,255,255,.32),transparent 42%),
+    radial-gradient(circle at 68% 74%,rgba(56,189,248,.32),transparent 52%),
+    radial-gradient(circle at 50% 50%,#3a2a7a 0%,#241a4d 58%,#140f2a 100%);
+  box-shadow:inset 0 0 46px rgba(5,4,10,.70),0 22px 60px rgba(10,6,26,.55),0 0 0 1px rgba(168,85,247,.22)
+}
+.auth-hero__orbit{border:1px solid rgba(168,85,247,.26)}
+.auth-hero__orbit--a{width:min(94%,300px);transform:translate(-50%,-50%) rotate(-18deg) scaleY(.30)}
+.auth-hero__orbit--b{width:min(114%,356px);border-color:rgba(56,189,248,.20);transform:translate(-50%,-50%) rotate(14deg) scaleY(.22)}
+
+/* Три строки о продукте — как в exe под планетой. */
+.auth-hero__list{list-style:none;margin:0;padding:0;display:grid;gap:12px;position:relative;z-index:2}
+.auth-hero__row{display:grid;grid-template-columns:20px 1fr;align-items:start;gap:12px;font-size:13.5px;line-height:1.5}
+.auth-hero__row svg{width:20px;height:20px;margin-top:1px;color:var(--violet-light,#c4b5fd)}
+.auth-hero__row span{color:rgba(255,255,255,.80)}
+
+@media (max-width:900px){
+  /* На узком экране планета только отодвигает форму вниз. */
+  .auth-hero__stage{display:none}
+  .auth-hero__sub{max-width:none}
+}

@@ -469,9 +469,19 @@ async function handleContact(message: TelegramMessage): Promise<void> {
 	}
 
 	const reasons: Record<string, string> = {
+		// ROUND 17: this used to talk only about registration, which is wrong for
+		// the case the user actually hits - linking Telegram to an account that
+		// already exists, from the cabinet. It also has to name the environment
+		// trap: the token lives in the database of whichever control plane issued
+		// it, and the bot can only long-poll from one of them, so a token minted
+		// on BETA is genuinely absent for a bot answering on PROD.
 		unknown:
-			"Код не найден или уже истёк. Начните регистрацию на сайте заново — " +
-			"ссылка в Telegram живёт 30 минут.",
+			"Код не найден или уже истёк.\n\n" +
+			"Если привязываете Telegram к готовому аккаунту — откройте личный " +
+			"кабинет на vpn.gluk.tech, раздел «Безопасность», и нажмите " +
+			"«Привязать Telegram» заново.\n\n" +
+			"Если кабинет открыт на канале BETA, а бот отвечает на PROD — код " +
+			"не найдётся. Переключите канал на PROD и повторите.",
 		email_pending: "Сначала подтвердите почту кодом на сайте, потом возвращайтесь сюда.",
 		phone_taken: "На этот номер уже зарегистрирован аккаунт. Воспользуйтесь входом или восстановлением пароля.",
 		telegram_taken: "Этот Telegram уже привязан к другому аккаунту.",

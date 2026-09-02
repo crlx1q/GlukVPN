@@ -2,6 +2,7 @@
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <iphlpapi.h>
 
 #include <chrono>
 #include <sstream>
@@ -48,15 +49,69 @@ bool FileExists(const std::wstring& path) {
 // the adapter of a live session can never be swept away; and the sweep runs
 // synchronously *before* the worker starts, because a sweep racing with
 // adapter creation could delete the new device while it is still coming up.
+// True when the expensive sweep below is worth paying for.
+//
+// ROUND 17: the round-12 sweep ran PowerShell on every connect and cost about
+// eight seconds before the tunnel could start at all - 16:34:30.531 to
+// 16:34:38.090 in the production service log. A clean machine has nothing to
+// sweep, so the cost is now only paid when it can achieve something: either
+// Windows still knows an interface by one of our names, or this is the first
+// connect since the service started, which is the right moment to clear stale
+// NetworkList profiles once.
+bool GhostSweepWorthRunning() {
+    static std::atomic<bool> sweptOnce{false};
+    if (!sweptOnce.exchange(true)) return true;
+
+    static const wchar_t* const kAliases[] = {
+        L"GlukVPN", L"GlukVPN 2", L"GlukVPN 3", L"GlukVPN 4", L"GlukVPN 5"};
+    for (const wchar_t* alias : kAliases) {
+        NET_LUID luid{};
+        if (ConvertInterfaceAliasToLuid(alias, &luid) == NO_ERROR) return true;
+    }
+    return false;
+}
+
 void PurgeGhostAdapters() {
+    if (!GhostSweepWorthRunning()) return;
+
     // pnputil needs an instance id, and enumerating the Net class from C++
     // means pulling in SetupAPI for a job that runs once per connect.
     // PowerShell is the documented route and keeps the service dependency-free.
+    //
+    // ROUND 17 fixes two things the production log exposed.
+    //
+    //  1. "Ghost adapter sweep finished, exit 1". Get-PnpDevice raises a
+    //     terminating error when its filter matches nothing, which is the
+    //     normal case, so the script failed on every healthy machine. Errors
+    //     are suppressed and the script ends in exit 0 - no outcome here is a
+    //     failure worth reporting.
+    //
+    //  2. The adapter alias was never what the user was reading. The worker
+    //     log says name="GlukVPN", yet Windows shows the network as
+    //     "GlukVPN 11": that number belongs to a *NetworkList profile*, not to
+    //     the adapter, and no amount of pnputil will ever touch it. Once the
+    //     adapter behind a profile is gone the profile and its unmanaged
+    //     signature are dead registry entries, so ours are removed by name and
+    //     Windows mints a clean "GlukVPN" profile on the next connect.
     std::wstring command =
         L"powershell.exe -NoProfile -NonInteractive -Command \""
+        L"$ErrorActionPreference='SilentlyContinue'; "
         L"Get-PnpDevice -Class Net -FriendlyName 'GlukVPN*' "
+        L"-ErrorAction SilentlyContinue "
         L"| Where-Object { $_.Status -ne 'OK' } "
-        L"| ForEach-Object { pnputil /remove-device $_.InstanceId }\"";
+        L"| ForEach-Object { pnputil /remove-device $_.InstanceId }; "
+        L"$nl='HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"
+        L"\\NetworkList'; "
+        L"Get-ChildItem ($nl + '\\Profiles') -ErrorAction SilentlyContinue "
+        L"| Where-Object { (Get-ItemProperty $_.PSPath "
+        L"-ErrorAction SilentlyContinue).ProfileName -like 'GlukVPN*' } "
+        L"| Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; "
+        L"Get-ChildItem ($nl + '\\Signatures\\Unmanaged') "
+        L"-ErrorAction SilentlyContinue "
+        L"| Where-Object { (Get-ItemProperty $_.PSPath "
+        L"-ErrorAction SilentlyContinue).Description -like 'GlukVPN*' } "
+        L"| Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; "
+        L"exit 0\"";
 
     STARTUPINFOW si{};
     si.cb = sizeof(si);

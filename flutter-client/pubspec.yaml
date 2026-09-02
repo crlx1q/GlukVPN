@@ -16,6 +16,20 @@ dependencies:
   # REST calls to the control plane (PROD or BETA channel).
   http: ^1.2.2
 
+  # ROUND 17: Material's own translations.
+  #
+  # This is the broken sign-in form. app.dart sets locale "ru" and lists it in
+  # supportedLocales, but the only material delegate in the tree was
+  # DefaultMaterialLocalizations, which supports English and nothing else. With
+  # the resolved locale unsupported there is no MaterialLocalizations at all,
+  # and TextField, Tooltip and IconButton each throw while building. A release
+  # build paints a thrown widget as a plain grey rectangle with no text - which
+  # is exactly the "big grey rectangle instead of the form" on the phone.
+  # It never showed on Windows because the desktop entry point never sets a
+  # locale, so that MaterialApp resolves to English and stays supported.
+  flutter_localizations:
+    sdk: flutter
+
   # Simple ChangeNotifier state management (no code generation).
   provider: ^6.1.2
 
