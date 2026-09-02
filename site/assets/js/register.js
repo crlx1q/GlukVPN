@@ -536,6 +536,21 @@
     if (!notice) return;
     var text = $("reg-closed-msg");
     if (text && why) text.textContent = why;
+
+    /* РАУНД 17: сначала гасим все шаги, и только потом показываем
+       заглушку. Порядок был обратный, и на экране одновременно висели
+       форма регистрации и «Регистрация сейчас закрыта» под ней — именно
+       это было видно на сайте. Шаги прячем сами, не полагаясь на step():
+       если тот по какой-то причине не сработает, две панели сразу
+       показать всё равно будет нельзя. */
+    var pane = notice.parentNode;
+    if (pane) {
+      var steps = pane.querySelectorAll("[data-reg-step]");
+      for (var i = 0; i < steps.length; i += 1) {
+        if (steps[i] !== notice) steps[i].hidden = true;
+      }
+    }
+
     notice.hidden = false;
     step("closed");
   }

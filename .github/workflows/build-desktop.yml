@@ -80,6 +80,19 @@ jobs:
         working-directory: flutter-client
         shell: pwsh
 
+      # ROUND 17: the empty white window on a second launch.
+      #
+      # The Win32 runner creates and shows its window before Dart main() runs,
+      # so the guard in lib/desktop/services/single_instance.dart can never
+      # prevent it - the second copy painted a blank window and only then said
+      # it was already running. The guard has to live in the runner, and
+      # flutter create regenerates windows/, so our runner is vendored and
+      # copied over the scaffold here, exactly like android_overrides.
+      - name: Apply our Windows runner overrides
+        run: Copy-Item -Path windows_overrides\* -Destination windows -Recurse -Force
+        working-directory: flutter-client
+        shell: pwsh
+
       - name: Generate Icons
         run: |
           pwsh -ExecutionPolicy Bypass -File desktop\packaging\make-icons.ps1
