@@ -205,6 +205,27 @@ func run() error {
 	}
 	luid := winipcfg.LUID(nativeTun.LUID())
 
+	// ROUND 12: report the name Windows actually handed out, not the one we
+	// asked for.
+	//
+	// Requesting a fixed GUID keeps us on one adapter *object*, but it cannot
+	// reserve the friendly name. If a previous install left a ghost "GlukVPN"
+	// interface behind - a crashed worker, or a pre-ROUND-8 build that used
+	// random GUIDs - Windows keeps that name and appends a number to ours,
+	// which is where "GlukVPN 11" comes from. Everything below is configured
+	// through the LUID, and the service reads the LUID out of the worker's
+	// stats rather than by looking the name up, so the tunnel itself is
+	// unaffected. The name only matters for what the user is shown - so log
+	// the real one, loudly, instead of letting the tray invent it.
+	actualName := name
+	if reported, nameErr := nativeTun.Name(); nameErr == nil && reported != "" {
+		actualName = reported
+	}
+	logf("adapter: name=%q luid=%d", actualName, uint64(luid))
+	if actualName != name {
+		logf("warning: Windows named the adapter %q because a stale %q interface still holds that name; remove the ghost adapter to get the plain name back", actualName, name)
+	}
+
 	logger := &device.Logger{
 		Verbosef: func(format string, args ...any) { logf("wg: "+format, args...) },
 		Errorf:   func(format string, args ...any) { logf("wg error: "+format, args...) },

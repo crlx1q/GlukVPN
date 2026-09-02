@@ -187,7 +187,16 @@ class _LoginViewState extends State<LoginView> {
         28 + MediaQuery.viewInsetsOf(context).bottom,
       ),
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      child: Form(
+      // ROUND 12: onboarding hosts this form inside a Stack over the map, not
+      // inside a Scaffold. Text fields, IconButton and TextButton all need a
+      // Material ancestor for their ink and decoration - without one they
+      // throw while building, and a release build paints that failure as an
+      // opaque grey box over most of the screen. That is exactly what showed
+      // up under the "Welcome back" heading. A transparent Material draws
+      // nothing and makes the form safe to host anywhere.
+      child: Material(
+        type: MaterialType.transparency,
+        child: Form(
         key: _form,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -310,6 +319,7 @@ class _LoginViewState extends State<LoginView> {
             // readouts live in Settings, behind an admin-only check.
           ],
         ),
+      ),
       ),
     );
   }

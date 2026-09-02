@@ -174,6 +174,11 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
   bool _linkCancelled = false;
   String? _linkCode;
 
+  /// ROUND 12: which door the running request came through. The website flow
+  /// and the Telegram flow are the same grant and share one busy flag, but
+  /// only the button that was actually pressed should show a spinner.
+  bool _linkViaTelegram = false;
+
   /// Signs in through the website without a password field in this window.
   ///
   /// Replaces the old "open vpn.gluk.tech and hope" jump. The server issues a
@@ -181,10 +186,11 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
   /// already signed in there, and this window collects the tokens. The Chrome
   /// extension calls the same three endpoints, so there is now one sign-in
   /// system instead of three improvised ones.
-  Future<void> _signInWithLink() async {
+  Future<void> _signInWithLink({bool viaTelegram = false}) async {
     if (_linkBusy) return;
     setState(() {
       _linkBusy = true;
+      _linkViaTelegram = viaTelegram;
       _linkCancelled = false;
       _linkCode = null;
       _localError = null;
@@ -198,17 +204,23 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
         started = true;
         if (!mounted) return;
         setState(() => _linkCode = start.userCode);
+        // ROUND 12: the Telegram button opens the bot, the website button
+        // opens the site. `confirmUrl` is the bot deep link when the control
+        // plane actually runs a bot and the website card when it does not, so
+        // a deployment without TELEGRAM_BOT_TOKEN still lands the user
+        // somewhere they can finish instead of on a dead link.
+        final String target = viaTelegram ? start.confirmUrl : start.verifyUrl;
         try {
           await launchUrl(
-            Uri.parse(start.verifyUrl),
+            Uri.parse(target),
             mode: LaunchMode.externalApplication,
           );
         } catch (_) {
           if (!mounted) return;
           setState(() {
             _localError = _ru
-                ? 'Не удалось открыть браузер. Откройте вручную: ${start.verifyUrl}'
-                : 'Could not open the browser. Open this manually: ${start.verifyUrl}';
+                ? 'Не удалось открыть ссылку. Откройте вручную: $target'
+                : 'Could not open the link. Open this manually: $target';
           });
         }
       },
@@ -231,6 +243,7 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
     if (!mounted) return;
     setState(() {
       _linkBusy = false;
+      _linkViaTelegram = false;
       _linkCode = null;
       if (outcome == LinkSignInOutcome.signedIn ||
           outcome == LinkSignInOutcome.cancelled) {
@@ -486,6 +499,10 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
                           label: 'Telegram',
                           enabled: AppConfig.telegramSignInEnabled && !busy,
                           soonLabel: _ru ? 'скоро' : 'soon',
+                          busy: _linkBusy && _linkViaTelegram,
+                          onTap: (busy || _linkBusy)
+                              ? null
+                              : () => _signInWithLink(viaTelegram: true),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -810,20 +827,31 @@ class _OutlineButton extends StatelessWidget {
   }
 }
 
-/// Telegram / Google, kept visible but disabled until the backend supports
-/// them, so the layout matches the final design instead of jumping later.
+/// Telegram / Google.
+///
+/// Google is still a placeholder and says so on hover. Telegram is a real
+/// button since ROUND 12: it starts the same device-authorization grant the
+/// phone uses and opens the bot, which is why this widget now takes an
+/// `onTap` and can show its own spinner.
 class _SocialButton extends StatelessWidget {
   const _SocialButton({
     required this.mark,
     required this.label,
     required this.enabled,
     required this.soonLabel,
+    this.onTap,
+    this.busy = false,
   });
 
   final Widget mark;
   final String label;
   final bool enabled;
   final String soonLabel;
+
+  /// Null means "not wired yet": the pill still renders so the layout is
+  /// final, but clicking does nothing and the tooltip explains why.
+  final VoidCallback? onTap;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -838,7 +866,18 @@ class _SocialButton extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: <Widget>[
-          Opacity(opacity: enabled ? 1 : 0.45, child: mark),
+          if (busy)
+            const SizedBox(
+              width: 15,
+              height: 15,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor:
+                    AlwaysStoppedAnimation<Color>(GlukColors.violetLight),
+              ),
+            )
+          else
+            Opacity(opacity: enabled ? 1 : 0.45, child: mark),
           const SizedBox(width: 8),
           Text(
             label,
@@ -853,8 +892,19 @@ class _SocialButton extends StatelessWidget {
       ),
     );
 
-    if (enabled) return body;
-    return Tooltip(message: soonLabel, child: body);
+    if (!enabled || onTap == null) {
+      return Tooltip(message: soonLabel, child: body);
+    }
+    // Material + InkWell so the ripple is clipped to the pill instead of
+    // landing on the card behind it.
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: busy ? null : onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: body,
+      ),
+    );
   }
 }
 

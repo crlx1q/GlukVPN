@@ -276,6 +276,81 @@ class ApiClient {
     return result;
   }
 
+  // --- account security (ROUND 12) -----------------------------------------
+  //
+  // These three back the Security section of the profile screen. They return
+  // decoded JSON rather than model classes on purpose: the shapes are small,
+  // used in exactly one screen, and adding three more classes to models.dart
+  // for `{ linked, username }` would be ceremony without a payoff.
+
+  /// Changes the account password.
+  ///
+  /// The server verifies `currentPassword` itself - this is deliberately not
+  /// something the client can skip, because a stolen unlocked phone must not
+  /// be enough to take the account over. On success every **other** refresh
+  /// token is revoked and the count comes back, so the screen can tell the
+  /// user how many other sessions just ended. The session that made the
+  /// request survives.
+  Future<int> changePassword({
+    required String currentPassword,
+    required String password,
+  }) async {
+    final Map<String, dynamic> json = await _request(
+      'POST',
+      '/api/auth/password',
+      body: <String, dynamic>{
+        'currentPassword': currentPassword,
+        'password': password,
+      },
+    );
+    final Object? revoked = json['revokedTokens'];
+    return revoked is num ? revoked.toInt() : 0;
+  }
+
+  /// Starts an email change. The address is not switched here: the server
+  /// mails a six digit code to the **new** address, and [confirmEmail]
+  /// finishes the job. That is what stops a typo from locking the account out
+  /// of its own recovery channel.
+  ///
+  /// Returns the decoded body, which carries `expiresAt` when the server
+  /// reports one.
+  Future<Map<String, dynamic>> changeEmail({
+    required String email,
+    required String currentPassword,
+  }) =>
+      _request(
+        'POST',
+        '/api/auth/email',
+        body: <String, dynamic>{
+          'email': email,
+          'currentPassword': currentPassword,
+        },
+      );
+
+  /// Confirms the pending email change with the code from the new address.
+  Future<Map<String, dynamic>> confirmEmail({required String code}) => _request(
+        'POST',
+        '/api/auth/email/confirm',
+        body: <String, dynamic>{'code': code},
+      );
+
+  /// Whether a Telegram identity is attached to this account.
+  ///
+  /// Shape: `{ linked: bool, username: String?, phoneTail: String? }`. The
+  /// server sends only the last digits of the phone number - the profile
+  /// screen needs to show *which* account is linked, not the number itself.
+  Future<Map<String, dynamic>> telegramStatus() =>
+      _request('GET', '/api/auth/telegram');
+
+  /// Starts a Telegram link or re-link.
+  ///
+  /// Shape: `{ url: String, code: String, expiresAt: String }`. `url` is a bot
+  /// deep link that already carries the code, so the client opens it instead
+  /// of asking the user to copy anything. Re-linking uses the same call: the
+  /// server rebinds the account to whichever Telegram identity confirms next.
+  Future<Map<String, dynamic>> telegramLinkStart() =>
+      _request('POST', '/api/auth/telegram/link');
+
   /// Restores a session from the stored refresh token on app start.
   ///
   /// Returns [SessionRefreshOutcome.offline] when the control plane could not
