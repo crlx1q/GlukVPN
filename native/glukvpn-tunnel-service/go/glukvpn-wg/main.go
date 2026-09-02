@@ -308,11 +308,12 @@ func run() error {
 
 	logf("tunnel %q is up", name)
 
-	// ROUND 18: let the tunnel report where packets die instead of leaving it
-	// to be guessed at from the outside. Both helpers only read and log.
+	// The probes and the 30-second byte counters are gone. They answered
+	// their question - both ends forward, the loss is on this side of Wintun -
+	// and a shipped VPN should not narrate itself. What stays is the socket
+	// guard, which is not diagnostics: it keeps our own encrypted UDP out of
+	// the tunnel when the physical default route changes.
 	stopDiagnostics := make(chan struct{})
-	go watchTunnelTraffic(dev, stopDiagnostics)
-	go probeThroughTunnel(cfg)
 	go keepSocketOutsideTheTunnel(bind, luid, stopDiagnostics)
 
 	waitForStop(name, opts.parentPID, dev)
@@ -323,6 +324,60 @@ func run() error {
 }
 
 // ------------------------------------------------------------- interface ---
+
+var bothFamilies = []winipcfg.AddressFamily{
+	winipcfg.AddressFamily(windows.AF_INET),
+	winipcfg.AddressFamily(windows.AF_INET6),
+}
+
+// addressesForFamily keeps the prefixes that belong to one address family,
+// because Windows configures addresses per family and rejects the mix.
+func addressesForFamily(addresses []netip.Prefix, family winipcfg.AddressFamily) []netip.Prefix {
+	isIPv4Family := family == winipcfg.AddressFamily(windows.AF_INET)
+	wanted := make([]netip.Prefix, 0, len(addresses))
+	for _, prefix := range addresses {
+		if prefix.Addr().Is4() != isIPv4Family {
+			continue
+		}
+		wanted = append(wanted, prefix)
+	}
+	return wanted
+}
+
+// cleanupAddressesOnDisconnectedInterfaces is wireguard-windows' own recovery
+// path, ported as-is from tunnel/addressconfig.go.
+//
+// A disabled or unplugged adapter keeps the addresses it was given. So a
+// leftover "GlukVPN 11" from an earlier install still owns 10.8.0.10, and when
+// the live adapter asks for the same address Windows either refuses it or
+// marks it duplicate - after which the stack accepts nothing addressed to it.
+func cleanupAddressesOnDisconnectedInterfaces(family winipcfg.AddressFamily, addresses []netip.Prefix) {
+	if len(addresses) == 0 {
+		return
+	}
+	wanted := make(map[netip.Addr]bool, len(addresses))
+	for i := range addresses {
+		wanted[addresses[i].Addr()] = true
+	}
+	interfaces, err := winipcfg.GetAdaptersAddresses(family, winipcfg.GAAFlagDefault)
+	if err != nil {
+		return
+	}
+	for _, iface := range interfaces {
+		if iface.OperStatus == winipcfg.IfOperStatusUp {
+			continue
+		}
+		for address := iface.FirstUnicastAddress; address != nil; address = address.Next {
+			ip, _ := netip.AddrFromSlice(address.Address.IP())
+			if !wanted[ip] {
+				continue
+			}
+			prefix := netip.PrefixFrom(ip, int(address.OnLinkPrefixLength))
+			logf("reclaiming the tunnel address %v from the disconnected adapter %q", prefix, iface.FriendlyName())
+			iface.LUID.DeleteIPAddress(prefix)
+		}
+	}
+}
 
 // configureInterface assigns the address, routes and DNS to the Wintun adapter.
 //
@@ -341,8 +396,22 @@ func configureInterface(luid winipcfg.LUID, cfg *tunnelConfig, mtu int) error {
 	if len(addresses) == 0 {
 		return errors.New("the tunnel config has no Address")
 	}
-	if err := luid.SetIPAddresses(addresses); err != nil {
-		return fmt.Errorf("cannot assign the tunnel address: %w", err)
+	// Official order, official recovery: assign per family, and if Windows
+	// says the address already exists, scrub it off any disconnected adapter
+	// and try once more.
+	for _, family := range bothFamilies {
+		wanted := addressesForFamily(addresses, family)
+		if len(wanted) == 0 {
+			continue
+		}
+		err := luid.SetIPAddressesForFamily(family, wanted)
+		if err == windows.ERROR_OBJECT_ALREADY_EXISTS {
+			cleanupAddressesOnDisconnectedInterfaces(family, wanted)
+			err = luid.SetIPAddressesForFamily(family, wanted)
+		}
+		if err != nil {
+			return fmt.Errorf("cannot assign the tunnel address: %w", err)
+		}
 	}
 
 	// tableOff should now always be false: PrepareConfig strips any Table key
@@ -362,15 +431,18 @@ func configureInterface(luid winipcfg.LUID, cfg *tunnelConfig, mtu int) error {
 				if prefix.Addr().Is6() {
 					nextHop = netip.IPv6Unspecified()
 				}
-				// A default route is never installed as a default route.
-				// See splitDefaultRoute for why.
-				for _, dest := range splitDefaultRoute(prefix) {
-					routes = append(routes, &winipcfg.RouteData{
-						Destination: dest,
-						NextHop:     nextHop,
-						Metric:      0,
-					})
-				}
+				// Official behaviour: install the AllowedIPs prefix exactly as
+				// it stands, masked, and let the interface metric decide who
+				// wins. wireguard-windows does not split the default route in
+				// half - that is a wg-quick trick for other platforms. On
+				// Windows the two halves are not a default route, so the stack
+				// never treats the adapter as the way out, which is its own
+				// class of "connected but no internet".
+				routes = append(routes, &winipcfg.RouteData{
+					Destination: prefix.Masked(),
+					NextHop:     nextHop,
+					Metric:      0,
+				})
 			}
 		}
 		if len(routes) > 0 {
@@ -456,6 +528,16 @@ func configureInterface(luid winipcfg.LUID, cfg *tunnelConfig, mtu int) error {
 			logf("no IP interface for family %d: %v", family, err)
 			continue
 		}
+		// These four are exactly what wireguard-windows sets and what this
+		// code never set. DadTransmits = 0 is the one that matters here: with
+		// Duplicate Address Detection left on, Windows keeps the tunnel
+		// address Tentative, and a Tentative or Duplicate address receives
+		// nothing at all - the stack drops every inbound packet addressed to
+		// it, without a word in any log. That is the symptom exactly.
+		iface.RouterDiscoveryBehavior = winipcfg.RouterDiscoveryDisabled
+		iface.DadTransmits = 0
+		iface.ManagedAddressConfigurationSupported = false
+		iface.OtherStatefulConfigurationSupported = false
 		iface.UseAutomaticMetric = false
 		iface.Metric = 0
 		iface.NLMTU = uint32(mtu)
@@ -890,8 +972,8 @@ type tracingTun struct {
 const (
 	// Enough packets to catch a DNS query, a TCP open attempt and a ping
 	// without turning the log into a packet dump.
-	tracePacketsInDetail = 14
-	traceEveryNth        = 500
+	tracePacketsInDetail = 3
+	traceEveryNth        = 5000
 	traceMaxWriteErrors  = 20
 )
 
