@@ -235,7 +235,16 @@ func run() error {
 	// physical interface once the tunnel's own routes are in place - see
 	// bindOutsideTheTunnel for why a routing table entry is not enough.
 	bind := conn.NewDefaultBind()
-	dev := device.NewDevice(tunDevice, bind, logger)
+
+	// ROUND 20: put a tracer between the data plane and Wintun.
+	//
+	// Both ends now agree that the packets exist: the node's FORWARD counters
+	// show it sends our traffic to the internet and gets the replies back, and
+	// the peer counters here show those replies arriving and decrypting. The
+	// one stretch nobody has ever looked at is the handover into Windows, so
+	// look at it.
+	traced := &tracingTun{Device: tunDevice}
+	dev := device.NewDevice(traced, bind, logger)
 
 	if err := dev.IpcSet(uapiText); err != nil {
 		dev.Close()
@@ -852,6 +861,164 @@ func tunnelGateway(cfg *tunnelConfig) (netip.Addr, bool) {
 		}
 	}
 	return netip.Addr{}, false
+}
+
+// ----------------------------------------------------------- packet trace ---
+
+// tracingTun wraps the Wintun device so the log can show the plain IP packets
+// crossing it in both directions, and what Windows said about them.
+//
+// This is the last unobserved stretch of the path. Everything before it is
+// accounted for by counters at both ends. So if traffic dies after this
+// point it dies inside Windows, and the only way to tell "we never handed
+// the packets over" from "Windows took them and threw them away" is to print
+// what was handed over, and what came back from the handover.
+//
+// Only Read and Write are overridden. The embedded tun.Device supplies every
+// other method, so this keeps compiling if that interface grows.
+type tracingTun struct {
+	tun.Device
+
+	// Each counter has exactly one writer goroutine - wireguard-go reads the
+	// device from its TUN reader routine and writes to it from the peer's
+	// sequential receiver - so no locking is needed.
+	fromWindows int
+	toWindows   int
+	writeErrors int
+}
+
+const (
+	// Enough packets to catch a DNS query, a TCP open attempt and a ping
+	// without turning the log into a packet dump.
+	tracePacketsInDetail = 14
+	traceEveryNth        = 500
+	traceMaxWriteErrors  = 20
+)
+
+// Write hands decrypted packets to Windows. Its return value is the number of
+// packets Windows accepted, so a short write is itself a finding.
+func (t *tracingTun) Write(bufs [][]byte, offset int) (int, error) {
+	accepted, err := t.Device.Write(bufs, offset)
+
+	for i, buf := range bufs {
+		if offset > len(buf) {
+			continue
+		}
+		t.toWindows++
+		if t.toWindows <= tracePacketsInDetail || t.toWindows%traceEveryNth == 0 {
+			logf("packet %d into Windows: %s, accepted=%v", t.toWindows, describePacket(buf[offset:]), i < accepted)
+		}
+	}
+
+	if err != nil {
+		t.writeErrors++
+		if t.writeErrors <= traceMaxWriteErrors {
+			logf("WARNING: Windows refused a decrypted packet - %d of %d accepted: %v", accepted, len(bufs), err)
+		}
+	}
+	return accepted, err
+}
+
+// Read takes the packets Windows wants to send through the tunnel.
+func (t *tracingTun) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
+	n, err := t.Device.Read(bufs, sizes, offset)
+
+	for i := 0; i < n && i < len(bufs) && i < len(sizes); i++ {
+		t.fromWindows++
+		if t.fromWindows > tracePacketsInDetail && t.fromWindows%traceEveryNth != 0 {
+			continue
+		}
+		end := offset + sizes[i]
+		if sizes[i] <= 0 || end > len(bufs[i]) {
+			continue
+		}
+		logf("packet %d out of Windows: %s", t.fromWindows, describePacket(bufs[i][offset:end]))
+	}
+	return n, err
+}
+
+// describePacket renders a raw IP packet as one readable line. The addresses
+// are the whole point: a reply addressed to anything other than our own
+// tunnel address would explain a silent drop all by itself.
+func describePacket(pkt []byte) string {
+	if len(pkt) < 20 {
+		return fmt.Sprintf("runt of %d bytes", len(pkt))
+	}
+	switch pkt[0] >> 4 {
+	case 4:
+		src, _ := netip.AddrFromSlice(pkt[12:16])
+		dst, _ := netip.AddrFromSlice(pkt[16:20])
+		headerLen := int(pkt[0]&0x0f) * 4
+		declared := int(pkt[2])<<8 | int(pkt[3])
+		payload := describePayload(pkt[9], pkt, headerLen)
+		if declared != len(pkt) {
+			return fmt.Sprintf("IPv4 %v -> %v %s, %d bytes but the header claims %d", src, dst, payload, len(pkt), declared)
+		}
+		return fmt.Sprintf("IPv4 %v -> %v %s, %d bytes", src, dst, payload, len(pkt))
+	case 6:
+		if len(pkt) < 40 {
+			return fmt.Sprintf("IPv6 runt of %d bytes", len(pkt))
+		}
+		src, _ := netip.AddrFromSlice(pkt[8:24])
+		dst, _ := netip.AddrFromSlice(pkt[24:40])
+		return fmt.Sprintf("IPv6 %v -> %v %s, %d bytes", src, dst, describePayload(pkt[6], pkt, 40), len(pkt))
+	}
+	return fmt.Sprintf("not an IP packet, first nibble %d, %d bytes", pkt[0]>>4, len(pkt))
+}
+
+// describePayload names the protocol and, for TCP and UDP, the ports and TCP
+// flags. That is what makes a line recognisable at a glance: a SYN to :443,
+// or an ICMP echo reply that never reached ping.
+func describePayload(proto byte, pkt []byte, headerLen int) string {
+	switch proto {
+	case 1:
+		if len(pkt) >= headerLen+2 {
+			return fmt.Sprintf("ICMP type %d code %d", pkt[headerLen], pkt[headerLen+1])
+		}
+		return "ICMP"
+	case 58:
+		return "ICMPv6"
+	case 6, 17:
+	default:
+		return fmt.Sprintf("protocol %d", proto)
+	}
+
+	name := "UDP"
+	if proto == 6 {
+		name = "TCP"
+	}
+	if len(pkt) < headerLen+4 {
+		return name
+	}
+	srcPort := int(pkt[headerLen])<<8 | int(pkt[headerLen+1])
+	dstPort := int(pkt[headerLen+2])<<8 | int(pkt[headerLen+3])
+	if proto == 6 && len(pkt) >= headerLen+14 {
+		return fmt.Sprintf("TCP :%d -> :%d %s", srcPort, dstPort, tcpFlags(pkt[headerLen+13]))
+	}
+	return fmt.Sprintf("%s :%d -> :%d", name, srcPort, dstPort)
+}
+
+func tcpFlags(bits byte) string {
+	var set []string
+	if bits&0x02 != 0 {
+		set = append(set, "SYN")
+	}
+	if bits&0x10 != 0 {
+		set = append(set, "ACK")
+	}
+	if bits&0x01 != 0 {
+		set = append(set, "FIN")
+	}
+	if bits&0x04 != 0 {
+		set = append(set, "RST")
+	}
+	if bits&0x08 != 0 {
+		set = append(set, "PSH")
+	}
+	if len(set) == 0 {
+		return "no flags"
+	}
+	return strings.Join(set, "+")
 }
 
 // ------------------------------------------------------------------ stop ---
