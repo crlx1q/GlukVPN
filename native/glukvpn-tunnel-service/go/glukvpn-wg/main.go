@@ -312,7 +312,11 @@ func configureInterface(luid winipcfg.LUID, cfg *tunnelConfig, mtu int) error {
 		return fmt.Errorf("cannot assign the tunnel address: %w", err)
 	}
 
-	// Table = off means the split-tunnelling engine owns the routing table.
+	// tableOff should now always be false: PrepareConfig strips any Table key
+	// out of the incoming config and no longer adds one, precisely because
+	// nothing in this codebase ever installed the tunnel's routes in its place.
+	// The branch survives only so that a hand-edited config cannot leave the
+	// adapter routeless without saying so in the log.
 	if !cfg.tableOff {
 		routes := make([]*winipcfg.RouteData, 0, 4)
 		for i := range cfg.peers {
@@ -340,6 +344,36 @@ func configureInterface(luid winipcfg.LUID, cfg *tunnelConfig, mtu int) error {
 			if err := luid.SetRoutes(routes); err != nil {
 				return fmt.Errorf("cannot install the tunnel routes: %w", err)
 			}
+			// Logged one by one on purpose. "The tunnel is up but there is no
+			// internet" is almost always a missing or losing route, and until
+			// now neither log said which routes were actually on the adapter,
+			// so the failure could only be guessed at from the outside.
+			for _, route := range routes {
+				logf("route installed: %v via %v metric %d", route.Destination, route.NextHop, route.Metric)
+			}
+		} else {
+			logf("WARNING: no AllowedIPs produced a route, so the tunnel will carry no traffic")
+		}
+	} else {
+		logf("WARNING: Table = off, so this tunnel has no routes and nothing will enter it")
+	}
+
+	// A v4-only tunnel on a v6-capable network is the quietest way for a VPN to
+	// look connected and change nothing at all: Windows prefers IPv6 for every
+	// name that has an AAAA record, so the browser keeps using the ISP and keeps
+	// showing the real address. Say it in the log instead of leaving it to be
+	// guessed at from the outside.
+	tunnelHasIPv6 := false
+	for i := range cfg.peers {
+		for _, raw := range cfg.peers[i].allowedIPs {
+			if prefix, err := netip.ParsePrefix(raw); err == nil && prefix.Addr().Is6() {
+				tunnelHasIPv6 = true
+			}
+		}
+	}
+	if !tunnelHasIPv6 {
+		if hops := allPhysicalGateways(luid, winipcfg.AddressFamily(windows.AF_INET6)); len(hops) > 0 {
+			logf("WARNING: the tunnel has no IPv6 AllowedIPs but this machine has an IPv6 default route, so IPv6 traffic bypasses the tunnel and the visible address will not change")
 		}
 	}
 
@@ -375,14 +409,31 @@ func configureInterface(luid winipcfg.LUID, cfg *tunnelConfig, mtu int) error {
 	// Without a low metric the physical adapter keeps winning the default
 	// route and the tunnel comes up carrying no traffic - which looks exactly
 	// like a broken VPN to the user.
-	if iface, err := luid.IPInterface(winipcfg.AddressFamily(windows.AF_INET)); err == nil {
+	//
+	// Both families, not only IPv4. With just the IPv4 metric pinned, an
+	// IPv6-capable network keeps its own default route at a better metric, and
+	// Windows prefers IPv6 for every name that has an AAAA record - so the
+	// browser leaves the tunnel entirely while the tunnel still looks healthy.
+	for _, family := range []winipcfg.AddressFamily{
+		winipcfg.AddressFamily(windows.AF_INET),
+		winipcfg.AddressFamily(windows.AF_INET6),
+	} {
+		iface, err := luid.IPInterface(family)
+		if err != nil {
+			logf("no IP interface for family %d: %v", family, err)
+			continue
+		}
 		iface.UseAutomaticMetric = false
 		iface.Metric = 0
 		iface.NLMTU = uint32(mtu)
 		if err := iface.Set(); err != nil {
-			logf("could not pin the interface metric: %v", err)
+			logf("could not pin the interface metric for family %d: %v", family, err)
+			continue
 		}
+		logf("interface metric pinned to 0 for family %d, nlmtu %d", family, mtu)
 	}
+
+	logf("interface configured: %d address(es), dns %v", len(addresses), dnsServers)
 
 	return nil
 }

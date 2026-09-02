@@ -229,7 +229,8 @@ std::string ParseAddress(const std::string& conf) {
 }
 
 // Rewrites/injects the keys we control, so the caller cannot smuggle in
-// arbitrary interface directives and so Table=off is applied for split modes.
+// arbitrary interface directives. Any Table key in the incoming config is
+// dropped below and never re-added, so WireGuard always owns the routes.
 std::string PrepareConfig(const UpRequest& request) {
     std::istringstream stream(request.wgConf);
     std::string line;
@@ -239,8 +240,19 @@ std::string PrepareConfig(const UpRequest& request) {
     bool inInterface = false;
     bool seenInterface = false;
 
-    const bool needsManualRoutes = request.splitMode != SplitMode::AllApps ||
-                                   !request.bypassRoutes.empty();
+    // Table = off used to be injected here for every split mode and for any
+    // bypass route, on the assumption that the split engine would install the
+    // tunnel's routes instead. It never did. ApplyBypassRoutes only adds the
+    // bypass prefixes, and it adds them to the *physical* interface;
+    // ApplyAppFilters returns immediately for AllApps and otherwise only adds
+    // WFP filters. So with Table = off nothing installed 0.0.0.0/1 and
+    // 128.0.0.0/1 on the adapter, and the result was a tunnel that finished
+    // its handshake and then carried no traffic at all.
+    //
+    // Bypass routes never needed the tunnel routes gone: a LAN prefix such as
+    // 192.168.0.0/24 on the physical interface already beats a /1 from the
+    // tunnel under longest-prefix match. WireGuard therefore always installs
+    // its own routes now, and no mode can silently end up with none.
 
     while (std::getline(stream, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
@@ -293,11 +305,6 @@ std::string PrepareConfig(const UpRequest& request) {
     }
     if (request.mtu > 0) {
         extras += "MTU = " + std::to_string(request.mtu) + "\r\n";
-    }
-    if (needsManualRoutes) {
-        // Table = off stops WireGuard installing 0.0.0.0/0, letting the split
-        // engine own the routing table instead.
-        extras += "Table = off\r\n";
     }
 
     return interfaceSection + extras + "\r\n" + rest;
