@@ -83,12 +83,18 @@ window.GLUK_CONFIG = {
     android: {
       status: "available",
       label: "Android",
-      version: "",
-      url: "", // TODO: указать ссылку на APK, когда сборка опубликована
+      version: "1.2.0",
+      url: "/downloads/glukvpn-release-1.2.0.apk",
       note: "Android 8.0 и новее",
     },
-    googlePlay: { status: "soon", label: "Google Play", url: "", note: "На модерации" },
-    windows: { status: "soon", label: "Windows", url: "", note: "В разработке" },
+    googlePlay: { status: "soon", label: "Google Play", url: "", note: "Публикация готовится" },
+    windows: {
+      status: "available",
+      label: "Windows",
+      version: "1.2.0",
+      url: "/downloads/GlukVPN-Setup-1.2.0.exe",
+      note: "Windows 10, 11 (64-bit)",
+    },
     ios: { status: "soon", label: "iOS", url: "", note: "В разработке" },
     macos: { status: "soon", label: "macOS", url: "", note: "В разработке" },
     chrome: { status: "soon", label: "Расширение для Chrome", url: "", note: "В разработке" },

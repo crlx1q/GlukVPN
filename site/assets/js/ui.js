@@ -204,21 +204,76 @@
     });
   }
 
+  function detectOS() {
+    var ua = navigator.userAgent || "";
+    var p = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+    if (/android/i.test(ua)) return "android";
+    if (/windows|win32|win64/i.test(ua) || /windows/i.test(p)) return "windows";
+    if (/macintosh|mac os x/i.test(ua) || /mac/i.test(p)) return "macos";
+    if (/iphone|ipad|ipod/i.test(ua)) return "ios";
+    if (/linux/i.test(ua)) return "linux";
+    return "other";
+  }
+
   /* --------------------------------------------------- ссылки на загрузку */
   function downloads() {
     var d = CFG.downloads || {};
     var android = d.android || {};
+    var windows = d.windows || {};
+    var os = detectOS();
+    var isEn = document.documentElement.lang === "en";
+
+    /* Универсальная адаптация главных кнопок скачивания под ОС пользователя */
+    var primaryUrl = os === "windows" && windows.url ? windows.url : (android.url || "/download/");
+    var primaryText = os === "windows"
+      ? (isEn ? "Download for Windows" : "Скачать для Windows")
+      : (os === "android"
+        ? (isEn ? "Download for Android" : "Скачать для Android")
+        : (isEn ? "Download GlukVPN" : "Скачать GlukVPN"));
+
     $$("[data-download-android]").forEach(function (a) {
-      if (android.url) {
-        a.setAttribute("href", android.url);
+      /* Если это карточка Android на странице /download/ - оставляем ссылку на APK */
+      if (a.closest(".platform") && a.closest(".platform").querySelector(".platform__name")?.textContent.trim().toLowerCase().indexOf("android") !== -1) {
+        if (android.url) {
+          a.setAttribute("href", android.url);
+          a.setAttribute("download", "glukvpn-release-1.2.0.apk");
+        }
+        return;
+      }
+
+      /* Главные CTA-кнопки (в шапке, на главном экране, в меню) ведут на софт под ОС клиента */
+      if (primaryUrl && primaryUrl !== "/download/") {
+        a.setAttribute("href", primaryUrl);
         a.setAttribute("download", "");
       }
-      /* если ссылки на сборку пока нет - оставляем адрес из разметки (/download/) */
+      /* Текст обновляем только у больших кнопок с текстом, не трогая иконки */
+      if (a.childNodes.length > 0) {
+        var lastNode = a.childNodes[a.childNodes.length - 1];
+        if (lastNode.nodeType === Node.TEXT_NODE && lastNode.textContent.trim().length > 0) {
+          lastNode.textContent = primaryText;
+        }
+      }
+      if (a.hasAttribute("title")) a.setAttribute("title", primaryText);
+      if (a.hasAttribute("aria-label")) a.setAttribute("aria-label", primaryText);
     });
+
+    $$("[data-download-windows]").forEach(function (a) {
+      if (windows.url) {
+        a.setAttribute("href", windows.url);
+        a.setAttribute("download", "GlukVPN-Setup-1.2.0.exe");
+      }
+    });
+
     $$("[data-android-note]").forEach(function (n) {
       n.textContent = android.url
         ? android.note || ""
-        : "Ссылка на сборку публикуется на странице загрузок.";
+        : (isEn ? "Build link is published on the download page." : "Ссылка на сборку публикуется на странице загрузок.");
+    });
+
+    $$("[data-windows-note]").forEach(function (n) {
+      n.textContent = windows.url
+        ? windows.note || ""
+        : (isEn ? "Windows 10, 11 (64-bit)" : "Windows 10, 11 (64-bit)");
     });
     $$("[data-telegram]").forEach(function (a) {
       a.setAttribute("href", (CFG.site && CFG.site.telegram) || "#");
