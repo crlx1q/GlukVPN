@@ -431,18 +431,25 @@ func configureInterface(luid winipcfg.LUID, cfg *tunnelConfig, mtu int) error {
 				if prefix.Addr().Is6() {
 					nextHop = netip.IPv6Unspecified()
 				}
-				// Official behaviour: install the AllowedIPs prefix exactly as
-				// it stands, masked, and let the interface metric decide who
-				// wins. wireguard-windows does not split the default route in
-				// half - that is a wg-quick trick for other platforms. On
-				// Windows the two halves are not a default route, so the stack
-				// never treats the adapter as the way out, which is its own
-				// class of "connected but no internet".
-				routes = append(routes, &winipcfg.RouteData{
-					Destination: prefix.Masked(),
-					NextHop:     nextHop,
-					Metric:      0,
-				})
+				// A default route is never installed as a default route.
+				// See splitDefaultRoute for why.
+				//
+				// ROUND 23: this was briefly a single masked prefix, to match
+				// wireguard-windows exactly, and it leaked - the real address
+				// became visible again, so the physical gateway kept winning
+				// the default route. The official client can afford one /0
+				// because it also arms a WFP kill switch that blocks every
+				// packet that is not on the tunnel, so a lost route costs it
+				// connectivity, never privacy. We do not arm that, so the
+				// pair of /1 routes has to win on its own merits, and it does:
+				// longest-prefix match beats any metric.
+				for _, dest := range splitDefaultRoute(prefix) {
+					routes = append(routes, &winipcfg.RouteData{
+						Destination: dest,
+						NextHop:     nextHop,
+						Metric:      0,
+					})
+				}
 			}
 		}
 		if len(routes) > 0 {
