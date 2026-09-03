@@ -26,6 +26,7 @@ add_executable(GlukVpnTunnelService
     src/service.cpp
     src/pipe_server.cpp
     src/tunnel.cpp
+    src/singbox.cpp
     src/wireguard_nt.cpp
     src/wfp.cpp
     src/split_tunnel.cpp

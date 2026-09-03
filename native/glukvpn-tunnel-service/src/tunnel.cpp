@@ -26,6 +26,13 @@ namespace {
 constexpr wchar_t kWorkerExe[] = L"glukvpn-wg.exe";
 constexpr wchar_t kWintunDll[] = L"wintun.dll";
 
+// ROUND 24: the data plane the service prefers. sing-box drives the same
+// wintun.dll, installs its own routes through auto_route and wraps the
+// traffic in TLS, so a provider that fingerprints the WireGuard header sees
+// an ordinary HTTPS session. The worker above stays in the payload and is
+// still used whenever the control plane hands us no gateway.
+constexpr wchar_t kSingBoxExe[] = L"sing-box.exe";
+
 bool FileExists(const std::wstring& path) {
     const DWORD attributes = GetFileAttributesW(path.c_str());
     return attributes != INVALID_FILE_ATTRIBUTES &&
@@ -142,6 +149,35 @@ void PurgeGhostAdapters() {
     }
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
+}
+
+// A Windows service owns no console, and CTRL+BREAK - the only polite way to
+// stop sing-box, which has no stop event of its own - can only be sent from
+// inside one. So one console is allocated for the lifetime of the service and
+// the data plane is started in it as its own process group. Without this the
+// only way to stop sing-box is TerminateProcess, which risks leaving its
+// routes and WFP filters behind: a dead tunnel and no internet, the one
+// outcome this service must never produce.
+bool EnsureConsole() {
+    static std::atomic<int> state{0}; // 0 unknown, 1 ready, 2 unavailable
+    const int known = state.load();
+    if (known != 0) return known == 1;
+
+    bool ready = GetConsoleWindow() != nullptr;
+    if (!ready) {
+        if (AllocConsole()) {
+            ready = true;
+        } else if (GetLastError() == ERROR_ACCESS_DENIED) {
+            // A console is already attached, which is all that is needed.
+            ready = true;
+        } else {
+            Log::Warn("No console could be allocated; sing-box will have to "
+                      "be stopped by force");
+        }
+    }
+
+    state.store(ready ? 1 : 2);
+    return ready;
 }
 
 // Last few hundred bytes of the worker log, flattened to one line. Without
@@ -336,6 +372,13 @@ bool Tunnel::ResolveWorkerPaths(std::wstring& exePath,
     return FileExists(exePath) && FileExists(wintunPath);
 }
 
+bool Tunnel::ResolveSingBoxPath(std::wstring& exePath) const {
+    std::wstring dir = AppData::ExecutableDir();
+    if (!dir.empty() && dir.back() != L'\\') dir.push_back(L'\\');
+    exePath = dir + kSingBoxExe;
+    return FileExists(exePath);
+}
+
 std::wstring Tunnel::StopEventName() const {
     // Same convention as the official client, so `wg-quick`-style tooling and
     // our own service agree on how to stop a tunnel.
@@ -343,13 +386,20 @@ std::wstring Tunnel::StopEventName() const {
 }
 
 bool Tunnel::DriverReady() {
-    // ROUND 7: the pair is glukvpn-wg.exe + wintun.dll, and there is no kernel
-    // driver in the picture at all. Both files must sit next to the service.
+    // ROUND 24: wintun.dll plus at least one data plane. sing-box is the
+    // engine the service prefers, the WireGuard worker is the fallback, and
+    // neither of them needs a kernel driver.
     std::wstring exePath;
     std::wstring wintunPath;
-    if (!ResolveWorkerPaths(exePath, wintunPath)) {
+    const bool haveWireGuard = ResolveWorkerPaths(exePath, wintunPath);
+
+    std::wstring singBoxPath;
+    const bool haveSingBox = ResolveSingBoxPath(singBoxPath);
+
+    if (!FileExists(wintunPath) || (!haveWireGuard && !haveSingBox)) {
         Log::Error(
-            "glukvpn-wg.exe or wintun.dll is missing next to the service");
+            "no usable data plane next to the service: wintun.dll plus "
+            "sing-box.exe or glukvpn-wg.exe is required");
         return false;
     }
 
@@ -370,9 +420,15 @@ std::string Tunnel::DriverDescription() {
 }
 
 void Tunnel::WorkerMain(std::wstring configPath) {
+    const bool singBox = engine_.load() == Engine::SingBox;
+
     std::wstring exePath;
     std::wstring wintunPath;
-    const bool haveBinaries = ResolveWorkerPaths(exePath, wintunPath);
+    bool haveBinaries = ResolveWorkerPaths(exePath, wintunPath);
+    if (singBox) {
+        // The same wintun.dll, a different process on top of it.
+        haveBinaries = ResolveSingBoxPath(exePath) && FileExists(wintunPath);
+    }
 
     const std::wstring logPath = AppData::RunDir() + L"\\tunnel-worker.log";
     const int64_t startedAt = NowUnix();
@@ -382,7 +438,11 @@ void Tunnel::WorkerMain(std::wstring configPath) {
     std::string detail;
 
     if (!haveBinaries) {
-        detail = "glukvpn-wg.exe or wintun.dll is missing next to the service";
+        detail = singBox
+                     ? "sing-box.exe or wintun.dll is missing next to the "
+                       "service"
+                     : "glukvpn-wg.exe or wintun.dll is missing next to the "
+                       "service";
         Log::Error("Tunnel worker cannot start: " + detail);
     } else {
         Log::Info("Tunnel worker starting (" + DriverDescription() + ")");
@@ -415,38 +475,81 @@ void Tunnel::WorkerMain(std::wstring configPath) {
             si.hStdError = logFile;
         }
 
-        // --parent lets the worker tear the adapter down if this service ever
-        // dies without calling Down(). An orphaned tunnel owning the default
-        // route is exactly how a machine ends up with no internet at all.
-        std::wstring command = L"\"" + exePath + L"\" \"" + configPath +
-                               L"\" --parent " +
-                               std::to_wstring(GetCurrentProcessId());
+        // --parent lets the WireGuard worker tear the adapter down if this
+        // service ever dies without calling Down(). An orphaned tunnel owning
+        // the default route is exactly how a machine ends up with no internet
+        // at all. sing-box has no such flag, so it goes into a job object that
+        // Windows tears down together with the service.
+        const std::wstring quote = L"\"";
+        std::wstring command = quote + exePath + quote + L" ";
+        if (singBox) {
+            command += L"run -c " + quote + configPath + quote;
+        } else {
+            command += quote + configPath + quote + L" --parent " +
+                       std::to_wstring(GetCurrentProcessId());
+        }
         const std::wstring workingDir = AppData::ExecutableDir();
+
+        HANDLE job = nullptr;
+        if (singBox) {
+            job = CreateJobObjectW(nullptr, nullptr);
+            if (job) {
+                JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+                limits.BasicLimitInformation.LimitFlags =
+                    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                SetInformationJobObject(job, JobObjectExtendedLimitInformation,
+                                        &limits, sizeof(limits));
+            }
+        }
+
+        // The console has to exist before the child starts, because the child
+        // inherits it. Its output still goes to the log file through the
+        // standard handles set above.
+        DWORD flags = CREATE_NO_WINDOW;
+        if (singBox && EnsureConsole()) flags = CREATE_NEW_PROCESS_GROUP;
+        if (job) flags |= CREATE_SUSPENDED;
 
         PROCESS_INFORMATION pi{};
         const BOOL spawned = CreateProcessW(
             exePath.c_str(), command.data(), nullptr, nullptr,
-            logFile != INVALID_HANDLE_VALUE ? TRUE : FALSE, CREATE_NO_WINDOW,
+            logFile != INVALID_HANDLE_VALUE ? TRUE : FALSE, flags,
             nullptr, workingDir.c_str(), &si, &pi);
 
         if (!spawned) {
             const DWORD error = GetLastError();
-            Log::LastError("CreateProcess(glukvpn-wg.exe) failed", error);
+            Log::LastError("CreateProcess(data plane) failed", error);
             detail = "the tunnel worker could not be started (Windows error " +
                      std::to_string(error) + ")";
         } else {
+            if (job) {
+                AssignProcessToJobObject(job, pi.hProcess);
+                ResumeThread(pi.hThread);
+            }
             CloseHandle(pi.hThread);
 
             // Wait, but never for ever. If a stop was asked for and the worker
             // ignores it, the adapter is taken down by force instead of being
             // left behind holding the default route.
             int graceTicks = 0;
+            bool askedPolitely = false;
             for (;;) {
                 const DWORD waited = WaitForSingleObject(pi.hProcess, 500);
                 if (waited != WAIT_TIMEOUT) break;
                 if (!stopRequested_.load()) continue;
+                if (singBox && !askedPolitely) {
+                    // sing-box removes its routes and its WFP filters on the
+                    // way out, so a graceful stop is what leaves the machine
+                    // with working internet after a disconnect.
+                    askedPolitely = true;
+                    if (!GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT,
+                                                  pi.dwProcessId)) {
+                        Log::Warn("sing-box could not be asked to stop, error " +
+                                  std::to_string(GetLastError()));
+                    }
+                }
                 if (++graceTicks < 16) continue;
-                Log::Warn("Tunnel worker ignored the stop event, terminating");
+                Log::Warn("Tunnel worker ignored the stop request, "
+                          "terminating");
                 TerminateProcess(pi.hProcess, 1);
                 WaitForSingleObject(pi.hProcess, 3000);
                 break;
@@ -454,9 +557,12 @@ void Tunnel::WorkerMain(std::wstring configPath) {
 
             if (!GetExitCodeProcess(pi.hProcess, &exitCode)) exitCode = 1;
             CloseHandle(pi.hProcess);
-            ok = exitCode == 0;
+            // An interrupted sing-box reports a non-zero code, which is the
+            // normal path through Down() rather than a failure to report.
+            ok = exitCode == 0 || (singBox && stopRequested_.load());
         }
 
+        if (job) CloseHandle(job);
         if (logFile != INVALID_HANDLE_VALUE) CloseHandle(logFile);
     }
 
@@ -549,8 +655,8 @@ bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
     if (!DriverReady()) {
         errorCode = "driver_unavailable";
         errorMessage =
-            "The tunnel worker (glukvpn-wg.exe) or wintun.dll is missing. "
-            "Reinstall GlukVPN.";
+            "The tunnel data plane (sing-box.exe or glukvpn-wg.exe) or "
+            "wintun.dll is missing. Reinstall GlukVPN.";
         status_.state = TunnelState::Error;
         status_.errorCode = errorCode;
         status_.errorMessage = errorMessage;
@@ -572,8 +678,36 @@ bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
     adapter_ = request.adapter.empty() ? L"GlukVPN" : request.adapter;
     request_ = request;
 
-    const std::string prepared = PrepareConfig(request);
-    configPath_ = AppData::TunnelConfigPath(adapter_);
+    // ROUND 24: sing-box whenever the control plane handed us a gateway and
+    // the binary is in the payload; the WireGuard worker otherwise. Deciding
+    // it here, once per session, keeps the rest of the class free of engine
+    // checks - it only has to know which file to write and how to read status.
+    std::wstring singBoxPath;
+    engine_.store(Engine::WireGuard);
+    if (request.gateway.usable()) {
+        if (ResolveSingBoxPath(singBoxPath)) {
+            engine_.store(Engine::SingBox);
+        } else {
+            Log::Warn("A gateway was supplied but sing-box.exe is missing; "
+                      "falling back to the WireGuard worker");
+        }
+    }
+
+    const bool singBox = engine_.load() == Engine::SingBox;
+
+    std::string prepared;
+    if (singBox) {
+        SingBoxOptions options;
+        options.adapter = AppData::ToUtf8(adapter_);
+        options.mtu = request.mtu;
+        options.dns = request.dns;
+        options.directRoutes = request.bypassRoutes;
+        prepared = BuildSingBoxConfig(request.gateway, options);
+        configPath_ = AppData::RunDir() + L"\\singbox.json";
+    } else {
+        prepared = PrepareConfig(request);
+        configPath_ = AppData::TunnelConfigPath(adapter_);
+    }
 
     if (!AppData::WriteConfig(configPath_, prepared)) {
         errorCode = "internal_error";
@@ -588,7 +722,11 @@ bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
     status_.state = TunnelState::Starting;
     status_.sessionId = request.sessionId;
     status_.adapter = AppData::ToUtf8(adapter_);
-    status_.vpnIp = ParseAddress(prepared);
+    // In sing-box mode the interface address is ours rather than the node's,
+    // so it is a constant; the address the outside world sees is measured
+    // separately by the app and shown as the external IP.
+    status_.vpnIp =
+        singBox ? std::string(kSingBoxTunAddress) : ParseAddress(prepared);
     status_.splitEngine = SplitTunnel::Instance().EngineName();
     startedUnix_ = NowUnix();
     status_.sinceUnix = startedUnix_;
@@ -612,7 +750,9 @@ bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
         }
     }
 
-    Log::Info("Tunnel up requested for adapter " + status_.adapter);
+    Log::Info(std::string("Tunnel up requested for adapter ") +
+              status_.adapter + " using " +
+              (singBox ? "sing-box" : "the WireGuard worker"));
     return true;
 }
 
@@ -671,8 +811,49 @@ void Tunnel::Down() {
     Log::Info("Tunnel down complete");
 }
 
+// sing-box publishes no UAPI socket and performs no handshake, so liveness is
+// the adapter plus the process, and the counters come from the same interface
+// table that Task Manager reads for the same adapter.
+void Tunnel::RefreshFromInterface(TunnelStatus& status) {
+    if (!running_.load()) return;
+
+    NET_LUID luid{};
+    if (ConvertInterfaceAliasToLuid(adapter_.c_str(), &luid) != NO_ERROR) {
+        if (status.state == TunnelState::Connected) {
+            status.state = TunnelState::Lost;
+            status.errorCode = "tunnel_lost";
+            status.errorMessage = "The VPN adapter disappeared";
+        }
+        return;
+    }
+
+    status.luid = luid.Value;
+    PermitTunnelInterface(status.luid);
+
+    MIB_IF_ROW2 row{};
+    row.InterfaceLuid = luid;
+    if (GetIfEntry2(&row) == NO_ERROR) {
+        status.rxBytes = row.InOctets;
+        status.txBytes = row.OutOctets;
+    }
+
+    // There is no handshake to report, so this field carries the moment the
+    // data plane was last seen alive. The UI only uses it to decide whether a
+    // tunnel has gone stale, and a dead sing-box stops refreshing it.
+    everHandshaked_ = true;
+    status.lastHandshakeUnix = NowUnix();
+    status.state = TunnelState::Connected;
+    status.errorCode.clear();
+    status.errorMessage.clear();
+}
+
 void Tunnel::RefreshFromDriver(TunnelStatus& status) {
     if (status.state == TunnelState::Down) return;
+
+    if (engine_.load() == Engine::SingBox) {
+        RefreshFromInterface(status);
+        return;
+    }
 
     wg::PeerStats stats;
     const bool read = wg::ReadPeerStats(adapter_, stats);

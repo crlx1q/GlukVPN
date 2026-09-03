@@ -205,10 +205,26 @@ std::string PipeServer::Dispatch(const std::string& line) {
         up.bypassRoutes = request["bypassRoutes"].stringList();
         up.endpointIps = request["endpointIps"].stringList();
 
+        // ROUND 24: the sing-box outbound. Present means "run sing-box";
+        // absent means the WireGuard worker, so a client that predates the
+        // engine change keeps working against a newer service.
+        const json::Value& gateway = request["gateway"];
+        if (gateway.isObject()) {
+            up.gateway.type = gateway["type"].asString();
+            up.gateway.host = gateway["host"].asString();
+            up.gateway.port = static_cast<int>(gateway["port"].asNumber());
+            up.gateway.uuid = gateway["uuid"].asString();
+            up.gateway.sni = gateway["sni"].asString();
+            up.gateway.flow = gateway["flow"].asString();
+            up.gateway.insecure = gateway["insecure"].asBool();
+        }
+
         const std::string adapter = request["adapter"].asString();
         if (!adapter.empty()) up.adapter = AppData::ToWide(adapter);
 
-        if (up.wgConf.empty()) {
+        // A sing-box session needs no WireGuard configuration at all, so the
+        // request is complete as soon as either of the two is present.
+        if (up.wgConf.empty() && !up.gateway.usable()) {
             return ErrorReply("bad_request", "Missing tunnel configuration");
         }
 

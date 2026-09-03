@@ -31,6 +31,7 @@
 #include <thread>
 #include <vector>
 
+#include "singbox.h"
 #include "split_tunnel.h"
 
 namespace gluk {
@@ -57,6 +58,11 @@ struct UpRequest {
     std::vector<std::string> splitApps;
     std::vector<std::string> bypassRoutes;
     std::vector<std::string> endpointIps; // never blocked by the kill switch
+
+    // ROUND 24: the sing-box outbound. When this is usable the service runs
+    // sing-box over the same wintun.dll and wgConf is ignored; when it is not,
+    // the WireGuard worker is used exactly as before.
+    GatewayConfig gateway;
 };
 
 struct TunnelStatus {
@@ -114,6 +120,10 @@ private:
     void WorkerMain(std::wstring configPath);
     void RefreshFromDriver(TunnelStatus& status);
 
+    // sing-box has no UAPI socket and no handshake, so its status comes from
+    // the Windows interface table instead of the WireGuard driver.
+    void RefreshFromInterface(TunnelStatus& status);
+
     // Whitelists the Wintun adapter in WFP the moment it appears.
     //
     // Without this the kill switch blocks the tunnel it is protecting: the
@@ -134,7 +144,17 @@ private:
     bool ResolveWorkerPaths(std::wstring& exePath,
                             std::wstring& wintunPath) const;
 
+    // Locates sing-box.exe next to the service binary. Returns false when the
+    // installer predates the engine change, which is a fallback, not a fault.
+    bool ResolveSingBoxPath(std::wstring& exePath) const;
+
     std::wstring StopEventName() const;
+
+    // Which data plane the current session uses. Decided once in Up(), since
+    // it settles which configuration file is written, how the process is
+    // started and how status is read back afterwards.
+    enum class Engine { WireGuard, SingBox };
+    std::atomic<Engine> engine_{Engine::WireGuard};
 
     mutable std::mutex mutex_;
     std::thread worker_;
