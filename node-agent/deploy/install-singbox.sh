@@ -99,10 +99,16 @@ note "Fetching the latest official sing-box release"
 LATEST_API="https://api.github.com/repos/SagerNet/sing-box/releases/latest"
 DOWNLOAD_BASE="https://github.com/SagerNet/sing-box/releases/download"
 
-TAG="$(curl -fsSL "$LATEST_API" | grep -m1 '"tag_name"' | cut -d'"' -f4)"
+TAG="$(curl -fsSL "$LATEST_API" 2>/dev/null | grep '"tag_name"' | head -n1 | cut -d'"' -f4)"
 [ -n "$TAG" ] || fail "could not resolve the latest sing-box release"
 VERSION="${TAG#v}"
-ARCHIVE="sing-box-$VERSION-linux-amd64"
+ARCH="amd64"
+case "$(uname -m)" in
+  aarch64|arm64) ARCH="arm64" ;;
+  x86_64|amd64)  ARCH="amd64" ;;
+  *) fail "unsupported architecture: $(uname -m)" ;;
+esac
+ARCHIVE="sing-box-$VERSION-linux-$ARCH"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
