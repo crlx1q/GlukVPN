@@ -79,13 +79,13 @@ class AppConfig {
 	// -------------------------------------------------------------------------
 
 	/// Human version of this build. Must stay in sync with pubspec.yaml's
-	/// `version: 1.0.0+2`. package_info_plus reads the real value at runtime on
+	/// `version: 1.2.0+3`. package_info_plus reads the real value at runtime on
 	/// desktop, but the update checker needs a number before any plugin is
 	/// initialised, and the unit tests must not depend on a platform channel.
-	static const String appVersion = '1.0.0';
+	static const String appVersion = '1.2.0';
 
 	/// Monotonic build number from pubspec.yaml (the part after `+`).
-	static const int appBuild = 2;
+	static const int appBuild = 3;
 
 	/// The public site. Registration, password recovery and the link sign-in
 	/// page all live there; the clients only ever open URLs under it, they never

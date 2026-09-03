@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../config.dart';
+import '../desktop/logic/node_selector.dart';
 import '../models/models.dart';
 import '../services/api_client.dart';
 import '../services/ping_service.dart';
@@ -133,11 +134,19 @@ class VpnController extends ChangeNotifier {
       final List<VpnNodeInfo> loaded = await _api.nodes();
       _nodes = loaded;
 
+      // ROUND 25: the phone used to take the first connectable row the API
+      // happened to return, so a busy node with 200 ms of ping could win over
+      // an idle one. It now scores exactly like Windows and the browser
+      // extension - latency, then current load, then spare capacity - through
+      // the shared selector.
       final String? currentId = _selectedNode?.id;
       VpnNodeInfo? next;
       if (currentId != null) {
-        next = _firstOrNull(loaded.where((VpnNodeInfo n) => n.id == currentId));
+        next = _firstOrNull(
+          loaded.where((VpnNodeInfo n) => n.id == currentId && n.connectable),
+        );
       }
+      next ??= pickBestNode(loaded).node;
       next ??= _firstOrNull(loaded.where((VpnNodeInfo n) => n.connectable));
       next ??= _firstOrNull(loaded);
       _selectedNode = next;
@@ -376,7 +385,17 @@ class VpnController extends ChangeNotifier {
     _safeNotify();
   }
 
-  Future<void> _probeExitIp() async {
+  /// Reads the address the world sees us as.
+  ///
+  /// [settle] exists because a probe fired the instant the tunnel reports up
+  /// leaves before the platform has finished moving traffic onto it: the answer
+  /// is then the home address, and the panel flashes it before correcting
+  /// itself a moment later.
+  Future<void> _probeExitIp({Duration settle = Duration.zero}) async {
+    if (settle > Duration.zero) {
+      await Future<void>.delayed(settle);
+      if (_disposed || _state != VpnUiState.connected) return;
+    }
     final String? ip = await _api.probeExitIp();
     if (ip == null) return;
     _exitIp = ip;
@@ -414,7 +433,10 @@ class VpnController extends ChangeNotifier {
         _state = VpnUiState.connected;
         _connectedSince ??= DateTime.now();
         _startTimers();
-        _probeExitIp();
+        // Settle window before the first exit-IP read: probing the instant the
+        // platform reports the tunnel up answers over the old link and flashes
+        // the home address in the panel.
+        _probeExitIp(settle: const Duration(milliseconds: 1200)).ignore();
         refreshStatus();
         break;
       case TunnelStage.denied:

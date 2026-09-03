@@ -539,6 +539,12 @@ class DesktopVpnController extends ChangeNotifier {
         gateway: TunnelGateway.fromJson(result.tunnel.gateway),
       );
 
+      // ROUND 25: drop the address that belongs to the home connection before
+      // the tunnel comes up. Left in place it stays on the panel for the whole
+      // connect and reads as a leak; cleared, the field shows a dash for a
+      // moment and is then filled in from inside the tunnel.
+      _publicIp = null;
+
       _setPhase(ConnectionPhase.connecting, detail: 'bringing_up');
       _armConnectDeadline();
 
@@ -750,13 +756,14 @@ class DesktopVpnController extends ChangeNotifier {
       _cancelReconnect();
       _connectedSince ??= DateTime.now();
       if (!wasConnected) {
-        await _refreshPublicIp();
-        unawaited(
-          Future<void>.delayed(const Duration(seconds: 2), () async {
-            if (_disposed || !_phase.isConnected) return;
-            await _refreshPublicIp();
-          }),
-        );
+        // ROUND 25: nothing is probed at the instant the tunnel reports up.
+        // The request used to leave before Windows had finished moving the
+        // default route onto the adapter, so ipify answered over the physical
+        // link and the home address flashed in the panel. Two delayed reads
+        // instead: one once the routes have settled, one as confirmation.
+        _publicIp = null;
+        unawaited(_delayedExitIpProbe(const Duration(milliseconds: 1200)));
+        unawaited(_delayedExitIpProbe(const Duration(seconds: 5)));
       }
     }
 
@@ -1018,6 +1025,16 @@ class DesktopVpnController extends ChangeNotifier {
       _dataObserved = true;
     }
     _notify();
+  }
+
+  /// Exit-IP probe that lets the routing table settle first.
+  ///
+  /// Bails out if the tunnel went away while it was waiting, so a connect that
+  /// fails halfway never paints an exit address.
+  Future<void> _delayedExitIpProbe(Duration delay) async {
+    await Future<void>.delayed(delay);
+    if (_disposed || !_phase.isConnected) return;
+    await _refreshPublicIp();
   }
 
   Future<void> _refreshPublicIp() async {

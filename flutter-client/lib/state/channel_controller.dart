@@ -34,6 +34,13 @@ class ChannelController extends ChangeNotifier {
   final Future<void> Function(AppChannel channel)? _onChannelChanged;
 
   AppChannel _active = AppConfig.defaultChannel;
+
+  /// True when BETA was flipped on by hand during this run of the app.
+  ///
+  /// Deliberately not persisted: it separates \"this device was left on beta by
+  /// an old build\" from \"the person in front of the screen just asked for
+  /// beta\", and only the second one survives being signed out.
+  bool _explicitBetaChoice = false;
   bool _switching = false;
   bool _probing = false;
   String? _error;
@@ -77,10 +84,21 @@ class ChannelController extends ChangeNotifier {
   ///
   /// Safe to call repeatedly: once the channel is PROD this returns at once,
   /// so the [switchTo] callback re-running bootstrap cannot loop.
+  /// ROUND 25: signed out is not the same as "not an admin".
+  ///
+  /// Round 12 demoted a signed-out app to PROD unconditionally, and that broke
+  /// the only way into BETA: an admin flipped the switch, the demotion fired
+  /// before anyone could log in, and "Sign in" opened a link carrying
+  /// `api=prod` - the wrong control plane, on which the beta account does not
+  /// exist. A channel chosen by hand in this run therefore survives until a
+  /// session actually says otherwise; a channel merely restored from storage
+  /// still gets demoted, which is the trap Round 12 was written for.
   Future<void> demoteIfNotAdmin(AuthUser? user) async {
     if (!_active.isBeta) return;
     if (user?.isAdmin ?? false) return;
+    if (user == null && _explicitBetaChoice) return;
     debugPrint('channel: beta is admin-only, moving back to prod');
+    _explicitBetaChoice = false;
     await switchTo(AppChannel.prod);
   }
 
@@ -142,6 +160,7 @@ class ChannelController extends ChangeNotifier {
     notifyListeners();
     try {
       _apply(channel);
+      _explicitBetaChoice = channel.isBeta;
       await _store.writeActiveChannel(channel.id);
       await _onChannelChanged?.call(channel);
       await probe(channel);

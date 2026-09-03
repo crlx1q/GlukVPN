@@ -1,12 +1,12 @@
 ; GlukVPN Desktop installer (Inno Setup 6)
 ;
 ; Build with:
-;   iscc /DAppVersion=1.0.0 /DStageDir=..\..\dist\stage installer.iss
+;   iscc /DAppVersion=1.2.0 /DStageDir=..\..\dist\stage installer.iss
 ;
 ; build-all.ps1 passes both defines automatically.
 
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "1.2.0"
 #endif
 
 #ifndef StageDir

@@ -30,7 +30,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$OutDir,
 
-    [string]$Version = '1.0.0',
+    [string]$Version = '1.2.0',
 
     [switch]$SingleFile
 )

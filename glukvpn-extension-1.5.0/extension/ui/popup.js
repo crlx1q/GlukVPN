@@ -17,6 +17,7 @@
 
 import { createTranslator, resolveLanguage, errorKeyFor } from '../lib/i18n.js'
 import { formatNodeLocation, localizeCountry, localizeCity } from '../lib/geo.js'
+import { bestNode } from '../lib/pick.js'
 import { paintIcons, iconSvg } from './icons.js'
 import { flagSvg } from './flags.js'
 
@@ -560,9 +561,36 @@ function nodeById(id) {
 	return nodes.find((node) => String(node?.id ?? node?.nodeId) === String(id)) ?? null
 }
 
+/*
+ * Id of the server the browser is actually using.
+ *
+ * The service worker publishes what it connected to as `runtime.node`. There
+ * has never been a `runtime.nodeId`, so the old lookup always fell through to
+ * `preferredNodeId` - which is null after an automatic connect. That is why
+ * the card read "no server selected" while the tunnel was up.
+ */
+function activeNodeId() {
+	const live = state?.runtime?.node
+	const id = live?.id ?? live?.nodeId ?? settings.preferredNodeId
+	return id ? String(id) : ''
+}
+
 function activeNode() {
-	const id = state?.runtime?.nodeId ?? settings.preferredNodeId
-	return nodeById(id)
+	const live = state?.runtime?.node
+	// The row from the server list carries load and ping; the runtime copy is
+	// the fallback for a popup opened before the list finished loading.
+	if (live?.id ?? live?.nodeId) return nodeById(live.id ?? live.nodeId) ?? live
+
+	const manual = settings.preferredNodeId ? nodeById(settings.preferredNodeId) : null
+	if (manual) return manual
+
+	// Nothing was chosen by hand, so name the server Auto would take instead of
+	// claiming none is selected. Same ranking as Windows and Android.
+	// `paid` is left at its default: the control plane does not mark premium
+	// nodes yet, so nothing is filtered out by it today.
+	return bestNode(nodes, {
+		preferCountryCode: state?.runtime?.geo?.countryCode ?? '',
+	}).node
 }
 
 function renderVpn() {
@@ -666,7 +694,7 @@ function renderServers() {
 		list.appendChild(empty)
 		return
 	}
-	const activeId = String(state?.runtime?.nodeId ?? settings.preferredNodeId ?? '')
+	const activeId = activeNodeId() || String(activeNode()?.id ?? '')
 	nodes.forEach((node, index) => {
 		const id = String(node?.id ?? node?.nodeId ?? index)
 		const offline = node?.online === false || node?.status === 'offline'
@@ -1266,7 +1294,9 @@ async function togglePower() {
 				})
 			}, CONNECT_WATCHDOG_MS)
 		}
-		const nodeId = state?.runtime?.nodeId ?? settings.preferredNodeId ?? nodes[0]?.id ?? null
+		// Auto picks the target when the user never chose one, so a power click
+		// no longer means "whatever came first in the list".
+		const nodeId = activeNodeId() || activeNode()?.id || nodes[0]?.id || null
 		const response = going ? await call('disconnect', { silent: false }) : await call('connect', nodeId ? { nodeId } : {})
 		clearWatchdog()
 		if (!response?.ok) {

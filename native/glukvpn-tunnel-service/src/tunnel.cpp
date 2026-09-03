@@ -641,6 +641,26 @@ void Tunnel::PermitTunnelInterface(uint64_t luid) {
     }
 }
 
+// Blocks until no interface answers to `adapter`, or the timeout expires.
+//
+// Only ever called on the connect path, where a few hundred milliseconds are
+// invisible next to the tunnel handshake itself.
+static void WaitForAdapterToVanish(const std::wstring& adapter,
+                                   ULONGLONG timeoutMs) {
+    if (adapter.empty()) return;
+
+    NET_LUID luid{};
+    const ULONGLONG deadline = GetTickCount64() + timeoutMs;
+    while (ConvertInterfaceAliasToLuid(adapter.c_str(), &luid) == NO_ERROR) {
+        if (GetTickCount64() >= deadline) {
+            Log::Warn("The previous VPN adapter is still present; starting the "
+                      "new tunnel anyway");
+            return;
+        }
+        Sleep(100);
+    }
+}
+
 bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
                 std::string& errorMessage) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -731,6 +751,17 @@ bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
     startedUnix_ = NowUnix();
     status_.sinceUnix = startedUnix_;
     everHandshaked_ = false;
+
+    // ROUND 25: Disconnect immediately followed by Connect.
+    //
+    // Down() signals the stop event and joins the worker thread *outside* the
+    // lock, so a connect that arrives right after it can start the next data
+    // plane while the previous process is still tearing its adapter down. Two
+    // instances then race for the same interface name and the same DNS
+    // listeners, and the newcomer dies with an error the user reads as "it just
+    // does not connect". Waiting for the old adapter to vanish costs nothing
+    // on a normal connect and makes the fast reconnect boring.
+    WaitForAdapterToVanish(adapter_, 3000);
 
     running_ = true;
     stopRequested_ = false;

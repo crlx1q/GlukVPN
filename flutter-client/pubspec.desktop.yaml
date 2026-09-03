@@ -14,7 +14,7 @@
 name: glukvpn
 description: GlukVPN client
 publish_to: "none"
-version: 1.0.0+2
+version: 1.2.0+3
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

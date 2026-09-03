@@ -16,6 +16,7 @@
 import { Api, ApiError, REFRESH } from './lib/api.js'
 import { detectBrowser } from './lib/browser.js'
 import { ProxyEngine } from './lib/proxy.js'
+import { pickNode as chooseNode } from './lib/pick.js'
 import { DEFAULT_SETTINGS, Store } from './lib/store.js'
 import { generateKeyPair, isValidKey, publicKeyFor } from './lib/x25519.js'
 
@@ -283,14 +284,22 @@ async function ensureDeviceScope() {
 	throw lastError ?? new ApiError({ statusCode: 409, code: 'device_conflict', message: 'Could not register this browser.' })
 }
 
+/*
+ * Which node to connect to.
+ *
+ * The ranking itself lives in lib/pick.js, shared with the popup and ported
+ * from the Dart selector, so the browser, Windows and Android all answer the
+ * same way: latency first, then current load, then spare capacity. Sorting by
+ * load alone - what this used to do - sent everyone to an idle node on the
+ * other side of the planet.
+ */
 function pickNode(nodes, preferredId) {
-	const usable = nodes.filter((node) => node.connectable !== false && node.online !== false)
-	const pool = usable.length ? usable : nodes
-	if (preferredId) {
-		const match = pool.find((node) => node.id === preferredId)
-		if (match) return match
-	}
-	return [...pool].sort((a, b) => (a.loadPercent ?? 100) - (b.loadPercent ?? 100))[0] ?? null
+	const list = Array.isArray(nodes) ? nodes : []
+	const chosen = chooseNode(list, preferredId)
+	if (chosen.node) return chosen.node
+	// Nothing scored as usable: a stale heartbeat, or a one-node fleet that just
+	// went quiet. Trying it anyway beats refusing to connect at all.
+	return list[0] ?? null
 }
 
 /*

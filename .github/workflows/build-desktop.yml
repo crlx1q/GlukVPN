@@ -130,13 +130,13 @@ jobs:
       - name: Publish Windows Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: windows-v1.0.0-build${{ github.run_number }}
-          name: GlukVPN Windows v1.0.0 - Build ${{ github.run_number }}
+          tag_name: windows-v1.2.0-build${{ github.run_number }}
+          name: GlukVPN Windows v1.2.0 - Build ${{ github.run_number }}
           prerelease: true
           files: dist/GlukVPN-Setup-*.exe
           body: |
-            GlukVPN Windows Desktop Client - v1.0.0
+            GlukVPN Windows Desktop Client - v1.2.0
             
-            * Installer: `GlukVPN-Setup-1.0.0.exe`
+            * Installer: `GlukVPN-Setup-1.2.0.exe`
             * Commit: ${{ github.sha }}
             * Channel: Production
