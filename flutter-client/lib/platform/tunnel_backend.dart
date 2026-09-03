@@ -165,6 +165,70 @@ class TunnelSnapshot {
       'tx=$txBytes, err=$errorCode)';
 }
 
+/// Outbound gateway for the sing-box engine on Windows.
+///
+/// When this is present the privileged service runs sing-box instead of the
+/// WireGuard worker: packets leave the machine inside TLS, which the DPI
+/// equipment used by providers in Kazakhstan cannot tell apart from an
+/// ordinary HTTPS session. When it is absent nothing changes and the tunnel
+/// is brought up from [wgConf] exactly as before.
+class TunnelGateway {
+  const TunnelGateway({
+    required this.host,
+    required this.port,
+    required this.uuid,
+    this.type = 'vless',
+    this.sni,
+    this.flow,
+    this.insecure = false,
+  });
+
+  /// Node hostname. Also the TLS server name unless [sni] overrides it.
+  final String host;
+  final int port;
+
+  /// Per-device credential issued by the control plane.
+  final String uuid;
+
+  final String type;
+  final String? sni;
+  final String? flow;
+
+  /// Staging certificates only. Never true against production.
+  final bool insecure;
+
+  bool get usable => host.isNotEmpty && port > 0 && uuid.isNotEmpty;
+
+  Map<String, dynamic> toWire() => <String, dynamic>{
+        'type': type,
+        'host': host,
+        'port': port,
+        'uuid': uuid,
+        if (sni != null && sni!.isNotEmpty) 'sni': sni,
+        if (flow != null && flow!.isNotEmpty) 'flow': flow,
+        if (insecure) 'insecure': true,
+      };
+
+  /// Reads the gateway out of a session payload. Returns null when the node
+  /// did not advertise one, which is how a mixed fleet keeps working: those
+  /// sessions simply stay on WireGuard.
+  static TunnelGateway? fromJson(Map<String, dynamic>? json) {
+    if (json == null) return null;
+
+    final rawPort = json['port'];
+    final gateway = TunnelGateway(
+      host: ((json['host'] as String?) ?? '').trim(),
+      port: rawPort is num ? rawPort.toInt() : int.tryParse('$rawPort') ?? 0,
+      uuid: ((json['uuid'] as String?) ?? '').trim(),
+      type: (json['type'] as String?) ?? 'vless',
+      sni: json['sni'] as String?,
+      flow: json['flow'] as String?,
+      insecure: json['insecure'] == true,
+    );
+    return gateway.usable ? gateway : null;
+  }
+}
+
 /// Options passed when bringing a tunnel up.
 class TunnelUpOptions {
   const TunnelUpOptions({
@@ -176,6 +240,7 @@ class TunnelUpOptions {
     this.splitApps = const <String>[],
     this.bypassRoutes = const <String>[],
     this.endpointIps = const <String>[],
+    this.gateway,
     this.keepAlive = true,
   });
 
@@ -190,6 +255,9 @@ class TunnelUpOptions {
   /// Server endpoint IPs that must stay reachable outside the tunnel,
   /// otherwise the kill switch would strangle our own handshake.
   final List<String> endpointIps;
+
+  /// TLS gateway for the sing-box engine. Null keeps the WireGuard worker.
+  final TunnelGateway? gateway;
 
   final bool keepAlive;
 }

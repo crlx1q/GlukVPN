@@ -18,7 +18,13 @@ import 'package:win32/win32.dart';
 
 
 /// Bumped whenever the request/response shape changes incompatibly.
-const int kTunnelProtocolVersion = 1;
+///
+/// 2: "up" carries the sing-box gateway, plus the flat split keys the service
+///    has always read. Must stay in lockstep with kProtocolVersion in
+///    native/glukvpn-tunnel-service/src/pipe_server.h - the app and the
+///    service ship in the same installer, and a mismatch is reported rather
+///    than guessed at.
+const int kTunnelProtocolVersion = 2;
 
 const int _errorFileNotFound = 2;
 const int _errorAccessDenied = 5;

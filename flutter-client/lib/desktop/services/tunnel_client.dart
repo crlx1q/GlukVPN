@@ -105,12 +105,17 @@ class WindowsTunnelClient implements TunnelBackend {
       'killSwitch': options.killSwitch,
       'dns': options.dns,
       if (options.mtu != null) 'mtu': options.mtu,
-      'split': <String, dynamic>{
-        'mode': splitModeWire(options.splitMode),
-        'apps': options.splitApps,
-        'bypassRoutes': options.bypassRoutes,
-      },
+      // ROUND 24: flat keys, because those are the ones the service reads.
+      // The nested "split" object sent here before was silently ignored, so
+      // no split mode and no bypass route has ever reached the tunnel - and
+      // sing-box needs the bypass prefixes to keep the LAN out of the TUN.
+      'splitMode': splitModeWire(options.splitMode),
+      'splitApps': options.splitApps,
+      'bypassRoutes': options.bypassRoutes,
       'endpointIps': options.endpointIps,
+      // Present only when the node advertised a TLS gateway. That is what
+      // makes the service start sing-box instead of the WireGuard worker.
+      if (options.gateway != null) 'gateway': options.gateway!.toWire(),
     });
 
     return _resultFrom(reply);

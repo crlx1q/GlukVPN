@@ -23,7 +23,11 @@ namespace gluk {
 
 // Bumped whenever the message contract changes incompatibly. The client
 // refuses to talk to a service with a different value.
-constexpr int kProtocolVersion = 1;
+//
+// 2: "up" carries a gateway object, which selects the sing-box engine. Must
+//    stay in lockstep with kTunnelProtocolVersion in
+//    flutter-client/lib/desktop/services/tunnel_ipc.dart.
+constexpr int kProtocolVersion = 2;
 
 #ifndef GLUK_SERVICE_VERSION
 #define GLUK_SERVICE_VERSION "1.0.0"
