@@ -5,7 +5,12 @@ import { conflict, forbidden, notFound, serviceUnavailable } from "../lib/errors
 import { usableHostIps } from "../lib/ip"
 import { bytesToNumber, prisma } from "../prisma"
 import { enqueueCommand, hasOpenCommand } from "./nodeCommands"
-import { isNodeConnectable, nodeEndpoint, effectiveNodeStatus } from "./nodes"
+import {
+	effectiveNodeStatus,
+	isNodeConnectable,
+	nodeEndpoint,
+	nodeHost,
+} from "./nodes"
 
 const ACTIVE_SESSION_STATES = ["PENDING", "ACTIVE"] as const
 
@@ -19,6 +24,20 @@ export type ClientTunnelConfig = {
 	endpoint: string
 	allowedIps: string[]
 	persistentKeepalive: number
+
+	/**
+	 * ROUND 24: the TLS gateway the Windows client should use instead of raw
+	 * WireGuard. Absent when the operator has not configured one, and then the
+	 * client behaves exactly as it did before.
+	 */
+	gateway?: {
+		type: "vless"
+		host: string
+		port: number
+		uuid: string
+		sni?: string
+		flow?: string
+	}
 }
 
 export type SessionView = {
@@ -235,6 +254,20 @@ export async function connectSession(params: {
 		throw serviceUnavailable("Node has not published its WireGuard key yet")
 	}
 
+	// The gateway is optional on purpose: a node that has not been migrated yet
+	// simply does not advertise one.
+	const vlessUuid = config.VLESS_UUID.trim()
+	const gateway = vlessUuid
+		? {
+				type: "vless" as const,
+				host: config.VLESS_HOST.trim() || nodeHost(node),
+				port: config.VLESS_PORT,
+				uuid: vlessUuid,
+				sni: config.VLESS_SNI.trim() || undefined,
+				flow: config.VLESS_FLOW.trim() || undefined,
+			}
+		: undefined
+
 	return {
 		session,
 		node,
@@ -248,6 +281,7 @@ export async function connectSession(params: {
 			endpoint: nodeEndpoint(node),
 			allowedIps: ["0.0.0.0/0"],
 			persistentKeepalive: 25,
+			...(gateway ? { gateway } : {}),
 		},
 	}
 }

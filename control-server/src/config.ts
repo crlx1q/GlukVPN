@@ -70,6 +70,18 @@ const EnvSchema = z.object({
 	NODE_HEARTBEAT_INTERVAL_SEC: z.coerce.number().int().min(5).max(300).default(10),
 	NODE_OFFLINE_AFTER_SEC: z.coerce.number().int().min(15).max(900).default(30),
 
+	// ROUND 24: the sing-box VLESS gateway handed to desktop clients, printed
+	// by node-agent/deploy/install-singbox.sh. An empty VLESS_UUID means "no
+	// gateway", and every client keeps using WireGuard, so filling these in is
+	// what actually switches the fleet over.
+	VLESS_UUID: z.string().default(""),
+	VLESS_PORT: z.coerce.number().int().min(1).max(65535).default(443),
+	// Defaults to the node's own hostname, which is the name its certificate is
+	// issued for. Override only when the TLS name differs from the hostname.
+	VLESS_HOST: z.string().default(""),
+	VLESS_SNI: z.string().default(""),
+	VLESS_FLOW: z.string().default("xtls-rprx-vision"),
+
 	MAX_DEVICES_PER_USER: z.coerce.number().int().min(1).max(100).default(3),
 	MAX_CONCURRENT_SESSIONS: z.coerce.number().int().min(1).max(50).default(1),
 	LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(100).default(5),

@@ -512,6 +512,7 @@ class TunnelConfig {
     required this.endpoint,
     required this.allowedIps,
     required this.persistentKeepalive,
+    this.gateway = const <String, dynamic>{},
   });
 
   factory TunnelConfig.fromJson(Map<String, dynamic> json) => TunnelConfig(
@@ -523,6 +524,7 @@ class TunnelConfig {
         endpoint: _asString(json['endpoint']),
         allowedIps: _asStringList(json['allowedIps']),
         persistentKeepalive: _asInt(json['persistentKeepalive'], 25),
+        gateway: _asMap(json['gateway']),
       );
 
   final String sessionId;
@@ -535,6 +537,14 @@ class TunnelConfig {
   final String endpoint;
   final List<String> allowedIps;
   final int persistentKeepalive;
+
+  /// ROUND 24: the TLS gateway this node offers, when it has one.
+  ///
+  /// Kept as a raw map so this model stays platform-neutral: Android ignores
+  /// it, and the Windows layer turns it into a typed gateway. Empty means the
+  /// node has not been migrated and the WireGuard fields above are the only
+  /// way in.
+  final Map<String, dynamic> gateway;
 
   String get assignedIp => interfaceAddress.split('/').first;
 

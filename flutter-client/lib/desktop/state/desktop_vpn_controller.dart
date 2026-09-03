@@ -533,6 +533,10 @@ class DesktopVpnController extends ChangeNotifier {
         // must never travel through the tunnel.
         bypassRoutes: settings.bypassRoutes,
         endpointIps: _activeEndpointIps,
+        // When the node advertises a sing-box gateway, the service runs
+        // sing-box against it instead of the WireGuard worker. A node without
+        // one yields null here and nothing about this connect changes.
+        gateway: TunnelGateway.fromJson(result.tunnel.gateway),
       );
 
       _setPhase(ConnectionPhase.connecting, detail: 'bringing_up');
