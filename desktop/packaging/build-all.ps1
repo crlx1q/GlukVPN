@@ -174,9 +174,28 @@ if (-not $SkipNative) {
         Pop-Location
     }
 
+    # 3. sing-box.exe - the DPI-resistant data plane (round 24). Official
+    #    release binary, unmodified: it owns the Wintun adapter, installs the
+    #    routes itself through auto_route, and wraps the traffic in TLS so the
+    #    provider cannot fingerprint a WireGuard header.
+    $singbox = Join-Path $vendor 'sing-box.exe'
+    if (-not (Test-Path $singbox)) {
+        Write-Note 'Fetching sing-box.exe (latest official windows-amd64 release)'
+        $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/SagerNet/sing-box/releases/latest' -UseBasicParsing
+        $asset = $release.assets | Where-Object { $_.name -like 'sing-box-*-windows-amd64.zip' } | Select-Object -First 1
+        if (-not $asset) { throw 'The latest sing-box release has no windows-amd64 archive.' }
+        $singboxZip = Join-Path $wgTemp 'sing-box.zip'
+        Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $singboxZip -UseBasicParsing
+        Expand-Archive -Path $singboxZip -DestinationPath (Join-Path $wgTemp 'sing-box') -Force
+        $found = Get-ChildItem -Path (Join-Path $wgTemp 'sing-box') -Filter 'sing-box.exe' -Recurse | Select-Object -First 1
+        if (-not $found) { throw 'sing-box.exe was not found inside the release archive.' }
+        Copy-Item $found.FullName $singbox -Force
+        Write-Note "Vendored sing-box $($release.tag_name)"
+    }
+
     Remove-Item $wgTemp -Recurse -Force -ErrorAction SilentlyContinue
 
-    foreach ($artifact in @('glukvpn-wg.exe', 'wintun.dll')) {
+    foreach ($artifact in @('glukvpn-wg.exe', 'wintun.dll', 'sing-box.exe')) {
         if (-not (Test-Path (Join-Path $vendor $artifact))) {
             throw "$artifact is missing from vendor\amd64 and could not be produced. Without it the client reports driver_unavailable and can never connect. See $vendor\README.md"
         }
@@ -297,7 +316,7 @@ $serviceOut = Join-Path $NativeBuild $Configuration
 if (Test-Path $serviceOut) {
     Copy-Item (Join-Path $serviceOut 'GlukVpnTunnelService.exe') `
         (Join-Path $Stage 'service') -Force
-    foreach ($artifact in @('glukvpn-wg.exe', 'wintun.dll')) {
+    foreach ($artifact in @('glukvpn-wg.exe', 'wintun.dll', 'sing-box.exe')) {
         $source = Join-Path $serviceOut $artifact
         if (Test-Path $source) {
             Copy-Item $source (Join-Path $Stage 'service') -Force

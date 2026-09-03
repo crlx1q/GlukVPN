@@ -69,7 +69,25 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'go build failed for the tunnel data plane' }
           Pop-Location
 
-          foreach ($artifact in @('glukvpn-wg.exe', 'wintun.dll')) {
+          # 3. sing-box.exe - the DPI-resistant data plane (round 24).
+          #    Official release binary, taken unmodified. It creates the
+          #    Wintun adapter itself and installs routes through auto_route,
+          #    so none of the hand-written Windows plumbing is on the path.
+          #    It loads the same wintun.dll fetched above.
+          $singbox = Join-Path $vendor 'sing-box.exe'
+          if (-not (Test-Path $singbox)) {
+            $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/SagerNet/sing-box/releases/latest' -UseBasicParsing
+            $asset = $release.assets | Where-Object { $_.name -like 'sing-box-*-windows-amd64.zip' } | Select-Object -First 1
+            if (-not $asset) { throw 'The latest sing-box release has no windows-amd64 archive.' }
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile singbox.zip -UseBasicParsing
+            Expand-Archive -Path singbox.zip -DestinationPath singbox -Force
+            $found = Get-ChildItem -Path singbox -Filter 'sing-box.exe' -Recurse | Select-Object -First 1
+            if (-not $found) { throw 'sing-box.exe was not found inside the release archive.' }
+            Copy-Item $found.FullName $singbox -Force
+            Write-Host "vendored sing-box $($release.tag_name)"
+          }
+
+          foreach ($artifact in @('glukvpn-wg.exe', 'wintun.dll', 'sing-box.exe')) {
             if (-not (Test-Path (Join-Path $vendor $artifact))) { throw "$artifact is missing from $vendor" }
           }
           Get-ChildItem $vendor | Format-Table Name, Length

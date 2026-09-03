@@ -90,7 +90,11 @@ endif()
 # them (desktop\packaging\build-all.ps1 does it automatically).
 set(GLUK_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vendor/amd64")
 
-foreach(artifact glukvpn-wg.exe wintun.dll)
+# ROUND 24. sing-box.exe joins the payload: the official release build of the
+# DPI-resistant data plane. It drives the same wintun.dll, installs its own
+# routes through auto_route, and wraps the traffic in TLS, so a provider that
+# fingerprints the WireGuard header sees ordinary HTTPS instead.
+foreach(artifact glukvpn-wg.exe wintun.dll sing-box.exe)
     if(EXISTS "${GLUK_VENDOR_DIR}/${artifact}")
         add_custom_command(TARGET GlukVpnTunnelService POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
