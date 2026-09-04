@@ -755,6 +755,223 @@ td.actions {
 	background: rgba(255, 107, 107, 0.12);
 }
 
+/* ---------- oracle cloud egress budget ---------- */
+
+.egress {
+	display: grid;
+	gap: 14px;
+}
+
+.egress-metrics {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+	gap: 11px;
+}
+
+.egress-metric {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	padding: 12px 14px 13px;
+	border-radius: 14px;
+	background: var(--cell);
+	border: 1px solid var(--stroke);
+}
+
+.egress-metric span {
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	color: var(--text-2);
+}
+
+.egress-metric strong {
+	font-size: 19px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-0);
+}
+
+.egress-metric.is-ok strong {
+	color: var(--ok);
+}
+
+.egress-metric.is-warn strong {
+	color: var(--amber);
+}
+
+.egress-metric.is-high strong {
+	color: #ff9f45;
+}
+
+.egress-metric.is-crit strong {
+	color: var(--danger);
+}
+
+.egress-gauge {
+	position: relative;
+	height: 18px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.06);
+	border: 1px solid var(--stroke);
+	overflow: hidden;
+}
+
+.egress-gauge i {
+	position: absolute;
+	top: 0;
+	left: 0;
+	bottom: 0;
+	display: block;
+	min-width: 3px;
+	border-radius: 999px;
+	background: linear-gradient(90deg, #22c58a, var(--ok));
+	box-shadow: 0 0 18px rgba(61, 220, 151, 0.55);
+	transition: width 0.5s ease;
+}
+
+.egress-gauge.is-warn i {
+	background: linear-gradient(90deg, #d99b3f, var(--amber));
+	box-shadow: 0 0 18px rgba(240, 181, 103, 0.55);
+}
+
+.egress-gauge.is-high i {
+	background: linear-gradient(90deg, #f0812f, #ff9f45);
+	box-shadow: 0 0 18px rgba(255, 159, 69, 0.55);
+}
+
+.egress-gauge.is-crit i {
+	background: linear-gradient(90deg, #e04848, var(--danger));
+	box-shadow: 0 0 20px rgba(255, 107, 107, 0.65);
+}
+
+.egress-gauge b {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 2px;
+	margin-left: -1px;
+	background: rgba(255, 255, 255, 0.32);
+}
+
+.egress-gauge b.is-sent {
+	background: var(--danger);
+	box-shadow: 0 0 9px rgba(255, 107, 107, 0.85);
+}
+
+.egress-legend {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	gap: 10px;
+	font-size: 12.5px;
+	font-variant-numeric: tabular-nums;
+}
+
+.egress-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+	padding: 12px 14px;
+	border-radius: 14px;
+	background: var(--cell);
+	border: 1px solid var(--stroke);
+}
+
+.egress-row strong {
+	font-size: 14px;
+	font-variant-numeric: tabular-nums;
+}
+
+.egress-row.is-ok {
+	border-color: rgba(61, 220, 151, 0.34);
+	box-shadow: inset 0 0 24px rgba(61, 220, 151, 0.08);
+}
+
+.egress-row.is-ok strong {
+	color: var(--ok);
+}
+
+.egress-row.is-bad {
+	border-color: rgba(255, 107, 107, 0.44);
+	box-shadow: inset 0 0 24px rgba(255, 107, 107, 0.1);
+}
+
+.egress-row.is-bad strong {
+	color: var(--danger);
+}
+
+.egress-label {
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	color: var(--text-2);
+}
+
+.egress-alerts {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+}
+
+.thr {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 11px;
+	border-radius: 999px;
+	border: 1px solid var(--stroke);
+	background: rgba(255, 255, 255, 0.03);
+	font-size: 11px;
+	font-weight: 700;
+	color: var(--text-1);
+	font-variant-numeric: tabular-nums;
+}
+
+.thr i {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--text-2);
+}
+
+.thr.is-armed i {
+	background: var(--violet);
+	box-shadow: 0 0 8px rgba(139, 92, 246, 0.8);
+}
+
+.thr.is-sent {
+	color: var(--amber);
+	border-color: rgba(240, 181, 103, 0.45);
+	background: rgba(240, 181, 103, 0.12);
+}
+
+.thr.is-sent i {
+	background: var(--amber);
+	box-shadow: 0 0 8px rgba(240, 181, 103, 0.85);
+}
+
+.thr.is-missed {
+	color: var(--danger);
+	border-color: rgba(255, 107, 107, 0.45);
+	background: rgba(255, 107, 107, 0.12);
+}
+
+.thr.is-missed i {
+	background: var(--danger);
+	box-shadow: 0 0 8px rgba(255, 107, 107, 0.85);
+}
+
+.egress-error {
+	margin: 0;
+	font-size: 12px;
+	color: var(--danger);
+}
+
 /* ---------- notices and toast ---------- */
 
 .notice {

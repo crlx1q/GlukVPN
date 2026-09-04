@@ -1149,3 +1149,88 @@
   .acs-tile__glow{background:radial-gradient(circle,rgba(139,92,246,.34),transparent 68%)}
   .acs-tile:hover{border-color:var(--stroke-violet)}
 }
+
+/* --------------------------------------------------------------- период ---
+   Переключатель «1 месяц / 3 месяца» на странице тарифов. Рисуется
+   billing.js и только тогда, когда квартальные тарифы реально есть.  */
+.plan-period {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto 22px;
+  padding: 5px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-pill);
+  background: var(--glass);
+}
+
+.plan-period__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-soft), color var(--t-fast) var(--ease-soft);
+}
+
+.plan-period__btn:hover {
+  color: var(--text-0);
+}
+
+.plan-period__btn.is-on {
+  background: var(--grad-cta);
+  color: #fff;
+  box-shadow: var(--glow-violet);
+}
+
+.plan-period__save {
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  background: rgba(94, 231, 163, 0.16);
+  color: var(--green);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-period__btn.is-on .plan-period__save {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+/* Выгода конкретного тарифа под ценой. */
+.plan__save {
+  margin: 6px 0 0;
+  color: var(--green);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .plan-period {
+    width: 100%;
+  }
+
+  .plan-period__btn {
+    flex: 1 1 0;
+    justify-content: center;
+    padding: 9px 12px;
+    font-size: 0.85rem;
+  }
+}
+
+/* До ответа API тумблер скрыт атрибутом hidden, а display:flex выше его
+   перебивает — возвращаем поведение явно. */
+.plan-period[hidden] {
+  display: none;
+}

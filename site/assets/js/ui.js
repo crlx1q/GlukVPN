@@ -9,6 +9,8 @@
   "use strict";
 
   var CFG = window.GLUK_CONFIG || {};
+  var PRICING = CFG.pricing || {};
+  var EN = (document.documentElement.getAttribute("data-lang") || "ru").toLowerCase() === "en";
   var BASE = document.documentElement.getAttribute("data-base") || ".";
 
   var $ = function (sel, root) {
@@ -136,17 +138,68 @@
   }
 
   /* ------------------------------------------------------- цены из config */
-  function priceText(plan) {
-    var p = CFG.pricing || {};
-    var label = plan.priceLabel != null ? plan.priceLabel : String(plan.price);
-    if (!plan.price) return "0";
-    return p.currencyPosition === "before"
-      ? (p.currency || "") + label
-      : label + " " + (p.currency || "");
+  /* Валюта до ответа API: /en/ считаем долларовым, остальное — как в
+     config. Гадать по navigator нельзя: цена прыгала бы с ₸ на ₽ и обратно,
+     а настоящую валюту всё равно назначает бэкенд по стране.        */
+  var CUR = EN ? "USD" : PRICING.defaultCurrency || "KZT";
+
+  function curConf(code) {
+    var all = PRICING.currencies || {};
+    return (
+      all[String(code || CUR).toUpperCase()] || {
+        symbol: "",
+        position: "after",
+        decimals: 0,
+        locale: "ru-RU",
+      }
+    );
   }
 
+  /* Минорные единицы (как priceMinor в API) -> "790 ₸" или "$1.99". */
+  function money(minor, code) {
+    var c = curConf(code);
+    var amount = (Number(minor) || 0) / 100;
+    var digits = c.decimals || 0;
+    var num;
+    try {
+      num = amount.toLocaleString(c.locale || "ru-RU", {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+      });
+    } catch (e) {
+      num = amount.toFixed(digits);
+    }
+    return c.position === "before" ? c.symbol + num : num + "\u00a0" + c.symbol;
+  }
+
+  function minorFor(plan, periodId, code) {
+    var row = ((plan && plan.prices) || {})[periodId || PRICING.defaultPeriod || "monthly"] || {};
+    return Number(row[String(code || CUR).toUpperCase()]) || 0;
+  }
+
+  function periodSuffix(periodId) {
+    var list = PRICING.periods || [];
+    var want = periodId || PRICING.defaultPeriod || "monthly";
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === want) return EN ? list[i].suffixEn || list[i].suffix : list[i].suffix;
+    }
+    return EN ? "mo" : "мес";
+  }
+
+  function priceText(plan) {
+    var minor = minorFor(plan, PRICING.defaultPeriod, CUR);
+    return minor ? money(minor, CUR) : "0";
+  }
+
+  /* billing.js на /pricing/ форматирует суммы этими же правилами. */
+  window.GlukPrice = {
+    money: money,
+    minorFor: minorFor,
+    periodSuffix: periodSuffix,
+    currency: CUR,
+  };
+
   function planCard(plan) {
-    var p = CFG.pricing || {};
     var features = (plan.features || [])
       .map(function (f) {
         return (
@@ -173,7 +226,7 @@
       '<div class="plan__price"><span class="plan__amount">' +
       priceText(plan) +
       '</span><span class="plan__period">/ ' +
-      (p.period || "мес") +
+      periodSuffix(PRICING.defaultPeriod) +
       "</span></div>" +
       '<p class="plan__note">' +
       (plan.tagline || "") +

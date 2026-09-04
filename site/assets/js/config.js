@@ -101,59 +101,93 @@ window.GLUK_CONFIG = {
   },
 
   /* ------------------------------------------------------------- тарифы ---
-     Цены предварительные. Меняются только здесь.                          */
+     Запасная копия матрицы цен. Главный источник — база контрол-
+     сервера через GET /api/billing/plans; эти значения показываются,
+     пока API не ответил или недоступен. Держите их в одном виде с
+     миграцией plan_currency_matrix, иначе цена будет прыгать при загрузке. */
   pricing: {
-    currency: "₸",
-    currencyPosition: "after", // "after" -> 1 990 ₸
-    period: "мес",
+    /* Валюта и период до ответа API. Реальную валюту выбирает бэкенд
+       по стране (Cloudflare CF-IPCountry): KZ -> KZT, RU -> RUB, остальные -> USD. */
+    defaultCurrency: "KZT",
+    defaultPeriod: "monthly",
+    /* Формат сумм: decimals 0 -> 790 ₸, decimals 2 -> $1.99. */
+    currencies: {
+      KZT: { symbol: "₸", position: "after", decimals: 0, locale: "ru-RU" },
+      RUB: { symbol: "₽", position: "after", decimals: 0, locale: "ru-RU" },
+      USD: { symbol: "$", position: "before", decimals: 2, locale: "en-US" },
+    },
+    /* days совпадает с plans.days на бэкенде (30 и 90) — по нему
+       раскладываются ответы API по переключателю периода.            */
+    periods: [
+      { id: "monthly", days: 30, label: "1 месяц", labelEn: "1 month", suffix: "мес", suffixEn: "mo" },
+      { id: "quarterly", days: 90, label: "3 месяца", labelEn: "3 months", suffix: "3 мес", suffixEn: "3 mo" },
+    ],
     note: "Цены предварительные и могут измениться до публичного запуска. Оплата и списания появятся вместе с релизом биллинга.",
     plans: [
       {
         id: "free",
         name: "Free",
-        price: 0,
-        priceLabel: "0",
+        tier: 0,
+        /* Коды из таблицы plans: именно их CTA отправляет в заказ.
+           У Free одна запись на любой период.                          */
+        codes: { monthly: "free", quarterly: "free" },
+        /* Минорные единицы, как priceMinor в API: 79000 = 790,00 ₸. */
+        prices: {
+          monthly: { KZT: 0, RUB: 0, USD: 0 },
+          quarterly: { KZT: 0, RUB: 0, USD: 0 },
+        },
         badge: "",
         tagline: "Попробовать без оплаты",
         cta: { label: "Начать бесплатно", href: "/download/" },
         features: [
-          { text: "1 регион на выбор системы", on: true },
           { text: "1 устройство", on: true },
-          { text: "Ограниченная скорость", on: true },
-          { text: "Kill switch", on: false },
+          { text: "5 GB в месяц", on: true },
+          { text: "Auto Best Server", on: true },
+          { text: "Kill Switch", on: true },
+          { text: "Выбор сервера", on: false },
           { text: "Приоритетная поддержка", on: false },
         ],
       },
       {
         id: "basic",
         name: "Basic",
-        price: 1490,
-        priceLabel: "1 490",
+        tier: 1,
+        codes: { monthly: "basic", quarterly: "basic_3m" },
+        prices: {
+          monthly: { KZT: 79000, RUB: 15000, USD: 199 },
+          quarterly: { KZT: 199000, RUB: 37900, USD: 499 },
+        },
         badge: "Популярный",
         featured: true,
         tagline: "Для повседневного использования",
         cta: { label: "Выбрать Basic", href: "/pricing/" },
         features: [
-          { text: "Все доступные регионы", on: true },
-          { text: "До 3 устройств", on: true },
-          { text: "Полная скорость канала", on: true },
-          { text: "Kill switch и DNS-защита", on: true },
+          { text: "3 устройства", on: true },
+          { text: "3 одновременных подключения", on: true },
+          { text: "50 GB в месяц", on: true },
+          { text: "Выбор сервера", on: true },
+          { text: "DNS Protection и Kill Switch", on: true },
           { text: "Приоритетная поддержка", on: false },
         ],
       },
       {
         id: "pro",
         name: "Pro",
-        price: 2490,
-        priceLabel: "2 490",
+        tier: 2,
+        codes: { monthly: "pro", quarterly: "pro_3m" },
+        prices: {
+          monthly: { KZT: 149000, RUB: 29000, USD: 399 },
+          quarterly: { KZT: 399000, RUB: 73900, USD: 999 },
+        },
         badge: "",
         tagline: "Для семьи и всех устройств",
         cta: { label: "Выбрать Pro", href: "/pricing/" },
         features: [
-          { text: "Все регионы + ранний доступ к новым", on: true },
-          { text: "До 10 устройств", on: true },
-          { text: "Полная скорость канала", on: true },
-          { text: "Kill switch и DNS-защита", on: true },
+          { text: "5 устройств", on: true },
+          { text: "5 одновременных подключений", on: true },
+          { text: "150 GB в месяц", on: true },
+          { text: "Все серверы и новые регионы первыми", on: true },
+          { text: "DNS Protection и Kill Switch", on: true },
           { text: "Приоритетная поддержка", on: true },
         ],
       },

@@ -609,7 +609,236 @@ function renderAudit(logs) {
 	}
 }
 
+/* ---------------- oracle cloud egress budget ---------------- */
+
+/** Oracle bills egress in decimal terabytes, so 1 TB is 1e12 bytes here too. */
+const EGRESS_BYTES_PER_TB = 1e12
+
+/**
+ * Alert band for the gauge: green below the first threshold, then yellow,
+ * orange and red as each next configured threshold is crossed. With the
+ * default OCI_EGRESS_ALERT_TB="7,8,9,9.5" that is <7 / 7-8 / 8-9 / >9 TB.
+ */
+function egressLevel(usedBytes, thresholds) {
+	const usedTb = Number(usedBytes || 0) / EGRESS_BYTES_PER_TB
+	const crossed = (thresholds || []).filter((tb) => usedTb >= tb).length
+	if (crossed <= 0) return "ok"
+	if (crossed === 1) return "warn"
+	if (crossed === 2) return "high"
+	return "crit"
+}
+
+/** The server already rounds to one decimal; never print a padded "12.0%". */
+function egressPercent(value) {
+	const number = Number(value || 0)
+	return `${Number.isInteger(number) ? number : number.toFixed(1)}%`
+}
+
+function egressDate(iso) {
+	if (!iso) return "—"
+	const date = new Date(iso)
+	return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString()
+}
+
+function egressMoney(amount, currency) {
+	const code = String(currency || "USD").toUpperCase()
+	const value = Number(amount || 0).toFixed(2)
+	if (code === "USD") return `$${value}`
+	if (code === "EUR") return `€${value}`
+	return `${value} ${code}`
+}
+
+function egressMetric(label, value, level) {
+	const box = document.createElement("div")
+	box.className = level ? `egress-metric is-${level}` : "egress-metric"
+	const caption = document.createElement("span")
+	caption.textContent = label
+	const amount = document.createElement("strong")
+	amount.textContent = value
+	box.append(caption, amount)
+	return box
+}
+
+function egressRow(label, value, tone, hint) {
+	const row = document.createElement("div")
+	row.className = tone ? `egress-row is-${tone}` : "egress-row"
+	const caption = document.createElement("span")
+	caption.className = "egress-label"
+	caption.textContent = label
+	const text = document.createElement("strong")
+	text.textContent = value
+	row.append(caption, text)
+	if (hint) {
+		const note = document.createElement("span")
+		note.className = "muted small"
+		note.textContent = hint
+		row.appendChild(note)
+	}
+	return row
+}
+
+/** "31.08.2026 → 30.09.2026 · 26 days left" */
+function egressCycle(view) {
+	if (!view.cycleStart || !view.cycleEnd) return "not configured"
+	const left = Math.max(0, Math.ceil((new Date(view.cycleEnd).getTime() - Date.now()) / 86400000))
+	return `${egressDate(view.cycleStart)} → ${egressDate(view.cycleEnd)} · ${left} days left`
+}
+
+/** Always Free means a zero bill, so show the real charge, not a promise. */
+function egressCostRow(charges) {
+	if (!charges) {
+		return egressRow(
+			"Cost status",
+			"Charges: no data",
+			null,
+			"The Usage API check is disabled or has not run yet.",
+		)
+	}
+	if (Number(charges.amount) > 0) {
+		return egressRow(
+			"Cost status",
+			`Charges: ${egressMoney(charges.amount, charges.currency)}`,
+			"bad",
+			"Zero was expected: paid resources appeared in the tenancy.",
+		)
+	}
+	return egressRow(
+		"Cost status",
+		`Charges: ${egressMoney(0, charges.currency)} · Zero Cost OK`,
+		"ok",
+		"Always Free: no paid charges in this cycle.",
+	)
+}
+
+function renderEgressBudget(view) {
+	const body = el("egress-body")
+	body.textContent = ""
+	el("egress-updated").textContent = view.lastPolledAt ? ago(view.lastPolledAt) : "—"
+
+	const wrap = document.createElement("div")
+	wrap.className = "egress"
+
+	// Without OCI credentials every number here would be an invented zero.
+	if (!view.configured) {
+		const note = document.createElement("div")
+		note.className = "notice"
+		const title = document.createElement("strong")
+		title.textContent = "Oracle egress tracking is not configured"
+		const text = document.createElement("p")
+		text.className = "muted small"
+		text.textContent = `Set OCI_* and OCI_BILLING_CYCLE_START in the control server .env to see usage against the ${view.budgetLabel} budget and the charges.`
+		note.append(title, text)
+		wrap.appendChild(note)
+		body.appendChild(wrap)
+		return
+	}
+
+	const level = egressLevel(view.usedBytes, view.thresholdsTb)
+	const usedTb = Number(view.usedBytes || 0) / EGRESS_BYTES_PER_TB
+
+	const metrics = document.createElement("div")
+	metrics.className = "egress-metrics"
+	metrics.append(
+		egressMetric("Used", `${view.usedLabel} (${egressPercent(view.usedPercent)})`, level),
+		egressMetric("Remaining", view.remainingLabel),
+		egressMetric("Always Free budget", view.budgetLabel),
+	)
+	wrap.appendChild(metrics)
+
+	const gauge = document.createElement("div")
+	gauge.className = `egress-gauge is-${level}`
+	gauge.setAttribute("role", "progressbar")
+	gauge.setAttribute("aria-valuemin", "0")
+	gauge.setAttribute("aria-valuemax", "100")
+	gauge.setAttribute("aria-valuenow", String(Math.round(Number(view.usedPercent || 0))))
+	gauge.setAttribute("aria-label", `Used ${view.usedLabel} of ${view.budgetLabel}`)
+	const fill = document.createElement("i")
+	// The CSP has no unsafe-inline, so sizes go through the CSSOM, like loadBar.
+	fill.style.width = `${Math.max(0, Math.min(100, Number(view.usedPercent || 0)))}%`
+	gauge.appendChild(fill)
+	// Marks sit at the real position of every Telegram threshold on the scale.
+	for (const tb of view.thresholdsTb || []) {
+		const at = (tb * EGRESS_BYTES_PER_TB) / (view.budgetBytes || EGRESS_BYTES_PER_TB)
+		if (!(at > 0) || at >= 1) continue
+		const tick = document.createElement("b")
+		if ((view.alertedTb || []).includes(tb)) tick.className = "is-sent"
+		tick.style.left = `${at * 100}%`
+		tick.title = `${tb} TB threshold`
+		gauge.appendChild(tick)
+	}
+	wrap.appendChild(gauge)
+
+	const legend = document.createElement("div")
+	legend.className = "egress-legend"
+	const used = document.createElement("span")
+	used.textContent = `Used: ${view.usedLabel} / ${view.budgetLabel} (${egressPercent(view.usedPercent)})`
+	const remaining = document.createElement("span")
+	remaining.className = "muted"
+	remaining.textContent = `Remaining: ${view.remainingLabel}`
+	legend.append(used, remaining)
+	wrap.appendChild(legend)
+
+	wrap.appendChild(egressRow("Billing cycle", egressCycle(view)))
+	wrap.appendChild(egressCostRow(view.charges))
+
+	const alerts = document.createElement("div")
+	alerts.className = "egress-alerts"
+	const alertsLabel = document.createElement("span")
+	alertsLabel.className = "egress-label"
+	alertsLabel.textContent = "Telegram alerts"
+	alerts.appendChild(alertsLabel)
+	for (const tb of view.thresholdsTb || []) {
+		const sent = (view.alertedTb || []).includes(tb)
+		// Crossed but never announced means the bot could not deliver the alert.
+		const missed = !sent && usedTb >= tb
+		const pill = document.createElement("span")
+		pill.className = `thr ${sent ? "is-sent" : missed ? "is-missed" : "is-armed"}`
+		pill.title = sent
+			? "Alert sent"
+			: missed
+				? "Threshold crossed, but no alert was sent"
+				: "Waiting for the threshold"
+		const dot = document.createElement("i")
+		const text = document.createElement("span")
+		text.textContent = `${tb} TB`
+		pill.append(dot, text)
+		alerts.appendChild(pill)
+	}
+	if (!(view.thresholdsTb || []).length) {
+		const none = document.createElement("span")
+		none.className = "muted small"
+		none.textContent = "no thresholds set (OCI_EGRESS_ALERT_TB)"
+		alerts.appendChild(none)
+	}
+	wrap.appendChild(alerts)
+
+	if (view.lastError) {
+		const error = document.createElement("p")
+		error.className = "egress-error"
+		error.textContent = `The last Oracle poll failed: ${view.lastError}`
+		wrap.appendChild(error)
+	}
+
+	body.appendChild(wrap)
+}
+
 /* ---------------- data loading ---------------- */
+
+/** Oracle figures are optional data: a 404 must not blank the dashboard. */
+async function loadEgressBudget() {
+	try {
+		renderEgressBudget(await request("/api/admin/traffic-budget"))
+	} catch (error) {
+		if (error.status !== 404) throw error
+		const body = el("egress-body")
+		body.textContent = ""
+		const note = document.createElement("p")
+		note.className = "muted small"
+		note.textContent = "This control server does not serve /api/admin/traffic-budget yet."
+		body.appendChild(note)
+		el("egress-updated").textContent = "—"
+	}
+}
 
 async function loadDeploy() {
 	try {
@@ -641,7 +870,8 @@ async function loadAll() {
 		renderDevices(devices.devices)
 		renderSessions(sessions.sessions)
 		renderAudit(audit.logs)
-		await loadDeploy()
+		// Both tolerate a 404 from an older control server.
+		await Promise.all([loadEgressBudget(), loadDeploy()])
 	} catch (error) {
 		if (error.status === 401 || error.status === 403) signOut(error.message)
 		else toast(error.message, true)
