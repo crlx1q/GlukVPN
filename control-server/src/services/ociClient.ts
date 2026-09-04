@@ -93,7 +93,7 @@ type SignedRequest = {
 	body?: unknown
 }
 
-async function signedRequest<T>(request: SignedRequest): Promise<T> {
+export async function signedRequest<T>(request: SignedRequest): Promise<T> {
 	const creds = credentials()
 	const date = new Date().toUTCString()
 	const payload = request.body === undefined ? "" : JSON.stringify(request.body)

@@ -231,10 +231,10 @@ const EnvSchema = z.object({
 	OCI_COMPARTMENT_OCID: z.string().default(""),
 	OCI_VNIC_OCID: z.string().default(""),
 	// The two namespaces that can answer this disagree on the metric name:
-	// oci_vcn exposes VnicBytesOut and needs nothing installed, while
+	// oci_vcn exposes VnicToNetworkBytes and needs nothing installed, while
 	// oci_computeagent exposes NetworksBytesOut and needs the monitoring plugin.
 	OCI_EGRESS_NAMESPACE: z.string().default("oci_vcn"),
-	OCI_EGRESS_METRIC: z.string().default("VnicBytesOut"),
+	OCI_EGRESS_METRIC: z.string().default("VnicToNetworkBytes"),
 	// Decimal terabytes, matching how Oracle quotes and bills the allowance.
 	OCI_EGRESS_BUDGET_TB: z.coerce.number().min(0.1).max(1000).default(10),
 	OCI_EGRESS_ALERT_TB: z.string().default("7,8,9,9.5"),
