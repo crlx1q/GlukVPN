@@ -202,10 +202,12 @@ async function handleControl(req, res, path) {
 	const credentials = parseBasic(req)
 	const auth = await verify(credentials)
 	if (!auth.ok) {
+		log('info', `Control stats denied (${auth.reason}) from ${req.socket.remoteAddress}`)
 		sendJson(res, 401, { error: { code: auth.reason ?? 'unauthorized' } })
 		return
 	}
 	const mine = counters(auth.deviceId)
+	log('info', `Control stats allowed for device ${auth.deviceId} from ${req.socket.remoteAddress}: rx=${mine.bytesRx}, tx=${mine.bytesTx}, active=${mine.active}`)
 	sendJson(res, 200, {
 		ok: true,
 		version: VERSION,
@@ -297,12 +299,19 @@ async function handleRequest(req, res) {
 /* ----------------------------------------------------------- CONNECT proxy */
 
 function denyConnect(socket, code, reason) {
+	const statusText =
+		code === 407 ? 'Proxy Authentication Required' :
+		code === 403 ? 'Forbidden' :
+		code === 429 ? 'Too Many Requests' :
+		code === 502 ? 'Bad Gateway' : (reason || 'Error')
 	const extra =
 		code === 407 ? 'Proxy-Authenticate: Basic realm="GlukVPN"\r\n' : ''
-	socket.write(
-		`HTTP/1.1 ${code} ${reason}\r\n${extra}Proxy-Agent: GlukVPN-Gateway/${VERSION}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`,
-	)
-	socket.destroy()
+	const payload = `HTTP/1.1 ${code} ${statusText}\r\n${extra}Proxy-Agent: GlukVPN-Gateway/${VERSION}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`
+	try {
+		socket.end(payload)
+	} catch {
+		socket.destroy()
+	}
 }
 
 async function handleConnect(req, clientSocket, head) {
@@ -311,10 +320,11 @@ async function handleConnect(req, clientSocket, head) {
 	const credentials = parseBasic(req)
 	const auth = await verify(credentials)
 	if (!auth.ok) {
-		log('debug', 'CONNECT denied:', auth.reason)
+		log('info', `CONNECT denied (${auth.reason}) from ${clientSocket.remoteAddress} for ${req.url}`)
 		denyConnect(clientSocket, auth.reason === 'token-rejected' || !credentials ? 407 : 403, auth.reason ?? 'Forbidden')
 		return
 	}
+	log('info', `CONNECT allowed for device ${auth.deviceId} from ${clientSocket.remoteAddress} to ${req.url}`)
 
 	const [rawHost, rawPort] = String(req.url || '').split(':')
 	const port = Number(rawPort || 443)

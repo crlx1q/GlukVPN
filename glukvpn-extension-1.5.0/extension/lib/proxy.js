@@ -164,16 +164,11 @@ export const ProxyEngine = {
 		const value = { mode: 'pac_script', pacScript: { data: pac, mandatory } }
 		const incognito = Boolean(config.tunnelIncognito)
 
-		// New layers first, stale layers last: while both hold a PAC the browser
-		// keeps tunnelling through one of them, whereas clearing first would open
-		// a gap with no proxy at all - a leak, however brief.
+		// Regular windows are always routed by the primary 'regular' scope.
+		await chrome.proxy.settings.set({ value, scope: 'regular' })
 		if (incognito) {
-			await chrome.proxy.settings.set({ value, scope: 'regular' })
 			await bestEffort(() => chrome.proxy.settings.set({ value, scope: 'incognito_persistent' }))
-			await bestEffort(() => chrome.proxy.settings.clear({ scope: 'regular_only' }))
 		} else {
-			await chrome.proxy.settings.set({ value, scope: 'regular_only' })
-			await bestEffort(() => chrome.proxy.settings.clear({ scope: 'regular' }))
 			await bestEffort(() => chrome.proxy.settings.clear({ scope: 'incognito_persistent' }))
 		}
 		return pac

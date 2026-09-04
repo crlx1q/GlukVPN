@@ -334,7 +334,7 @@ function pickNode(nodes, preferredId) {
  */
 function gatewayFor(settings, node) {
 	const paired = (value) => value === 8443 || value === 8444
-	const channelPort = 8443
+	const channelPort = settings.channel === 'beta' ? 8444 : 8443
 	const advertised = Number(node?.browserProxyPort) || 0
 	const saved = Number(settings.gateway?.port) || 0
 	let port = channelPort
@@ -1088,23 +1088,4 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 		void bootstrap()
 	}
 })
-
-// ------------------------------------------------------------- auth handler --
-if (chrome.webRequest?.onAuthRequired) {
-	chrome.webRequest.onAuthRequired.addListener(
-		(details, asyncCallback) => {
-			if (!details.isProxy) return {}
-			void (async () => {
-				const creds = await ProxyEngine.credentials()
-				if (creds?.username && creds?.password) {
-					asyncCallback({ authCredentials: { username: creds.username, password: creds.password } })
-				} else {
-					asyncCallback({})
-				}
-			})()
-		},
-		{ urls: ['<all_urls>'] },
-		['asyncBlocking'],
-	)
-}
 
