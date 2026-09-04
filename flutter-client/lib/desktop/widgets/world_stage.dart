@@ -203,13 +203,12 @@ class _WorldStageState extends State<WorldStage>
                 // ended in an eight-degree jump. Folding it into a triangle
                 // wave makes the ends meet: the drift travels out and back like
                 // the phone version, and the loop is seamless.
-                driftDegrees: widget.reduceMotion
-                    ? 0
-                    : (((_orbit.value <= 0.5
-                                    ? _orbit.value * 2
-                                    : (1 - _orbit.value) * 2) *
-                                8) -
-                            4),
+                // ROUND 28: the same wave the phone now uses. The round 5
+                // triangle met at its ends, which fixed the jump, but it still
+                // *started* at its own minimum - so the first frame sat four
+                // degrees off the midpoint instead of on it.
+                driftDegrees:
+                    widget.reduceMotion ? 0 : _centredSway(_orbit.value) * 4,
                 zoom: widget.zoomBoost * (1.0 + (_morph.value * 0.06)),
                 dotOpacity: 0.55 + (_morph.value * 0.15),
                 selfPoint: self,
@@ -235,6 +234,17 @@ class _WorldStageState extends State<WorldStage>
         ],
       ),
     );
+  }
+
+  /// -1..1 for a 0..1 input, running 0 -> +1 -> 0 -> -1 -> 0.
+  ///
+  /// Opens dead centre and is symmetric around it, and both ends are 0 so the
+  /// loop is still seamless.
+  double _centredSway(double t) {
+    final double phase = t - t.floorToDouble();
+    if (phase < 0.25) return phase * 4;
+    if (phase < 0.75) return 2 - phase * 4;
+    return phase * 4 - 4;
   }
 
   /// Keeps both endpoints of the route on screen.
