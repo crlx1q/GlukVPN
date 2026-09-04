@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto"
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
-import { config } from "../config"
 import { writeAudit } from "../lib/audit"
+import { deviceLimitReached, effectiveDeviceLimit } from "../lib/deviceLimit"
 import { badRequest, conflict, notFound } from "../lib/errors"
 import { wireGuardKeySchema } from "../lib/wg"
 import { clientIp, getAuthUser, requireUser } from "../middleware/auth"
@@ -52,20 +52,39 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
 			}
 
 			const reactivating = existing !== null && existing.status !== "ACTIVE"
-			const maxDevices = Math.min(user.maxDevices, config.MAX_DEVICES_PER_USER)
+			const maxDevices = effectiveDeviceLimit(user)
 			// A brand-new key and a returning revoked key both take up a slot.
 			if (!existing || reactivating) {
-				const activeDevices = await prisma.device.count({
+				// ROUND 28: the list, not just the count. The client turns this into
+				// the "Device limit" picker, so the 409 has to carry the rows it will
+				// show - a bare count could only ever become a dead end, which is
+				// precisely what all three clients were doing with it.
+				const active = await prisma.device.findMany({
 					where: {
 						userId: user.id,
 						status: "ACTIVE",
 						...(existing ? { NOT: { id: existing.id } } : {}),
 					},
+					// Most recently used first: the device you are least likely to want
+					// to sign out ends up at the top, and the stale one at the bottom.
+					orderBy: [{ lastSeen: "desc" }, { createdAt: "desc" }],
+					select: { id: true, deviceName: true, platform: true, lastSeen: true },
 				})
-				if (activeDevices >= maxDevices) {
-					throw conflict(
-						`Device limit reached (${maxDevices}). Revoke another device first.`,
+				if (active.length >= maxDevices) {
+					const devices = await Promise.all(
+						active.map(async (candidate) => ({
+							id: candidate.id,
+							deviceName: candidate.deviceName,
+							platform: candidate.platform,
+							lastSeen: candidate.lastSeen?.toISOString() ?? null,
+							connected: (await findLiveSessionForDevice(candidate.id)) !== null,
+						})),
 					)
+					throw deviceLimitReached({
+						maxDevices,
+						activeDevices: active.length,
+						devices,
+					})
 				}
 			}
 
@@ -158,7 +177,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
 
 		return reply.send({
 			devices: items,
-			maxDevices: Math.min(user.maxDevices, config.MAX_DEVICES_PER_USER),
+			maxDevices: effectiveDeviceLimit(user),
 		})
 	})
 
