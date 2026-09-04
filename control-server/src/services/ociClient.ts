@@ -237,7 +237,7 @@ export async function summarizeCharges(
 ): Promise<ChargeTotal> {
 	const creds = credentials()
 	const response = await signedRequest<UsageResponse>({
-		host: "usageapi." + creds.region + ".oraclecloud.com",
+		host: "usageapi." + creds.region + ".oci.oraclecloud.com",
 		method: "POST",
 		path: "/20200107/usage",
 		body: {
