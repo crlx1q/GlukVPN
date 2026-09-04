@@ -65,7 +65,7 @@ $NativeDir    = Join-Path $RepoRoot 'native\glukvpn-tunnel-service'
 $DistDir      = Join-Path $RepoRoot 'dist'
 $NativeBuild  = Join-Path $NativeDir 'build'
 
-$AppVersion = '1.2.0'
+$AppVersion = '1.3.0'
 
 function Write-Step($message) {
     Write-Host ""
