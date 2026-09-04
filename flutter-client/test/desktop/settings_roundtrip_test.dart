@@ -19,6 +19,8 @@ void main() {
       expect(d.animationsEnabled, isTrue);
       expect(d.reduceMotion, isFalse);
       expect(d.language, 'system');
+      // The globe is the default reveal; the flat map is opt-in.
+      expect(d.flatMap, isFalse);
     });
 
     test('the VPN outlives the window, and Exit tears it down', () {
@@ -50,6 +52,7 @@ void main() {
         windowY: 64,
         lastNodeId: 'de-01',
         autoNodeSelection: false,
+        flatMap: true,
       );
 
       final restored = DesktopSettings.fromJson(original.toJson());
@@ -73,6 +76,7 @@ void main() {
       expect(restored.windowY, 64);
       expect(restored.lastNodeId, 'de-01');
       expect(restored.autoNodeSelection, isFalse);
+      expect(restored.flatMap, isTrue);
     });
 
     test('the payload is versioned so future migrations are possible', () {

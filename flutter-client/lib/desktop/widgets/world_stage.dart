@@ -21,6 +21,7 @@ class WorldStage extends StatefulWidget {
     this.allNodes = const <MapPoint>[],
     this.height = 420,
     this.zoomBoost = 1,
+    this.forceFlat = false,
   });
 
   final ConnectionPhase phase;
@@ -45,6 +46,15 @@ class WorldStage extends StatefulWidget {
   /// changing the projection or the marker positions.
   final double zoomBoost;
 
+  /// Keeps the flat map even while the tunnel is up.
+  ///
+  /// ROUND 28. The morph to a globe is the default reveal, but a globe hides
+  /// half the world behind itself. When the user picks the flat map from the
+  /// corner button the morph runs backwards and stays down - while everything
+  /// that reads as *connected* (the green bloom, the lit server marker) is
+  /// driven separately and is unaffected.
+  final bool forceFlat;
+
   @override
   State<WorldStage> createState() => _WorldStageState();
 }
@@ -58,6 +68,14 @@ class _WorldStageState extends State<WorldStage>
 
   /// Drives the flat-map <-> globe morph. 0 = flat map, 1 = globe.
   late final AnimationController _morph;
+
+  /// Drives everything that means "the tunnel is up": the green bloom, the
+  /// brighter dots, the lit server marker.
+  ///
+  /// ROUND 28: this used to be [_morph] as well, which conflated shape with
+  /// state. Pinning the map flat therefore also kept the bloom violet and the
+  /// server dot faint on a perfectly healthy tunnel.
+  late final AnimationController _link;
 
   @override
   void initState() {
@@ -82,6 +100,11 @@ class _WorldStageState extends State<WorldStage>
     _morph = AnimationController(
       vsync: this,
       duration: GlukMotion.screen,
+      value: (widget.phase.isConnected && !widget.forceFlat) ? 1 : 0,
+    );
+    _link = AnimationController(
+      vsync: this,
+      duration: GlukMotion.screen,
       value: widget.phase.isConnected ? 1 : 0,
     );
 
@@ -92,7 +115,8 @@ class _WorldStageState extends State<WorldStage>
   void didUpdateWidget(covariant WorldStage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.phase != widget.phase ||
-        oldWidget.reduceMotion != widget.reduceMotion) {
+        oldWidget.reduceMotion != widget.reduceMotion ||
+        oldWidget.forceFlat != widget.forceFlat) {
       _applyMotion();
     }
   }
@@ -125,6 +149,15 @@ class _WorldStageState extends State<WorldStage>
     }
 
     if (connected) {
+      _link.forward();
+    } else {
+      _link.reverse();
+    }
+
+    // Shape is a separate question from state: a live tunnel drawn on the flat
+    // map still turns the bloom green and lights the server dot, it just does
+    // not fold the world into a ball.
+    if (connected && !widget.forceFlat) {
       _morph.forward();
     } else {
       _morph.reverse();
@@ -138,6 +171,7 @@ class _WorldStageState extends State<WorldStage>
     _arc.dispose();
     _orbit.dispose();
     _morph.dispose();
+    _link.dispose();
     super.dispose();
   }
 
@@ -156,13 +190,13 @@ class _WorldStageState extends State<WorldStage>
           Positioned.fill(
             child: IgnorePointer(
               child: AnimatedBuilder(
-                animation: Listenable.merge(<Listenable>[_pulse, _morph]),
+                animation: Listenable.merge(<Listenable>[_pulse, _link]),
                 builder: (BuildContext context, Widget? child) {
                   final glow = 0.28 + (_pulse.value * 0.12);
                   final tint = Color.lerp(
                     GlukColors.violet,
                     GlukColors.connected,
-                    _morph.value,
+                    _link.value,
                   )!;
                   return DecoratedBox(
                     decoration: BoxDecoration(
@@ -190,6 +224,7 @@ class _WorldStageState extends State<WorldStage>
               _arc,
               _orbit,
               _morph,
+              _link,
             ]),
             builder: (BuildContext context, Widget? child) {
               return DottedWorld(
@@ -210,11 +245,11 @@ class _WorldStageState extends State<WorldStage>
                 driftDegrees:
                     widget.reduceMotion ? 0 : _centredSway(_orbit.value) * 4,
                 zoom: widget.zoomBoost * (1.0 + (_morph.value * 0.06)),
-                dotOpacity: 0.55 + (_morph.value * 0.15),
+                dotOpacity: 0.55 + (_link.value * 0.15),
                 selfPoint: self,
                 selfOpacity: self == null ? 0 : 1,
                 serverPoint: server,
-                serverOpacity: server == null ? 0 : _morph.value.clamp(0.35, 1),
+                serverOpacity: server == null ? 0 : _link.value.clamp(0.35, 1),
                 nodePoints: widget.allNodes,
                 arcProgress: _arcProgress(),
                 arcPhase: _arc.value,

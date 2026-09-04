@@ -35,6 +35,7 @@ class DesktopSettings {
     this.windowY,
     this.lastNodeId,
     this.autoNodeSelection = true,
+    this.flatMap = false,
     this.channel = 'prod',
   });
 
@@ -99,6 +100,16 @@ class DesktopSettings {
   final String? lastNodeId;
   final bool autoNodeSelection;
 
+  // --- Map ---
+  /// How the home-screen world is drawn while the tunnel is up.
+  ///
+  /// ROUND 28. Connecting folds the stage into a globe, which is the right
+  /// reveal but a poor map: half the dots rotate out of sight, often including
+  /// the user's own. This is the choice made from the button in the corner of
+  /// the map card, and it has to outlive a restart - a preference you have to
+  /// re-set on every launch is worse than no preference at all.
+  final bool flatMap;
+
   // --- Developer menu ---
   /// Control plane this install talks to: `prod` or `beta`.
   ///
@@ -160,6 +171,7 @@ class DesktopSettings {
     String? lastNodeId,
     bool clearLastNodeId = false,
     bool? autoNodeSelection,
+    bool? flatMap,
     String? channel,
   }) {
     return DesktopSettings(
@@ -185,6 +197,7 @@ class DesktopSettings {
       windowY: windowY ?? this.windowY,
       lastNodeId: clearLastNodeId ? null : (lastNodeId ?? this.lastNodeId),
       autoNodeSelection: autoNodeSelection ?? this.autoNodeSelection,
+      flatMap: flatMap ?? this.flatMap,
       channel: normalizeChannel(channel ?? this.channel),
     );
   }
@@ -212,6 +225,7 @@ class DesktopSettings {
         'windowY': windowY,
         'lastNodeId': lastNodeId,
         'autoNodeSelection': autoNodeSelection,
+        'flatMap': flatMap,
         'channel': channel,
       };
 
@@ -273,6 +287,7 @@ class DesktopSettings {
       windowY: keepGeometry ? real('windowY') : null,
       lastNodeId: json['lastNodeId'] as String?,
       autoNodeSelection: flag('autoNodeSelection', true),
+      flatMap: flag('flatMap', false),
       channel: normalizeChannel(json['channel'] as String?),
     );
   }

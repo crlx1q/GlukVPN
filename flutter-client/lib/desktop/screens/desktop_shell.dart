@@ -89,6 +89,17 @@ class DesktopShellState extends State<DesktopShell> {
     setState(() => _index = _accountTab);
   }
 
+  /// ROUND 28: globe or flat map on the home screen.
+  ///
+  /// Saved like every other view preference rather than held in this State,
+  /// so it survives a restart. No setState: build already listens to the
+  /// settings store, which notifies on save.
+  void _toggleFlatMap() {
+    widget.settings.update(
+      (DesktopSettings current) => current.copyWith(flatMap: !current.flatMap),
+    );
+  }
+
   /// One switch, plus the laptop's own opinion.
   ///
   /// Requirement 15, as restated by the user: a single Animations toggle, and
@@ -279,6 +290,8 @@ class DesktopShellState extends State<DesktopShell> {
           auth: widget.auth,
           strings: widget.strings,
           reduceMotion: _reduceMotion,
+          flatMap: widget.settings.value.flatMap,
+          onToggleFlatMap: _toggleFlatMap,
           onOpenServers: openServers,
         );
     }

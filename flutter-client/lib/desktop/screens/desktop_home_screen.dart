@@ -40,6 +40,8 @@ class DesktopHomeScreen extends StatefulWidget {
     required this.auth,
     required this.strings,
     required this.reduceMotion,
+    required this.flatMap,
+    required this.onToggleFlatMap,
     required this.onOpenServers,
   });
 
@@ -47,6 +49,11 @@ class DesktopHomeScreen extends StatefulWidget {
   final AuthController auth;
   final DesktopStrings strings;
   final bool reduceMotion;
+
+  /// ROUND 28: draw the world flat instead of folding it into a globe on
+  /// connect. Persisted in DesktopSettings, so it survives a restart.
+  final bool flatMap;
+  final VoidCallback onToggleFlatMap;
   final VoidCallback onOpenServers;
 
   @override
@@ -114,6 +121,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           self: self,
           serverPoint: serverPoint,
           nodePoints: nodePoints,
+          flatMap: widget.flatMap,
+          onToggleFlatMap: widget.onToggleFlatMap,
           onOpenServers: widget.onOpenServers,
         );
 
@@ -185,6 +194,8 @@ class _MapCard extends StatelessWidget {
     required this.self,
     required this.serverPoint,
     required this.nodePoints,
+    required this.flatMap,
+    required this.onToggleFlatMap,
     required this.onOpenServers,
   });
 
@@ -194,6 +205,8 @@ class _MapCard extends StatelessWidget {
   final SelfLocation? self;
   final MapPoint? serverPoint;
   final List<MapPoint> nodePoints;
+  final bool flatMap;
+  final VoidCallback onToggleFlatMap;
   final VoidCallback onOpenServers;
 
   Color get _accent {
@@ -262,6 +275,7 @@ class _MapCard extends StatelessWidget {
                     // Fills the card instead of leaving empty bands above and
                     // below a thin strip of dots.
                     zoomBoost: 1.62,
+                    forceFlat: flatMap,
                   );
                 },
               ),
@@ -337,7 +351,97 @@ class _MapCard extends StatelessWidget {
                 ),
               ),
             ),
+
+            // Globe <-> flat map, bottom right.
+            //
+            // ROUND 28. Connecting folds the world into a ball, which is a
+            // good reveal and a bad map: the far half rotates out of sight,
+            // and with a European node that is often the user's own dot. The
+            // control sits where a zoom control sits on any map, and lifts
+            // clear of the server pill below it.
+            Positioned(
+              right: 14,
+              bottom: 86,
+              child: _MapModeButton(
+                flat: flatMap,
+                russian: s.isRussian,
+                onTap: onToggleFlatMap,
+              ),
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The globe/flat-map switch in the corner of the map card.
+///
+/// Deliberately not an [IconButton]: the desktop theme kills ripples, so the
+/// stock button gives no feedback at all on a dark card. A hover ring reads
+/// correctly with a mouse, which is the only pointer this client has.
+class _MapModeButton extends StatefulWidget {
+  const _MapModeButton({
+    required this.flat,
+    required this.russian,
+    required this.onTap,
+  });
+
+  final bool flat;
+  final bool russian;
+  final VoidCallback onTap;
+
+  @override
+  State<_MapModeButton> createState() => _MapModeButtonState();
+}
+
+class _MapModeButtonState extends State<_MapModeButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    // The label names what the button *does*, not what is on screen now, and
+    // the icon matches it. A globe icon on a globe would be a status readout,
+    // not a control.
+    final String label = widget.russian
+        ? (widget.flat ? 'Показать глобус' : 'Показать плоскую карту')
+        : (widget.flat ? 'Show the globe' : 'Show the flat map');
+
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        button: true,
+        label: label,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: GestureDetector(
+            onTap: widget.onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: _hovered
+                    ? DesktopTokens.cardHover
+                    : DesktopTokens.cardRaised.withOpacity(0.86),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: _hovered
+                      ? GlukColors.violetLight.withOpacity(0.55)
+                      : DesktopTokens.cardBorder,
+                ),
+              ),
+              child: Center(
+                child: Icon(
+                  widget.flat ? Icons.public_rounded : Icons.map_rounded,
+                  size: 19,
+                  color: _hovered ? GlukColors.text0 : GlukColors.text1,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
