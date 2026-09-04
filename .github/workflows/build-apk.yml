@@ -159,10 +159,17 @@ jobs:
             echo "keyAlias=$KEY_ALIAS"
             echo "keyPassword=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
           } > android/key.properties
-          chmod 600 android/key.properties android/glukvpn-release.jks
+          cp android/glukvpn-release.jks android/app/glukvpn-release.jks
+          cp android/key.properties android/app/key.properties
+          chmod 600 android/key.properties android/glukvpn-release.jks android/app/key.properties android/app/glukvpn-release.jks
           echo "Keystore staged for Gradle: $(wc -c < android/glukvpn-release.jks) bytes"
 
       - name: Build release APK
+        env:
+          ANDROID_KEYSTORE_PATH: glukvpn-release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           # ROUND 12: every published client points at PROD, whatever branch it
@@ -209,7 +216,7 @@ jobs:
 
       - name: Remove the keystore from the workspace
         if: always()
-        run: rm -f android/key.properties android/glukvpn-release.jks
+        run: rm -f android/key.properties android/glukvpn-release.jks android/app/key.properties android/app/glukvpn-release.jks
 
       - name: Debug-key build (no keystore configured)
         if: env.HAS_KEYSTORE != 'true'

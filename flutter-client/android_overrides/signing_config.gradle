@@ -50,9 +50,15 @@ def glukKeyPassword = glukPick('keyPassword', 'KEY_PASSWORD') ?: glukStorePasswo
 def glukStoreFile = null
 if (glukStorePath != null) {
     File candidate = new File(glukStorePath)
-    // A bare file name is resolved against android/, which is where CI decodes
-    // the keystore and where the Flutter documentation puts it.
-    glukStoreFile = candidate.isAbsolute() ? candidate : rootProject.file(glukStorePath)
+    if (candidate.isAbsolute() && candidate.exists()) {
+        glukStoreFile = candidate
+    } else if (rootProject.file(glukStorePath).exists()) {
+        glukStoreFile = rootProject.file(glukStorePath)
+    } else if (project.file(glukStorePath).exists()) {
+        glukStoreFile = project.file(glukStorePath)
+    } else {
+        glukStoreFile = rootProject.file(glukStorePath)
+    }
 }
 
 def glukMissing = []
@@ -86,8 +92,10 @@ if (glukMissing.isEmpty()) {
     }
     // The path, never the passwords: build logs are readable by anyone who can
     // see the run.
+    println("GlukVPN: release builds are signed with ${glukStoreFile}")
     logger.lifecycle("GlukVPN: release builds are signed with ${glukStoreFile}")
 } else {
+    println('GlukVPN: no complete release keystore (' + glukMissing.join(', ') + ')')
     logger.warn(
         'GlukVPN: no complete release keystore (' + glukMissing.join(', ') +
             '). The release build falls back to the per-machine debug key, so ' +
