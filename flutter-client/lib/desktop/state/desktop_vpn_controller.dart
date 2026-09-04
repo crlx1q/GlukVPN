@@ -1230,10 +1230,10 @@ class DesktopVpnController extends ChangeNotifier {
   /// services do not, and a backend that is not the Windows client cannot, so
   /// the value decided at connect time stands unless there is a report.
   void _syncEngineFromService() {
-    final TunnelBackend backend = _tunnel;
+    final backend = _tunnel;
     if (backend is! TunnelEngineReporter) return;
     final TunnelEngine? reported =
-        tunnelEngineFromWire(backend.reportedEngine);
+        tunnelEngineFromWire((backend as TunnelEngineReporter).reportedEngine);
     if (reported != null && reported != _engine) {
       dlog.write('vpn', 'engine reported by the service: ${reported.wireName}');
       _engine = reported;
