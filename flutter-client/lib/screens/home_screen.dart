@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../config.dart';
 import '../i18n/app_strings.dart';
+import '../models/device_limit.dart';
 import '../models/models.dart';
+import '../services/api_client.dart';
 import '../state/auth_controller.dart';
 import '../state/channel_controller.dart';
 import '../state/vpn_controller.dart';
@@ -14,6 +16,7 @@ import '../utils/geo.dart';
 import '../utils/geo_dictionary.dart';
 import '../utils/map_view.dart';
 import '../widgets/connect_button.dart';
+import '../widgets/device_limit_dialog.dart';
 import '../widgets/dotted_world.dart';
 import '../widgets/glass.dart';
 import '../widgets/logo.dart';
@@ -59,8 +62,37 @@ class _HomeScreenState extends State<HomeScreen> {
     if (vpn.busy) return;
     if (vpn.isConnected) {
       await vpn.disconnect();
-    } else if (!vpn.isTransitioning) {
-      await vpn.connect();
+      return;
+    }
+    if (vpn.isTransitioning) return;
+
+    final AuthController auth = context.read<AuthController>();
+    // Clear any stale verdict first, so what we read back belongs to this tap.
+    auth.clearDeviceLimit();
+    await vpn.connect();
+    if (!mounted) return;
+
+    // Connecting registers this device first, and registration is refused when
+    // every slot on the plan is taken. The controller records the occupied
+    // slots rather than only failing, which turns a dead end into one tap.
+    // Read from that state rather than catching: connect() handles its own
+    // errors and does not rethrow.
+    final DeviceLimitDetails? limit = auth.deviceLimit;
+    if (limit == null || !limit.isActionable) return;
+
+    final String? freed = await showDeviceLimitDialog(
+      context: context,
+      details: limit,
+      strings: context.strings,
+    );
+    if (freed == null || !mounted) return;
+
+    try {
+      await auth.freeDeviceSlot(freed);
+      if (mounted) await vpn.connect();
+    } on ApiException {
+      // freeDeviceSlot leaves the limit state in place, so the next tap offers
+      // the list again instead of failing silently.
     }
   }
 
