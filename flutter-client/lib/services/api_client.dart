@@ -25,6 +25,7 @@ class ApiException implements Exception {
     required this.code,
     required this.message,
     this.retryAfterSec,
+    this.details,
   });
 
   /// HTTP status, or 0 for transport-level failures (offline, DNS, TLS, timeout).
@@ -33,12 +34,24 @@ class ApiException implements Exception {
   final String message;
   final int? retryAfterSec;
 
+  /// Structured context the server attached to this error, when it sent any.
+  ///
+  /// Carrying it on the exception is what lets the UI offer a way out of an
+  /// error rather than only describing it: a 409 from device registration
+  /// arrives with the list of devices already using the slots.
+  final Map<String, dynamic>? details;
+
   bool get isNetwork => statusCode == 0;
   bool get isUnauthorized => statusCode == 401;
   bool get isForbidden => statusCode == 403;
   bool get isNotFound => statusCode == 404;
   bool get isConflict => statusCode == 409;
   bool get isRateLimited => statusCode == 429;
+
+  /// The device this app registered was revoked or deleted server-side.
+  /// The account is at its device ceiling. [details] carries the devices, so
+  /// the user can free a slot instead of being stuck on this screen.
+  bool get isDeviceLimit => isConflict && code == 'device_limit_reached';
 
   /// The device this app registered was revoked or deleted server-side.
   bool get isDeviceRevoked =>
@@ -178,10 +191,13 @@ class ApiClient {
     String code = 'http_${response.statusCode}';
     String message = 'Request failed (${response.statusCode}).';
     final Object? error = json['error'];
+    Map<String, dynamic>? details;
     if (error is Map) {
       final Map<String, dynamic> parsed = _map(error);
       code = (parsed['code'] ?? code).toString();
       message = (parsed['message'] ?? message).toString();
+      final Object? extra = parsed['details'];
+      if (extra is Map) details = _map(extra);
     }
     final String? retryAfter = response.headers['retry-after'];
     throw ApiException(
@@ -189,6 +205,7 @@ class ApiClient {
       code: code,
       message: message,
       retryAfterSec: retryAfter == null ? null : int.tryParse(retryAfter),
+      details: details,
     );
   }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../models/device_limit.dart';
 import '../models/models.dart';
 import '../platform/platform_target.dart';
 import '../services/api_client.dart';
@@ -49,6 +50,11 @@ class AuthController extends ChangeNotifier {
   /// the UI shows the offline state instead of a login screen.
   bool _unconfirmed = false;
 
+  /// Set when device registration was refused because every slot on the plan
+  /// is taken. Kept rather than discarded so the UI can offer the list of
+  /// devices to free instead of a dead-end error message.
+  DeviceLimitDetails? _deviceLimit;
+
   ApiClient get api => _api;
   AuthStage get stage => _stage;
   AuthUser? get user => _user;
@@ -58,6 +64,15 @@ class AuthController extends ChangeNotifier {
   String? get deviceId => _deviceId;
   String? get deviceName => _deviceName;
   String? get devicePublicKey => _devicePublicKey;
+
+  /// Non-null when the last registration attempt hit the plan's device ceiling.
+  DeviceLimitDetails? get deviceLimit => _deviceLimit;
+
+  void clearDeviceLimit() {
+    if (_deviceLimit == null) return;
+    _deviceLimit = null;
+    notifyListeners();
+  }
   bool get isAuthenticated => _stage == AuthStage.authenticated;
   bool get subscriptionActive => _subscription?.isActive ?? false;
 
@@ -358,6 +373,15 @@ class AuthController extends ChangeNotifier {
       _deviceId = registration.device.id;
       await _store.writeDeviceId(registration.device.id);
     } on ApiException catch (error) {
+      // Running out of device slots is a 409, but it is not a key problem and
+      // regenerating the pair cannot cure it: the retry is refused for exactly
+      // the same reason, and the install has meanwhile thrown away the identity
+      // the node holds a peer for. Record the device list and stop instead.
+      if (error.isDeviceLimit) {
+        _deviceLimit = DeviceLimitDetails.fromJson(error.details);
+        notifyListeners();
+        rethrow;
+      }
       // The key was revoked or belongs to another account: start over once with
       // a brand new pair instead of leaving the app unusable.
       if (!forceNewKeys && (error.isForbidden || error.isConflict)) {
@@ -406,6 +430,19 @@ class AuthController extends ChangeNotifier {
   }
 
   Future<DevicesResult> loadDevices() => _api.devices();
+
+  /// Frees one device slot and registers this install into it.
+  ///
+  /// Backs the device-limit dialog: revoking the chosen device closes its
+  /// sessions and drops its peer server-side, and only then is registration
+  /// retried. The limit state is cleared last, so a failure anywhere leaves the
+  /// dialog on screen instead of silently doing nothing.
+  Future<void> freeDeviceSlot(String deviceId) async {
+    await revokeDevice(deviceId);
+    await ensureDeviceRegistered();
+    _deviceLimit = null;
+    notifyListeners();
+  }
 
   /// Revokes a device. Server-side this also closes its sessions and removes the
   /// WireGuard peer from the node.
