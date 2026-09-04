@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../i18n/app_strings.dart';
 import '../models/models.dart';
 import '../services/ping_service.dart';
 import '../state/vpn_controller.dart';
+import '../theme/motion.dart';
 import '../theme/tokens.dart';
 import '../utils/geo.dart';
 import '../utils/geo_dictionary.dart';
 import '../utils/signal.dart';
 import '../widgets/glass.dart';
 import '../widgets/signal_bars.dart';
+import '../widgets/skeleton.dart';
 
 /// The server list: rounded rows, a 26 px radio, a flag disc and the signal
 /// bars on the right.
@@ -87,8 +90,11 @@ class _ServersScreenState extends State<ServersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
     final VpnController vpn = context.watch<VpnController>();
+    final MotionController motion = context.watch<MotionController>();
     final TextTheme text = Theme.of(context).textTheme;
+    final bool loadingFirstTime = vpn.nodes.isEmpty && vpn.loadingNodes;
 
     final List<VpnNodeInfo> recommended = vpn.nodes
         .where((VpnNodeInfo node) => node.connectable)
@@ -118,15 +124,15 @@ class _ServersScreenState extends State<ServersScreen> {
                   CircleIconButton(
                     icon: Icons.arrow_back_rounded,
                     onTap: widget.onDone!,
-                    tooltip: 'Back',
+                    tooltip: s.back,
                   ),
                 if (widget.onDone != null) const SizedBox(width: 14),
-                Text('Servers', style: text.headlineSmall),
+                Text(s.servers, style: text.headlineSmall),
                 const Spacer(),
                 CircleIconButton(
                   icon: Icons.refresh_rounded,
                   onTap: _refresh,
-                  tooltip: 'Refresh',
+                  tooltip: s.refresh,
                 ),
               ],
             ),
@@ -158,19 +164,27 @@ class _ServersScreenState extends State<ServersScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(24, 8, 24, 108),
                 children: <Widget>[
-                  if (vpn.nodes.isEmpty && vpn.loadingNodes)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 60),
-                      child: Center(child: CircularProgressIndicator()),
-                    ),
+                  // First load: three rows in the shape of a server row, so
+                  // the list arrives into a layout that already exists instead
+                  // of replacing a spinner in the middle of nowhere.
+                  if (loadingFirstTime) ...<Widget>[
+                    _SectionLabel(label: s.forYou),
+                    const SizedBox(height: 10),
+                    for (int i = 0; i < 3; i++)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 9),
+                        child: _ServerTileSkeleton(
+                          animate: !motion.reduceMotion,
+                        ),
+                      ),
+                  ],
                   if (vpn.nodes.isEmpty && !vpn.loadingNodes)
-                    const InlineNotice(
-                      message: 'No servers available right now. '
-                          'Pull down to refresh.',
+                    InlineNotice(
+                      message: s.noServersPullToRefresh,
                       tone: GlukColors.violetLight,
                     ),
                   if (recommended.isNotEmpty) ...<Widget>[
-                    const _SectionLabel(label: 'For You'),
+                    _SectionLabel(label: s.forYou),
                     const SizedBox(height: 10),
                     for (final VpnNodeInfo node in recommended)
                       Padding(
@@ -185,7 +199,7 @@ class _ServersScreenState extends State<ServersScreen> {
                   ],
                   if (others.isNotEmpty) ...<Widget>[
                     const SizedBox(height: 8),
-                    const _SectionLabel(label: 'Other Servers'),
+                    _SectionLabel(label: s.otherServers),
                     const SizedBox(height: 10),
                     for (final VpnNodeInfo node in others)
                       Padding(
@@ -237,23 +251,27 @@ class _ServerTile extends StatelessWidget {
   final VoidCallback? onTap;
 
   /// City, region and live figures - all from the backend, never a node name.
-  String get _details {
-    if (!node.online) return 'Offline';
-    final List<String> parts = <String>[node.displaySubtitle];
+  String _details(AppStrings s) {
+    if (!node.online) return s.offline;
+    final String city = localizeCity(node.city, russian: s.isRussian);
+    final List<String> parts = <String>[
+      city.isNotEmpty ? city : node.displaySubtitle,
+    ];
     final String region = node.region ?? '';
     if (region.isNotEmpty && region != node.displaySubtitle) parts.add(region);
     if (!node.connectable) {
-      parts.add('unavailable');
+      parts.add(s.unavailable);
     } else {
-      parts.add('${node.loadPercent.round()}% load');
+      parts.add(s.loadPercent(node.loadPercent.round()));
       final int? ms = sample?.milliseconds;
-      if (ms != null) parts.add('$ms ms');
+      if (ms != null) parts.add('$ms ${s.ms}');
     }
     return parts.join('  \u00b7  ');
   }
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
     final TextTheme text = Theme.of(context).textTheme;
     // Three bars, computed from the node's own numbers: whether it is online,
     // how loaded it says it is, and the round trip this phone just measured.
@@ -291,6 +309,9 @@ class _ServerTile extends StatelessWidget {
                             countryCode: node.countryCode,
                             countryName: node.country,
                             region: node.region,
+                            // Was left at the dictionary's default (Russian),
+                            // so an English interface still read "Германия".
+                            russian: s.isRussian,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -312,7 +333,7 @@ class _ServerTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    _details,
+                    _details(s),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: text.bodySmall?.copyWith(fontSize: 10.5),
@@ -326,6 +347,63 @@ class _ServerTile extends StatelessWidget {
             _Radio(selected: selected, enabled: node.connectable),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// A server row with nothing in it yet: the same disc, two lines, bars and
+/// radio as [_ServerTile], drawn as shimmering bars. Sized from the same text
+/// styles, so the real rows land exactly where these were.
+class _ServerTileSkeleton extends StatelessWidget {
+  const _ServerTileSkeleton({required this.animate});
+
+  final bool animate;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme text = Theme.of(context).textTheme;
+    return GlassPanel(
+      radius: 999,
+      padding: const EdgeInsets.fromLTRB(10, 9, 12, 9),
+      child: Row(
+        children: <Widget>[
+          SkeletonBox(
+            width: GlukSizes.flagCircle,
+            height: GlukSizes.flagCircle,
+            radius: GlukSizes.flagCircle / 2,
+            animate: animate,
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SkeletonText(
+                  characters: 18,
+                  style: text.titleMedium,
+                  animate: animate,
+                ),
+                const SizedBox(height: 2),
+                SkeletonText(
+                  characters: 26,
+                  style: text.bodySmall?.copyWith(fontSize: 10.5),
+                  animate: animate,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Stand-ins for the signal bars and the radio.
+          SkeletonBox(width: 18, height: 12, radius: 3, animate: animate),
+          const SizedBox(width: 10),
+          SkeletonBox(
+            width: GlukSizes.radio,
+            height: GlukSizes.radio,
+            radius: GlukSizes.radio / 2,
+            animate: animate,
+          ),
+        ],
       ),
     );
   }

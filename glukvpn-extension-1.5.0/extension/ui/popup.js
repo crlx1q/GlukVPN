@@ -65,7 +65,32 @@ const DEFAULTS = {
 	tunnelMode: 'all',
 	siteList: [],
 	language: 'auto',
+	tunnelIncognito: false,
 }
+
+// A metric that is still unknown while connected shows a skeleton - but not
+// forever. Past this age the value is treated as unavailable and an em dash
+// takes over (the exit-IP probe can legitimately be blocked, for instance).
+const METRIC_SKELETON_MAX_MS = 75000
+const DASH = '\u2014'
+
+// Chrome's own "Allow in Incognito" switch: null = not asked yet / unknown.
+let incognitoAllowed = null
+
+// PROD / BETA card. Versions are probed best-effort when Settings opens and
+// kept here so re-renders never cost a request.
+const CHANNELS = ['prod', 'beta']
+const CHANNEL_PROBE_TIMEOUT_MS = 1500
+const CHANNEL_CACHE_MS = 60000
+const channelInfo = {
+	prod: { status: 'unknown', version: null, checkedAt: 0 },
+	beta: { status: 'unknown', version: null, checkedAt: 0 },
+}
+let channelProbe = null
+let channelSwitching = false
+// Sticky until the next attempt or until the user leaves Settings, so the
+// five-second state poll cannot wipe it before it has been read.
+let channelError = null
 
 let state = null
 let settings = { ...DEFAULTS }
@@ -502,7 +527,16 @@ function setView(next) {
 	}
 	syncGlide()
 	if (next === 'servers') ensureNodes()
-	if (next === 'settings') ensureDevices()
+	if (next === 'settings') {
+		ensureDevices()
+		// Both are best effort and both come back through a render, so the
+		// section opens at once and fills in as answers arrive.
+		probeIncognitoAccess()
+		if (channelCardVisible()) ensureChannelVersions()
+	} else if (channelError) {
+		channelError = null
+		renderChannelCard()
+	}
 	if (next === 'profile') {
 		ensureDevices()
 		renderProfile()
@@ -647,17 +681,35 @@ function renderVpn() {
 	drawRoute(latLonFor(geo), target, online ? phase : 'offline')
 
 	// Numbers.
-	const stats = state?.runtime?.stats ?? {}
-	const session = state?.runtime?.session ?? {}
-	const setText = (id, value) => {
-		const node2 = $(id)
-		if (node2) node2.textContent = value
-	}
-	setText('st-public-ip', stats.publicIp ?? '--')
-	setText('st-vpn-ip', session.vpnIp ?? state?.runtime?.vpnIp ?? '--')
-	setText('st-ping', pingLabel(stats.ping))
-	setText('st-rx', bytesLabel(stats.bytesRx))
-	setText('st-tx', bytesLabel(stats.bytesTx))
+	//
+	// Three honest states per cell: a value, a skeleton ("on its way"), or an
+	// em dash ("there is none"). Anything the worker still holds from an earlier
+	// session is ignored unless the tunnel is up or being dialled, so a stale IP
+	// can never sit in the grid pretending to be current.
+	const live = online && phase === 'connected'
+	const dialing = online && phase === 'connecting'
+	const stats = live || dialing ? (state?.runtime?.stats ?? {}) : {}
+	const session = live || dialing ? (state?.runtime?.session ?? {}) : {}
+	const stillLoading = (value) => live && (value === null || value === undefined) && connectedAgeMs() < METRIC_SKELETON_MAX_MS
+	const publicIp = stats.publicIp ?? null
+	renderMetric($('st-public-ip'), {
+		value: live && publicIp ? String(publicIp) : DASH,
+		loading: dialing || stillLoading(publicIp),
+		chars: 15,
+	})
+	// The VPN address arrives with the connect result itself, so once the
+	// tunnel is up there is nothing left to wait for: value or dash.
+	const vpnIp = session.vpnIp ?? state?.runtime?.vpnIp ?? null
+	renderMetric($('st-vpn-ip'), { value: live && vpnIp ? String(vpnIp) : DASH, loading: dialing, chars: 15 })
+	const ping = Number(stats.ping)
+	const pingKnown = Number.isFinite(ping) && ping > 0
+	renderMetric($('st-ping'), {
+		value: live && pingKnown ? pingLabel(ping) : DASH,
+		loading: dialing || stillLoading(pingKnown ? ping : null),
+		chars: 6,
+	})
+	renderMetric($('st-rx'), { value: bytesLabel(live ? stats.bytesRx : 0) })
+	renderMetric($('st-tx'), { value: bytesLabel(live ? stats.bytesTx : 0) })
 	tickDuration()
 
 	// Errors are shown, never swallowed - and no connection at all outranks
@@ -672,15 +724,59 @@ function renderVpn() {
 	renderProfile()
 }
 
-function tickDuration() {
+/** Milliseconds since the tunnel came up; 0 when it is not up. */
+function connectedAgeMs() {
 	const since = Number(state?.runtime?.since ?? state?.runtime?.connectedAt ?? 0)
+	return since > 0 ? Math.max(0, Date.now() - since) : 0
+}
+
+function tickDuration() {
 	const node = $('st-duration')
 	if (!node) return
-	if (phaseOf() !== 'connected' || !since) {
-		node.textContent = '--'
+	const phase = phaseOf()
+	if (!isOnline()) {
+		renderMetric(node, { value: DASH })
 		return
 	}
-	node.textContent = durationLabel(Date.now() - since)
+	if (phase === 'connecting') {
+		renderMetric(node, { loading: true, chars: 8 })
+		return
+	}
+	const since = Number(state?.runtime?.since ?? state?.runtime?.connectedAt ?? 0)
+	if (phase !== 'connected' || !since) {
+		renderMetric(node, { value: DASH })
+		return
+	}
+	renderMetric(node, { value: durationLabel(Date.now() - since) })
+}
+
+/**
+ * One metric cell. `loading` paints a shimmering bar about `chars` characters
+ * wide instead of a placeholder string; otherwise the value is written as text.
+ *
+ * The bar is only rebuilt when its size changes. renderVpn runs on every poll
+ * and every runtime broadcast, and replacing the node each time restarted the
+ * shimmer from zero - a visible stutter every few seconds.
+ */
+function renderMetric(el, { value = DASH, loading = false, chars = 6 } = {}) {
+	if (!el) return
+	if (loading) {
+		const width = String(Math.max(2, Math.round(Number(chars) || 6)))
+		if (el.dataset.skel !== width) {
+			const bar = document.createElement('span')
+			bar.className = 'skel'
+			bar.style.setProperty('--skel-w', `${width}ch`)
+			bar.setAttribute('aria-hidden', 'true')
+			el.replaceChildren(bar)
+			el.dataset.skel = width
+		}
+		el.setAttribute('aria-busy', 'true')
+		return
+	}
+	if (el.dataset.skel !== undefined) delete el.dataset.skel
+	el.removeAttribute('aria-busy')
+	const text = value === null || value === undefined || value === '' ? DASH : String(value)
+	if (el.textContent !== text) el.textContent = text
 }
 
 function renderServers() {
@@ -777,9 +873,7 @@ function renderSettings() {
 	// rejects non-admin accounts and has no sign-up, so showing the switch to
 	// everyone only ever produced a login failure the user could not fix. Hidden
 	// here and enforced on the server, exactly as in the phone and PC clients.
-	const isAdmin = Boolean(
-		state?.runtime?.user?.isAdmin ?? state?.user?.isAdmin ?? false,
-	)
+	const isAdmin = isAdminUser()
 	// ROUND 12: the five-tap gesture is gone here too.
 	//
 	// It was deleted from the phone and the PC in round 11, but this folder was
@@ -787,24 +881,34 @@ function renderSettings() {
 	// still five clicks away in the extension. A gesture is not a permission: it
 	// let a normal account uncover a switch the beta plane then refuses, while an
 	// admin had to know a trick to reach a control they are entitled to.
-	const channelVisible = isAdmin
+	//
+	// Testers get the channel card as well (the beta plane accepts them), but
+	// not the raw API / site overrides below it - those stay admin-only.
+	const channelVisible = channelCardVisible()
 	const channelField = $('field-channel')
 	if (channelField) {
 		channelField.classList.toggle('hidden', !channelVisible)
 		channelField.hidden = !channelVisible
 	}
-	// The developer block behind the switch is for the same audience: it holds
+	// The developer block behind the switch is for administrators: it holds
 	// the API host and site host overrides. Hiding the switch but leaving those
 	// rows on screen would only move the foot-gun one line down - a normal user
 	// who edits "Control API" ends up with a client that talks to nothing, and
-	// no way to tell that they are the reason.
-	for (const id of ['btn-devmode', 'dev-body']) {
-		const node = $(id)
-		if (!node) continue
-		node.classList.toggle('hidden', !channelVisible)
-		node.hidden = !channelVisible
+	// no way to tell that they are the reason. The body additionally follows
+	// its disclosure: re-rendering must not pop a collapsed section open.
+	const devButton = $('btn-devmode')
+	if (devButton) {
+		devButton.classList.toggle('hidden', !isAdmin)
+		devButton.hidden = !isAdmin
 	}
-	setValue('s-channel', channelVisible ? (settings.channel ?? 'prod') : 'prod')
+	const devBody = $('dev-body')
+	if (devBody) {
+		const showDev = isAdmin && devModeOpen
+		devBody.classList.toggle('hidden', !showDev)
+		devBody.hidden = !showDev
+	}
+	renderChannelCard()
+	if (channelVisible && view === 'settings') ensureChannelVersions()
 	setValue('s-api-base', settings.apiBase?.[settings.channel ?? 'prod'] ?? '')
 	setValue('s-site-base', settings.siteBase ?? '')
 	setValue('s-gw-host', settings.gateway?.host ?? '')
@@ -815,7 +919,295 @@ function renderSettings() {
 	setValue('s-gw-scheme', scheme === 'http' ? 'https' : scheme)
 	toggleSwitch($('sw-auto'), Boolean(settings.autoConnect))
 	toggleSwitch($('sw-kill'), Boolean(settings.killSwitch))
+	toggleSwitch($('sw-incognito'), Boolean(settings.tunnelIncognito))
 	applyI18n()
+	renderIncognitoNote()
+}
+
+// ----------------------------------------------------------- incognito ----
+
+/**
+ * Chrome keeps the real permission behind its own per-extension switch, so the
+ * toggle in our settings is only half of the story. This asks Chrome for the
+ * other half; the answer is rendered under the toggle row.
+ */
+function probeIncognitoAccess() {
+	return new Promise((resolve) => {
+		let done = false
+		const finish = (value) => {
+			if (done) return
+			done = true
+			incognitoAllowed = typeof value === 'boolean' ? value : null
+			renderIncognitoNote()
+			resolve(incognitoAllowed)
+		}
+		try {
+			if (!chrome?.extension?.isAllowedIncognitoAccess) return finish(null)
+			// Callback form works on every Chromium that has the API; a promise is
+			// only returned when no callback is passed.
+			chrome.extension.isAllowedIncognitoAccess((allowed) => {
+				void chrome.runtime.lastError
+				finish(allowed)
+			})
+			setTimeout(() => finish(null), 2000)
+		} catch {
+			finish(null)
+		}
+	})
+}
+
+/** The line under the incognito toggle: permission state + a way to fix it. */
+function renderIncognitoNote() {
+	const foot = $('incognito-foot')
+	const text = $('incognito-state')
+	const link = $('btn-incognito-perm')
+	if (!foot || !text || !link) return
+	const on = Boolean(settings.tunnelIncognito)
+	const allowed = incognitoAllowed
+	// The link only makes sense while there is something to grant.
+	const showLink = allowed !== true
+	link.classList.toggle('hidden', !showLink)
+	link.hidden = !showLink
+	let message = ''
+	let cls = 'hint'
+	if (allowed === true) {
+		message = t('settings.incognitoAllowed')
+		cls = 'hint ok'
+	} else if (allowed === false && on) {
+		// The user asked for incognito but Chrome will not let us in: this is
+		// the one state that needs to be loud.
+		message = t('settings.incognitoNotAllowed')
+		cls = 'hint warn'
+	}
+	// Class and attribute both, as everywhere in this file: the stylesheet sets
+	// display on these nodes, which silently beats the bare `hidden` attribute.
+	text.className = cls + (message ? '' : ' hidden')
+	text.textContent = message
+	text.hidden = !message
+	foot.classList.toggle('hidden', !message && !showLink)
+	foot.hidden = !message && !showLink
+}
+
+function openIncognitoPermission() {
+	let id = ''
+	try {
+		id = String(chrome.runtime.id ?? '')
+	} catch {}
+	// chrome:// pages cannot be linked from a popup; chrome.tabs.create can
+	// open them, and Chrome highlights the extension named by ?id=.
+	openUrl(id ? `chrome://extensions/?id=${id}` : 'chrome://extensions/')
+}
+
+// ------------------------------------------------------- channel card -----
+
+function isAdminUser() {
+	return Boolean(state?.runtime?.user?.isAdmin ?? state?.user?.isAdmin ?? false)
+}
+
+/** Older control servers never send isTester; absent means false. */
+function isTesterUser() {
+	return Boolean(state?.runtime?.user?.isTester ?? state?.user?.isTester ?? false)
+}
+
+function channelCardVisible() {
+	return isAdminUser() || isTesterUser()
+}
+
+function currentChannel() {
+	return settings.channel === 'beta' ? 'beta' : 'prod'
+}
+
+function channelLabel(channel) {
+	return channel === 'beta' ? 'BETA' : 'PRODUCTION'
+}
+
+/** The tunnel must be down before the control plane can change under it. */
+function tunnelBusy() {
+	const phase = phaseOf()
+	return phase === 'connected' || phase === 'connecting' || phase === 'disconnecting'
+}
+
+function channelBase(channel) {
+	const base = String(settings.apiBase?.[channel] ?? DEFAULTS.apiBase[channel] ?? '').trim()
+	return base.replace(/\/+$/, '')
+}
+
+/**
+ * Is a control plane answering on that channel, and which version?
+ *
+ * Direct GET of /api/version - the API hosts are always in the PAC's direct
+ * list, so this works whether or not the tunnel is up. A short deadline: this
+ * is a liveness check, not a request that is allowed to keep a switch waiting.
+ */
+async function probeChannel(channel) {
+	const base = channelBase(channel)
+	if (!base) return { ok: false, version: null }
+	try {
+		const response = await fetch(`${base}/api/version`, {
+			method: 'GET',
+			cache: 'no-store',
+			credentials: 'omit',
+			headers: { accept: 'application/json' },
+			signal: AbortSignal.timeout(CHANNEL_PROBE_TIMEOUT_MS),
+		})
+		if (!response.ok) return { ok: false, version: null }
+		let json = null
+		try {
+			json = await response.json()
+		} catch {
+			json = null
+		}
+		const looksLikeControlPlane =
+			json && typeof json === 'object' && (typeof json.channel === 'string' || json.service === 'glukvpn-control')
+		if (!looksLikeControlPlane) return { ok: false, version: null }
+		const version = String(json.version ?? '').trim()
+		return { ok: true, version: version || null }
+	} catch {
+		return { ok: false, version: null }
+	}
+}
+
+function rememberChannel(channel, probe) {
+	channelInfo[channel] = {
+		status: probe.ok ? 'up' : 'down',
+		version: probe.ok ? probe.version : null,
+		checkedAt: Date.now(),
+	}
+}
+
+/** Probes both channels, at most once per minute, one flight at a time. */
+function ensureChannelVersions(force = false) {
+	if (channelProbe) return channelProbe
+	const fresh = CHANNELS.every((channel) => Date.now() - channelInfo[channel].checkedAt < CHANNEL_CACHE_MS)
+	if (fresh && !force) return Promise.resolve()
+	for (const channel of CHANNELS) $(`chan-${channel}`)?.classList.add('busy')
+	channelProbe = Promise.all(
+		CHANNELS.map(async (channel) => {
+			rememberChannel(channel, await probeChannel(channel))
+			$(`chan-${channel}`)?.classList.remove('busy')
+		}),
+	)
+		.catch(() => {})
+		.finally(() => {
+			channelProbe = null
+			renderChannelCard()
+		})
+	return channelProbe
+}
+
+function setChannelError(text, kind = 'warn') {
+	channelError = text ? { text, kind } : null
+	renderChannelCard()
+}
+
+function renderChannelCard() {
+	if (!$('field-channel')) return
+	const current = currentChannel()
+	const locked = tunnelBusy()
+	for (const channel of CHANNELS) {
+		const pill = $(`chan-${channel}`)
+		if (!pill) continue
+		const on = channel === current
+		pill.classList.toggle('on', on)
+		pill.classList.toggle('locked', locked)
+		pill.setAttribute('aria-pressed', on ? 'true' : 'false')
+		pill.setAttribute('aria-disabled', locked ? 'true' : 'false')
+		const info = channelInfo[channel]
+		const ver = $(`chan-ver-${channel}`)
+		if (ver) {
+			ver.classList.toggle('up', info.status === 'up')
+			ver.classList.toggle('down', info.status === 'down')
+			const label = ver.querySelector('.chan-ver-text')
+			if (label) {
+				label.textContent =
+					info.status === 'up' ? (info.version ?? '?')
+					: info.status === 'down' ? t('dev.channelOff')
+					: '\u2026'
+			}
+		}
+	}
+	const status = $('chan-status')
+	if (status) {
+		const info = channelInfo[current]
+		const version = info.status === 'up' && info.version ? info.version : info.status === 'down' ? t('dev.channelOff') : '\u2026'
+		status.textContent = t('dev.channelUsing', { channel: channelLabel(current), version })
+		status.classList.toggle('beta', current === 'beta')
+	}
+	const errorLine = $('chan-error')
+	if (errorLine) {
+		// A live tunnel outranks a stale probe failure: the pills are dimmed,
+		// and the line says why.
+		const shown = locked ? { text: t('dev.channelDisconnectFirst'), kind: 'warn' } : channelError
+		errorLine.textContent = shown?.text ?? ''
+		errorLine.classList.toggle('bad', shown?.kind === 'bad')
+		errorLine.classList.toggle('hidden', !shown)
+		errorLine.hidden = !shown
+	}
+}
+
+/**
+ * PROD <-> BETA.
+ *
+ * The target is probed first, and nothing changes unless it answers: a switch
+ * to a dead channel used to sign the user out and then fail to sign them back
+ * in, which read as a broken account rather than as a server that is down.
+ */
+async function switchChannel(target) {
+	if (!CHANNELS.includes(target) || channelSwitching) return
+	const from = currentChannel()
+	if (target === from) return
+	if (tunnelBusy()) {
+		setChannelError(t('dev.channelDisconnectFirst'), 'warn')
+		return
+	}
+	channelSwitching = true
+	setChannelError('')
+	const pill = $(`chan-${target}`)
+	pill?.classList.add('busy')
+	const probe = await probeChannel(target)
+	rememberChannel(target, probe)
+	pill?.classList.remove('busy')
+	if (!probe.ok) {
+		channelSwitching = false
+		// The pills never moved, so there is nothing to revert visually; the
+		// render below just refreshes the version line and shows the reason.
+		setChannelError(t(target === 'beta' ? 'dev.channelUnavailableBeta' : 'dev.channelUnavailableProd'), 'bad')
+		return
+	}
+
+	const previousGateway = { ...(settings.gateway ?? {}) }
+	settings.channel = target
+	const field = $('s-api-base')
+	if (field) field.value = settings.apiBase?.[target] ?? ''
+	// ROUND 9 (block 4.2): prod is served on 8443, beta on 8444. Leaving the
+	// port behind pointed the browser at the prod listener while carrying beta
+	// credentials, which surfaces as an opaque TLS failure rather than as
+	// "wrong channel".
+	const port = target === 'beta' ? 8444 : 8443
+	settings.gateway = { ...(settings.gateway ?? {}), port }
+	const portField = $('s-gw-port')
+	if (portField) portField.value = String(port)
+	renderChannelCard()
+	const saved = await saveSettings()
+	if (!saved) {
+		// Not persisted, so not switched: put the form back the way it was
+		// rather than signing out of a channel we are still on.
+		settings.channel = from
+		settings.gateway = previousGateway
+		if (field) field.value = settings.apiBase?.[from] ?? ''
+		if (portField) portField.value = String(previousGateway.port ?? (from === 'beta' ? 8444 : 8443))
+		channelSwitching = false
+		renderChannelCard()
+		return
+	}
+	// A session belongs to exactly one control plane: a prod refresh token is
+	// meaningless on beta and produces 401s that read as a broken account.
+	banner('set-banner', t('dev.channelSwitched', { channel: target }), { kind: 'info', title: t('dev.title') })
+	try {
+		await signOut()
+	} finally {
+		channelSwitching = false
+	}
 }
 
 /** "Except these" and "only these" are meaningless without somewhere to type. */
@@ -1279,7 +1671,12 @@ async function togglePower() {
 			// on a leash: if nothing comes back, it becomes an error instead of
 			// spinning until the popup is closed.
 			localPhase = 'connecting'
-			state = { ...(state ?? {}), runtime: { ...(state?.runtime ?? {}), phase: 'connecting', error: null } }
+			// Numbers from the previous session are not "this" session's: drop
+			// them now so the grid shows skeletons, never a stale address.
+			state = {
+				...(state ?? {}),
+				runtime: { ...(state?.runtime ?? {}), phase: 'connecting', error: null, stats: null, session: null, connectedAt: null },
+			}
 			renderVpn()
 			clearWatchdog()
 			connectWatchdog = setTimeout(() => {
@@ -1344,7 +1741,9 @@ function linesOf(id) {
 }
 
 function buildSettingsPatch() {
-	const channel = $('s-channel')?.value ?? settings.channel ?? 'prod'
+	// The channel is owned by the PROD/BETA card, which only writes it after the
+	// target has answered - so the in-memory value is the truth here.
+	const channel = currentChannel()
 	return {
 		channel,
 		apiBase: { ...settings.apiBase, [channel]: String($('s-api-base')?.value ?? '').trim() || settings.apiBase?.[channel] },
@@ -1360,6 +1759,7 @@ function buildSettingsPatch() {
 		language: settings.language ?? 'auto',
 		autoConnect: Boolean(settings.autoConnect),
 		killSwitch: Boolean(settings.killSwitch),
+		tunnelIncognito: Boolean(settings.tunnelIncognito),
 		preferredNodeId: settings.preferredNodeId ?? null,
 	}
 }
@@ -1670,26 +2070,23 @@ function wire() {
 		toggleSwitch($('sw-kill'), settings.killSwitch)
 		queueSave()
 	})
-
-	$('s-channel')?.addEventListener('change', async () => {
-		const channel = $('s-channel').value
-		settings.channel = channel
-		const field = $('s-api-base')
-		if (field) field.value = settings.apiBase?.[channel] ?? ''
-		// ROUND 9 (block 4.2): prod is served on 8443, beta on 8444. Leaving the
-		// port behind pointed the browser at the prod listener while carrying beta
-		// credentials, which surfaces as an opaque TLS failure rather than as
-		// "wrong channel".
-		const port = channel === 'beta' ? 8444 : 8443
-		settings.gateway = { ...(settings.gateway ?? {}), port }
-		const portField = $('s-gw-port')
-		if (portField) portField.value = String(port)
-		await saveSettings()
-		// A session belongs to exactly one control plane: a prod refresh token is
-		// meaningless on beta and produces 401s that read as a broken account.
-		banner('set-banner', t('dev.channelSwitched', { channel }), { kind: 'info', title: t('dev.title') })
-		await signOut()
+	// Saving is enough to make this live: the worker re-applies the proxy
+	// settings, scopes included, whenever settings change while connected.
+	$('sw-incognito')?.addEventListener('click', () => {
+		settings.tunnelIncognito = !settings.tunnelIncognito
+		toggleSwitch($('sw-incognito'), settings.tunnelIncognito)
+		renderIncognitoNote()
+		queueSave()
+		// The user may have just flipped Chrome's own switch and come back.
+		probeIncognitoAccess()
 	})
+	$('btn-incognito-perm')?.addEventListener('click', openIncognitoPermission)
+
+	// PROD / BETA. The handler probes the target before anything is changed;
+	// see switchChannel for the order of operations.
+	for (const channel of CHANNELS) {
+		$(`chan-${channel}`)?.addEventListener('click', () => switchChannel(channel))
+	}
 
 	// ROUND 9 (block 4.3): the device filter finally does something.
 	$('seg-devices')?.addEventListener('click', (event) => {
@@ -1799,6 +2196,9 @@ async function boot() {
 	// the worker wakes up.
 	nodes = cachedNodes()
 	renderServers()
+	// Asked once up front so the incognito row can render its state the moment
+	// Settings is opened, instead of flashing from "unknown" to an answer.
+	probeIncognitoAccess()
 	await refreshState()
 	paintIcons()
 	if (!nodes.length) ensureNodes()

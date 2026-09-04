@@ -40,7 +40,13 @@ export async function requireUser(request: FastifyRequest): Promise<void> {
 
 	const user = await prisma.user.findUnique({ where: { id: payload.sub } })
 	if (!user) throw unauthorized("Unknown user")
-	if (user.status !== "ACTIVE") throw forbidden("User is disabled")
+	if (user.status !== "ACTIVE") {
+		throw forbidden(
+			user.status === "BLOCKED"
+				? "This account has been blocked. Contact support."
+				: "User is disabled",
+		)
+	}
 
 	let device = null
 	if (payload.did) {

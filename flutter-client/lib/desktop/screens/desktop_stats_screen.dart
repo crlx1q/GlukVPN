@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/tokens.dart';
 import '../../utils/format.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/skeleton.dart';
 import '../i18n/desktop_strings.dart';
 import '../state/usage_store.dart';
 import '../widgets/metric_cell.dart';
@@ -17,14 +18,24 @@ class DesktopStatsScreen extends StatelessWidget {
     super.key,
     required this.usage,
     required this.strings,
+    this.loading = false,
+    this.reduceMotion = false,
   });
 
   final UsageSnapshot usage;
   final DesktopStrings strings;
 
+  /// ROUND 26: true until the history has been read from disk. Every cell
+  /// shows a skeleton instead of a zero that is about to be replaced.
+  final bool loading;
+
+  /// Skeletons hold still under reduce-motion.
+  final bool reduceMotion;
+
   @override
   Widget build(BuildContext context) {
     final s = strings;
+    final bool animate = !reduceMotion;
 
     return ListView(
       padding: const EdgeInsets.all(GlukSizes.pagePadding),
@@ -46,18 +57,24 @@ class DesktopStatsScreen extends StatelessWidget {
               value: formatBytes(usage.today.totalBytes),
               monospace: true,
               icon: Icons.today_rounded,
+              loading: loading,
+              animate: animate,
             ),
             MetricCell(
               label: s.thisMonth,
               value: formatBytes(usage.thisMonth.totalBytes),
               monospace: true,
               icon: Icons.calendar_month_rounded,
+              loading: loading,
+              animate: animate,
             ),
             MetricCell(
               label: s.allTime,
               value: formatBytes(usage.allTime.totalBytes),
               monospace: true,
               icon: Icons.all_inclusive_rounded,
+              loading: loading,
+              animate: animate,
             ),
           ],
         ),
@@ -71,17 +88,23 @@ class DesktopStatsScreen extends StatelessWidget {
               value: formatBytes(usage.allTime.rxBytes),
               monospace: true,
               valueColor: GlukColors.connected,
+              loading: loading,
+              animate: animate,
             ),
             MetricCell(
               label: '${s.uploaded} · ${s.allTime}',
               value: formatBytes(usage.allTime.txBytes),
               monospace: true,
               valueColor: GlukColors.violetLight,
+              loading: loading,
+              animate: animate,
             ),
             MetricCell(
               label: s.vpnTime,
               value: formatDuration(usage.allTime.duration),
               monospace: true,
+              loading: loading,
+              animate: animate,
             ),
           ],
         ),
@@ -99,7 +122,28 @@ class DesktopStatsScreen extends StatelessWidget {
         ),
         const SizedBox(height: 10),
 
-        if (usage.recentDays.isEmpty)
+        if (loading)
+          // The chart has no shape until the days are known, so the panel
+          // holds a few bar-sized placeholders where the rows will be.
+          GlassPanel(
+            radius: 18,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                for (int i = 0; i < 4; i++)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 7),
+                    child: SkeletonText(
+                      characters: 34,
+                      animate: animate,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+              ],
+            ),
+          )
+        else if (usage.recentDays.isEmpty)
           GlassPanel(
             radius: 18,
             padding: const EdgeInsets.symmetric(vertical: 34),

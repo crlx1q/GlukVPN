@@ -432,7 +432,19 @@ async function connect({ nodeId }) {
 			return fail('This computer is offline. Connect to a network and try again.', 'offline')
 		}
 	} catch {}
-	await patchRuntime({ phase: PHASE.connecting, error: null })
+	// A fresh attempt starts with fresh numbers. Leaving the previous session's
+	// stats in place let the popup show the old exit IP as if it were still
+	// true while a new tunnel was being dialled (browser restart with a tunnel
+	// that had been up, or a connect issued on top of a live one). Only the old
+	// session id is kept, so a failed attempt can still close it on the server.
+	const previous = await Store.runtime()
+	await patchRuntime({
+		phase: PHASE.connecting,
+		error: null,
+		connectedAt: null,
+		session: previous?.session?.id ? { id: previous.session.id } : null,
+		stats: null,
+	})
 	await setBadge(PHASE.connecting)
 	try {
 		const settings = await Store.settings()
@@ -473,6 +485,7 @@ async function connect({ nodeId }) {
 			killSwitch: settings.killSwitch,
 			siteList: settings.siteList,
 			tunnelMode: settings.tunnelMode,
+			tunnelIncognito: settings.tunnelIncognito,
 		})
 
 		await patchRuntime({
@@ -837,6 +850,7 @@ const HANDLERS = {
 				killSwitch: settings.killSwitch,
 				siteList: settings.siteList,
 				tunnelMode: settings.tunnelMode,
+				tunnelIncognito: settings.tunnelIncognito,
 			})
 			await patchRuntime({ gateway })
 		}

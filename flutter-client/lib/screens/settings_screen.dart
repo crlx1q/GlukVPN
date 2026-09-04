@@ -15,6 +15,7 @@ import '../theme/motion.dart';
 import '../theme/tokens.dart';
 import '../utils/format.dart' hide countryFlag;
 import '../widgets/glass.dart';
+import '../widgets/language_pill.dart';
 import 'account_screen.dart';
 import 'devices_screen.dart';
 
@@ -43,47 +44,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// secret gesture only meant a normal user could uncover a switch that would
   /// then fail on them, while an admin had to know the trick to find a control
   /// they are entitled to. The rule is now the same one the browser extension
-  /// and the desktop client use: `channel.canSwitchAs(user)`, which is simply
-  /// "this account is an admin". No taps, no hidden state, one rule everywhere.
+  /// and the desktop client use: `channel.canSwitchFor(user)` - an admin or a
+  /// flagged beta tester, on a build that allows beta at all. No taps, no
+  /// hidden state, one rule everywhere.
 
-  /// ROUND 11: the language picker.
-  ///
-  /// Three choices, not two. "System" has to exist and has to be the default,
-  /// because the app should follow the phone for anyone who never opens this
-  /// row. Picking a language explicitly pins it, so a Russian phone can run the
-  /// app in English and the other way round.
-  Future<void> _pickLanguage(LocaleController locale) async {
-    final AppStrings s = context.strings;
-    final AppLanguage? picked = await showDialog<AppLanguage>(
-      context: context,
-      builder: (BuildContext context) => SimpleDialog(
-        title: Text(s.language),
-        children: <Widget>[
-          for (final AppLanguage option in AppLanguage.values)
-            RadioListTile<AppLanguage>(
-              value: option,
-              groupValue: locale.preference,
-              title: Text(_languageLabel(option, s)),
-              onChanged: (AppLanguage? value) =>
-                  Navigator.of(context).pop(value),
-            ),
-        ],
-      ),
-    );
-    if (picked != null) await locale.select(picked);
-  }
+  /// ROUND 11: the language picker. The dialog itself lives in
+  /// `widgets/language_pill.dart` now, shared with the pill on sign-in.
+  Future<void> _pickLanguage(LocaleController locale) =>
+      showLanguageChooser(context, locale);
 
-  /// The two real languages are written in their own language - a person
-  /// looking for Russian is looking for "\u0420\u0443\u0441\u0441\u043a\u0438\u0439", not for "Russian".
-  static String _languageLabel(AppLanguage option, AppStrings s) {
-    switch (option) {
-      case AppLanguage.system:
-        return s.languageAuto;
-      case AppLanguage.english:
-        return 'English';
-      case AppLanguage.russian:
-        return '\u0420\u0443\u0441\u0441\u043a\u0438\u0439';
+  /// Why the loops are frozen, in the interface language. Null when motion is
+  /// only paused because the app is in the background.
+  static String? _reduceMotionReason(MotionController motion, AppStrings s) {
+    if (motion.systemDisablesAnimations) return s.reasonSystemAnimationsOff;
+    if (motion.powerSaveMode) return s.reasonBatterySaver;
+    if (motion.lowBattery) {
+      return s.reasonLowBattery(MotionController.lowBatteryThreshold);
     }
+    return null;
   }
 
   @override
@@ -168,8 +146,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 : Icons.animation_rounded,
             title: s.animations,
             subtitle: motion.reduceMotion
-                ? 'Paused to save power (${motion.reduceMotionReason}). '
-                    'Buttons still show their progress.'
+                ? s.reduceMotionBody(_reduceMotionReason(motion, s))
                 : s.fullMotion,
             trailing: _Pill(
               label: motion.reduceMotion ? s.reduced : s.full,
@@ -190,24 +167,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             onTap: () => _pickLanguage(locale),
           ),
-          // Admins only, on every client. A normal account sees PROD and
-          // nothing about channels, because that is all it is allowed to use.
-          if (channel.canSwitchAs(user)) ...<Widget>[
+          // Admins, beta testers and internal builds, on every client - and
+          // only when this build can switch at all. A normal account sees PROD
+          // and nothing about channels, because that is all it may use.
+          if (channel.canSwitchFor(user)) ...<Widget>[
             const SizedBox(height: 20),
             _SectionLabel(s.internal),
             const SizedBox(height: 8),
-            _ChannelPanel(channel: channel, vpn: vpn),
+            _ChannelCard(channel: channel, vpn: vpn, motion: motion),
             const SizedBox(height: 12),
             _DiagnosticsPanel(channel: channel, auth: auth),
           ],
           const SizedBox(height: 20),
           _LogoutButton(auth: auth, vpn: vpn),
           const SizedBox(height: 14),
-          Text(
-            'Traffic accounting records only byte counters and session times '
-            '\u2014 never addresses, URLs or payloads.',
-            style: text.bodySmall,
-          ),
+          Text(s.accountingNotice, style: text.bodySmall),
           const SizedBox(height: 8),
           // The one line a release build keeps: what version answered. It is
           // plain text now - tapping it five times does nothing.
@@ -224,28 +198,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
-}
-
-/// Short, human date for a card: "12 Sep 2026". `formatDateTime` is for rows
-/// where the exact minute matters; a plan expiry does not read like a log line.
-String _shortDate(DateTime? value) {
-  if (value == null) return '\u2014';
-  const List<String> months = <String>[
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  final DateTime local = value.toLocal();
-  return '${local.day} ${months[local.month - 1]} ${local.year}';
 }
 
 /// A status word, not a database enum: lower case, tinted, pill-shaped.
@@ -388,6 +340,7 @@ class _SubscriptionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
     final TextTheme text = Theme.of(context).textTheme;
     final DateTime? expires = subscription?.expiresAt;
     final int? daysLeft = expires == null
@@ -413,12 +366,12 @@ class _SubscriptionCard extends StatelessWidget {
                 color: GlukColors.violetLight,
               ),
               const SizedBox(width: 8),
-              Text('Premium', style: text.titleMedium),
+              Text(s.premium, style: text.titleMedium),
               const Spacer(),
               _Pill(
                 label: active
-                    ? 'active'
-                    : (subscription?.status.toLowerCase() ?? 'none'),
+                    ? s.active
+                    : (subscription?.status.toLowerCase() ?? s.none),
                 tone: active ? GlukColors.connected : GlukColors.amber,
               ),
             ],
@@ -431,10 +384,7 @@ class _SubscriptionCard extends StatelessWidget {
               children: <Widget>[
                 Text('$daysLeft', style: text.headlineSmall),
                 const SizedBox(width: 6),
-                Text(
-                  daysLeft == 1 ? 'day left' : 'days left',
-                  style: text.bodySmall,
-                ),
+                Text(s.daysLeft(daysLeft), style: text.bodySmall),
               ],
             ),
             const SizedBox(height: 9),
@@ -449,7 +399,7 @@ class _SubscriptionCard extends StatelessWidget {
             ),
           ] else
             Text(
-              active ? 'Active' : 'No active plan',
+              active ? s.activePlan : s.noActivePlan,
               style: text.titleMedium?.copyWith(
                 color: active ? GlukColors.connected : GlukColors.amber,
               ),
@@ -458,16 +408,19 @@ class _SubscriptionCard extends StatelessWidget {
           Row(
             children: <Widget>[
               Expanded(
-                child: _MiniStat(label: 'Devices', value: 'up to $maxDevices'),
-              ),
-              Expanded(
                 child: _MiniStat(
-                  label: 'At once',
-                  value: '$maxSessions tunnel${maxSessions == 1 ? '' : 's'}',
+                  label: s.devicesShort,
+                  value: '${s.upTo} $maxDevices',
                 ),
               ),
               Expanded(
-                child: _MiniStat(label: 'Renews', value: _shortDate(expires)),
+                child: _MiniStat(
+                  label: s.atOnce,
+                  value: s.tunnelsCount(maxSessions),
+                ),
+              ),
+              Expanded(
+                child: _MiniStat(label: s.renews, value: s.shortDate(expires)),
               ),
             ],
           ),
@@ -487,6 +440,9 @@ class _ProfileCard extends StatelessWidget {
 
   Future<void> _rename(BuildContext context) async {
     final AuthController auth = context.read<AuthController>();
+    // Read once, up front: the strings must not be looked up through a context
+    // that may be gone by the time the request returns.
+    final AppStrings s = context.read<LocaleController>().strings;
     final String? next = await showDialog<String>(
       context: context,
       builder: (BuildContext context) =>
@@ -502,8 +458,8 @@ class _ProfileCard extends StatelessWidget {
         SnackBar(
           content: Text(
             result.changed
-                ? 'Nickname is now ${result.username}'
-                : 'That is already your nickname',
+                ? s.nicknameIsNow(result.username)
+                : s.alreadyYourNickname,
           ),
         ),
       );
@@ -517,12 +473,13 @@ class _ProfileCard extends StatelessWidget {
     if (id.isEmpty) return;
     Clipboard.setData(ClipboardData(text: id));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Account ID copied')),
+      SnackBar(content: Text(context.read<LocaleController>().strings.accountIdCopied)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
     final TextTheme text = Theme.of(context).textTheme;
     final String name = user?.username ?? '\u2014';
     final String initial =
@@ -580,7 +537,7 @@ class _ProfileCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     _Pill(
                       label: active
-                          ? 'active'
+                          ? s.active
                           : (user?.status.toLowerCase() ?? '\u2014'),
                       tone: active ? GlukColors.connected : GlukColors.amber,
                     ),
@@ -590,7 +547,7 @@ class _ProfileCard extends StatelessWidget {
                 Row(
                   children: <Widget>[
                     Text(
-                      id.isEmpty ? 'ID unavailable' : 'ID $id',
+                      id.isEmpty ? s.idUnavailable : 'ID $id',
                       style: text.bodyMedium?.copyWith(
                         color: GlukColors.text1,
                         fontFeatures: const <FontFeature>[
@@ -618,9 +575,8 @@ class _ProfileCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   created == null
-                      ? 'Nickname can change, this number never does'
-                      : 'Member since ${_shortDate(created)} \u00b7 the number '
-                          'never changes',
+                      ? s.nicknameChangesIdDoesNot
+                      : s.memberSinceNeverChanges(s.shortDate(created)),
                   style: text.bodySmall?.copyWith(fontSize: 10.5),
                 ),
               ],
@@ -628,7 +584,7 @@ class _ProfileCard extends StatelessWidget {
           ),
           CircleIconButton(
             icon: Icons.edit_rounded,
-            tooltip: 'Change nickname',
+            tooltip: s.changeNickname,
             size: 34,
             onTap: () => _rename(context),
           ),
@@ -660,9 +616,10 @@ class _RenameDialogState extends State<_RenameDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
     return AlertDialog(
       backgroundColor: GlukColors.bg,
-      title: const Text('Change nickname'),
+      title: Text(s.changeNickname),
       content: Form(
         key: _form,
         child: TextFormField(
@@ -670,14 +627,14 @@ class _RenameDialogState extends State<_RenameDialog> {
           autofocus: true,
           autocorrect: false,
           enableSuggestions: false,
-          decoration: const InputDecoration(labelText: 'Nickname'),
+          decoration: InputDecoration(labelText: s.nickname),
           validator: (String? value) {
             final String text = (value ?? '').trim();
             if (text.length < AppConfig.minUsernameLength) {
-              return 'At least ${AppConfig.minUsernameLength} characters';
+              return s.atLeastChars(AppConfig.minUsernameLength);
             }
             if (text.length > AppConfig.maxUsernameLength) {
-              return 'At most ${AppConfig.maxUsernameLength} characters';
+              return s.atMostChars(AppConfig.maxUsernameLength);
             }
             return null;
           },
@@ -686,14 +643,14 @@ class _RenameDialogState extends State<_RenameDialog> {
       actions: <Widget>[
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(s.cancel),
         ),
         FilledButton(
           onPressed: () {
             if (!(_form.currentState?.validate() ?? false)) return;
             Navigator.of(context).pop(_controller.text.trim());
           },
-          child: const Text('Save'),
+          child: Text(s.save),
         ),
       ],
     );
@@ -710,41 +667,42 @@ class _DiagnosticsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
     final ChannelVersion? version = channel.versionOf(channel.active);
 
     return _Panel(
-      title: 'Diagnostics',
+      title: s.diagnostics,
       children: <Widget>[
-        _Row(label: 'Channel', value: channel.active.label),
-        _Row(label: 'Control API', value: channel.baseUrl, mono: true),
-        _Row(label: 'Server version', value: version?.version ?? '\u2014'),
+        _Row(label: s.channel, value: channel.active.label),
+        _Row(label: s.controlApi, value: channel.baseUrl, mono: true),
+        _Row(label: s.serverVersion, value: version?.version ?? '\u2014'),
         // The release id is what actually changes when a promote copies the
         // same version number into another directory.
         _Row(
-          label: 'Release',
+          label: s.release,
           value: version?.releaseLabel ?? '\u2014',
           mono: true,
         ),
         _Row(
-          label: 'Data version',
+          label: s.dataVersion,
           value: version?.migration ?? '\u2014',
           mono: true,
         ),
-        _Row(label: 'Released', value: formatDateTime(version?.releasedAt)),
-        _Row(label: 'Device', value: auth.deviceName ?? '\u2014'),
-        _Row(label: 'Device id', value: _short(auth.deviceId), mono: true),
+        _Row(label: s.released, value: formatDateTime(version?.releasedAt)),
+        _Row(label: s.device, value: auth.deviceName ?? '\u2014'),
+        _Row(label: s.deviceId, value: _short(auth.deviceId), mono: true),
         _Row(
-          label: 'WireGuard key',
+          label: s.wireguardKey,
           value: auth.devicePublicKey == null
-              ? 'not generated yet'
-              : '${_short(auth.devicePublicKey, 12)} (public)',
+              ? s.notGeneratedYet
+              : '${_short(auth.devicePublicKey, 12)} ${s.publicKeyMark}',
           mono: true,
         ),
         _Row(
-          label: 'Tunnel interface',
+          label: s.tunnelInterface,
           value: AppConfig.tunnelInterfaceName,
         ),
-        _Row(label: 'App id', value: AppConfig.appId, mono: true),
+        _Row(label: s.appId, value: AppConfig.appId, mono: true),
       ],
     );
   }
@@ -755,25 +713,56 @@ class _DiagnosticsPanel extends StatelessWidget {
   }
 }
 
-/// PROD / BETA. The two channels are separate deployments with separate
-/// databases, so this is a channel switch, not a URL toggle: accounts, devices
-/// and sessions do not carry over.
-class _ChannelPanel extends StatelessWidget {
-  const _ChannelPanel({required this.channel, required this.vpn});
+/// PROD / BETA - the channel card, one design on the phone, the desktop and
+/// the extension.
+///
+/// Two segmented pills side by side. The active one is filled (violet for
+/// PROD, amber for BETA - amber is reserved for beta everywhere, so the two
+/// can never be confused), the other is a ghost outline. Under each pill a
+/// status dot and the version that channel reports, or "off" when it did not
+/// answer. Then one line saying what is in use, and one line of hint.
+///
+/// The two channels are separate deployments with separate databases, so a
+/// tap here is a channel switch, not a URL toggle: accounts, devices and
+/// sessions do not carry over. The tap goes through
+/// [ChannelController.trySwitch], which probes the target first and refuses
+/// to move when it does not answer; the card only renders that outcome.
+class _ChannelCard extends StatelessWidget {
+  const _ChannelCard({
+    required this.channel,
+    required this.vpn,
+    required this.motion,
+  });
 
   final ChannelController channel;
   final VpnController vpn;
+  final MotionController motion;
+
+  /// The error line, in the interface language, or null when there is none.
+  static String? _failure(ChannelController channel, AppStrings s) {
+    final AppChannel? unavailable = channel.unavailableChannel;
+    if (unavailable != null) {
+      return s.serverUnavailable(beta: unavailable.isBeta);
+    }
+    if (channel.lastSwitchResult == ChannelSwitchResult.notAllowed) {
+      return s.channelAdminOnly;
+    }
+    return channel.error;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
     final TextTheme text = Theme.of(context).textTheme;
+    // Repointing the app at another control plane mid-tunnel would leave a
+    // peer installed on a node the app can no longer talk to.
     final bool locked = vpn.isConnected || vpn.isTransitioning;
-    final ChannelVersion? prod = channel.versionOf(AppChannel.prod);
-    final ChannelVersion? beta = channel.versionOf(AppChannel.beta);
-    final String? betaProblem = channel.unreachableReason(AppChannel.beta);
+    final bool enabled = !locked && !channel.switching;
+    final ChannelVersion? current = channel.versionOf(channel.active);
+    final String? failure = _failure(channel, s);
 
     return _Panel(
-      title: 'Channel',
+      title: s.channel,
       trailing: channel.probing
           ? const SizedBox(
               width: 14,
@@ -782,63 +771,165 @@ class _ChannelPanel extends StatelessWidget {
             )
           : null,
       children: <Widget>[
-        _Row(
-          label: 'Production',
-          value: prod?.version ?? 'unreachable',
-          valueColor: prod == null ? GlukColors.amber : GlukColors.text0,
-        ),
-        _Row(
-          label: 'Beta',
-          value: beta?.version ?? 'off',
-          valueColor: beta == null ? GlukColors.text2 : GlukColors.amber,
-        ),
-        const SizedBox(height: 6),
         Row(
           children: <Widget>[
-            Expanded(
-              child: Text(
-                channel.isBeta ? 'Using BETA' : 'Using PRODUCTION',
-                style: text.titleMedium?.copyWith(
-                  color: channel.isBeta ? GlukColors.amber : GlukColors.text0,
+            for (final AppChannel option in AppChannel.values) ...<Widget>[
+              if (option != AppChannel.values.first) const SizedBox(width: 10),
+              Expanded(
+                child: _ChannelSegment(
+                  option: option,
+                  active: channel.active == option,
+                  reachable: channel.isReachable(option),
+                  version: channel.versionOf(option)?.version,
+                  pending: channel.pendingTarget == option,
+                  enabled: enabled,
+                  motion: motion,
+                  onTap: () => channel.trySwitch(option),
                 ),
               ),
-            ),
-            if (channel.switching)
-              const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            else
-              Switch(
-                value: channel.isBeta,
-                activeColor: GlukColors.amber,
-                onChanged: locked || (!channel.betaReachable && !channel.isBeta)
-                    ? null
-                    : (bool value) => channel.setBetaEnabled(value),
-              ),
+            ],
           ],
+        ),
+        const SizedBox(height: 14),
+        // "Using: PRODUCTION · 1.2.0" / "Сейчас: BETA · 1.3.0". The channel
+        // names stay Latin in both languages: they are labels, not words.
+        Text(
+          '${s.channelNow}: ${channel.isBeta ? 'BETA' : 'PRODUCTION'} '
+          '\u00b7 ${current?.version ?? '\u2014'}',
+          style: text.titleMedium?.copyWith(
+            color: channel.isBeta ? GlukColors.amber : GlukColors.text0,
+            fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+          ),
         ),
         const SizedBox(height: 6),
         Text(
-          locked
-              ? 'Disconnect first: switching channel while a tunnel is up would '
-                'leave a peer installed on a node this app can no longer reach.'
-              : channel.betaReachable || channel.isBeta
-                  ? 'BETA is a separate deployment: its own database, its own '
-                    'WireGuard node (wg1 on UDP 51821) and its own accounts. '
-                    'Your PROD session stays signed in.'
-                  : 'BETA is not answering right now'
-                    '${betaProblem == null ? '' : ': $betaProblem'}.',
-          style: text.bodySmall,
+          locked ? s.disconnectVpnFirst : s.channelSwitchHint,
+          style: text.bodySmall?.copyWith(
+            color: locked ? GlukColors.amber : null,
+          ),
         ),
-        if (channel.error != null) ...<Widget>[
+        if (failure != null) ...<Widget>[
           const SizedBox(height: 10),
           InkWell(
             onTap: channel.clearError,
-            child: InlineNotice(message: channel.error!),
+            child: InlineNotice(message: failure, tone: GlukColors.amber),
           ),
         ],
+      ],
+    );
+  }
+}
+
+/// One half of the channel card: the pill and the status line under it.
+class _ChannelSegment extends StatelessWidget {
+  const _ChannelSegment({
+    required this.option,
+    required this.active,
+    required this.reachable,
+    required this.version,
+    required this.pending,
+    required this.enabled,
+    required this.motion,
+    required this.onTap,
+  });
+
+  final AppChannel option;
+  final bool active;
+  final bool reachable;
+  final String? version;
+
+  /// True while [ChannelController.trySwitch] is probing or moving to this
+  /// channel - the pill shows a spinner next to its label.
+  final bool pending;
+  final bool enabled;
+  final MotionController motion;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
+    final TextTheme text = Theme.of(context).textTheme;
+    final Color tone = option.isBeta ? GlukColors.amber : GlukColors.violet;
+    // Amber is light, so the active BETA pill takes dark text; violet is dark
+    // enough for white.
+    final Color labelColor = active
+        ? (option.isBeta ? GlukColors.bg : GlukColors.text0)
+        : GlukColors.text1;
+    final bool tappable = enabled && !active;
+
+    return Column(
+      children: <Widget>[
+        Opacity(
+          opacity: enabled || active ? 1 : 0.55,
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(999),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: tappable ? onTap : null,
+              splashColor: tone.withOpacity(0.18),
+              child: AnimatedContainer(
+                duration: motion.transition(const Duration(milliseconds: 180)),
+                height: 40,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: active ? tone : Colors.transparent,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: active ? tone : GlukColors.stroke,
+                    width: 1.2,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    if (pending) ...<Widget>[
+                      SizedBox(
+                        width: 13,
+                        height: 13,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.8,
+                          color: labelColor,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    Text(
+                      option.label,
+                      style: text.labelLarge?.copyWith(
+                        color: labelColor,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 7),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: reachable ? GlukColors.connected : GlukColors.text2,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              reachable ? (version ?? '\u2014') : s.off,
+              style: text.bodySmall?.copyWith(
+                color: reachable ? GlukColors.text1 : GlukColors.text2,
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -851,23 +942,21 @@ class _LogoutButton extends StatelessWidget {
   final VpnController vpn;
 
   Future<void> _logout(BuildContext context) async {
+    final AppStrings s = context.read<LocaleController>().strings;
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
         backgroundColor: GlukColors.bg,
-        title: const Text('Sign out?'),
-        content: const Text(
-          'The tunnel is closed, this device is revoked on the server and its '
-          'peer is removed from the node.',
-        ),
+        title: Text(s.signOutQuestion),
+        content: Text(s.signOutBody),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+            child: Text(s.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Sign out'),
+            child: Text(s.signOut),
           ),
         ],
       ),
@@ -889,7 +978,7 @@ class _LogoutButton extends StatelessWidget {
           const Icon(Icons.logout_rounded, size: 17, color: GlukColors.danger),
           const SizedBox(width: 8),
           Text(
-            'Sign out',
+            context.strings.signOut,
             style: Theme.of(context)
                 .textTheme
                 .titleMedium

@@ -1,4 +1,5 @@
 import '../../platform/tunnel_backend.dart';
+import '../logic/connection_phase.dart';
 import 'tunnel_ipc.dart';
 
 /// What the service told us about itself during the handshake.
@@ -36,7 +37,7 @@ class TunnelServiceInfo {
 /// Talks to GlukVpnTunnelService.exe over a named pipe. All privileged work
 /// (adapter creation, routing, WFP filters) happens in that service, so the
 /// Flutter process never needs to be elevated after install.
-class WindowsTunnelClient implements TunnelBackend {
+class WindowsTunnelClient implements TunnelBackend, TunnelEngineReporter {
   WindowsTunnelClient({
     TunnelPipe? pipe,
     String pipeName = 'GlukVPN.tunnel',
@@ -46,9 +47,24 @@ class WindowsTunnelClient implements TunnelBackend {
 
   TunnelServiceInfo? _info;
   String? _lastError;
+  String? _engine;
 
   TunnelServiceInfo? get info => _info;
   String? get lastError => _lastError;
+
+  /// ROUND 26: `sing-box` or `wireguard`, from the `engine` field the service
+  /// adds to every status reply. Null until the service has said, or with a
+  /// service from before the field existed. Kept here rather than on
+  /// [TunnelSnapshot] because that type is shared with Android, which has no
+  /// engine to report.
+  @override
+  String? get reportedEngine => _engine;
+
+  /// Remembers the engine named in [payload], if any.
+  void _noteEngine(Map<String, dynamic>? payload) {
+    final Object? raw = payload?['engine'];
+    if (raw is String && raw.isNotEmpty) _engine = raw;
+  }
 
   @override
   Future<bool> isAvailable() async {
@@ -86,6 +102,7 @@ class WindowsTunnelClient implements TunnelBackend {
       driverReady: payload['driverReady'] == true,
       perAppRedirectSupported: payload['perAppRedirect'] == true,
     );
+    _noteEngine(payload);
     _lastError = null;
     return _info;
   }
@@ -145,6 +162,7 @@ class WindowsTunnelClient implements TunnelBackend {
       );
     }
 
+    _noteEngine(reply.payload);
     return parseStatus(reply.payload!);
   }
 
@@ -185,6 +203,7 @@ class WindowsTunnelClient implements TunnelBackend {
     }
 
     final payload = reply.payload!;
+    _noteEngine(payload);
     if (payload['ok'] != true) {
       final code = _errorCodeOf(payload);
       return TunnelResult.failure(
@@ -252,15 +271,26 @@ class WindowsTunnelClient implements TunnelBackend {
     }
   }
 
+  // The service uses two shapes: a rejected request answers with a nested
+  // `error: {code, message}` object, while a status body that describes a
+  // tunnel that failed on its own carries flat `errorCode` / `errorMessage`
+  // keys (FillStatus in pipe_server.cpp). ROUND 26: both are read, so the
+  // service's own explanation - "sing-box.exe is missing next to the service"
+  // - reaches the UI instead of a bare tunnel_error.
+
   static String? _errorCodeOf(Map<String, dynamic> body) {
     final error = body['error'];
     if (error is Map) return error['code'] as String?;
+    final flat = body['errorCode'];
+    if (flat is String && flat.isNotEmpty) return flat;
     return null;
   }
 
   static String? _errorMessageOf(Map<String, dynamic> body) {
     final error = body['error'];
     if (error is Map) return error['message'] as String?;
+    final flat = body['errorMessage'];
+    if (flat is String && flat.isNotEmpty) return flat;
     return null;
   }
 

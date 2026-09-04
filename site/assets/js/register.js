@@ -406,6 +406,29 @@
     });
   }
 
+  /* 0.8.0: вход через Google может вернуть outcome:"registration" — аккаунт
+     создан, но контакт в Telegram ещё не подтверждён. sso.js переводит карточку
+     в этот же телеграм-шаг и запускает тот же опрос статуса, что и обычная
+     регистрация: одна ручка, один экран, одно поведение. */
+  window.GlukRegister = {
+    showTelegramStep: function (email, telegramUrl, telegramCode, note) {
+      stopPolling();
+      reg.email = String(email || "");
+      reg.telegramUrl = String(telegramUrl || "");
+      var open = $("reg-tg-open");
+      if (open) {
+        if (reg.telegramUrl) open.href = reg.telegramUrl;
+        else open.removeAttribute("href");
+      }
+      var manual = $("reg-tg-code");
+      if (manual) manual.textContent = telegramCode || "";
+      msg($("reg-tg-msg"), note || "", "ok");
+      step("telegram");
+      reg.tries = 0;
+      if (reg.email) pollStatus();
+    }
+  };
+
   var resend = $("reg-code-resend");
   if (resend) {
     resend.addEventListener("click", function () {

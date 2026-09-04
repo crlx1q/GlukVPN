@@ -2,11 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../../theme/tokens.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/skeleton.dart';
 
 /// A single labelled metric in the desktop HUD (PUBLIC IP, PING, TRAFFIC…).
 ///
 /// Matches the density of the approved visual language: tiny uppercase label,
 /// large value, glass background.
+///
+/// ROUND 26: [loading] swaps the value for a shimmer of [skeletonCharacters]
+/// so the statistics screen does not flash zeros while the history is still
+/// being read from disk.
 class MetricCell extends StatelessWidget {
   const MetricCell({
     super.key,
@@ -17,6 +22,9 @@ class MetricCell extends StatelessWidget {
     this.trailing,
     this.monospace = false,
     this.compact = false,
+    this.loading = false,
+    this.skeletonCharacters = 8,
+    this.animate = true,
   });
 
   final String label;
@@ -31,8 +39,26 @@ class MetricCell extends StatelessWidget {
   /// Tighter padding for the mini tray panel.
   final bool compact;
 
+  /// Draw a skeleton in place of [value].
+  final bool loading;
+
+  /// Width of the skeleton, in characters of the value's font.
+  final int skeletonCharacters;
+
+  /// False under reduce-motion: the skeleton then holds still.
+  final bool animate;
+
   @override
   Widget build(BuildContext context) {
+    final TextStyle valueStyle = TextStyle(
+      color: valueColor ?? GlukColors.text0,
+      fontSize: compact ? 14 : 17,
+      fontWeight: FontWeight.w600,
+      fontFeatures: monospace
+          ? const <FontFeature>[FontFeature.tabularFigures()]
+          : null,
+    );
+
     return GlassPanel(
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 12 : 16,
@@ -66,19 +92,19 @@ class MetricCell extends StatelessWidget {
             ],
           ),
           SizedBox(height: compact ? 4 : 6),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: valueColor ?? GlukColors.text0,
-              fontSize: compact ? 14 : 17,
-              fontWeight: FontWeight.w600,
-              fontFeatures: monospace
-                  ? const <FontFeature>[FontFeature.tabularFigures()]
-                  : null,
+          if (loading)
+            SkeletonText(
+              characters: skeletonCharacters,
+              style: valueStyle,
+              animate: animate,
+            )
+          else
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: valueStyle,
             ),
-          ),
         ],
       ),
     );

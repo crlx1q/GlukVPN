@@ -73,13 +73,13 @@ Future<void> main() async {
   // plane where its account does not exist. Round 11 then hid the switch from
   // non-admins, which removed the only way back from inside the app.
   //
-  // Resolve the stored session once, and if it does not belong to an admin -
-  // or there is no session at all - return to PROD before the first frame.
-  // The extra bootstrap only runs on this rare beta path; the normal one still
-  // happens in AuthGate.
+  // Resolve the stored session once, and if it does not belong to an admin or
+  // a beta tester - or there is no session at all - return to PROD before the
+  // first frame. The extra bootstrap only runs on this rare beta path; the
+  // normal one still happens in AuthGate.
   if (channel.isBeta) {
     await auth.bootstrap();
-    await channel.demoteIfNotAdmin(auth.user);
+    await channel.demoteIfNotEntitled(auth.user);
   }
 
   // Before the first frame, so the app never flashes English at somebody who

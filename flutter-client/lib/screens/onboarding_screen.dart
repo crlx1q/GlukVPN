@@ -5,14 +5,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
+import '../i18n/app_strings.dart';
 import '../models/models.dart';
 import '../state/vpn_controller.dart';
 import '../theme/motion.dart';
 import '../theme/tokens.dart';
 import '../utils/geo.dart';
+import '../utils/geo_dictionary.dart';
 import '../utils/map_view.dart';
 import '../widgets/dotted_world.dart';
 import '../widgets/glass.dart';
+import '../widgets/language_pill.dart';
 import '../widgets/logo.dart';
 import '../widgets/page_background.dart';
 import 'login_screen.dart';
@@ -258,9 +261,18 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   Widget build(BuildContext context) {
     final MotionController motion = context.watch<MotionController>();
     final VpnController vpn = context.watch<VpnController>();
+    final bool russian = context.strings.isRussian;
     final IntroCamera camera = IntroCamera(
       self: _self.point,
       server: _serverPoint(vpn),
+    );
+    // The node the story flies to, named in the interface language through
+    // the shared dictionary; the shipped German node when the list is empty.
+    final VpnNodeInfo? node = vpn.selectedNode;
+    final String serverName = localizeCountry(
+      node?.countryCode ?? 'DE',
+      russian: russian,
+      fallback: node?.country,
     );
 
     return Scaffold(
@@ -307,10 +319,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                                   onSkip: _openLogin,
                                   self: _self,
                                   serverFlag: countryFlag(
-                                    vpn.selectedNode?.countryCode ?? 'DE',
+                                    node?.countryCode ?? 'DE',
                                   ),
-                                  serverName: vpn.selectedNode?.country ??
-                                      'Germany',
+                                  serverName: serverName,
                                 ),
                               ),
                             ),
@@ -672,6 +683,7 @@ class _IntroPager extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
     final TextTheme text = Theme.of(context).textTheme;
 
     return Column(
@@ -684,6 +696,11 @@ class _IntroPager extends StatelessWidget {
               const SizedBox(width: 12),
               Text('GlukVPN', style: text.titleMedium),
               const Spacer(),
+              // The language can be changed before there is an account: the
+              // Settings row is behind a login, which is exactly where someone
+              // who cannot read this screen is not.
+              const LanguagePill(),
+              const SizedBox(width: 4),
               ValueListenableBuilder<double>(
                 valueListenable: page,
                 builder: (BuildContext context, double value, Widget? _) {
@@ -695,7 +712,7 @@ class _IntroPager extends StatelessWidget {
                     duration: const Duration(milliseconds: 200),
                     child: TextButton(
                       onPressed: last ? null : onSkip,
-                      child: const Text('Skip'),
+                      child: Text(s.skip),
                     ),
                   );
                 },
@@ -740,7 +757,7 @@ class _IntroPager extends StatelessWidget {
                 builder: (BuildContext context, double value, Widget? _) {
                   final bool last = value > pages - 1.5;
                   return PrimaryPillButton(
-                    label: last ? "Let's Go" : 'Next',
+                    label: last ? s.letsGo : s.next,
                     onPressed: onNext,
                   );
                 },
@@ -771,30 +788,37 @@ class _Panel extends StatelessWidget {
   final String serverName;
 
   /// eyebrow, first line, accent line, body.
-  List<String> get _copy {
+  List<String> _copy(AppStrings s) {
     switch (index) {
       case 0:
         return <String>[
-          'Global access',
-          'Access the world with',
-          'Super Fast VPN Servers\u2026',
-          'Reach any of our locations in a tap and browse as if you were there.',
+          s.obGlobalAccess,
+          s.obAccessTheWorld,
+          s.obSuperFast,
+          s.obReachAnyLocation,
         ];
       case 1:
+        final String? country = self.countryCode == null
+            ? null
+            : localizeCountry(
+                self.countryCode,
+                russian: s.isRussian,
+                fallback: self.countryName,
+              );
         return <String>[
-          self.countryName == null ? 'You are here' : 'You \u00b7 ${self.countryName}',
-          'This is where',
-          'you are right now',
-          'Approximate, and worked out from your device region and network - '
-              'GlukVPN asks for no GPS and no location permission.',
+          country == null || country.isEmpty
+              ? s.obYouAreHere
+              : '${s.you} \u00b7 $country',
+          s.obThisIsWhere,
+          s.obYouAreRightNow,
+          s.obApproximateBody,
         ];
       default:
         return <String>[
-          'Route \u00b7 $serverName',
-          'One tap and',
-          "you're through",
-          'Your traffic leaves from $serverName over an encrypted WireGuard '
-              'tunnel. Secure route, no logs of the sites you visit.',
+          '${s.obRoute} \u00b7 $serverName',
+          s.obOneTapAnd,
+          s.obYoureThrough,
+          s.obTrafficLeaves(serverName),
         ];
     }
   }
@@ -802,7 +826,7 @@ class _Panel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final TextTheme text = Theme.of(context).textTheme;
-    final List<String> copy = _copy;
+    final List<String> copy = _copy(context.strings);
     final double d = delta.clamp(-1.5, 1.5);
     final double away = d.abs().clamp(0.0, 1.0);
 

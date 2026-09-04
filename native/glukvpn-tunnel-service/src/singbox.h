@@ -61,6 +61,16 @@ struct SingBoxOptions {
 
     // Prefixes kept off the tunnel, e.g. a LAN the user asked to bypass.
     std::vector<std::string> directRoutes;
+
+    // ROUND 26: mirrors the "killSwitch" flag of the "up" request. When set,
+    // the TUN inbound is rendered with strict_route, which makes sing-box
+    // install its own WFP rules so that nothing - DNS included - can leave
+    // over the physical NIC while the tunnel is up. Together with the block-all
+    // filters wfp.cpp arms for the same flag this is what "kill switch" means
+    // on the sing-box engine. Off by default: strict routing also refuses
+    // traffic while the tunnel is being torn down, which a user who did not
+    // ask for a kill switch reads as "the VPN broke my internet".
+    bool strictRoute = false;
 };
 
 // Renders the configuration file. Never fails: an unusable gateway is

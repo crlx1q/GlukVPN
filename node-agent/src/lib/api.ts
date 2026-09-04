@@ -46,7 +46,7 @@ export type RegisterResponse = {
 	wireguard: WireguardParams
 }
 
-export type CommandType = "ADD_PEER" | "REMOVE_PEER" | "SYNC_PEERS"
+export type CommandType = "ADD_PEER" | "REMOVE_PEER" | "SYNC_PEERS" | "SYNC_POLICY"
 
 export type NodeCommand = {
 	id: string
@@ -60,7 +60,29 @@ export type HeartbeatResponse = {
 	nodeStatus: string
 	heartbeatIntervalSec: number
 	nodeTokenExpiresAt: string | null
+	/** Version of the sing-box policy the control plane wants applied. */
+	policyVersion?: string
 	commands: NodeCommand[]
+}
+
+/** The sing-box gateway this node advertises to clients. */
+export type GatewayInfo = {
+	host: string
+	port: number
+	sni?: string
+	flow?: string
+}
+
+export type HeartbeatBody = {
+	cpuPercent?: number
+	ramPercent?: number
+	uptimeSeconds?: number
+	peerCount?: number
+	agentVersion?: string
+	wireguardPublicKey?: string
+	/** Omit = unchanged; null = this node runs no gateway. */
+	gateway?: GatewayInfo | null
+	policyVersion?: string
 }
 
 export type PeerReport = {
@@ -70,13 +92,61 @@ export type PeerReport = {
 	lastHandshakeAt?: string | null
 }
 
+export type VlessDomainReport = {
+	host: string
+	bytesRx: number
+	bytesTx: number
+	connections: number
+	lastSeenAt: string | null
+}
+
+/** Per-device deltas since the previous acknowledged report. */
+export type VlessUserReport = {
+	name: string
+	deltaRx: number
+	deltaTx: number
+	activeConnections: number
+	lastSeenAt: string | null
+	domains?: VlessDomainReport[]
+}
+
 export type ReportResponse = {
 	ok: boolean
 	/** Peers present on the node that the control plane does not know about. */
 	removePeers: string[]
 	/** Live sessions whose peer is missing on the node. */
 	missingPeers: Array<{ sessionId: string; publicKey: string }>
+	vless?: { sessionsUpdated: number; domainsUpdated: number; unknownUsers: string[] }
 }
+
+export type PolicyUser = { name: string; uuid: string; flow: string }
+
+export type PolicyRule = {
+	kind:
+		| "PROTOCOL"
+		| "DOMAIN"
+		| "DOMAIN_SUFFIX"
+		| "DOMAIN_KEYWORD"
+		| "DOMAIN_REGEX"
+		| "IP_CIDR"
+		| "PORT"
+		| "PORT_RANGE"
+	value: string
+	network: string | null
+}
+
+export type NodePolicy = {
+	version: string
+	generatedAt: string
+	users: PolicyUser[]
+	legacyUser: PolicyUser | null
+	rules: PolicyRule[]
+	builtinRules: PolicyRule[]
+	domainStats: boolean
+	flow: string
+}
+
+export type PolicyResponse = { ok: boolean; nodeId: string; policy: NodePolicy }
 
 export type RotateResponse = {
 	nodeToken: string
@@ -187,14 +257,7 @@ export class ControlApi {
 		}
 	}
 
-	async heartbeat(body: {
-		cpuPercent?: number
-		ramPercent?: number
-		uptimeSeconds?: number
-		peerCount?: number
-		agentVersion?: string
-		wireguardPublicKey?: string
-	}): Promise<HeartbeatResponse> {
+	async heartbeat(body: HeartbeatBody): Promise<HeartbeatResponse> {
 		return httpRequest<HeartbeatResponse>({
 			method: "POST",
 			path: "/api/node/heartbeat",
@@ -203,12 +266,21 @@ export class ControlApi {
 		})
 	}
 
-	/** Byte counters and handshake times only — never traffic contents. */
-	async report(peers: PeerReport[]): Promise<ReportResponse> {
+	/** Byte counters, handshake/activity times and sniffed host names only — never payloads. */
+	async report(peers: PeerReport[], vless?: VlessUserReport[]): Promise<ReportResponse> {
 		return httpRequest<ReportResponse>({
 			method: "POST",
 			path: "/api/node/report",
-			body: { peers },
+			body: { peers, ...(vless ? { vless: { users: vless } } : {}) },
+			headers: this.authHeaders(),
+		})
+	}
+
+	/** The sing-box users + reject rules this node should be running. */
+	async policy(): Promise<PolicyResponse> {
+		return httpRequest<PolicyResponse>({
+			method: "GET",
+			path: "/api/node/policy",
 			headers: this.authHeaders(),
 		})
 	}

@@ -6,6 +6,7 @@ import { writeAudit } from "../lib/audit"
 import { badRequest, forbidden, notFound } from "../lib/errors"
 import { clientIp, getAuthUser, requireUser } from "../middleware/auth"
 import { prisma } from "../prisma"
+import { latestSubscription, subscriptionPayload, userPayload } from "../services/accountView"
 import type { LinkTokenPayload } from "../services/linkAuth"
 import {
 	approveLink,
@@ -72,39 +73,27 @@ async function mintLinkTokens(
 	user: User,
 ): Promise<LinkTokenPayload> {
 	const tokens = await issueTokens(app, user, null)
-	const subscription = await prisma.subscription.findFirst({
-		where: { userId: user.id },
-		orderBy: { expiresAt: "desc" },
-	})
+	const subscription = await latestSubscription(user.id)
 	return {
 		tokenType: "Bearer",
 		accessToken: tokens.accessToken,
 		expiresIn: tokens.accessTokenExpiresInSec,
 		refreshToken: tokens.refreshToken,
 		refreshTokenExpiresAt: tokens.refreshTokenExpiresAt.toISOString(),
-		user: {
-			id: user.id,
-			publicId: user.publicId,
-			username: user.username,
-			email: user.email,
-			emailVerified: user.emailVerifiedAt !== null,
-			isAdmin: user.isAdmin,
-			status: user.status,
-			maxDevices: user.maxDevices,
-			maxConcurrentSessions: user.maxSessions,
-			origin: {
-				country: user.lastCountry,
-				countryCode: user.lastCountryCode,
-				region: user.lastRegion,
-			},
-		},
-		subscription: subscription
-			? {
-					status: subscription.status,
-					expiresAt: subscription.expiresAt.toISOString(),
-				}
-			: null,
+		user: userPayload(user),
+		subscription: subscriptionPayload(subscription),
 	}
+}
+
+/**
+ * Tokens are minted only when the client actually collects them (the single
+ * poll that flips APPROVED -> USED), and only for a user who is still allowed
+ * to sign in at that moment.
+ */
+async function mintForUserId(app: FastifyInstance, userId: string): Promise<LinkTokenPayload | null> {
+	const user = await prisma.user.findUnique({ where: { id: userId } })
+	if (!user || user.status !== "ACTIVE") return null
+	return mintLinkTokens(app, user)
 }
 
 export async function linkAuthRoutes(app: FastifyInstance): Promise<void> {
@@ -120,8 +109,8 @@ export async function linkAuthRoutes(app: FastifyInstance): Promise<void> {
 	// sign-up. Somebody who intercepts a deep link therefore still cannot
 	// approve it - they would have to be the linked account.
 	setTelegramLoginBridge({
-		describe: (userCode: string) => {
-			const record = describeLink(userCode)
+		describe: async (userCode: string) => {
+			const record = await describeLink(userCode)
 			if (!record) return null
 			return {
 				client: record.client,
@@ -135,10 +124,10 @@ export async function linkAuthRoutes(app: FastifyInstance): Promise<void> {
 			if (!user) return { ok: false, reason: "not_linked" }
 			if (user.status !== "ACTIVE") return { ok: false, reason: "disabled" }
 
-			const outcome = approveLink({
+			const outcome = await approveLink({
 				userCode,
 				userId: user.id,
-				tokens: await mintLinkTokens(app, user),
+				via: "telegram",
 			})
 			if (!outcome.ok) return { ok: false, reason: outcome.reason }
 
@@ -154,7 +143,7 @@ export async function linkAuthRoutes(app: FastifyInstance): Promise<void> {
 			})
 			return { ok: true, username: user.username }
 		},
-		deny: (userCode: string) => ({ ok: denyLink(userCode).ok }),
+		deny: async (userCode: string) => ({ ok: (await denyLink(userCode)).ok }),
 	})
 
 	// ------------------------------- client side ----------------------------
@@ -168,7 +157,7 @@ export async function linkAuthRoutes(app: FastifyInstance): Promise<void> {
 			const parsed = StartBody.safeParse(request.body)
 			if (!parsed.success) throw badRequest("client is required")
 
-			const started = startLink({
+			const started = await startLink({
 				client: parsed.data.client,
 				deviceName: parsed.data.deviceName ?? null,
 				ip: clientIp(request),
@@ -214,7 +203,10 @@ export async function linkAuthRoutes(app: FastifyInstance): Promise<void> {
 			const parsed = PollBody.safeParse(request.body)
 			if (!parsed.success) throw badRequest("requestId and pollSecret are required")
 
-			const outcome = pollLink(parsed.data)
+			const outcome = await pollLink({
+				...parsed.data,
+				mint: (userId) => mintForUserId(app, userId),
+			})
 			if (outcome.status === "approved") {
 				return reply.send({ status: "approved", ...outcome.tokens })
 			}
@@ -235,7 +227,7 @@ export async function linkAuthRoutes(app: FastifyInstance): Promise<void> {
 			const parsed = CodeParams.safeParse(request.params)
 			if (!parsed.success) throw badRequest("Invalid code")
 
-			const record = describeLink(parsed.data.code)
+			const record = await describeLink(parsed.data.code)
 			if (!record) throw notFound("This sign-in link is unknown or has expired")
 			return reply.send({ request: record })
 		},
@@ -253,13 +245,13 @@ export async function linkAuthRoutes(app: FastifyInstance): Promise<void> {
 			if (user.status !== "ACTIVE") throw forbidden("User is disabled")
 
 			const code = normalizeCode(parsed.data.code)
-			const pending = describeLink(code)
+			const pending = await describeLink(code)
 			if (!pending) throw notFound("This sign-in link is unknown or has expired")
 
-			const outcome = approveLink({
+			const outcome = await approveLink({
 				userCode: code,
 				userId: user.id,
-				tokens: await mintLinkTokens(app, user),
+				via: "web",
 			})
 
 			if (!outcome.ok) {
@@ -291,7 +283,7 @@ export async function linkAuthRoutes(app: FastifyInstance): Promise<void> {
 			if (!parsed.success) throw badRequest("Invalid code")
 			const { user } = getAuthUser(request)
 
-			const outcome = denyLink(parsed.data.code)
+			const outcome = await denyLink(parsed.data.code)
 			if (!outcome.ok) throw notFound("This sign-in link is unknown or has expired")
 
 			await writeAudit({

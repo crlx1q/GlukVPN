@@ -81,6 +81,12 @@ class DesktopStrings {
   String get autoConnect => _t('autoConnect');
   String get killSwitch => _t('killSwitch');
   String get killSwitchHint => _t('killSwitchHint');
+
+  /// Shown when the kill switch is flipped while a tunnel is up.
+  String get killSwitchReconnectNotice => _t('killSwitchReconnectNotice');
+  String get reconnectNow => _t('reconnectNow');
+  String get reconnecting => _t('reconnecting');
+  String get protocol => _t('protocol');
   String get dns => _t('dns');
   String get dnsHint => _t('dnsHint');
   String get mtu => _t('mtu');
@@ -138,8 +144,29 @@ class DesktopStrings {
   String get serviceMissing => _t('serviceMissing');
   String get serviceMissingHint => _t('serviceMissingHint');
 
+  // ---- channel card ----
+  String get channel => _t('channel');
+  String get channelUsing => _t('channelUsing');
+  String get channelOff => _t('channelOff');
+  String get channelHint => _t('channelHint');
+  String get channelDisconnectFirst => _t('channelDisconnectFirst');
+  String get channelBetaUnavailable => _t('channelBetaUnavailable');
+  String get channelProdUnavailable => _t('channelProdUnavailable');
+  String get channelRefused => _t('channelRefused');
+
   /// Human label for a connection phase.
   String phaseLabel(ConnectionPhase phase) => _t(phase.labelKey);
+
+  /// Human, engine-aware wording for a raw status detail code such as
+  /// `handshake_pending`, or null when the code has no wording of its own.
+  ///
+  /// On a sing-box tunnel there is no WireGuard handshake, so the same verdict
+  /// reads "Waiting for the tunnel to respond…" there and "Waiting for the
+  /// WireGuard handshake…" only when the WireGuard worker is actually in use.
+  String? describeStatusDetail(String code, TunnelEngine engine) {
+    final String? key = statusDetailKey(code, engine);
+    return key == null ? null : _t(key);
+  }
 
   static const Map<String, String> _en = <String, String>{
     'navHome': 'Home',
@@ -177,8 +204,18 @@ class DesktopStrings {
     'reduceMotion': 'Reduce motion',
     'sectionVpn': 'VPN',
     'autoConnect': 'Connect on launch',
-    'killSwitch': 'Kill switch',
-    'killSwitchHint': 'Blocks all traffic if the tunnel drops',
+    'killSwitch': 'Cut internet if the VPN drops (kill switch)',
+    'killSwitchHint':
+        'Blocks every connection outside the tunnel with Windows Filtering '
+            'Platform rules and turns on strict routing in the sing-box engine. '
+            'If the tunnel drops, nothing reaches the internet until it is back '
+            'or you disconnect. Off by default.',
+    'killSwitchReconnectNotice':
+        'The kill switch applies on the next connect. Reconnect now to arm it '
+            'for this session.',
+    'reconnectNow': 'Reconnect now',
+    'reconnecting': 'Reconnecting…',
+    'protocol': 'Protocol',
     'dns': 'DNS',
     'dnsHint': 'Leave empty to use the server-provided DNS',
     'mtu': 'MTU',
@@ -225,6 +262,16 @@ class DesktopStrings {
     'serviceMissingHint':
         'GlukVPN cannot reach its Windows tunnel service. Reinstall the app '
             'or allow the elevation prompt.',
+    // channel card
+    'channel': 'Channel',
+    'channelUsing': 'Using',
+    'channelOff': 'off',
+    'channelHint':
+        'Separate database and accounts. Switching signs you out.',
+    'channelDisconnectFirst': 'Disconnect the VPN first',
+    'channelBetaUnavailable': 'The beta server is currently unavailable',
+    'channelProdUnavailable': 'The production server is currently unavailable',
+    'channelRefused': 'This build cannot switch to the beta channel',
     // phases
     'phase.disconnected': 'Disconnected',
     'phase.connecting': 'Connecting…',
@@ -236,6 +283,28 @@ class DesktopStrings {
     'phase.limitReached': 'Limit reached',
     'phase.accessRevoked': 'Access revoked',
     'phase.tunnelLost': 'Tunnel lost',
+    // status details (raw verifier codes made human; engine-neutral unless
+    // the key ends in .wg, which is only ever used on the WireGuard engine)
+    'detail.preparing': 'Preparing the connection…',
+    'detail.bringingUp': 'Bringing the tunnel up…',
+    'detail.waitingForTunnel': 'Waiting for the tunnel to respond…',
+    'detail.handshakePending.wg': 'Waiting for the WireGuard handshake…',
+    'detail.tunnelSilent': 'The tunnel stopped responding',
+    'detail.handshakeStale.wg': 'No WireGuard handshake for over three minutes',
+    'detail.peerNotReady': 'Waiting for the server to confirm the session…',
+    'detail.verifying': 'Verifying the connection…',
+    'detail.verified': 'Connection verified',
+    'detail.reconnecting': 'Reconnecting…',
+    'detail.tearingDown': 'Closing the tunnel…',
+    'detail.down': 'Disconnected',
+    'detail.tunnelLost': 'The tunnel lost contact with the server',
+    'detail.tunnelError': 'The tunnel exited with an error',
+    'detail.serviceUnavailable': 'The tunnel service is not responding',
+    'detail.permissionDenied': 'Access to the tunnel service was denied',
+    'detail.subscriptionInactive': 'The subscription is not active',
+    'detail.connectTimeout': 'The tunnel did not come up in time',
+    'detail.notAuthenticated': 'Sign in again to connect',
+    'detail.noNodes': 'No servers are available right now',
   };
 
   static const Map<String, String> _ru = <String, String>{
@@ -274,8 +343,18 @@ class DesktopStrings {
     'reduceMotion': 'Меньше движения',
     'sectionVpn': 'VPN',
     'autoConnect': 'Подключаться при запуске',
-    'killSwitch': 'Kill switch',
-    'killSwitchHint': 'Блокирует весь трафик, если туннель упал',
+    'killSwitch': 'Аварийное отключение интернета при обрыве VPN',
+    'killSwitchHint':
+        'Блокирует все соединения вне туннеля правилами Windows Filtering '
+            'Platform и включает строгую маршрутизацию в движке sing-box. Если '
+            'туннель упал, интернета не будет, пока он не поднимется или вы не '
+            'отключитесь. По умолчанию выключено.',
+    'killSwitchReconnectNotice':
+        'Аварийное отключение применится при следующем подключении. '
+            'Переподключитесь сейчас, чтобы включить его для этой сессии.',
+    'reconnectNow': 'Переподключить сейчас',
+    'reconnecting': 'Переподключение…',
+    'protocol': 'Протокол',
     'dns': 'DNS',
     'dnsHint': 'Оставьте пустым, чтобы использовать DNS сервера',
     'mtu': 'MTU',
@@ -322,6 +401,16 @@ class DesktopStrings {
     'serviceMissingHint':
         'GlukVPN не видит свою службу туннеля. Переустановите приложение '
             'или разрешите запрос прав администратора.',
+    // channel card
+    'channel': 'Канал',
+    'channelUsing': 'Сейчас',
+    'channelOff': 'выкл.',
+    'channelHint':
+        'Отдельная база и аккаунты. При переключении вы выйдете из аккаунта.',
+    'channelDisconnectFirst': 'Сначала отключите VPN',
+    'channelBetaUnavailable': 'Бета-сервер сейчас недоступен',
+    'channelProdUnavailable': 'Продакшен-сервер сейчас недоступен',
+    'channelRefused': 'Эта сборка не умеет переключаться на бета-канал',
     // phases
     'phase.disconnected': 'Не подключено',
     'phase.connecting': 'Подключение…',
@@ -333,5 +422,26 @@ class DesktopStrings {
     'phase.limitReached': 'Достигнут лимит',
     'phase.accessRevoked': 'Доступ отозван',
     'phase.tunnelLost': 'Туннель потерян',
+    // status details
+    'detail.preparing': 'Подготовка соединения…',
+    'detail.bringingUp': 'Поднимаем туннель…',
+    'detail.waitingForTunnel': 'Ожидание ответа туннеля…',
+    'detail.handshakePending.wg': 'Ожидание рукопожатия WireGuard…',
+    'detail.tunnelSilent': 'Туннель перестал отвечать',
+    'detail.handshakeStale.wg': 'Нет рукопожатия WireGuard больше трёх минут',
+    'detail.peerNotReady': 'Ждём подтверждения сессии от сервера…',
+    'detail.verifying': 'Проверка соединения…',
+    'detail.verified': 'Соединение проверено',
+    'detail.reconnecting': 'Переподключение…',
+    'detail.tearingDown': 'Закрываем туннель…',
+    'detail.down': 'Не подключено',
+    'detail.tunnelLost': 'Туннель потерял связь с сервером',
+    'detail.tunnelError': 'Туннель завершился с ошибкой',
+    'detail.serviceUnavailable': 'Служба туннеля не отвечает',
+    'detail.permissionDenied': 'Доступ к службе туннеля запрещён',
+    'detail.subscriptionInactive': 'Подписка не активна',
+    'detail.connectTimeout': 'Туннель не поднялся вовремя',
+    'detail.notAuthenticated': 'Войдите заново, чтобы подключиться',
+    'detail.noNodes': 'Сейчас нет доступных серверов',
   };
 }

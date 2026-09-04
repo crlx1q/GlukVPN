@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../config.dart';
+import '../i18n/app_strings.dart';
 import '../models/models.dart';
 import '../state/auth_controller.dart';
 import '../state/channel_controller.dart';
@@ -10,11 +11,13 @@ import '../theme/motion.dart';
 import '../theme/tokens.dart';
 import '../utils/format.dart' hide countryFlag;
 import '../utils/geo.dart';
+import '../utils/geo_dictionary.dart';
 import '../utils/map_view.dart';
 import '../widgets/connect_button.dart';
 import '../widgets/dotted_world.dart';
 import '../widgets/glass.dart';
 import '../widgets/logo.dart';
+import '../widgets/skeleton.dart';
 
 /// The main screen: dotted world map behind a 150 px power button, a state
 /// badge, the selected node, a 2x2 readout grid and the traffic panel.
@@ -76,6 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
     final VpnController vpn = context.watch<VpnController>();
     final AuthController auth = context.watch<AuthController>();
     final MotionController motion = context.watch<MotionController>();
@@ -92,11 +96,22 @@ class _HomeScreenState extends State<HomeScreen> {
         .toList();
 
     final (String badgeLabel, Color badgeTone) = switch (vpn.state) {
-      VpnUiState.connected => ('connected', GlukColors.connected),
-      VpnUiState.connecting => ('connecting', GlukColors.amber),
-      VpnUiState.disconnecting => ('disconnecting', GlukColors.amber),
-      VpnUiState.disconnected => ('inactive', GlukColors.text2),
+      VpnUiState.connected => (s.stateConnected, GlukColors.connected),
+      VpnUiState.connecting => (s.stateConnecting, GlukColors.amber),
+      VpnUiState.disconnecting => (s.stateDisconnecting, GlukColors.amber),
+      VpnUiState.disconnected => (s.stateInactive, GlukColors.text2),
     };
+
+    // The four readouts share one rule: a figure that is on its way is a
+    // skeleton, a figure that does not apply is a dash, and nothing from the
+    // previous session is ever shown in the gap. "On its way" is the whole of
+    // connecting and disconnecting, plus the moments after the tunnel is up
+    // while the exit address and the first ping are still out.
+    final bool connected = vpn.isConnected;
+    final bool transitioning = vpn.isTransitioning;
+    final bool animate = !motion.reduceMotion;
+    final String? pingText =
+        connected ? vpn.ping.milliseconds?.toString() : null;
 
     return Stack(
       children: <Widget>[
@@ -147,6 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       _ServerRow(
                         node: node,
                         loading: vpn.loadingNodes,
+                        animate: animate,
                         onTap: widget.onOpenServers,
                       ),
                       const SizedBox(height: 14),
@@ -154,17 +170,38 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: <Widget>[
                           Expanded(
                             child: StatCell(
-                              label: 'Public IP',
-                              value: vpn.exitIp ?? '\u2014',
-                              valueColor:
-                                  vpn.isConnected ? GlukColors.connected : null,
+                              label: s.publicIp,
+                              child: ValueOrSkeleton(
+                                // Exit address through the tunnel, or the
+                                // phone's own address while disconnected -
+                                // never one standing in for the other.
+                                value: vpn.publicIp,
+                                loading: transitioning ||
+                                    (connected && vpn.exitIp == null),
+                                characters: 15,
+                                animate: animate,
+                                style: StatCell.valueStyle(
+                                  context,
+                                  color: connected ? GlukColors.connected : null,
+                                ),
+                              ),
                             ),
                           ),
                           const SizedBox(width: 9),
                           Expanded(
                             child: StatCell(
-                              label: 'VPN IP',
-                              value: vpn.assignedIp ?? '\u2014 . \u2014 . \u2014 . \u2014',
+                              label: s.vpnIp,
+                              child: ValueOrSkeleton(
+                                // The lease is only shown once the tunnel is
+                                // up; while connecting it is a promise, not an
+                                // address the phone is using.
+                                value: connected ? vpn.assignedIp : null,
+                                loading: transitioning ||
+                                    (connected && vpn.assignedIp == null),
+                                characters: 15,
+                                animate: animate,
+                                style: StatCell.valueStyle(context),
+                              ),
                             ),
                           ),
                         ],
@@ -174,21 +211,35 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: <Widget>[
                           Expanded(
                             child: StatCell(
-                              label: 'Duration',
-                              value: vpn.isConnected
-                                  ? formatDuration(vpn.connectedFor)
-                                  : '00:00:00',
+                              label: s.duration,
+                              child: ValueOrSkeleton(
+                                value: connected
+                                    ? formatDuration(vpn.connectedFor)
+                                    : null,
+                                loading: transitioning,
+                                characters: 8,
+                                emptyLabel: '00:00:00',
+                                animate: animate,
+                                style: StatCell.valueStyle(context),
+                              ),
                             ),
                           ),
                           const SizedBox(width: 9),
                           Expanded(
                             child: StatCell(
-                              label: 'Ping',
-                              value: vpn.ping.milliseconds?.toString() ?? '\u2014',
+                              label: s.ping,
+                              child: ValueOrSkeleton(
+                                value: pingText,
+                                loading: transitioning ||
+                                    (connected && pingText == null),
+                                characters: 5,
+                                animate: animate,
+                                style: StatCell.valueStyle(context),
+                              ),
                               trailing: Text(
-                                vpn.ping.ok
-                                    ? 'ms \u00b7 ${vpn.ping.sourceLabel}'
-                                    : 'ms',
+                                connected && vpn.ping.ok
+                                    ? '${s.ms} \u00b7 ${vpn.ping.sourceLabel}'
+                                    : s.ms,
                                 style: text.bodySmall,
                               ),
                             ),
@@ -200,16 +251,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       if (node != null && !node.online) ...<Widget>[
                         const SizedBox(height: 12),
                         InlineNotice(
-                          message: '${node.displayTitle} is offline right now. '
-                              'Pick another server.',
+                          message: s.nodeOffline(node.displayTitle),
                           tone: GlukColors.amber,
                         ),
                       ],
                       if (!auth.subscriptionActive) ...<Widget>[
                         const SizedBox(height: 12),
-                        const InlineNotice(
-                          message: 'Your plan is inactive, so new connections '
-                              'are paused.',
+                        InlineNotice(
+                          message: s.planInactiveNotice,
                           tone: GlukColors.amber,
                         ),
                       ],
@@ -381,20 +430,21 @@ class _LocationChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
     final TextTheme text = Theme.of(context).textTheme;
     final String flag = countryFlag(self.countryCode ?? '');
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Icon(
+        const Icon(
           Icons.my_location_rounded,
           size: 12,
           color: GlukColors.text2,
         ),
         const SizedBox(width: 6),
         Text(
-          'You',
+          s.you,
           style: text.bodySmall?.copyWith(color: GlukColors.text2),
         ),
         const SizedBox(width: 6),
@@ -403,7 +453,9 @@ class _LocationChip extends StatelessWidget {
           const SizedBox(width: 5),
         ],
         Text(
-          self.placeLabel,
+          // Through the shared dictionary, so the country reads in the
+          // interface language rather than always in English.
+          self.localizedPlace(russian: s.isRussian),
           style: text.bodySmall?.copyWith(color: GlukColors.text1),
         ),
       ],
@@ -493,7 +545,7 @@ class _ProfileChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final TextTheme text = Theme.of(context).textTheme;
-    final String name = username ?? 'account';
+    final String name = username ?? context.strings.account.toLowerCase();
     final String initial =
         name.isEmpty ? '?' : name.characters.first.toUpperCase();
 
@@ -541,11 +593,15 @@ class _ServerRow extends StatelessWidget {
   const _ServerRow({
     required this.node,
     required this.loading,
+    required this.animate,
     required this.onTap,
   });
 
   final VpnNodeInfo? node;
   final bool loading;
+
+  /// False under reduce-motion: the loading skeleton then holds still.
+  final bool animate;
   final VoidCallback onTap;
 
   @override
@@ -561,16 +617,33 @@ class _ServerRow extends StatelessWidget {
           children: <Widget>[
             const FlagCircle(flag: '\u{1F310}'),
             const SizedBox(width: 10),
-            Text(
-              loading ? 'Loading servers\u2026' : 'No server available',
-              style: text.titleMedium,
-            ),
+            // A bar the size of a place name while the list loads: the row
+            // keeps its shape and nothing has to be read and then unread.
+            if (loading)
+              SkeletonText(
+                characters: 14,
+                style: text.titleMedium,
+                animate: animate,
+              )
+            else
+              Text(context.strings.noServerAvailable, style: text.titleMedium),
             const Spacer(),
             const Icon(Icons.chevron_right_rounded, color: GlukColors.text2),
           ],
         ),
       );
     }
+
+    // Country and city through the shared dictionary, like the server list,
+    // so the chip reads "Германия · Франкфурт" on a Russian phone.
+    final bool russian = context.strings.isRussian;
+    final String title = localizeCountry(
+      node!.countryCode,
+      russian: russian,
+      fallback: node!.displayTitle,
+    );
+    final String city = localizeCity(node!.city, russian: russian);
+    final String subtitle = city.isNotEmpty ? city : node!.displaySubtitle;
 
     return GlassPanel(
       radius: 999,
@@ -580,11 +653,11 @@ class _ServerRow extends StatelessWidget {
         children: <Widget>[
           FlagCircle(flag: countryFlag(node!.countryCode)),
           const SizedBox(width: 10),
-          Text(node!.displayTitle, style: text.titleMedium),
+          Text(title, style: text.titleMedium),
           const SizedBox(width: 6),
           Flexible(
             child: Text(
-              '\u00b7 ${node!.displaySubtitle}',
+              '\u00b7 $subtitle',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: text.bodySmall,
@@ -616,6 +689,7 @@ class _TrafficPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
     final TextTheme text = Theme.of(context).textTheme;
 
     return GlassPanel(
@@ -628,7 +702,7 @@ class _TrafficPanel extends StatelessWidget {
             children: <Widget>[
               const Icon(Icons.swap_vert_rounded, size: 15, color: GlukColors.text2),
               const SizedBox(width: 6),
-              Text('Traffic'.toUpperCase(), style: text.labelMedium),
+              Text(s.traffic.toUpperCase(), style: text.labelMedium),
             ],
           ),
           const SizedBox(height: 12),
@@ -637,7 +711,7 @@ class _TrafficPanel extends StatelessWidget {
               Expanded(
                 child: _TrafficItem(
                   icon: Icons.south_rounded,
-                  label: 'Downloaded',
+                  label: s.downloaded,
                   value: formatBytes(rx),
                   tone: GlukColors.violetLight,
                 ),
@@ -645,7 +719,7 @@ class _TrafficPanel extends StatelessWidget {
               Expanded(
                 child: _TrafficItem(
                   icon: Icons.north_rounded,
-                  label: 'Uploaded',
+                  label: s.uploaded,
                   value: formatBytes(tx),
                   tone: GlukColors.blue,
                 ),

@@ -208,6 +208,84 @@ class AppStrings {
 		// --- session state ---
 		required this.showingLastKnownState,
 		required this.sessionExpired,
+		// --- home ---
+		required this.publicIp,
+		required this.vpnIp,
+		required this.duration,
+		required this.ping,
+		required this.ms,
+		required this.traffic,
+		required this.downloaded,
+		required this.uploaded,
+		required this.you,
+		required this.stateConnected,
+		required this.stateConnecting,
+		required this.stateDisconnecting,
+		required this.stateInactive,
+		required this.noServerAvailable,
+		required this.planInactiveNotice,
+		// --- servers ---
+		required this.servers,
+		required this.forYou,
+		required this.otherServers,
+		required this.offline,
+		required this.unavailable,
+		required this.noServersPullToRefresh,
+		// --- onboarding ---
+		required this.skip,
+		required this.next,
+		required this.letsGo,
+		required this.obGlobalAccess,
+		required this.obAccessTheWorld,
+		required this.obSuperFast,
+		required this.obReachAnyLocation,
+		required this.obYouAreHere,
+		required this.obThisIsWhere,
+		required this.obYouAreRightNow,
+		required this.obApproximateBody,
+		required this.obRoute,
+		required this.obOneTapAnd,
+		required this.obYoureThrough,
+		// --- connectivity / splash ---
+		required this.retry,
+		required this.reconnecting,
+		required this.youAreOffline,
+		required this.noInternetConnection,
+		required this.noInternetBody,
+		required this.securingYourConnection,
+		// --- update banner, continued ---
+		required this.hideUntilNextLaunch,
+		required this.buildTooOld,
+		required this.copyLink,
+		required this.downloadLinkCopied,
+		// --- settings, continued ---
+		required this.reasonSystemAnimationsOff,
+		required this.reasonBatterySaver,
+		required this.activePlan,
+		required this.alreadyYourNickname,
+		required this.idUnavailable,
+		required this.controlApi,
+		required this.serverVersion,
+		required this.release,
+		required this.dataVersion,
+		required this.released,
+		required this.device,
+		required this.deviceId,
+		required this.wireguardKey,
+		required this.notGeneratedYet,
+		required this.publicKeyMark,
+		required this.tunnelInterface,
+		required this.appId,
+		// --- channel card ---
+		required this.channelNow,
+		required this.channelSwitchHint,
+		required this.disconnectVpnFirst,
+		required this.betaServerUnavailable,
+		required this.prodServerUnavailable,
+		// --- account, continued ---
+		required this.activeSessions,
+		required this.noDevicesSignedIn,
+		required this.unnamedDevice,
 	});
 
 	/// BCP-47 language subtag, also used as the `Locale` code.
@@ -396,6 +474,97 @@ class AppStrings {
 	final String showingLastKnownState;
 	final String sessionExpired;
 
+	// --- home ---
+	final String publicIp;
+	final String vpnIp;
+	final String duration;
+	final String ping;
+
+	/// Unit suffix next to the ping figure.
+	final String ms;
+	final String traffic;
+	final String downloaded;
+	final String uploaded;
+	final String you;
+
+	/// Status badge words, lower case - the badge upper-cases them itself.
+	final String stateConnected;
+	final String stateConnecting;
+	final String stateDisconnecting;
+	final String stateInactive;
+	final String noServerAvailable;
+	final String planInactiveNotice;
+
+	// --- servers ---
+	final String servers;
+	final String forYou;
+	final String otherServers;
+	final String offline;
+	final String unavailable;
+	final String noServersPullToRefresh;
+
+	// --- onboarding ---
+	final String skip;
+	final String next;
+	final String letsGo;
+	final String obGlobalAccess;
+	final String obAccessTheWorld;
+	final String obSuperFast;
+	final String obReachAnyLocation;
+	final String obYouAreHere;
+	final String obThisIsWhere;
+	final String obYouAreRightNow;
+	final String obApproximateBody;
+	final String obRoute;
+	final String obOneTapAnd;
+	final String obYoureThrough;
+
+	// --- connectivity / splash ---
+	final String retry;
+	final String reconnecting;
+	final String youAreOffline;
+	final String noInternetConnection;
+	final String noInternetBody;
+	final String securingYourConnection;
+
+	// --- update banner, continued ---
+	final String hideUntilNextLaunch;
+	final String buildTooOld;
+	final String copyLink;
+	final String downloadLinkCopied;
+
+	// --- settings, continued ---
+	final String reasonSystemAnimationsOff;
+	final String reasonBatterySaver;
+	final String activePlan;
+	final String alreadyYourNickname;
+	final String idUnavailable;
+	final String controlApi;
+	final String serverVersion;
+	final String release;
+	final String dataVersion;
+	final String released;
+	final String device;
+	final String deviceId;
+	final String wireguardKey;
+	final String notGeneratedYet;
+	final String publicKeyMark;
+	final String tunnelInterface;
+	final String appId;
+
+	// --- channel card ---
+	/// "Using" / "Сейчас" - the prefix of "Using: BETA · 1.3.0".
+	final String channelNow;
+	final String channelSwitchHint;
+	final String disconnectVpnFirst;
+	final String betaServerUnavailable;
+	final String prodServerUnavailable;
+
+	// --- account, continued ---
+	final String activeSessions;
+	final String noDevicesSignedIn;
+	final String unnamedDevice;
+
 	// --- parameterised -------------------------------------------------------
 	//
 	// Anything that interpolates a number or a name is a method rather than a
@@ -460,6 +629,74 @@ class AppStrings {
 	String resendIn(int seconds) => isRussian
 			? 'Код отправлен — подождите $seconds с'
 			: 'Code sent \u2014 wait $seconds s';
+
+	String nodeOffline(String name) => isRussian
+			? '$name сейчас офлайн. Выберите другой сервер.'
+			: '$name is offline right now. Pick another server.';
+
+	String loadPercent(int percent) =>
+			isRussian ? 'нагрузка $percent%' : '$percent% load';
+
+	String obTrafficLeaves(String server) => isRussian
+			? 'Ваш трафик выходит из $server через зашифрованный туннель '
+					'WireGuard. Безопасный маршрут, никаких логов посещённых сайтов.'
+			: 'Your traffic leaves from $server over an encrypted WireGuard '
+					'tunnel. Secure route, no logs of the sites you visit.';
+
+	String reduceMotionBody(String? reason) {
+		final String why = reason == null ? '' : ' ($reason)';
+		return isRussian
+				? 'Приостановлены для экономии заряда$why. Кнопки по-прежнему '
+						'показывают прогресс.'
+				: 'Paused to save power$why. Buttons still show their progress.';
+	}
+
+	String reasonLowBattery(int percent) =>
+			isRussian ? 'Заряд ниже $percent%' : 'Battery below $percent%';
+
+	String memberSinceNeverChanges(String date) => isRussian
+			? 'С нами с $date \u00b7 номер никогда не меняется'
+			: 'Member since $date \u00b7 the number never changes';
+
+	/// Which server refused to answer the availability probe before a switch.
+	String serverUnavailable({required bool beta}) =>
+			beta ? betaServerUnavailable : prodServerUnavailable;
+
+	/// "12 Sep 2026" / "12 сен 2026" for cards, where a full timestamp reads
+	/// like a log line.
+	String shortDate(DateTime? value) {
+		if (value == null) return '\u2014';
+		const List<String> en = <String>[
+			'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+			'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+		];
+		const List<String> ru = <String>[
+			'янв', 'фев', 'мар', 'апр', 'мая', 'июн',
+			'июл', 'авг', 'сен', 'окт', 'ноя', 'дек',
+		];
+		final DateTime local = value.toLocal();
+		final String month = (isRussian ? ru : en)[local.month - 1];
+		return '${local.day} $month ${local.year}';
+	}
+
+	/// "3m ago" / "3 мин назад" for heartbeat and last-seen fields.
+	String relativeTime(DateTime? value) {
+		if (value == null) return isRussian ? 'никогда' : 'never';
+		final Duration delta = DateTime.now().difference(value);
+		if (delta.isNegative) return isRussian ? 'только что' : 'just now';
+		if (delta.inSeconds < 60) {
+			return isRussian ? '${delta.inSeconds} с назад' : '${delta.inSeconds}s ago';
+		}
+		if (delta.inMinutes < 60) {
+			return isRussian
+					? '${delta.inMinutes} мин назад'
+					: '${delta.inMinutes}m ago';
+		}
+		if (delta.inHours < 24) {
+			return isRussian ? '${delta.inHours} ч назад' : '${delta.inHours}h ago';
+		}
+		return isRussian ? '${delta.inDays} д назад' : '${delta.inDays}d ago';
+	}
 
 	// -------------------------------------------------------------------------
 
@@ -675,6 +912,85 @@ class AppStrings {
 				'Showing the last known state \u2014 the server has not confirmed this '
 				'session yet.',
 		sessionExpired: 'Session expired. Please sign in again.',
+		publicIp: 'Public IP',
+		vpnIp: 'VPN IP',
+		duration: 'Duration',
+		ping: 'Ping',
+		ms: 'ms',
+		traffic: 'Traffic',
+		downloaded: 'Downloaded',
+		uploaded: 'Uploaded',
+		you: 'You',
+		stateConnected: 'connected',
+		stateConnecting: 'connecting',
+		stateDisconnecting: 'disconnecting',
+		stateInactive: 'inactive',
+		noServerAvailable: 'No server available',
+		planInactiveNotice:
+				'Your plan is inactive, so new connections are paused.',
+		servers: 'Servers',
+		forYou: 'For You',
+		otherServers: 'Other Servers',
+		offline: 'Offline',
+		unavailable: 'unavailable',
+		noServersPullToRefresh:
+				'No servers available right now. Pull down to refresh.',
+		skip: 'Skip',
+		next: 'Next',
+		letsGo: "Let's Go",
+		obGlobalAccess: 'Global access',
+		obAccessTheWorld: 'Access the world with',
+		obSuperFast: 'Super Fast VPN Servers\u2026',
+		obReachAnyLocation:
+				'Reach any of our locations in a tap and browse as if you were there.',
+		obYouAreHere: 'You are here',
+		obThisIsWhere: 'This is where',
+		obYouAreRightNow: 'you are right now',
+		obApproximateBody:
+				'Approximate, and worked out from your device region and network '
+				'\u2014 GlukVPN asks for no GPS and no location permission.',
+		obRoute: 'Route',
+		obOneTapAnd: 'One tap and',
+		obYoureThrough: "you're through",
+		retry: 'Retry',
+		reconnecting: 'Reconnecting\u2026',
+		youAreOffline: "You're offline",
+		noInternetConnection: 'No internet connection',
+		noInternetBody:
+				'Check your Wi-Fi or mobile data. Everything continues as soon as you '
+				'are back online.',
+		securingYourConnection: 'Securing your connection',
+		hideUntilNextLaunch: 'Hide until next launch',
+		buildTooOld:
+				'This build is older than the oldest version the servers still accept.',
+		copyLink: 'Copy link',
+		downloadLinkCopied: 'Download link copied',
+		reasonSystemAnimationsOff: 'System animations are turned off',
+		reasonBatterySaver: 'Battery saver is on',
+		activePlan: 'Active',
+		alreadyYourNickname: 'That is already your nickname',
+		idUnavailable: 'ID unavailable',
+		controlApi: 'Control API',
+		serverVersion: 'Server version',
+		release: 'Release',
+		dataVersion: 'Data version',
+		released: 'Released',
+		device: 'Device',
+		deviceId: 'Device id',
+		wireguardKey: 'WireGuard key',
+		notGeneratedYet: 'not generated yet',
+		publicKeyMark: '(public)',
+		tunnelInterface: 'Tunnel interface',
+		appId: 'App id',
+		channelNow: 'Using',
+		channelSwitchHint:
+				'Separate database and accounts. Switching signs you out.',
+		disconnectVpnFirst: 'Disconnect the VPN first',
+		betaServerUnavailable: 'The beta server is currently unavailable',
+		prodServerUnavailable: 'The production server is currently unavailable',
+		activeSessions: 'Active sessions',
+		noDevicesSignedIn: 'No devices are signed in.',
+		unnamedDevice: 'unnamed device',
 	);
 
 	static const AppStrings ru = AppStrings(
@@ -818,7 +1134,7 @@ class AppStrings {
 				'Переключение канала доступно только администраторам. Всем остальным '
 				'\u2014 продакшн, единственное место, где существует их аккаунт.',
 		unreachable: 'недоступен',
-		off: 'выключена',
+		off: 'выкл.',
 		profile: 'Профиль',
 		username: 'Логин',
 		nickname: 'Ник',
@@ -887,6 +1203,87 @@ class AppStrings {
 				'Показано последнее известное состояние \u2014 сервер ещё не '
 				'подтвердил эту сессию.',
 		sessionExpired: 'Сессия истекла. Войдите заново.',
+		publicIp: 'Внешний IP',
+		vpnIp: 'VPN IP',
+		duration: 'Длительность',
+		ping: 'Пинг',
+		ms: 'мс',
+		traffic: 'Трафик',
+		downloaded: 'Получено',
+		uploaded: 'Отправлено',
+		you: 'Вы',
+		stateConnected: 'подключено',
+		stateConnecting: 'подключение',
+		stateDisconnecting: 'отключение',
+		stateInactive: 'не активно',
+		noServerAvailable: 'Нет доступных серверов',
+		planInactiveNotice:
+				'Подписка не активна, поэтому новые подключения приостановлены.',
+		servers: 'Серверы',
+		forYou: 'Для вас',
+		otherServers: 'Другие серверы',
+		offline: 'Офлайн',
+		unavailable: 'недоступен',
+		noServersPullToRefresh:
+				'Серверов сейчас нет. Потяните вниз, чтобы обновить.',
+		skip: 'Пропустить',
+		next: 'Далее',
+		letsGo: 'Начать',
+		obGlobalAccess: 'Доступ без границ',
+		obAccessTheWorld: 'Весь мир через',
+		obSuperFast: 'сверхбыстрые VPN-серверы\u2026',
+		obReachAnyLocation:
+				'Подключайтесь к любой из наших локаций в одно касание и пользуйтесь '
+				'интернетом так, будто вы там.',
+		obYouAreHere: 'Вы здесь',
+		obThisIsWhere: 'Вот где вы',
+		obYouAreRightNow: 'находитесь сейчас',
+		obApproximateBody:
+				'Приблизительно, по региону устройства и сети \u2014 GlukVPN не '
+				'запрашивает ни GPS, ни разрешение на геолокацию.',
+		obRoute: 'Маршрут',
+		obOneTapAnd: 'Одно касание \u2014',
+		obYoureThrough: 'и вы на месте',
+		retry: 'Повторить',
+		reconnecting: 'Переподключение\u2026',
+		youAreOffline: 'Нет соединения',
+		noInternetConnection: 'Нет подключения к интернету',
+		noInternetBody:
+				'Проверьте Wi-Fi или мобильные данные. Как только связь вернётся, '
+				'всё продолжится само.',
+		securingYourConnection: 'Защищаем соединение',
+		hideUntilNextLaunch: 'Скрыть до следующего запуска',
+		buildTooOld:
+				'Эта сборка старее самой ранней версии, которую ещё принимают '
+				'серверы.',
+		copyLink: 'Копировать ссылку',
+		downloadLinkCopied: 'Ссылка на загрузку скопирована',
+		reasonSystemAnimationsOff: 'Анимации отключены в системе',
+		reasonBatterySaver: 'Включён режим энергосбережения',
+		activePlan: 'Активна',
+		alreadyYourNickname: 'Это уже ваш ник',
+		idUnavailable: 'ID недоступен',
+		controlApi: 'Управляющий API',
+		serverVersion: 'Версия сервера',
+		release: 'Релиз',
+		dataVersion: 'Версия данных',
+		released: 'Выпущен',
+		device: 'Устройство',
+		deviceId: 'ID устройства',
+		wireguardKey: 'Ключ WireGuard',
+		notGeneratedYet: 'ещё не создан',
+		publicKeyMark: '(публичный)',
+		tunnelInterface: 'Интерфейс туннеля',
+		appId: 'ID приложения',
+		channelNow: 'Сейчас',
+		channelSwitchHint:
+				'Отдельная база и аккаунты. При переключении вы выйдете из аккаунта.',
+		disconnectVpnFirst: 'Сначала отключите VPN',
+		betaServerUnavailable: 'Бета-сервер сейчас недоступен',
+		prodServerUnavailable: 'Сервер PROD сейчас недоступен',
+		activeSessions: 'Активные сессии',
+		noDevicesSignedIn: 'Нет устройств в сети.',
+		unnamedDevice: 'устройство без имени',
 	);
 }
 
@@ -932,14 +1329,36 @@ class LocaleController extends ChangeNotifier {
 		}
 	}
 
-	/// What the phone asks for. Anything that is not Russian falls back to
-	/// English rather than to the first supported locale, because English is the
-	/// language a non-Russian speaker is most likely to read.
-	static AppStrings get systemDefault {
-		final String code =
-				PlatformDispatcher.instance.locale.languageCode.toLowerCase();
-		return code == 'ru' ? AppStrings.ru : AppStrings.en;
+	/// Languages whose phones read Russian by default.
+	///
+	/// The same list the desktop client uses (`desktop_strings.dart`): the
+	/// product ships to the CIS, where Russian is the shared second language, so
+	/// a phone set to Kazakh or Uzbek gets Russian rather than English. Anything
+	/// else falls back to English, the language a non-Russian speaker is most
+	/// likely to read.
+	static const List<String> russianDefaultLanguages = <String>[
+		'ru',
+		'kk',
+		'be',
+		'uk',
+		'ky',
+		'uz',
+	];
+
+	/// Resolves a locale tag (`ru`, `kk_KZ`, `en-US`, `de_DE.UTF-8`) to the
+	/// strings the "system" preference should use. Pure, so it is unit-tested
+	/// without a platform.
+	static AppStrings resolveSystemLanguage(String localeTag) {
+		final String prefix =
+				localeTag.trim().toLowerCase().split(RegExp(r'[_\-.]')).first;
+		return russianDefaultLanguages.contains(prefix)
+				? AppStrings.ru
+				: AppStrings.en;
 	}
+
+	/// What the phone asks for.
+	static AppStrings get systemDefault =>
+			resolveSystemLanguage(PlatformDispatcher.instance.locale.languageCode);
 
 	Future<void> restore() async {
 		_preference = AppLanguage.fromId(await _store.readLanguage());

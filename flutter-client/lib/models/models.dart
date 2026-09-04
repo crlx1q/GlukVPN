@@ -117,6 +117,7 @@ class AuthUser {
     required this.isAdmin,
     required this.maxDevices,
     required this.maxConcurrentSessions,
+    this.isTester = false,
     this.publicId = '',
     this.email,
     this.emailVerified = false,
@@ -136,6 +137,7 @@ class AuthUser {
       emailVerified: _asBool(json['emailVerified']),
       status: _asString(json['status'], 'ACTIVE'),
       isAdmin: _asBool(json['isAdmin']),
+      isTester: _asBool(json['isTester']),
       maxDevices: _asInt(json['maxDevices'], 3),
       maxConcurrentSessions: _asInt(json['maxConcurrentSessions'], 1),
       originCountry: _asStringOrNull(origin['country']),
@@ -162,8 +164,16 @@ class AuthUser {
 
   final String status;
   final bool isAdmin;
+
+  /// Beta tester flag set by an administrator. Testers see the PROD / BETA
+  /// channel switch on every client (phone, desktop, extension) without being
+  /// administrators. Missing on older control servers, so it defaults to false.
+  final bool isTester;
   final int maxDevices;
   final int maxConcurrentSessions;
+
+  /// May switch release channels: administrators always, testers when flagged.
+  bool get canUseBetaChannel => isAdmin || isTester;
 
   /// Approximate origin, resolved server-side from the login IP: country and
   /// region only. This app asks for no location permission and stores no
@@ -198,6 +208,7 @@ class AuthUser {
         emailVerified: emailVerified ?? this.emailVerified,
         status: status,
         isAdmin: isAdmin,
+        isTester: isTester,
         maxDevices: maxDevices,
         maxConcurrentSessions: maxConcurrentSessions,
         originCountry: originCountry,

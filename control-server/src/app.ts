@@ -9,6 +9,7 @@ import { config } from "./config"
 import { HttpError } from "./lib/errors"
 import { adminRoutes } from "./routes/admin"
 import { authRoutes } from "./routes/auth"
+import { billingRoutes } from "./routes/billing"
 import { deployRoutes } from "./routes/deploy"
 import { deviceRoutes } from "./routes/devices"
 import { healthRoutes } from "./routes/health"
@@ -81,7 +82,9 @@ export async function buildApp(): Promise<FastifyInstance> {
 				defaultSrc: ["'self'"],
 				scriptSrc: ["'self'"],
 				styleSrc: ["'self'"],
-				imgSrc: ["'self'", "data:"],
+				// Site favicons in the admin Activity view come from DuckDuckGo's
+				// icon service; it receives the domain name and nothing else.
+				imgSrc: ["'self'", "data:", "https://icons.duckduckgo.com"],
 				connectSrc: ["'self'"],
 				objectSrc: ["'none'"],
 				frameAncestors: ["'none'"],
@@ -140,6 +143,9 @@ export async function buildApp(): Promise<FastifyInstance> {
 	await app.register(deviceRoutes)
 	await app.register(vpnRoutes)
 	await app.register(nodeAgentRoutes)
+	// Plans, orders and the payment webhook. Public catalogue, user-scoped
+	// orders; the webhook verifies the gateway signature itself.
+	await app.register(billingRoutes)
 	// Admin routes live in their own scope: the requireAdmin hook is registered
 	// inside that scope and must not leak into the other route groups.
 	await app.register(adminRoutes)

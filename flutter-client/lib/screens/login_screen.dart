@@ -8,6 +8,7 @@ import '../services/link_opener.dart';
 import '../state/auth_controller.dart';
 import '../theme/tokens.dart';
 import '../widgets/glass.dart';
+import '../widgets/language_pill.dart';
 import '../widgets/logo.dart';
 import '../widgets/social_icons.dart';
 import 'register_screen.dart';
@@ -201,12 +202,21 @@ class _LoginViewState extends State<LoginView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            if (widget.onBack != null)
-              CircleIconButton(
-                icon: Icons.arrow_back_rounded,
-                onTap: widget.onBack!,
-                tooltip: s.back,
-              ),
+            // Back on the left, the language pill on the right - the pill is
+            // here because this is the last screen a person sees before they
+            // have an account, and the Settings row is behind the login.
+            Row(
+              children: <Widget>[
+                if (widget.onBack != null)
+                  CircleIconButton(
+                    icon: Icons.arrow_back_rounded,
+                    onTap: widget.onBack!,
+                    tooltip: s.back,
+                  ),
+                const Spacer(),
+                const LanguagePill(),
+              ],
+            ),
             const SizedBox(height: 26),
             const GlukLogo(size: 56),
             const SizedBox(height: 18),

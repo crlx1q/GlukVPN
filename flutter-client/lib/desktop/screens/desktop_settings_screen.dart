@@ -61,6 +61,12 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
 
   String? _notice;
 
+  /// ROUND 26: an optional button inside the notice. The only user so far is
+  /// "Reconnect now" after the kill switch was flipped on a live tunnel.
+  String? _noticeActionLabel;
+  Future<void> Function()? _noticeAction;
+  bool _noticeBusy = false;
+
   bool _testingGateway = false;
   bool _restoringNetwork = false;
 
@@ -75,14 +81,50 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _copyDiagnostics() async {
-    await Clipboard.setData(ClipboardData(text: widget.vpn.diagnosticsDump()));
+  /// Replaces the notice at the top of the page. Any earlier action button is
+  /// dropped with it, so a stale "Reconnect now" never outlives its message.
+  void _showNotice(
+    String? message, {
+    String? actionLabel,
+    Future<void> Function()? action,
+  }) {
     if (!mounted) return;
     setState(() {
-      _notice = _ru
-          ? 'Журнал скопирован в буфер обмена'
-          : 'Diagnostics copied to the clipboard';
+      _notice = message;
+      _noticeActionLabel = message == null ? null : actionLabel;
+      _noticeAction = message == null ? null : action;
+      _noticeBusy = false;
     });
+  }
+
+  Future<void> _runNoticeAction() async {
+    final Future<void> Function()? action = _noticeAction;
+    if (action == null || _noticeBusy) return;
+    setState(() => _noticeBusy = true);
+    try {
+      await action();
+    } finally {
+      if (mounted) _showNotice(null);
+    }
+  }
+
+  /// Kill switch flipped while a tunnel is up: the flag is sent with `up`, so
+  /// it only takes effect on the next connect. Offer to do that connect now.
+  void _noticeKillSwitchNeedsReconnect() {
+    _showNotice(
+      widget.strings.killSwitchReconnectNotice,
+      actionLabel: widget.strings.reconnectNow,
+      action: widget.vpn.reconnect,
+    );
+  }
+
+  Future<void> _copyDiagnostics() async {
+    await Clipboard.setData(ClipboardData(text: widget.vpn.diagnosticsDump()));
+    _showNotice(
+      _ru
+          ? 'Журнал скопирован в буфер обмена'
+          : 'Diagnostics copied to the clipboard',
+    );
   }
 
   /// ROUND 5: the way out of "the whole PC has no internet".
@@ -96,16 +138,16 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
     setState(() => _restoringNetwork = true);
     final bool ok = await widget.vpn.releaseNetworkLocks(reason: 'settings');
     if (!mounted) return;
-    setState(() {
-      _restoringNetwork = false;
-      _notice = ok
+    setState(() => _restoringNetwork = false);
+    _showNotice(
+      ok
           ? (_ru
               ? 'Сетевые фильтры сняты, интернет должен работать'
               : 'Network filters released, internet should be back')
           : (_ru
               ? 'Не удалось снять фильтры. Перезагрузите ПК.'
-              : 'Could not release the filters. Reboot the PC.');
-    });
+              : 'Could not release the filters. Reboot the PC.'),
+    );
   }
 
   Future<void> _testGateway() async {
@@ -113,14 +155,14 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
     await widget.vpn.measureNodePings();
     if (!mounted) return;
     final int? ping = widget.vpn.currentPingMs;
-    setState(() {
-      _testingGateway = false;
-      _notice = ping == null
+    setState(() => _testingGateway = false);
+    _showNotice(
+      ping == null
           ? (_ru ? 'Сервер не ответил на проверку' : 'The server did not answer')
           : (_ru
               ? 'Сервер отвечает за ${formatPing(ping)}'
-              : 'Server responds in ${formatPing(ping)}');
-    });
+              : 'Server responds in ${formatPing(ping)}'),
+    );
   }
 
   @override
@@ -142,7 +184,15 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
         const SizedBox(height: 18),
 
         if (_notice != null) ...<Widget>[
-          InlineNotice(message: _notice!, tone: NoticeTone.info),
+          if (_noticeAction == null)
+            InlineNotice(message: _notice!, tone: NoticeTone.info)
+          else
+            _ActionNotice(
+              message: _notice!,
+              buttonLabel: _noticeActionLabel ?? '',
+              busy: _noticeBusy,
+              onPressed: _runNoticeAction,
+            ),
           const SizedBox(height: 14),
         ],
 
@@ -151,10 +201,14 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
           title: ru ? 'Быстрый старт' : 'Quick start',
           subtitle: ru
               ? 'GlukVPN стартует вместе с Windows, прячется в трей и сам '
-                  'поднимает туннель. Открыл окно — уже подключено.'
+                  'поднимает туннель. Открыл окно — уже подключено. Каждый '
+                  'переключатель работает сам по себе: свёрнутый запуск и '
+                  'автоподключение действуют и при ручном запуске.'
               : 'GlukVPN starts with Windows, stays in the tray and brings the '
                   'tunnel up on its own. By the time you open the window it is '
-                  'already connected.',
+                  'already connected. Each switch works on its own: start '
+                  'minimized and connect on launch also apply when you open '
+                  'GlukVPN by hand.',
           children: <Widget>[
             _SwitchTile(
               label: s.startWithWindows,
@@ -244,14 +298,20 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
         _Section(
           title: s.sectionVpn,
           children: <Widget>[
+            // ROUND 26: kill switch = WFP block-all filters + sing-box
+            // strict_route, both keyed to this one flag and both off by
+            // default. The flag travels with every `up`, so flipping it on a
+            // live tunnel takes effect on the next connect - hence the offer to
+            // reconnect right away.
             _SwitchTile(
               label: s.killSwitch,
               subtitle: s.killSwitchHint,
               value: _value.killSwitch,
               onChanged: (bool v) async {
                 await _patch((DesktopSettings x) => x.copyWith(killSwitch: v));
-                if (widget.vpn.phase.isConnected) {
-                  setState(() => _notice = s.splitReconnectNeeded);
+                final ConnectionPhase phase = widget.vpn.phase;
+                if (phase.isConnected || phase == ConnectionPhase.connecting) {
+                  _noticeKillSwitchNeedsReconnect();
                 }
               },
             ),
@@ -288,7 +348,7 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
           settings: widget.settings,
           vpn: widget.vpn,
           onChanged: () => setState(() {}),
-          onNotice: (String? message) => setState(() => _notice = message),
+          onNotice: _showNotice,
         ),
 
         // ---- 5. Advanced (from the browser extension) --------------------
@@ -309,7 +369,7 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
                   (DesktopSettings x) => x.copyWith(bypassRoutes: _list(raw)),
                 );
                 if (widget.vpn.phase.isConnected) {
-                  setState(() => _notice = s.splitReconnectNeeded);
+                  _showNotice(s.splitReconnectNeeded);
                 }
               },
             ),
@@ -329,9 +389,13 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
                 );
               },
             ),
+            // ROUND 26: the engine actually in use, not a constant. sing-box
+            // (TUN + VLESS over TLS) is what every migrated node yields; the
+            // WireGuard worker shows here only when it is really the one
+            // carrying the session.
             _InfoTile(
-              label: ru ? 'Протокол' : 'Protocol',
-              value: 'WireGuard · Wintun',
+              label: s.protocol,
+              value: widget.vpn.engine.protocolLabel,
             ),
             _InfoTile(
               label: ru ? 'Сетевой адаптер' : 'Network adapter',
@@ -400,12 +464,11 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
                     clearMtu: true,
                   ),
                 );
-                if (!mounted) return;
-                setState(() {
-                  _notice = ru
+                _showNotice(
+                  ru
                       ? 'Расширенные настройки сброшены'
-                      : 'Advanced settings restored';
-                });
+                      : 'Advanced settings restored',
+                );
               },
             ),
           ],
@@ -484,12 +547,18 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
         // was wrong in both directions: a normal user could uncover a switch
         // the beta plane would then refuse them, and an admin had to know the
         // trick to reach something they are entitled to. Now it renders for
-        // admins and is absent for everyone else - the same rule the phone and
-        // the browser extension use.
+        // admins and testers and is absent for everyone else - the same rule
+        // the phone and the browser extension use.
+        //
+        // ROUND 26: the shared channel card. It probes the target control
+        // plane before switching, so a beta that is switched off leaves the
+        // session alone, and it refuses to switch under a live tunnel.
         Center(
           child: DevChannelFooter(
-            russian: widget.strings.isRussian,
-            isAdmin: widget.auth.user?.isAdmin ?? false,
+            strings: widget.strings,
+            api: widget.vpn.api,
+            canSwitch: widget.auth.user?.canUseBetaChannel ?? false,
+            locked: widget.vpn.phase.isConnected || widget.vpn.phase.isBusy,
             // ROUND 9 (1.3): write the choice down before signing out.
             //
             // The switch used to only set an in-memory override, so the next
@@ -1497,6 +1566,57 @@ class _ActionTile extends StatelessWidget {
                   ),
                 ],
               ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          _SmallButton(
+            label: buttonLabel,
+            busy: busy,
+            onTap: busy ? null : onPressed,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// An inline notice with one button, in the info tone.
+///
+/// ROUND 26: `InlineNotice` is text only, and the kill switch needs a notice
+/// that can *do* something - "applies on the next connect, reconnect now".
+class _ActionNotice extends StatelessWidget {
+  const _ActionNotice({
+    required this.message,
+    required this.buttonLabel,
+    required this.onPressed,
+    this.busy = false,
+  });
+
+  final String message;
+  final String buttonLabel;
+  final VoidCallback onPressed;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    const Color colour = NoticeTone.info;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: colour.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colour.withOpacity(0.35)),
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: colour, fontWeight: FontWeight.w500),
             ),
           ),
           const SizedBox(width: 12),

@@ -190,7 +190,7 @@ class _OfflineBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final ConnectivityService connectivity = context.watch<ConnectivityService>();
     final TextTheme text = Theme.of(context).textTheme;
-    final bool russian = context.strings.isRussian;
+    final AppStrings s = context.strings;
     return SafeArea(
       bottom: false,
       child: Padding(
@@ -211,9 +211,7 @@ class _OfflineBanner extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  connectivity.checking
-                      ? (russian ? 'Переподключение…' : 'Reconnecting…')
-                      : (russian ? 'Нет соединения' : "You're offline"),
+                  connectivity.checking ? s.reconnecting : s.youAreOffline,
                   style: text.bodyMedium,
                 ),
               ),
@@ -221,7 +219,7 @@ class _OfflineBanner extends StatelessWidget {
                 onPressed: connectivity.checking
                     ? null
                     : () => _retryConnection(context),
-                child: Text(russian ? 'Повторить' : 'Retry'),
+                child: Text(s.retry),
               ),
             ],
           ),
@@ -238,7 +236,7 @@ class _OfflineScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final ConnectivityService connectivity = context.watch<ConnectivityService>();
     final TextTheme text = Theme.of(context).textTheme;
-    final bool russian = context.strings.isRussian;
+    final AppStrings s = context.strings;
     return Container(
       color: GlukColors.pageBg,
       child: SafeArea(
@@ -268,23 +266,19 @@ class _OfflineScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 22),
                 Text(
-                  russian ? 'Нет подключения к интернету' : 'No internet connection',
+                  s.noInternetConnection,
                   style: text.headlineSmall,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  russian
-                      ? 'Проверьте Wi-Fi или мобильные данные. Как только связь '
-                          'вернётся, всё продолжится само.'
-                      : 'Check your Wi-Fi or mobile data. Everything continues '
-                          'as soon as you are back online.',
+                  s.noInternetBody,
                   style: text.bodyMedium,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 26),
                 PrimaryPillButton(
-                  label: russian ? 'Повторить' : 'Retry',
+                  label: s.retry,
                   busy: connectivity.checking,
                   onPressed: connectivity.checking
                       ? null
@@ -374,12 +368,7 @@ class SplashView extends StatelessWidget {
             const SizedBox(height: 20),
             Text('GlukVPN', style: text.titleLarge),
             const SizedBox(height: 6),
-            Text(
-              context.strings.isRussian
-                  ? 'Защищаем соединение'
-                  : 'Securing your connection',
-              style: text.bodySmall,
-            ),
+            Text(context.strings.securingYourConnection, style: text.bodySmall),
             const SizedBox(height: 26),
             const SizedBox(
               width: 120,
@@ -431,6 +420,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
     // System back must walk the tab stack instead of leaving the app: on
     // Android 16 an unhandled back on the first route closes the process
     // straight away, which is what made Servers -> Back quit GlukVPN.
@@ -463,8 +453,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         bottomNavigationBar: GlukNavBar(
           index: _index,
           onChanged: _select,
-          items: const <GlukNavItem>[
-            GlukNavItem(
+          items: <GlukNavItem>[
+            const GlukNavItem(
               icon: Icons.shield_outlined,
               activeIcon: Icons.shield,
               label: 'VPN',
@@ -472,12 +462,12 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             GlukNavItem(
               icon: Icons.public_outlined,
               activeIcon: Icons.public,
-              label: 'Servers',
+              label: s.servers,
             ),
             GlukNavItem(
               icon: Icons.settings_outlined,
               activeIcon: Icons.settings,
-              label: 'Settings',
+              label: s.settings,
             ),
           ],
         ),

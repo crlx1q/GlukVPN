@@ -242,6 +242,8 @@ class DesktopShellState extends State<DesktopShell> {
           child: DesktopStatsScreen(
             usage: widget.vpn.usage,
             strings: widget.strings,
+            loading: !widget.vpn.usageLoaded,
+            reduceMotion: _reduceMotion,
           ),
         );
       case _accountTab:

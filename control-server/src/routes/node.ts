@@ -9,7 +9,9 @@ import { wireGuardKeySchema } from "../lib/wg"
 import { clientIp, getAuthNode, requireNode } from "../middleware/auth"
 import { prisma } from "../prisma"
 import { claimPendingCommands, completeCommand } from "../services/nodeCommands"
+import { buildNodePolicy } from "../services/policy"
 import { ensureIpPool, releaseLease } from "../services/sessions"
+import { applyVlessReport } from "../services/vlessStats"
 
 const ipv4 = z.string().trim().refine((value) => {
 	try {
@@ -47,6 +49,20 @@ const RegisterBody = z.object({
 	agentVersion: z.string().trim().max(30).optional(),
 })
 
+/**
+ * The sing-box gateway a node advertises. `null` (explicit) means "I run no
+ * gateway" and clears whatever was stored; omitted means "no change".
+ */
+const GatewayBody = z
+	.object({
+		host: z.string().trim().min(1).max(255),
+		port: z.coerce.number().int().min(1).max(65535),
+		sni: z.string().trim().max(255).optional(),
+		flow: z.string().trim().max(40).optional(),
+	})
+	.nullable()
+	.optional()
+
 const HeartbeatBody = z
 	.object({
 		cpuPercent: z.coerce.number().min(0).max(100).optional(),
@@ -55,8 +71,28 @@ const HeartbeatBody = z
 		peerCount: z.coerce.number().int().min(0).max(10000).optional(),
 		agentVersion: z.string().trim().max(30).optional(),
 		wireguardPublicKey: wireGuardKeySchema.optional(),
+		gateway: GatewayBody,
+		// Version of the policy the agent has actually written to sing-box.
+		policyVersion: z.string().trim().max(64).optional(),
 	})
 	.optional()
+
+const VlessDomain = z.object({
+	host: z.string().trim().min(1).max(253),
+	bytesRx: z.coerce.number().min(0),
+	bytesTx: z.coerce.number().min(0),
+	connections: z.coerce.number().int().min(0),
+	lastSeenAt: z.string().datetime().nullable().optional(),
+})
+
+const VlessUser = z.object({
+	name: z.string().trim().min(1).max(64),
+	deltaRx: z.coerce.number().min(0),
+	deltaTx: z.coerce.number().min(0),
+	activeConnections: z.coerce.number().int().min(0),
+	lastSeenAt: z.string().datetime().nullable().optional(),
+	domains: z.array(VlessDomain).max(200).optional(),
+})
 
 const ReportBody = z.object({
 	peers: z
@@ -70,6 +106,12 @@ const ReportBody = z.object({
 			}),
 		)
 		.max(1000),
+	// sing-box side: per-device deltas since the previous acknowledged report.
+	vless: z
+		.object({
+			users: z.array(VlessUser).max(1000),
+		})
+		.optional(),
 })
 
 const AckParams = z.object({ id: z.string().uuid("Invalid command id") })
@@ -239,6 +281,27 @@ export async function nodeAgentRoutes(app: FastifyInstance): Promise<void> {
 			const { node, tokenId } = getAuthNode(request)
 			const body = parsed.data ?? {}
 
+			// Gateway: explicit null clears it, an object replaces it, absence
+			// keeps the stored value (the agent only sends it with metrics).
+			const gatewayData =
+				body.gateway === undefined
+					? {}
+					: body.gateway === null
+						? {
+								gatewayHost: null,
+								gatewayPort: null,
+								gatewaySni: null,
+								gatewayFlow: null,
+								gatewayUpdatedAt: new Date(),
+							}
+						: {
+								gatewayHost: body.gateway.host,
+								gatewayPort: body.gateway.port,
+								gatewaySni: body.gateway.sni?.trim() || null,
+								gatewayFlow: body.gateway.flow?.trim() || null,
+								gatewayUpdatedAt: new Date(),
+							}
+
 			const updated = await prisma.vpnNode.update({
 				where: { id: node.id },
 				data: {
@@ -250,8 +313,22 @@ export async function nodeAgentRoutes(app: FastifyInstance): Promise<void> {
 					activePeers: body.peerCount ?? node.activePeers,
 					agentVersion: body.agentVersion ?? node.agentVersion,
 					wireguardPublicKey: body.wireguardPublicKey ?? node.wireguardPublicKey,
+					...gatewayData,
+					...(body.policyVersion !== undefined
+						? {
+								policyVersion: body.policyVersion,
+								...(body.policyVersion !== node.policyVersion
+									? { policyAppliedAt: new Date() }
+									: {}),
+							}
+						: {}),
 				},
 			})
+
+			// Desired policy version travels with every heartbeat so the agent
+			// can tell "nothing changed" apart from "fetch the new document"
+			// without a second round trip.
+			const policy = await buildNodePolicy(updated)
 
 			// Successful use of a token retires every older token of this node,
 			// which makes rotation safe: the old token dies only once the new one works.
@@ -270,6 +347,7 @@ export async function nodeAgentRoutes(app: FastifyInstance): Promise<void> {
 				nodeStatus: updated.status,
 				heartbeatIntervalSec: config.NODE_HEARTBEAT_INTERVAL_SEC,
 				nodeTokenExpiresAt: token?.expiresAt.toISOString() ?? null,
+				policyVersion: policy.version,
 				commands: commands.map((command) => ({
 					id: command.id,
 					type: command.type,
@@ -279,7 +357,26 @@ export async function nodeAgentRoutes(app: FastifyInstance): Promise<void> {
 		},
 	)
 
-	/** Peer state + WireGuard byte counters. */
+	/**
+	 * The sing-box policy for this node: VLESS users (one credential per active
+	 * device) and the reject rules. The agent merges it into its singbox.json
+	 * and reloads sing-box; nothing in the document can be turned into a shell
+	 * command, a file path or a redirect.
+	 */
+	app.get(
+		"/api/node/policy",
+		{
+			preHandler: requireNode,
+			config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+		},
+		async (request, reply) => {
+			const { node } = getAuthNode(request)
+			const policy = await buildNodePolicy(node)
+			return reply.send({ ok: true, nodeId: node.id, policy })
+		},
+	)
+
+	/** Peer state + WireGuard byte counters, and the sing-box side of the same. */
 	app.post(
 		"/api/node/report",
 		{
@@ -291,6 +388,10 @@ export async function nodeAgentRoutes(app: FastifyInstance): Promise<void> {
 			if (!parsed.success) throw badRequest("Invalid report payload")
 			const { node } = getAuthNode(request)
 			const { peers } = parsed.data
+
+			const vless = parsed.data.vless
+				? await applyVlessReport(node, parsed.data.vless.users)
+				: null
 
 			const liveSessions = await prisma.session.findMany({
 				where: { nodeId: node.id, status: { in: ["PENDING", "ACTIVE"] } },
@@ -342,6 +443,15 @@ export async function nodeAgentRoutes(app: FastifyInstance): Promise<void> {
 				// The agent removes these keys; peers are never created here.
 				removePeers: unknownPeers,
 				missingPeers,
+				...(vless
+					? {
+							vless: {
+								sessionsUpdated: vless.sessionsUpdated,
+								domainsUpdated: vless.domainsUpdated,
+								unknownUsers: vless.unknownUsers,
+							},
+						}
+					: {}),
 			})
 		},
 	)
@@ -367,6 +477,16 @@ export async function nodeAgentRoutes(app: FastifyInstance): Promise<void> {
 				result: body.data.error ? { error: body.data.error } : { ok: body.data.ok },
 			})
 			if (!command) throw notFound("Command not found")
+
+			if (command.type === "SYNC_POLICY" && body.data.ok) {
+				// The agent applied the policy: remember when, so the panel can show
+				// "applied 3s ago" next to the desired version.
+				const policy = await buildNodePolicy(node)
+				await prisma.vpnNode.update({
+					where: { id: node.id },
+					data: { policyVersion: policy.version, policyAppliedAt: new Date() },
+				})
+			}
 
 			if (command.sessionId) {
 				if (command.type === "ADD_PEER") {

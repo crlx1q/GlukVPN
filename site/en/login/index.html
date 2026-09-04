@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Sign in — GlukVPN</title>
-  <meta name="description" content="Sign in to GlukVPN with the same login and password as in the app.">
+  <meta name="description" content="Sign in to GlukVPN with the same login and password as in the app, or continue with Telegram or Google. Subscription, devices and account status.">
   <link rel="canonical" href="https://vpn.gluk.tech/en/login/">
   <meta name="theme-color" content="#0a0714">
   <meta name="color-scheme" content="dark">
@@ -16,7 +16,7 @@
   <link rel="alternate" hreflang="en" href="https://vpn.gluk.tech/en/login/">
   <link rel="alternate" hreflang="x-default" href="https://vpn.gluk.tech/login/">
   <meta property="og:title" content="Sign in — GlukVPN">
-  <meta property="og:description" content="Sign in to GlukVPN with the same login and password as in the app.">
+  <meta property="og:description" content="Sign in to GlukVPN with the same login and password as in the app, or continue with Telegram or Google. Subscription, devices and account status.">
   <meta property="og:url" content="https://vpn.gluk.tech/en/login/">
   <meta property="og:image" content="https://vpn.gluk.tech/assets/img/og-cover.png">
   <meta property="og:image:width" content="1200">
@@ -24,7 +24,7 @@
   <meta property="og:image:alt" content="GlukVPN — fast, private VPN">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Sign in — GlukVPN">
-  <meta name="twitter:description" content="Sign in to GlukVPN with the same login and password as in the app.">
+  <meta name="twitter:description" content="Sign in to GlukVPN with the same login and password as in the app, or continue with Telegram or Google. Subscription, devices and account status.">
   <meta name="twitter:image" content="https://vpn.gluk.tech/assets/img/og-cover.png">
   <link rel="icon" href="/favicon.ico" sizes="32x32">
   <link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png">
@@ -34,25 +34,25 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&amp;display=swap">
-  <link rel="stylesheet" href="/assets/css/fonts.css?v=0.7.4">
-  <link rel="stylesheet" href="/assets/css/tokens.css?v=0.7.4">
-  <link rel="stylesheet" href="/assets/css/base.css?v=0.7.4">
-  <link rel="stylesheet" href="/assets/css/components.css?v=0.7.4">
-  <link rel="stylesheet" href="/assets/css/sections.css?v=0.7.4">
-  <link rel="stylesheet" href="/assets/css/app-ui.css?v=0.7.4">
-  <link rel="stylesheet" href="/assets/css/utilities.css?v=0.7.4">
-  <link rel="stylesheet" href="/assets/css/fx.css?v=0.7.4">
-  <link rel="stylesheet" href="/assets/css/auth.css?v=0.7.4">
-  <script src="/assets/js/config.js?v=0.7.4" defer></script>
-  <script src="/assets/js/i18n.js?v=0.7.4" defer></script>
-  <script src="/assets/js/world-dots.js?v=0.7.4" defer></script>
-  <script src="/assets/js/globe.js?v=0.7.4" defer></script>
-  <script src="/assets/js/network-map.js?v=0.7.4" defer></script>
-  <script src="/assets/js/sections.js?v=0.7.4" defer></script>
-  <script src="/assets/js/ui.js?v=0.7.4" defer></script>
-  <script src="/assets/js/fx.js?v=0.7.4" defer></script>
-  <script src="/assets/js/auth.js?v=0.7.4" defer></script>
-  <script src="/assets/js/fonts.js?v=0.7.4" defer></script>
+  <link rel="stylesheet" href="/assets/css/fonts.css?v=0.8.0">
+  <link rel="stylesheet" href="/assets/css/tokens.css?v=0.8.0">
+  <link rel="stylesheet" href="/assets/css/base.css?v=0.8.0">
+  <link rel="stylesheet" href="/assets/css/components.css?v=0.8.0">
+  <link rel="stylesheet" href="/assets/css/sections.css?v=0.8.0">
+  <link rel="stylesheet" href="/assets/css/app-ui.css?v=0.8.0">
+  <link rel="stylesheet" href="/assets/css/utilities.css?v=0.8.0">
+  <link rel="stylesheet" href="/assets/css/fx.css?v=0.8.0">
+  <link rel="stylesheet" href="/assets/css/auth.css?v=0.8.0">
+  <script src="/assets/js/config.js?v=0.8.0" defer></script>
+  <script src="/assets/js/i18n.js?v=0.8.0" defer></script>
+  <script src="/assets/js/world-dots.js?v=0.8.0" defer></script>
+  <script src="/assets/js/globe.js?v=0.8.0" defer></script>
+  <script src="/assets/js/network-map.js?v=0.8.0" defer></script>
+  <script src="/assets/js/sections.js?v=0.8.0" defer></script>
+  <script src="/assets/js/ui.js?v=0.8.0" defer></script>
+  <script src="/assets/js/fx.js?v=0.8.0" defer></script>
+  <script src="/assets/js/auth.js?v=0.8.0" defer></script>
+  <script src="/assets/js/fonts.js?v=0.8.0" defer></script>
 
 </head>
 <body>
@@ -117,10 +117,14 @@
           <p class="auth-card__sub" data-auth-sub>The same login and password as in the GlukVPN app.</p>
         </div>
 
-        <div class="auth-tabs" role="tablist" aria-label="Sign in or sign up">
+        <!-- 0.8.0: parity with /login/ — one card, three modes. Recovery is not
+             a third tab: it opens from "Forgot your password?" and ?mode=recover,
+             so its tab button stays in the DOM (login.js needs it) but is hidden. -->
+        <div class="auth-tabs auth-tabs--pair" role="tablist" aria-label="Sign in or sign up">
           <span class="auth-tabs__ind" data-auth-ind aria-hidden="true"></span>
           <button class="auth-tab is-active" type="button" role="tab" aria-selected="true" data-auth-tab="login">Sign in</button>
           <button class="auth-tab" type="button" role="tab" aria-selected="false" data-auth-tab="register">Sign up</button>
+          <button class="auth-tab" type="button" role="tab" aria-selected="false" data-auth-tab="recover" hidden>Recovery</button>
         </div>
 
         <div class="auth-panes">
@@ -144,18 +148,201 @@
               </label>
               <button class="btn btn--primary btn--lg btn--block" type="submit">Sign in</button>
               <p class="auth-msg" data-login-msg role="status" aria-live="polite"></p>
-              <p class="auth-hint">Forgot your password? Message support — we restore access through the contact linked to the account.</p>
+              <p class="auth-hint"><a class="auth-link" href="/en/login/?mode=recover" data-auth-goto="recover">Forgot your password?</a> — we will send a code by email or to Telegram. No account yet? <a class="auth-link" href="/en/login/?mode=register" data-auth-goto="register">Sign up</a>.</p>
             </form>
+
+            <!-- 0.8.0: sign in with Telegram or Google. The row stays hidden until
+                 sso.js learns from /api/auth/config which providers are enabled;
+                 without JS only the password form remains. -->
+            <div class="auth-alt" data-sso hidden>
+              <div class="auth-alt__div" aria-hidden="true">or</div>
+              <button class="auth-alt__btn auth-alt__btn--tg" type="button" data-sso-telegram hidden><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>Continue with Telegram</button>
+              <div class="auth-alt__google" data-google-btn data-google-mode="login" hidden></div>
+              <p class="auth-alt__note" data-sso-note hidden></p>
+            </div>
+
+            <!-- Waiting for the Telegram confirmation (device-link flow). -->
+            <div class="sso-wait" data-sso-wait hidden>
+              <div class="sso-wait__head"><span class="spinner" aria-hidden="true"></span><span data-sso-wait-title>Waiting for confirmation in Telegram…</span></div>
+              <p class="sso-wait__text">We opened Telegram in a new tab. Confirm the sign-in in the bot — this page updates by itself.</p>
+              <div class="sso-wait__code">
+                <b class="mono" data-sso-code>—</b>
+                <span>If the tab did not open, <a data-sso-link href="#" target="_blank" rel="noopener">open the bot</a> and send this code. <a data-sso-verify href="#" target="_blank" rel="noopener" hidden>Confirmation page</a></span>
+              </div>
+              <div class="sso-wait__row"><span class="sso-wait__timer" data-sso-timer></span><button class="btn btn--ghost btn--sm" type="button" data-sso-cancel>Cancel</button></div>
+              <p class="auth-msg" data-sso-msg role="status" aria-live="polite"></p>
+            </div>
           </div>
 
           <div class="auth-pane" data-auth-pane="register" hidden>
-            <div class="auth-invite">
-              <span class="icon-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="8" cy="12" r="4" stroke="currentColor" stroke-width="1.6"/><path d="M12 12h8m-3 0v3m3-3v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
-              <h2 class="h3">Invite-only sign-up</h2>
-              <p class="muted">While the beta is running, accounts are issued manually: that keeps region load under control and lets us fix problems fast. Write to us and we will send you a login and password.</p>
-              <a class="btn btn--primary btn--lg btn--block" href="https://t.me/glukvpn" data-telegram target="_blank" rel="noopener"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>Request access on Telegram</a>
+            <!-- Kept in the DOM for register.js (it writes data-at on every step);
+                 hidden visually, as on the Russian page. -->
+            <ol class="reg-steps" data-reg-progress data-at="form" aria-hidden="true" hidden>
+              <li class="reg-steps__item" data-for="form"><b>1</b><span>Email</span></li>
+              <li class="reg-steps__item" data-for="code"><b>2</b><span>Code</span></li>
+              <li class="reg-steps__item" data-for="telegram"><b>3</b><span>Telegram</span></li>
+            </ol>
+
+            <!-- Step 1 — email and password -->
+            <div data-reg-step="form">
+              <form class="form" data-reg-form novalidate>
+                <label class="field">
+                  <span class="field__label">Email</span>
+                  <span class="field__box">
+                    <input class="input" type="email" name="email" autocomplete="email" placeholder="you@example.com" required>
+                  </span>
+                </label>
+                <label class="field">
+                  <span class="field__label">Password</span>
+                  <span class="field__box">
+                    <input class="input" type="password" name="password" autocomplete="new-password" placeholder="At least 8 characters" required>
+                    <button class="pw-toggle" type="button" data-pw-toggle aria-label="Show password">
+                      <span class="pw-toggle__ic pw-toggle__ic--off"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 3l18 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.6 6.3A9.6 9.6 0 0 1 12 6.2c4.6 0 8 3.3 9.3 5.8-.6 1.2-1.7 2.7-3.3 3.9M6.5 7.9C4.6 9.1 3.3 10.8 2.7 12c1.3 2.5 4.7 5.8 9.3 5.8 1.2 0 2.3-.2 3.3-.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+                      <span class="pw-toggle__ic pw-toggle__ic--on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3.1"/></svg></span>
+                    </button>
+                  </span>
+                </label>
+                <label class="field">
+                  <span class="field__label">Repeat the password</span>
+                  <span class="field__box">
+                    <input class="input" type="password" name="password2" autocomplete="new-password" placeholder="Once more" required>
+                  </span>
+                </label>
+                <div class="captcha" data-turnstile="register"></div>
+                <button class="btn btn--primary btn--lg btn--block" type="submit">Continue</button>
+                <p class="auth-msg" id="reg-msg" role="status" aria-live="polite"></p>
+                <p class="auth-hint">By continuing you agree to the <a href="/en/terms/">terms</a> and the <a href="/en/privacy/">privacy policy</a>.</p>
+              </form>
+              <!-- 0.8.0: sign up with Google — the email is verified by Google, only the
+                   Telegram step remains. Shown only when google.enabled in /api/auth/config. -->
+              <div class="auth-alt" data-sso-register hidden>
+                <div class="auth-alt__div" aria-hidden="true">or</div>
+                <div class="auth-alt__google" data-google-btn data-google-mode="register" hidden></div>
+              </div>
+            </div>
+
+            <!-- Step 2 — the code from the email -->
+            <div data-reg-step="code" hidden>
+              <form class="form" data-reg-code-form novalidate>
+                <p class="auth-card__sub">We sent a code to <b id="reg-code-to"></b>. It is valid for <span data-code-ttl>5</span> min.</p>
+                <p class="notice notice--warn" id="reg-code-warn" hidden>The email could not be sent. Contact support — we will confirm it by hand.</p>
+                <label class="field">
+                  <span class="field__label">Code from the email</span>
+                  <span class="field__box">
+                    <input class="input input--code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" required>
+                  </span>
+                </label>
+                <button class="btn btn--primary btn--lg btn--block" type="submit">Confirm</button>
+                <p class="auth-msg" id="reg-code-msg" role="status" aria-live="polite"></p>
+                <button class="btn btn--ghost btn--block" type="button" id="reg-code-resend">Send the code again</button>
+              </form>
+            </div>
+
+            <!-- Step 3 — Telegram -->
+            <div data-reg-step="telegram" hidden>
+              <div class="auth-invite">
+                <span class="icon-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg></span>
+                <h2 class="h3">Last step — Telegram</h2>
+                <p class="muted">Open the bot and press “Share contact”. The phone number is only used to keep one account per person; we never call or message it.</p>
+                <a class="btn btn--primary btn--lg btn--block" id="reg-tg-open" href="#" target="_blank" rel="noopener">Open Telegram</a>
+                <p class="auth-hint">If the bot did not open by itself, find it in Telegram and send the code: <b class="mono" id="reg-tg-code"></b></p>
+                <p class="auth-status"><span class="spinner" aria-hidden="true"></span> Waiting for confirmation…</p>
+                <p class="auth-msg" id="reg-tg-msg" role="status" aria-live="polite"></p>
+              </div>
+            </div>
+
+            <!-- Done -->
+            <div data-reg-step="done" hidden>
+              <div class="auth-invite">
+                <span class="icon-badge icon-badge--ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg></span>
+                <h2 class="h3">Account created</h2>
+                <p class="muted">Your login: <b class="mono" id="reg-done-login"></b>. You can sign in with the login or the email — on the site, in the app and in the extension.</p>
+                <a class="btn btn--primary btn--lg btn--block" href="/en/login/" data-auth-goto="login">Sign in</a>
+                <a class="btn btn--ghost btn--block" href="/en/download/">Download the app</a>
+              </div>
+            </div>
+
+            <!-- Sign-up closed: the server said selfRegistration:false or the bot
+                 is not configured. register.js replaces the text with the reason. -->
+            <div class="auth-invite" data-reg-step="closed" id="reg-closed" hidden>
+              <span class="icon-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg></span>
+              <h2 class="h3">Sign-up is closed right now</h2>
+              <p class="muted" id="reg-closed-msg">Accounts are currently issued by hand. Message us and we will open access.</p>
+              <a class="btn btn--ghost btn--block" href="https://t.me/glukvpn" data-telegram target="_blank" rel="noopener"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>Message us on Telegram</a>
               <a class="btn btn--ghost btn--block" href="mailto:support@gluk.tech" data-support-email><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.4" stroke="currentColor" stroke-width="1.6"/><path d="M4 7l8 5.6L20 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-fill-text>support@gluk.tech</span></a>
-              <p class="auth-hint">Already have an account from the app? It works on the site too — go back to the “Sign in” tab.</p>
+              <p class="auth-hint">Already have an account? <a class="auth-link" href="/en/login/" data-auth-goto="login">Back to sign-in</a>. <a class="auth-link" href="/en/login/?mode=recover" data-auth-goto="recover">Forgot your password?</a></p>
+            </div>
+          </div>
+          <div class="auth-pane" data-auth-pane="recover" hidden>
+            <!-- Step 1 — where to send the code -->
+            <div data-reg-step="request">
+              <form class="form" data-rec-form novalidate>
+                <label class="field">
+                  <span class="field__label">Username or email</span>
+                  <span class="field__box">
+                    <input class="input" type="text" name="identifier" autocomplete="username" placeholder="gluk_user" required>
+                  </span>
+                </label>
+
+                <fieldset class="choice">
+                  <legend class="field__label">Where to send the code</legend>
+                  <label class="choice__opt">
+                    <input type="radio" name="channel" value="email" checked>
+                    <span>By email</span>
+                  </label>
+                  <label class="choice__opt">
+                    <input type="radio" name="channel" value="telegram">
+                    <span>To Telegram</span>
+                  </label>
+                </fieldset>
+
+                <div class="captcha" data-turnstile="recover"></div>
+                <button class="btn btn--primary btn--lg btn--block" type="submit">Send the code</button>
+                <p class="auth-msg" id="rec-msg" role="status" aria-live="polite"></p>
+                <p class="auth-hint">If the account exists, the code arrives within a minute. We do not reveal whether an address is registered — otherwise this form could be used to probe other people's emails.</p>
+              </form>
+            </div>
+
+            <!-- Step 2 — the code and a new password -->
+            <div data-reg-step="reset" hidden>
+              <form class="form" data-rec-reset-form novalidate>
+                <p class="auth-card__sub" id="rec-where"></p>
+                <label class="field">
+                  <span class="field__label">Confirmation code</span>
+                  <span class="field__box">
+                    <input class="input input--code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" required>
+                  </span>
+                </label>
+                <label class="field">
+                  <span class="field__label">New password</span>
+                  <span class="field__box">
+                    <input class="input" type="password" name="password" autocomplete="new-password" placeholder="At least 8 characters" required>
+                    <button class="pw-toggle" type="button" data-pw-toggle aria-label="Show password">
+                      <span class="pw-toggle__ic pw-toggle__ic--off"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 3l18 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.6 6.3A9.6 9.6 0 0 1 12 6.2c4.6 0 8 3.3 9.3 5.8-.6 1.2-1.7 2.7-3.3 3.9M6.5 7.9C4.6 9.1 3.3 10.8 2.7 12c1.3 2.5 4.7 5.8 9.3 5.8 1.2 0 2.3-.2 3.3-.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+                      <span class="pw-toggle__ic pw-toggle__ic--on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3.1"/></svg></span>
+                    </button>
+                  </span>
+                </label>
+                <label class="field">
+                  <span class="field__label">Repeat the password</span>
+                  <span class="field__box">
+                    <input class="input" type="password" name="password2" autocomplete="new-password" placeholder="Once more" required>
+                  </span>
+                </label>
+                <button class="btn btn--primary btn--lg btn--block" type="submit">Save the password</button>
+                <p class="auth-msg" id="rec-reset-msg" role="status" aria-live="polite"></p>
+                <p class="auth-hint">After the password changes, every active session is signed out — you will need to sign in again on all devices.</p>
+              </form>
+            </div>
+
+            <!-- Done -->
+            <div data-reg-step="reset-done" hidden>
+              <div class="auth-invite">
+                <span class="icon-badge icon-badge--ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg></span>
+                <h2 class="h3">Password updated</h2>
+                <p class="muted">Now sign in with the new password — on the site and in every app.</p>
+                <a class="btn btn--primary btn--lg btn--block" href="/en/login/" data-auth-goto="login">Sign in</a>
+              </div>
             </div>
           </div>
         </div>
@@ -169,18 +356,33 @@
       </div>
 
       <aside class="auth-aside">
-        <div class="auth-aside__card">
-          <div class="auth-aside__head">
-            <span class="auth-aside__title">Карта подключений</span>
-            <span class="auth-aside__badge"><i class="acs-dot"></i>Сеть онлайн</span>
+        <!-- Same composition as the Windows client sign-in window: title, subtitle,
+             a CSS-only planet and three product lines. Nothing is loaded or drawn
+             per frame. -->
+        <div class="auth-aside__card auth-hero">
+          <div class="auth-hero__copy">
+            <h2 class="auth-hero__title">Your own network, your own rules</h2>
+            <p class="auth-hero__sub">WireGuard, our own nodes and a system-wide Windows tunnel — no browser proxy.</p>
           </div>
-          <div class="auth-aside__stage">
-            <canvas class="auth-aside__map" data-network-map width="960" height="540"></canvas>
+          <div class="auth-hero__stage" aria-hidden="true">
+            <span class="auth-hero__glow"></span>
+            <span class="auth-hero__globe"></span>
+            <span class="auth-hero__orbit auth-hero__orbit--a"></span>
+            <span class="auth-hero__orbit auth-hero__orbit--b"></span>
           </div>
-          <ul class="auth-aside__stats">
-            <li><b data-count="3">3</b><span>региона онлайн</span></li>
-            <li><b data-count="24" data-count-suffix=" ms">24 ms</b><span>лучший latency</span></li>
-            <li><b data-count="99" data-count-suffix=",9 %">99,9 %</b><span>доступность</span></li>
+          <ul class="auth-hero__list">
+            <li class="auth-hero__row">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="13" height="9.5" rx="1.8" stroke="currentColor" stroke-width="1.6"/><rect x="16" y="9" width="5.5" height="10.5" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M6 17.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              <span>Phone, computer and browser in one account</span>
+            </li>
+            <li class="auth-hero__row">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 13.5l4-6 4 4 3.5-5.5 3 4.5 3.5-2.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 19.5h18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              <span>Automatic node choice by latency and load</span>
+            </li>
+            <li class="auth-hero__row">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l7 3v5.2c0 4.3-2.9 8.2-7 9.8-4.1-1.6-7-5.5-7-9.8V6l7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.2 12.2l2 2 3.6-3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span>Kill switch and split tunnelling</span>
+            </li>
           </ul>
         </div>
         <ul class="auth-marks">
@@ -192,7 +394,11 @@
     </div>
   </section>
 
-  <script src="/assets/js/login.js?v=0.7.4" defer></script>
+  <!-- register.js drives the three sign-up steps and password recovery,
+       login.js — sign-in and tab switching, sso.js — Telegram and Google. -->
+  <script src="/assets/js/register.js?v=0.8.0" defer></script>
+  <script src="/assets/js/login.js?v=0.8.0" defer></script>
+  <script src="/assets/js/sso.js?v=0.8.0" defer></script>
 
   </main>
 

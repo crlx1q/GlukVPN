@@ -98,6 +98,18 @@ export async function registrationRoutes(app: FastifyInstance): Promise<void> {
 				enabled: telegramConfigured(),
 				username: config.TELEGRAM_BOT_USERNAME.trim().replace(/^@/, ""),
 			},
+			// The site renders the Google button only when a client id exists; the
+			// id is public by design (it is embedded in every Google sign-in page).
+			google: {
+				enabled: config.googleEnabled,
+				clientId: config.googleEnabled ? config.GOOGLE_CLIENT_ID.trim() : null,
+				requireTelegram: config.GOOGLE_REQUIRE_TELEGRAM,
+			},
+			billing: {
+				enabled: config.billingEnabled,
+				provider: config.billingEnabled ? config.BILLING_PROVIDER : null,
+				currency: config.BILLING_CURRENCY,
+			},
 			codeTtlMinutes: config.VERIFICATION_CODE_TTL_MIN,
 			passwordMinLength: 8,
 		}),

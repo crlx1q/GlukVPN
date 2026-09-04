@@ -109,6 +109,115 @@ extension ConnectionPhaseX on ConnectionPhase {
   }
 }
 
+/// Which data plane the privileged service runs for a session.
+///
+/// ROUND 24 made sing-box the engine the service prefers; the WireGuard worker
+/// stays as the fallback for nodes that advertise no TLS gateway. The UI has to
+/// know which one is live, because "waiting for the WireGuard handshake" is a
+/// lie on a sing-box tunnel - there is no handshake to wait for.
+enum TunnelEngine {
+  /// glukvpn-wg.exe: wireguard-go in userspace over Wintun.
+  wireGuard,
+
+  /// sing-box.exe: TUN inbound, VLESS over TLS outbound. The primary engine.
+  singBox,
+}
+
+extension TunnelEngineX on TunnelEngine {
+  /// What the Settings "Protocol" row shows.
+  String get protocolLabel {
+    switch (this) {
+      case TunnelEngine.singBox:
+        return 'VLESS over TLS \u00b7 sing-box (TUN)';
+      case TunnelEngine.wireGuard:
+        return 'WireGuard \u00b7 Wintun';
+    }
+  }
+
+  /// The value the service reports in the `engine` status field.
+  String get wireName =>
+      this == TunnelEngine.singBox ? 'sing-box' : 'wireguard';
+}
+
+/// Parses the `engine` field of a service status reply. Null when the service
+/// predates the field or has not decided yet (no tunnel requested).
+TunnelEngine? tunnelEngineFromWire(String? raw) {
+  switch (raw?.trim().toLowerCase()) {
+    case 'sing-box':
+    case 'singbox':
+    case 'sing_box':
+      return TunnelEngine.singBox;
+    case 'wireguard':
+    case 'wg':
+      return TunnelEngine.wireGuard;
+    default:
+      return null;
+  }
+}
+
+/// Implemented by backends that can say which engine they are running.
+///
+/// Kept apart from `TunnelBackend` so the platform-neutral interface in
+/// `lib/platform/` does not have to grow a Windows-only notion.
+abstract class TunnelEngineReporter {
+  /// `sing-box` / `wireguard` as last reported by the service, or null when it
+  /// has not said.
+  String? get reportedEngine;
+}
+
+/// i18n key for a raw status detail code, or null when the code has no human
+/// wording of its own (call sites then fall back to a generic phrase).
+///
+/// The codes come from [TunnelVerifier] and from `DesktopVpnController`; they
+/// used to reach the home banner verbatim (`handshake_pending`), which is
+/// neither readable nor true on a sing-box tunnel. Only the two handshake codes
+/// are engine-specific: on WireGuard they *are* about the handshake, on
+/// sing-box the same verdicts mean "the tunnel has not answered yet" and "the
+/// tunnel went quiet".
+String? statusDetailKey(String code, TunnelEngine engine) {
+  final bool wg = engine == TunnelEngine.wireGuard;
+  switch (code) {
+    case 'preparing':
+      return 'detail.preparing';
+    case 'bringing_up':
+      return 'detail.bringingUp';
+    case 'handshake_pending':
+      return wg ? 'detail.handshakePending.wg' : 'detail.waitingForTunnel';
+    case 'handshake_stale':
+      return wg ? 'detail.handshakeStale.wg' : 'detail.tunnelSilent';
+    case 'peer_not_ready':
+      return 'detail.peerNotReady';
+    case 'no_traffic_yet':
+      return 'detail.verifying';
+    case 'verified':
+      return 'detail.verified';
+    case 'reconnecting':
+      return 'detail.reconnecting';
+    case 'tearing_down':
+      return 'detail.tearingDown';
+    case 'down':
+      return 'detail.down';
+    case 'tunnel_lost':
+      return 'detail.tunnelLost';
+    case 'tunnel_error':
+      return 'detail.tunnelError';
+    case 'tunnel_service_unavailable':
+      return 'detail.serviceUnavailable';
+    case 'tunnel_permission_denied':
+      return 'detail.permissionDenied';
+    case 'subscription_inactive':
+      return 'detail.subscriptionInactive';
+    case 'connect_timeout':
+      return 'detail.connectTimeout';
+    case 'not_authenticated':
+      return 'detail.notAuthenticated';
+    case 'no_available_nodes':
+      return 'detail.noNodes';
+    default:
+      return null;
+  }
+}
+
 /// Outcome of evaluating whether we may legitimately show CONNECTED.
 class TunnelVerdict {
   const TunnelVerdict(this.phase, this.reason);
@@ -142,7 +251,9 @@ class ServerTunnelStatus {
 /// Android client has. Four independent conditions must all hold:
 ///
 ///   1. the privileged service reports state == connected;
-///   2. the WireGuard handshake is fresh (within [handshakeStaleAfter]);
+///   2. the liveness stamp is fresh (within [handshakeStaleAfter]) - the last
+///      WireGuard handshake on that engine, the moment sing-box was last seen
+///      alive on the other; the wire field is `lastHandshakeUnix` for both;
 ///   3. the control server agrees the peer is provisioned (peerReady);
 ///   4. we have observed actual data movement or a gateway ping.
 ///

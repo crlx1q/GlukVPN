@@ -1,4 +1,5 @@
-import type { Device, Session, User, VpnNode } from "@prisma/client"
+import { randomUUID } from "node:crypto"
+import type { Device, Session, Subscription, User, VpnNode } from "@prisma/client"
 import { config } from "../config"
 import { writeAudit } from "../lib/audit"
 import { conflict, forbidden, notFound, serviceUnavailable } from "../lib/errors"
@@ -11,6 +12,7 @@ import {
 	nodeEndpoint,
 	nodeHost,
 } from "./nodes"
+import { requestPolicySync } from "./policy"
 
 const ACTIVE_SESSION_STATES = ["PENDING", "ACTIVE"] as const
 
@@ -46,10 +48,13 @@ export type SessionView = {
 	assignedVpnIp: string
 	connectedAt: string
 	disconnectedAt: string | null
+	/** WireGuard: last handshake. VLESS: last observed connection ("activity"). */
 	lastHandshakeAt: string | null
 	bytesRx: number
 	bytesTx: number
 	durationSec: number
+	/** "wireguard" | "vless" — inferred from what the node actually saw. */
+	transport: string
 	node: { id: string; name: string; country: string; countryCode: string; host: string }
 	deviceId: string
 }
@@ -67,6 +72,7 @@ export function toSessionView(
 		lastHandshakeAt: session.lastHandshakeAt?.toISOString() ?? null,
 		bytesRx: bytesToNumber(session.bytesRx),
 		bytesTx: bytesToNumber(session.bytesTx),
+		transport: session.transport,
 		durationSec: Math.max(
 			0,
 			Math.floor((end.getTime() - session.connectedAt.getTime()) / 1000),
@@ -95,18 +101,36 @@ export async function ensureIpPool(node: VpnNode): Promise<void> {
 	})
 }
 
-export async function hasActiveSubscription(userId: string): Promise<boolean> {
-	const subscription = await prisma.subscription.findFirst({
+/**
+ * The subscription that currently entitles a user: active, unexpired, and the
+ * highest tier if several overlap (a Pro month bought on top of a Basic one).
+ */
+export async function activeSubscription(userId: string): Promise<Subscription | null> {
+	return prisma.subscription.findFirst({
 		where: { userId, status: "ACTIVE", expiresAt: { gt: new Date() } },
+		orderBy: [{ tier: "desc" }, { expiresAt: "desc" }],
 	})
-	return subscription !== null
 }
 
-async function pickNode(nodeId?: string | null): Promise<VpnNode> {
+export async function hasActiveSubscription(userId: string): Promise<boolean> {
+	return (await activeSubscription(userId)) !== null
+}
+
+/** Human name for a tier gate, for error messages and the server list. */
+export function tierLabel(tier: number): string {
+	if (tier >= 2) return "Pro"
+	if (tier === 1) return "Basic"
+	return "Free"
+}
+
+async function pickNode(nodeId: string | null | undefined, tier: number): Promise<VpnNode> {
 	if (nodeId) {
 		const node = await prisma.vpnNode.findUnique({ where: { id: nodeId } })
 		if (!node) throw notFound("Node not found")
 		if (node.status === "DISABLED") throw forbidden("Node is disabled")
+		if (node.tier > tier) {
+			throw forbidden(`This server requires the ${tierLabel(node.tier)} plan`)
+		}
 		if (!node.wireguardPublicKey) {
 			throw serviceUnavailable("Node has not published its WireGuard key yet")
 		}
@@ -116,15 +140,65 @@ async function pickNode(nodeId?: string | null): Promise<VpnNode> {
 		return node
 	}
 
-	// No explicit choice: least loaded online node.
+	// No explicit choice: least loaded online node the plan is allowed to use.
 	const candidates = await prisma.vpnNode.findMany({
-		where: { status: { not: "DISABLED" }, wireguardPublicKey: { not: null } },
+		where: {
+			status: { not: "DISABLED" },
+			wireguardPublicKey: { not: null },
+			tier: { lte: tier },
+		},
 		orderBy: [{ activePeers: "asc" }],
 	})
 	const online = candidates.filter((node) => isNodeConnectable(node))
 	const chosen = online[0]
 	if (!chosen) throw serviceUnavailable("No VPN node is currently available")
 	return chosen
+}
+
+/**
+ * Personal VLESS credential for a device. Devices registered before the column
+ * existed get one the first time they connect; the node policy is re-synced
+ * so sing-box knows the new user before the client reaches it.
+ */
+export async function ensureDeviceVlessUuid(device: Device): Promise<Device> {
+	if (device.vlessUuid) return device
+	const updated = await prisma.device.update({
+		where: { id: device.id },
+		data: { vlessUuid: randomUUID() },
+	})
+	await requestPolicySync().catch(() => 0)
+	return updated
+}
+
+/**
+ * The gateway clients should use on this node. Per-node values reported by the
+ * agent win; the .env VLESS_* block is the fallback for a node whose agent
+ * predates the heartbeat field. `null` = no gateway, the client uses WireGuard.
+ */
+export function gatewayFor(node: VpnNode, device: Device): ClientTunnelConfig["gateway"] | null {
+	const uuid = (device.vlessUuid ?? config.VLESS_UUID).trim()
+	if (!uuid) return null
+	if (node.gatewayHost && node.gatewayPort) {
+		return {
+			type: "vless",
+			host: node.gatewayHost,
+			port: node.gatewayPort,
+			uuid,
+			sni: node.gatewaySni ?? undefined,
+			flow: (node.gatewayFlow ?? config.VLESS_FLOW).trim() || undefined,
+		}
+	}
+	// Legacy fallback: one gateway for the fleet, configured in .env. Only when
+	// the operator actually filled it in (VLESS_UUID is the historical switch).
+	if (!config.VLESS_UUID.trim()) return null
+	return {
+		type: "vless",
+		host: config.VLESS_HOST.trim() || nodeHost(node),
+		port: config.VLESS_PORT,
+		uuid,
+		sni: config.VLESS_SNI.trim() || undefined,
+		flow: config.VLESS_FLOW.trim() || undefined,
+	}
 }
 
 /**
@@ -189,13 +263,13 @@ export async function connectSession(params: {
 	nodeId?: string | null
 	ip?: string | null
 }): Promise<ConnectResult> {
-	const { user, device } = params
+	const { user } = params
 
 	if (user.status !== "ACTIVE") throw forbidden("User is disabled")
-	if (device.status !== "ACTIVE") throw forbidden("Device is revoked")
-	if (!(await hasActiveSubscription(user.id))) {
-		throw forbidden("No active subscription")
-	}
+	if (params.device.status !== "ACTIVE") throw forbidden("Device is revoked")
+	const subscription = await activeSubscription(user.id)
+	if (!subscription) throw forbidden("No active subscription")
+	const device = await ensureDeviceVlessUuid(params.device)
 
 	// A device may hold only one live session: reconnecting replaces the old one.
 	const previous = await prisma.session.findMany({
@@ -215,14 +289,20 @@ export async function connectSession(params: {
 		)
 	}
 
-	const node = await pickNode(params.nodeId ?? null)
+	const node = await pickNode(params.nodeId ?? null, subscription.tier)
 	const nodeLive = await prisma.session.count({
 		where: { nodeId: node.id, status: { in: [...ACTIVE_SESSION_STATES] } },
 	})
 	if (nodeLive >= node.capacity) throw conflict(`Node ${node.name} is at capacity`)
 
 	await ensureIpPool(node)
-	const session = await createSessionWithLease({ user, device, node })
+	const created = await createSessionWithLease({ user, device, node })
+	const session = params.ip
+		? await prisma.session.update({
+				where: { id: created.id },
+				data: { clientIp: params.ip },
+			})
+		: created
 
 	await enqueueCommand({
 		nodeId: node.id,
@@ -255,18 +335,8 @@ export async function connectSession(params: {
 	}
 
 	// The gateway is optional on purpose: a node that has not been migrated yet
-	// simply does not advertise one.
-	const vlessUuid = config.VLESS_UUID.trim()
-	const gateway = vlessUuid
-		? {
-				type: "vless" as const,
-				host: config.VLESS_HOST.trim() || nodeHost(node),
-				port: config.VLESS_PORT,
-				uuid: vlessUuid,
-				sni: config.VLESS_SNI.trim() || undefined,
-				flow: config.VLESS_FLOW.trim() || undefined,
-			}
-		: undefined
+	// simply does not advertise one. The credential is the device's own.
+	const gateway = gatewayFor(node, device) ?? undefined
 
 	return {
 		session,

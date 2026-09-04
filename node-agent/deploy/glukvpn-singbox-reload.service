@@ -1,0 +1,14 @@
+# Triggered by glukvpn-singbox-reload.path. One shot, no arguments, root.
+#
+# `sing-box check` runs first so an invalid file is reported in the journal
+# with the actual parser error; the reload itself is `systemctl reload`, i.e.
+# the ExecReload (SIGHUP) of glukvpn-singbox.service.
+
+[Unit]
+Description=Reload the GlukVPN sing-box gateway after a config change
+After=glukvpn-singbox.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/local/bin/sing-box check -c /etc/glukvpn/singbox.json
+ExecStart=/bin/systemctl reload glukvpn-singbox.service

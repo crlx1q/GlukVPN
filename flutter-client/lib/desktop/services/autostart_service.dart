@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 import 'package:win32/win32.dart';
 
+import '../logic/startup_plan.dart';
+
 /// Manages the "Start with Windows" preference.
 ///
 /// Writes HKCU\Software\Microsoft\Windows\CurrentVersion\Run, which is the
@@ -12,10 +14,14 @@ import 'package:win32/win32.dart';
 /// of startup. The UI process starting itself is purely a user preference.
 ///
 /// The installer writes exactly the same value, so the two never fight.
+///
+/// Only "Start with Windows" lives here. "Start minimised" merely decides
+/// whether the Run entry carries [kStartHiddenFlag]; the setting itself is read
+/// on every launch by `startsHidden()`, so it also works without autostart.
 class AutostartService {
   const AutostartService({
     this.valueName = 'GlukVPN',
-    this.hiddenFlag = '--hidden',
+    this.hiddenFlag = kStartHiddenFlag,
   });
 
   static const String _runKeyPath =

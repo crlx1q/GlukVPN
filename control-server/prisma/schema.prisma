@@ -20,6 +20,10 @@ datasource db {
 enum UserStatus {
   ACTIVE
   DISABLED
+  /// Blocked by an administrator for abuse. Same effect as DISABLED (no login,
+  /// no tunnels, tokens revoked) but kept apart so support can tell "switched
+  /// off" from "banned", and so the block reason has somewhere to live.
+  BLOCKED
 }
 
 enum DeviceStatus {
@@ -51,6 +55,48 @@ enum CommandType {
   ADD_PEER
   REMOVE_PEER
   SYNC_PEERS
+  /// Re-read the sing-box policy (VLESS users + block rules) right now instead
+  /// of waiting for the next heartbeat to notice the version changed.
+  SYNC_POLICY
+}
+
+/// What one sing-box route rule matches on. Values map 1:1 onto sing-box
+/// route-rule fields, and the agent turns every enabled row into
+/// `{ <field>: [value], "action": "reject" }` - nothing else is ever generated
+/// from this table, so a rule can block traffic but can never redirect it.
+enum BlockRuleKind {
+  /// Sniffed application protocol: bittorrent, quic, stun, dns, ssh, rdp, ...
+  PROTOCOL
+  /// Exact domain ("tracker.example.org").
+  DOMAIN
+  /// Domain suffix (".example.org" matches every subdomain).
+  DOMAIN_SUFFIX
+  /// Substring anywhere in the domain ("torrent").
+  DOMAIN_KEYWORD
+  /// Go regular expression over the domain.
+  DOMAIN_REGEX
+  /// Destination IP or CIDR ("203.0.113.0/24").
+  IP_CIDR
+  /// Destination port ("25").
+  PORT
+  /// Destination port range ("6881:6999").
+  PORT_RANGE
+}
+
+enum LinkRequestStatus {
+  PENDING
+  APPROVED
+  DENIED
+  EXPIRED
+  USED
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
 }
 
 enum CommandStatus {
@@ -107,6 +153,11 @@ model User {
   passwordHash    String     @map("password_hash")
   status          UserStatus @default(ACTIVE)
   isAdmin         Boolean    @default(false) @map("is_admin")
+  /// Beta tester: may switch the PROD/BETA channel in every client without
+  /// being an administrator. Set from the admin panel.
+  isTester        Boolean    @default(false) @map("is_tester")
+  blockedAt       DateTime?  @map("blocked_at")
+  blockedReason   String?    @map("blocked_reason")
   maxDevices      Int        @default(3) @map("max_devices")
   maxSessions     Int        @default(1) @map("max_concurrent_sessions")
   /// Approximate origin resolved from the login IP: country/region only.
@@ -126,6 +177,10 @@ model User {
   deployJobs        DeployJob[]
   verificationCodes VerificationCode[]
   identityLinks     IdentityLink[]
+  linkRequests      LinkRequest[]
+  blockRules        NodeBlockRule[]
+  domainStats       TrafficDomainStat[]
+  orders            Order[]
 
   @@map("users")
 }
@@ -136,6 +191,12 @@ model Device {
   deviceName String       @map("device_name")
   // WireGuard public key of the device. The private key never leaves the phone.
   publicKey  String       @unique @map("public_key")
+  /// Personal VLESS credential for the sing-box gateway. One per device, issued
+  /// at registration, never shared: it is what lets a node attribute traffic to
+  /// exactly this device and what gets cut when the device is revoked. The
+  /// fleet-wide VLESS_UUID from .env is only a fallback for rows that predate
+  /// this column.
+  vlessUuid  String?      @unique @map("vless_uuid") @db.Uuid
   platform   String?
   status     DeviceStatus @default(ACTIVE)
   createdAt  DateTime     @default(now()) @map("created_at")
@@ -146,6 +207,7 @@ model Device {
   sessions      Session[]
   refreshTokens RefreshToken[]
   auditLogs     AuditLog[]
+  domainStats   TrafficDomainStat[]
 
   @@index([userId])
   @@index([status])
@@ -208,6 +270,8 @@ model VpnNode {
   dns                String     @default("1.1.1.1,1.0.0.1")
   mtu                Int        @default(1420)
   status             NodeStatus @default(PENDING)
+  /// Minimum subscription tier that may connect here (0 = everyone).
+  tier               Int        @default(0)
   capacity           Int        @default(50)
   activePeers        Int        @default(0) @map("active_peers")
   cpuPercent         Float?     @map("cpu_percent")
@@ -215,17 +279,87 @@ model VpnNode {
   uptimeSeconds      Int?       @map("uptime_seconds")
   agentVersion       String?    @map("agent_version")
   lastHeartbeat      DateTime?  @map("last_heartbeat")
+
+  /// sing-box VLESS-over-TLS gateway on this node, as reported by the agent in
+  /// its heartbeat. Null host = the node has no gateway and clients use
+  /// WireGuard. Per-node on purpose: the .env VLESS_* values were one gateway
+  /// for the whole fleet, which stops being true with the second node.
+  gatewayHost        String?    @map("gateway_host")
+  gatewayPort        Int?       @map("gateway_port")
+  gatewaySni         String?    @map("gateway_sni")
+  gatewayFlow        String?    @map("gateway_flow")
+  gatewayUpdatedAt   DateTime?  @map("gateway_updated_at")
+  /// Policy version (users + block rules) the agent last confirmed it applied.
+  policyVersion      String?    @map("policy_version")
+  policyAppliedAt    DateTime?  @map("policy_applied_at")
+
   createdAt          DateTime   @default(now()) @map("created_at")
   updatedAt          DateTime   @updatedAt @map("updated_at")
 
-  tokens    NodeToken[]
-  sessions  Session[]
-  commands  NodeCommand[]
-  ipLeases  IpLease[]
-  auditLogs AuditLog[]
+  tokens      NodeToken[]
+  sessions    Session[]
+  commands    NodeCommand[]
+  ipLeases    IpLease[]
+  auditLogs   AuditLog[]
+  blockRules  NodeBlockRule[]
+  domainStats TrafficDomainStat[]
 
   @@index([status])
   @@map("vpn_nodes")
+}
+
+/// One "reject" rule for the sing-box router on a node (or on every node when
+/// `nodeId` is null). Built-in rules (BitTorrent, outbound SMTP) are not rows:
+/// the agent always emits them, so they cannot be switched off by mistake.
+model NodeBlockRule {
+  id          String        @id @default(uuid()) @db.Uuid
+  /// Null = applies to all nodes.
+  nodeId      String?       @map("node_id") @db.Uuid
+  kind        BlockRuleKind
+  value       String
+  /// "tcp", "udp" or null for both.
+  network     String?
+  enabled     Boolean       @default(true)
+  note        String?
+  createdById String?       @map("created_by_id") @db.Uuid
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  node      VpnNode? @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([nodeId, enabled])
+  @@map("node_block_rules")
+}
+
+/// Which sites a device talked to through a node, aggregated per session and
+/// domain. Fed by the sing-box sniffer (SNI / HTTP host / QUIC) via the node
+/// agent. Only the host name and byte counters are kept - never URLs, never
+/// payloads - and rows are purged after DOMAIN_STATS_RETENTION_DAYS.
+model TrafficDomainStat {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  deviceId    String   @map("device_id") @db.Uuid
+  sessionId   String   @map("session_id") @db.Uuid
+  nodeId      String   @map("node_id") @db.Uuid
+  domain      String
+  category    String?
+  bytesRx     BigInt   @default(0) @map("bytes_rx")
+  bytesTx     BigInt   @default(0) @map("bytes_tx")
+  connections Int      @default(0)
+  firstSeenAt DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device  Device  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  node    VpnNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, domain])
+  @@index([userId, lastSeenAt])
+  @@index([deviceId, lastSeenAt])
+  @@index([lastSeenAt])
+  @@map("traffic_domain_stats")
 }
 
 /// One-time enrollment token: lets a fresh node exchange it for its own node token.
@@ -307,17 +441,25 @@ model Session {
   status          SessionStatus @default(PENDING)
   connectedAt     DateTime      @default(now()) @map("connected_at")
   disconnectedAt  DateTime?     @map("disconnected_at")
+  /// WireGuard: time of the last handshake. VLESS: time of the last observed
+  /// connection - there is no handshake, so this reads as "last activity".
   lastHandshakeAt DateTime?     @map("last_handshake_at")
   // Byte counters only — no traffic content, no URLs, no DPI.
   bytesRx         BigInt        @default(0) @map("bytes_rx")
   bytesTx         BigInt        @default(0) @map("bytes_tx")
   closeReason     String?       @map("close_reason")
+  /// "wireguard" until the node reports VLESS traffic for this device, then
+  /// "vless". Inferred, never claimed by the client.
+  transport       String        @default("wireguard")
+  /// Public IP the connect request came from (abuse handling; not shown to users).
+  clientIp        String?       @map("client_ip")
 
-  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  device   Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  node     VpnNode       @relation(fields: [nodeId], references: [id], onDelete: Cascade)
-  commands NodeCommand[]
-  ipLease  IpLease?
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device      Device              @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  node        VpnNode             @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  commands    NodeCommand[]
+  ipLease     IpLease?
+  domainStats TrafficDomainStat[]
 
   @@index([userId, status])
   @@index([nodeId, status])
@@ -328,7 +470,13 @@ model Session {
 model Subscription {
   id        String             @id @default(uuid()) @db.Uuid
   userId    String             @map("user_id") @db.Uuid
+  /// Plan code: "free", "basic", "pro" (see `plans`), or the legacy "test".
   plan      String             @default("test")
+  /// Entitlement level copied from the plan at purchase time. Nodes carry a
+  /// minimum tier; a session is only opened when the subscription meets it.
+  tier      Int                @default(0)
+  /// "manual" (admin/CLI), "order" (paid through billing), "seed", "promo".
+  source    String             @default("manual")
   status    SubscriptionStatus @default(ACTIVE)
   expiresAt DateTime           @map("expires_at")
   createdAt DateTime           @default(now()) @map("created_at")
@@ -338,6 +486,58 @@ model Subscription {
 
   @@index([userId, status])
   @@map("subscriptions")
+}
+
+// ------------------------------ billing ------------------------------------
+
+/// A sellable plan. Prices are minor units (tiyn / cents) to avoid floats.
+model Plan {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  tier        Int      @default(0)
+  days        Int      @default(30)
+  priceMinor  Int      @default(0) @map("price_minor")
+  currency    String   @default("KZT")
+  maxDevices  Int      @default(3) @map("max_devices")
+  maxSessions Int      @default(1) @map("max_sessions")
+  features    Json     @default("[]") @db.JsonB
+  featured    Boolean  @default(false)
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  orders Order[]
+
+  @@map("plans")
+}
+
+/// One purchase attempt. `provider` names the gateway adapter ("manual",
+/// "stripe", ...); `providerRef` is its id for the payment so a webhook can
+/// find the order. A PAID order extends the user's subscription exactly once.
+model Order {
+  id          String      @id @default(uuid()) @db.Uuid
+  userId      String      @map("user_id") @db.Uuid
+  planId      String      @map("plan_id") @db.Uuid
+  status      OrderStatus @default(PENDING)
+  amountMinor Int         @map("amount_minor")
+  currency    String
+  provider    String
+  providerRef String?     @map("provider_ref")
+  paymentUrl  String?     @map("payment_url")
+  paidAt      DateTime?   @map("paid_at")
+  metadata    Json?       @db.JsonB
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@index([providerRef])
+  @@map("orders")
 }
 
 model AuditLog {
@@ -474,6 +674,35 @@ model IdentityLink {
   @@unique([provider, providerUserId])
   @@index([userId])
   @@map("identity_links")
+}
+
+/// Sign-in by link (device-authorization grant) for the desktop client, the
+/// extension and the website. Persisted so a request survives an API restart
+/// and so prod and beta each keep their own table rather than their own RAM.
+/// No token is ever stored here: approval only records *who* approved, and the
+/// tokens are minted at the moment the client collects them.
+model LinkRequest {
+  id             String            @id @default(uuid()) @db.Uuid
+  userCode       String            @unique @map("user_code")
+  pollSecretHash String            @map("poll_secret_hash")
+  client         String
+  deviceName     String?           @map("device_name")
+  ip             String?
+  userAgent      String?           @map("user_agent")
+  status         LinkRequestStatus @default(PENDING)
+  userId         String?           @map("user_id") @db.Uuid
+  /// "web" or "telegram" - which surface approved it.
+  approvedVia    String?           @map("approved_via")
+  expiresAt      DateTime          @map("expires_at")
+  lastPollAt     DateTime?         @map("last_poll_at")
+  approvedAt     DateTime?         @map("approved_at")
+  usedAt         DateTime?         @map("used_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("link_requests")
 }
 
 enum VerificationPurpose {

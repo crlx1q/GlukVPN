@@ -103,19 +103,21 @@ const chatLogins = new Map<number, { code: string; at: number }>()
  * bot is run standalone (`npm run bot`) nothing installs it, and the bot says
  * so instead of pretending the button works.
  */
+type LinkSummary = {
+	client: string
+	deviceName: string | null
+	ip: string | null
+	status: string
+}
+
 export type TelegramLoginBridge = {
-	describe: (userCode: string) => {
-		client: string
-		deviceName: string | null
-		ip: string | null
-		status: string
-	} | null
+	describe: (userCode: string) => Promise<LinkSummary | null> | LinkSummary | null
 	approve: (input: { userCode: string; telegramId: string }) => Promise<{
 		ok: boolean
 		reason?: string
 		username?: string
 	}>
-	deny: (userCode: string) => { ok: boolean }
+	deny: (userCode: string) => Promise<{ ok: boolean }> | { ok: boolean }
 }
 
 let loginBridge: TelegramLoginBridge | null = null
@@ -287,7 +289,7 @@ async function handleLoginStart(message: TelegramMessage, rawCode: string): Prom
 		return
 	}
 
-	const pending = loginBridge.describe(code)
+	const pending = await loginBridge.describe(code)
 	if (!pending || pending.status !== "pending") {
 		chatLogins.delete(chatId)
 		await sendTelegramMessage(
@@ -333,7 +335,7 @@ async function handleLoginDecision(message: TelegramMessage, allow: boolean): Pr
 	chatLogins.delete(chatId)
 
 	if (!allow) {
-		loginBridge.deny(code)
+		await loginBridge.deny(code)
 		await sendTelegramMessage(
 			chatId,
 			"Вход отклонён. Приложение об этом уже знает.\n\n" +
@@ -516,7 +518,7 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
 	if (text.startsWith("/cancel")) {
 		chatTokens.delete(message.chat.id)
 		const pendingLogin = chatLogins.get(message.chat.id)
-		if (pendingLogin && loginBridge) loginBridge.deny(pendingLogin.code)
+		if (pendingLogin && loginBridge) await loginBridge.deny(pendingLogin.code)
 		chatLogins.delete(message.chat.id)
 		await sendTelegramMessage(message.chat.id, "Отменил. Ничего не сохранено.", HIDE_KEYBOARD)
 		return

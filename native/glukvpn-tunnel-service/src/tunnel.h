@@ -19,6 +19,15 @@
 // A child process rather than a DLL is deliberate: the Go build needs no cgo
 // toolchain, and a crash in the data plane cannot take the service with it.
 // The adapter still shows up in Network Connections and ipconfig.
+//
+// ROUND 24-26. The WireGuard worker is now the *fallback*. When the control
+// plane hands "up" a gateway object and sing-box.exe ships next to the
+// service, the data plane is sing-box: a TUN inbound on the same wintun.dll,
+// VLESS over TLS on 443 outbound. Engine selection happens once per session in
+// Up(); the status reply names the engine so the UI can word itself for it.
+// The kill switch is one flag with two halves on sing-box - the WFP block-all
+// filters from wfp.cpp plus strict_route in the generated config - and off by
+// default.
 
 #pragma once
 
@@ -77,6 +86,12 @@ struct TunnelStatus {
     int64_t sinceUnix = 0;
     bool killSwitchActive = false;
     std::string splitEngine;
+
+    // ROUND 26: "sing-box" or "wireguard", decided in Up(). Reported to the
+    // UI so its status texts can stop talking about WireGuard handshakes when
+    // the data plane is sing-box. Empty while no tunnel has been requested.
+    std::string engine;
+
     std::string errorCode;
     std::string errorMessage;
 };

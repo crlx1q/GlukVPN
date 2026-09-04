@@ -33,6 +33,11 @@ export const DEFAULT_SETTINGS = {
 	bypass: ['localhost', '127.0.0.1', '*.local', '10.*', '192.168.*'],
 	autoConnect: false,
 	preferredNodeId: null,
+	// Off: the proxy is applied to regular windows only. On: incognito windows
+	// are routed too - which additionally needs the user-controlled "Allow in
+	// Incognito" switch on chrome://extensions, something an extension cannot
+	// grant itself.
+	tunnelIncognito: false,
 }
 
 const KEYS = {
@@ -75,6 +80,7 @@ function mergeSettings(stored) {
 	if (merged.channel !== 'beta') merged.channel = 'prod'
 	merged.killSwitch = Boolean(merged.killSwitch)
 	merged.autoConnect = Boolean(merged.autoConnect)
+	merged.tunnelIncognito = Boolean(merged.tunnelIncognito)
 
 	merged.gateway.host = String(merged.gateway.host ?? '').trim()
 	const port = Number(merged.gateway.port)

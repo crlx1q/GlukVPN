@@ -1,0 +1,20 @@
+# Reload sing-box whenever the node agent rewrites its config.
+#
+# The agent runs unprivileged and must not be able to run systemctl, so it
+# only writes /etc/glukvpn/singbox.json (atomically, via rename). systemd
+# notices the change through inotify and triggers glukvpn-singbox-reload.service,
+# which sends SIGHUP to sing-box. sing-box validates the new file before it
+# swaps instances, so a broken file leaves the running gateway untouched.
+#
+# Install: node-agent/deploy/setup-singbox-agent.sh
+
+[Unit]
+Description=Watch the GlukVPN sing-box config for changes
+After=glukvpn-singbox.service
+
+[Path]
+PathChanged=/etc/glukvpn/singbox.json
+Unit=glukvpn-singbox-reload.service
+
+[Install]
+WantedBy=multi-user.target

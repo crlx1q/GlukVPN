@@ -46,6 +46,7 @@ class TrayController with TrayListener {
   DesktopStrings _strings;
 
   String? _lastIcon;
+  String? _lastTooltip;
   String? _lastSignature;
   bool _attached = false;
 
@@ -72,6 +73,8 @@ class TrayController with TrayListener {
 
   void updateStrings(DesktopStrings strings) {
     _strings = strings;
+    // The tooltip carries the phase label, so it changes language too.
+    unawaited(_applyIcon(force: true));
     unawaited(_rebuildMenu(force: true));
   }
 
@@ -82,13 +85,24 @@ class TrayController with TrayListener {
 
   // -------------------------------------------------------------------
 
+  /// Pushes the icon and the tooltip for the current phase.
+  ///
+  /// ROUND 26: the tooltip is tracked on its own. It used to be refreshed only
+  /// together with the icon, so on a tray-only start the server resolved
+  /// *after* the icon had turned amber and the tooltip kept saying
+  /// "Connecting…" with no server until the next icon change. The tray is the
+  /// only surface a hidden start has, so it has to be exact.
   Future<void> _applyIcon({bool force = false}) async {
     final String icon = 'assets/tray/${_vpn.phase.trayIconName}.ico';
-    if (!force && icon == _lastIcon) return;
+    final String tooltip = _tooltip();
+    final bool iconChanged = force || icon != _lastIcon;
+    final bool tooltipChanged = force || tooltip != _lastTooltip;
+    if (!iconChanged && !tooltipChanged) return;
     _lastIcon = icon;
+    _lastTooltip = tooltip;
     try {
-      await trayManager.setIcon(icon);
-      await trayManager.setToolTip(_tooltip());
+      if (iconChanged) await trayManager.setIcon(icon);
+      if (tooltipChanged) await trayManager.setToolTip(tooltip);
     } catch (e) {
       // A missing icon must never take down the app.
       dlog.warn('tray', 'setIcon($icon) failed: $e');

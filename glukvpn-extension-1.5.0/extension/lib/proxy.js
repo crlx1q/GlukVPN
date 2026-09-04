@@ -109,6 +109,18 @@ export function buildPac({ gateway, apiHosts, bypass, siteList, tunnelMode, kill
 }`
 }
 
+/** Runs one chrome.proxy.settings call and swallows its failure. Used for the
+ *  scopes Chrome refuses without "Allow in Incognito" - a missing permission
+ *  there must not undo the regular-window proxy that was just set. */
+async function bestEffort(operation) {
+	try {
+		await operation()
+		return true
+	} catch {
+		return false
+	}
+}
+
 export const ProxyEngine = {
 	/** Credentials answered to the gateway's 407. Kept in storage because the
 	 *  service worker is torn down between requests and the auth listener must
@@ -124,18 +136,55 @@ export const ProxyEngine = {
 		await chrome.storage.local.remove(CREDENTIALS_KEY)
 	},
 
+	/*
+	 * Which windows the PAC file applies to.
+	 *
+	 * Chrome layers extension preferences by scope, and the layering is what
+	 * makes the incognito toggle honest:
+	 *   regular              regular windows, *inherited by incognito* unless a
+	 *                        more specific scope overrides it
+	 *   regular_only         regular windows and nothing else
+	 *   incognito_persistent incognito windows only, survives restarts
+	 *
+	 * So "tunnel incognito = off" cannot simply mean `regular` - with the
+	 * extension allowed in incognito that scope would quietly route incognito
+	 * windows too. Off therefore writes `regular_only`; on writes `regular` plus
+	 * an explicit `incognito_persistent` copy. In both cases the scopes that
+	 * are not in use are cleared, so a PAC from the previous state never
+	 * lingers in a layer we stopped writing to.
+	 *
+	 * The incognito scope is only writable once the user has ticked "Allow in
+	 * Incognito" on chrome://extensions. Without it Chrome rejects the call;
+	 * that is not an error worth failing the connect over - regular windows are
+	 * still routed, and the popup tells the user what is missing.
+	 */
 	async apply(config) {
 		const pac = buildPac(config)
 		const mandatory = Boolean(config.killSwitch) && config.tunnelMode !== 'only'
-		await chrome.proxy.settings.set({
-			value: { mode: 'pac_script', pacScript: { data: pac, mandatory } },
-			scope: 'regular',
-		})
+		const value = { mode: 'pac_script', pacScript: { data: pac, mandatory } }
+		const incognito = Boolean(config.tunnelIncognito)
+
+		// New layers first, stale layers last: while both hold a PAC the browser
+		// keeps tunnelling through one of them, whereas clearing first would open
+		// a gap with no proxy at all - a leak, however brief.
+		if (incognito) {
+			await chrome.proxy.settings.set({ value, scope: 'regular' })
+			await bestEffort(() => chrome.proxy.settings.set({ value, scope: 'incognito_persistent' }))
+			await bestEffort(() => chrome.proxy.settings.clear({ scope: 'regular_only' }))
+		} else {
+			await chrome.proxy.settings.set({ value, scope: 'regular_only' })
+			await bestEffort(() => chrome.proxy.settings.clear({ scope: 'regular' }))
+			await bestEffort(() => chrome.proxy.settings.clear({ scope: 'incognito_persistent' }))
+		}
 		return pac
 	},
 
 	async clear() {
+		// Every layer this extension ever writes. The regular one must succeed;
+		// the others are best effort (incognito access may have been revoked).
 		await chrome.proxy.settings.clear({ scope: 'regular' })
+		await bestEffort(() => chrome.proxy.settings.clear({ scope: 'regular_only' }))
+		await bestEffort(() => chrome.proxy.settings.clear({ scope: 'incognito_persistent' }))
 		await this.clearCredentials()
 	},
 

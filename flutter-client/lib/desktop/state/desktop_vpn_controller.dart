@@ -11,6 +11,7 @@ import '../../services/ping_service.dart';
 import '../../state/auth_controller.dart';
 import '../logic/connection_phase.dart';
 import '../logic/node_selector.dart';
+import '../logic/startup_plan.dart';
 import '../services/app_paths.dart';
 import '../services/desktop_log.dart';
 import '../services/service_bootstrap.dart';
@@ -93,6 +94,18 @@ class DesktopVpnController extends ChangeNotifier {
   Timer? _nodeRetryTimer;
   bool _bootstrapping = false;
 
+  /// A bootstrap asked for while one was running. It used to be dropped, and
+  /// with it the auto-connect decision: sign in while the first bootstrap is
+  /// still waiting on the service pipe and the app never connected on its own.
+  bool _bootstrapQueued = false;
+
+  /// "Connect on launch" fires at most once per process.
+  bool _autoConnectAttempted = false;
+
+  /// Which data plane the current (or last) session runs on. Null until a
+  /// tunnel has been requested or adopted; see [engine].
+  TunnelEngine? _engine;
+
   // ---- internals ----
   Timer? _statusTimer;
   Timer? _serverTimer;
@@ -131,6 +144,33 @@ class DesktopVpnController extends ChangeNotifier {
   int get rxBytes => _snapshot.rxBytes;
   int get txBytes => _snapshot.txBytes;
   UsageSnapshot get usage => _usage.snapshot();
+
+  /// True once the traffic history has been read from disk, so the statistics
+  /// screen can show skeletons instead of zeros while it loads.
+  bool get usageLoaded => _usage.loaded;
+
+  /// The engine the current session runs on.
+  ///
+  /// Decided at connect time from whether the node advertised a TLS gateway,
+  /// then corrected by what the service actually reports (it falls back to
+  /// WireGuard when sing-box.exe is missing). Before the first connect it is
+  /// the engine the service prefers, sing-box, because that is what every
+  /// migrated node yields; [engineKnown] says whether it has been confirmed.
+  TunnelEngine get engine => _engine ?? TunnelEngine.singBox;
+  bool get engineKnown => _engine != null;
+
+  /// The tunnel's own address, only while a tunnel exists.
+  ///
+  /// ROUND 26: never the address of a tunnel that is already gone. The service
+  /// keeps `vpnIp` in its status until the next `up`, so reading the snapshot
+  /// directly painted the old 172.19.0.1 next to "Disconnected".
+  String? get vpnIp {
+    if (!_phase.isConnected && _phase != ConnectionPhase.connecting) {
+      return null;
+    }
+    final String? ip = _snapshot.vpnIp;
+    return ip == null || ip.isEmpty ? null : ip;
+  }
 
   /// Why the privileged tunnel service cannot be used, or null when it can.
   String? get serviceProblem => _serviceProblem;
@@ -192,6 +232,7 @@ class DesktopVpnController extends ChangeNotifier {
     sb.writeln('service   : ready=$_serviceReady');
     sb.writeln('service ? : ${_serviceProblem ?? '-'}');
     sb.writeln('phase     : $_phase ($_statusDetail)');
+    sb.writeln('engine    : ${_engine?.wireName ?? '-'}');
     sb.writeln('message   : ${_userMessage ?? '-'}');
     sb.writeln(
       'nodes     : total=${_nodes.length} visible=${userVisibleNodes.length}',
@@ -235,8 +276,17 @@ class DesktopVpnController extends ChangeNotifier {
   ///
   /// Every step is fault-isolated: one failing step can no longer prevent the
   /// others from running.
+  ///
+  /// ROUND 26: a call that arrives while a bootstrap is running is queued and
+  /// replayed once, instead of being dropped. The dropped call was the one
+  /// carrying the freshly restored session, so "connect on launch" silently
+  /// did nothing whenever the service probe was slower than the sign-in.
   Future<void> bootstrap() async {
-    if (_disposed || _bootstrapping) return;
+    if (_disposed) return;
+    if (_bootstrapping) {
+      _bootstrapQueued = true;
+      return;
+    }
     _bootstrapping = true;
     dlog.write('vpn', 'bootstrap start (auth=${_auth.stage})');
 
@@ -255,11 +305,23 @@ class DesktopVpnController extends ChangeNotifier {
       _startStatusPolling();
       unawaited(_guard('exit-ip', _refreshPublicIp));
 
-      if (_settings.value.autoConnect &&
-          _phase == ConnectionPhase.disconnected &&
-          _auth.stage == AuthStage.authenticated) {
-        dlog.write('vpn', 'auto-connect enabled, connecting');
-        unawaited(connect());
+      // Decided by the same pure helper the tests exercise. This runs only
+      // after the service probe and the adoption above, so a tunnel the
+      // service already holds is never doubled and the connect never races
+      // the session restore: it is gated on the auth stage at this moment.
+      final StartupPlan plan = startupPlan(
+        settings: _settings.value,
+        args: const <String>[],
+        authenticated: _auth.stage == AuthStage.authenticated,
+        phase: _phase,
+        autoConnectAttempted: _autoConnectAttempted,
+      );
+      dlog.write('vpn', 'startup plan: $plan');
+      if (plan.autoConnect) {
+        _autoConnectAttempted = true;
+        // automatic: no UAC prompt at login. A missing service is reported on
+        // the home banner with an "Install service" button instead.
+        unawaited(connect(automatic: true));
       }
     } finally {
       _bootstrapping = false;
@@ -269,6 +331,12 @@ class DesktopVpnController extends ChangeNotifier {
             'nodes=${_nodes.length} visible=${userVisibleNodes.length}',
       );
       _notify();
+    }
+
+    if (_bootstrapQueued && !_disposed) {
+      _bootstrapQueued = false;
+      dlog.write('vpn', 'replaying the bootstrap that arrived mid-flight');
+      await bootstrap();
     }
   }
 
@@ -287,6 +355,7 @@ class DesktopVpnController extends ChangeNotifier {
     final TunnelSnapshot snap = await _tunnel.status();
     _snapshot = snap;
     _activeSessionId = snap.sessionId;
+    _syncEngineFromService();
 
     if (snap.state == TunnelState.connected) {
       dlog.write('vpn', 'adopted a live tunnel (session=${snap.sessionId})');
@@ -405,9 +474,18 @@ class DesktopVpnController extends ChangeNotifier {
     if (!automatic) _cancelReconnect();
 
     try {
+      // ROUND 26: the snapshot of the previous session is dropped before the
+      // new one starts, so the panel shows skeletons while connecting rather
+      // than the old tunnel address and the old byte counters.
+      _snapshot = TunnelSnapshot.unknown;
+      _currentPingMs = null;
+      _pingSource = PingSource.none;
       _setPhase(ConnectionPhase.connecting, detail: 'preparing');
       _userMessage = null;
-      dlog.write('connect', 'requested (node=${node?.id ?? 'auto'})');
+      dlog.write(
+        'connect',
+        'requested (node=${node?.id ?? 'auto'}, automatic=$automatic)',
+      );
 
       if (_auth.stage != AuthStage.authenticated) {
         _fail(
@@ -419,10 +497,12 @@ class DesktopVpnController extends ChangeNotifier {
       }
 
       // One repair attempt, because pressing Connect is an explicit action and
-      // a UAC prompt here is understandable.
+      // a UAC prompt here is understandable. An automatic connect - at login
+      // or on the reconnect ladder - must never raise one: nobody pressed
+      // anything, so it fails with a banner the user can act on instead.
       if (!_serviceReady) {
         await _probeService();
-        if (!_serviceReady) {
+        if (!_serviceReady && !automatic) {
           await repairService();
         }
         if (!_serviceReady) {
@@ -541,9 +621,17 @@ class DesktopVpnController extends ChangeNotifier {
 
       // ROUND 25: drop the address that belongs to the home connection before
       // the tunnel comes up. Left in place it stays on the panel for the whole
-      // connect and reads as a leak; cleared, the field shows a dash for a
+      // connect and reads as a leak; cleared, the field shows a skeleton for a
       // moment and is then filled in from inside the tunnel.
       _publicIp = null;
+
+      // The engine follows the gateway: a node that advertises one gets
+      // sing-box, the rest stay on the WireGuard worker. The service confirms
+      // or corrects this in its status (it falls back when sing-box.exe is
+      // missing), see _syncEngineFromService.
+      _engine = options.gateway != null
+          ? TunnelEngine.singBox
+          : TunnelEngine.wireGuard;
 
       _setPhase(ConnectionPhase.connecting, detail: 'bringing_up');
       _armConnectDeadline();
@@ -553,6 +641,7 @@ class DesktopVpnController extends ChangeNotifier {
         sessionId: result.session.id,
         options: options,
       );
+      _syncEngineFromService();
 
       if (!up.ok) {
         dlog.error(
@@ -597,7 +686,9 @@ class DesktopVpnController extends ChangeNotifier {
       _setPhase(ConnectionPhase.disconnecting, detail: 'tearing_down');
 
       final TunnelResult down = await _tunnel.down();
-      _snapshot = down.snapshot ?? TunnelSnapshot.down;
+      // Whatever the service answered, the tunnel address it carried belongs
+      // to the session that just ended and must not survive on the panel.
+      _snapshot = _withoutTunnelAddress(down.snapshot ?? TunnelSnapshot.down);
 
       await _releaseServerSession();
 
@@ -645,6 +736,22 @@ class DesktopVpnController extends ChangeNotifier {
     await connect(node: node);
   }
 
+  /// Tears the tunnel down and brings it straight back up on the same server.
+  ///
+  /// ROUND 26: settings that travel with `up` - the kill switch above all -
+  /// only apply to the next connect. "Reconnect now" in Settings is this. The
+  /// service waits for the old adapter to vanish before starting the new data
+  /// plane (round 25), so no artificial delay is needed here.
+  Future<void> reconnect() async {
+    if (_busy) return;
+    final bool wasUp = _phase.isConnected || _phase == ConnectionPhase.connecting;
+    if (wasUp) await disconnect(userInitiated: false);
+    // Auto selection stays auto; a manual pick is kept.
+    final VpnNodeInfo? node =
+        _settings.value.autoNodeSelection ? null : _selectedNode;
+    await connect(node: node);
+  }
+
   Future<void> setAutoSelection(bool enabled) async {
     await _settings.update(
       (DesktopSettings s) => s.copyWith(autoNodeSelection: enabled),
@@ -666,6 +773,7 @@ class DesktopVpnController extends ChangeNotifier {
       dlog.error('poll', 'status failed', e);
       return;
     }
+    _syncEngineFromService();
 
     if (_snapshot.rxBytes > _baselineRx) _dataObserved = true;
 
@@ -736,6 +844,26 @@ class DesktopVpnController extends ChangeNotifier {
         _reconnectAttempt < _maxReconnectAttempts) {
       _scheduleReconnect();
       return;
+    }
+
+    // ROUND 26: when the service explains a failure - "The tunnel could not
+    // be started: sing-box.exe is missing next to the service" - the first
+    // transition into the error phase goes through _fail, so that sentence and
+    // its humanised form reach the banner instead of a bare tunnel_error. The
+    // reconnect ladder above is untouched: a lost tunnel keeps its own path.
+    if (verdict.phase.isError &&
+        verdict.phase != ConnectionPhase.tunnelLost &&
+        !_phase.isError) {
+      final String? explained = _snapshot.errorMessage;
+      if (explained != null && explained.isNotEmpty) {
+        final String? code = _snapshot.errorCode;
+        _fail(
+          verdict.phase,
+          code == null || code.isEmpty ? verdict.reason : code,
+          explained,
+        );
+        return;
+      }
     }
 
     // ROUND 9 (1.2): the exit IP is re-read on every *entry* into CONNECTED,
@@ -1096,6 +1224,43 @@ class DesktopVpnController extends ChangeNotifier {
   // Helpers
   // -------------------------------------------------------------------
 
+  /// Takes the engine the service says it is running, when it says so.
+  ///
+  /// The service reports `engine` in every status reply since round 26. Older
+  /// services do not, and a backend that is not the Windows client cannot, so
+  /// the value decided at connect time stands unless there is a report.
+  void _syncEngineFromService() {
+    final TunnelBackend backend = _tunnel;
+    if (backend is! TunnelEngineReporter) return;
+    final TunnelEngine? reported =
+        tunnelEngineFromWire(backend.reportedEngine);
+    if (reported != null && reported != _engine) {
+      dlog.write('vpn', 'engine reported by the service: ${reported.wireName}');
+      _engine = reported;
+    }
+  }
+
+  /// A copy of [snap] without the tunnel address.
+  ///
+  /// `TunnelSnapshot.copyWith` cannot clear a field (null means "keep"), and
+  /// the service leaves `vpnIp` in its status after `down`.
+  static TunnelSnapshot _withoutTunnelAddress(TunnelSnapshot snap) {
+    return TunnelSnapshot(
+      state: snap.state,
+      sessionId: snap.sessionId,
+      adapterName: snap.adapterName,
+      luid: snap.luid,
+      rxBytes: snap.rxBytes,
+      txBytes: snap.txBytes,
+      lastHandshakeUnix: snap.lastHandshakeUnix,
+      sinceUnix: snap.sinceUnix,
+      killSwitchActive: snap.killSwitchActive,
+      splitEngine: snap.splitEngine,
+      errorCode: snap.errorCode,
+      errorMessage: snap.errorMessage,
+    );
+  }
+
   /// Turns an [ApiException] into something a human can act on.
   String _describeApi(ApiException e) {
     final String base = e.message.isEmpty ? 'Request failed' : e.message;
@@ -1224,21 +1389,32 @@ class DesktopVpnController extends ChangeNotifier {
   /// "WireGuard driver files are missing. Reinstall GlukVPN." The message also
   /// blamed the user for a packaging bug: the installer simply never shipped
   /// tunnel.dll. Both the wording and the cause are fixed now.
+  ///
+  /// ROUND 26: engine-aware. WireGuard is named only when the WireGuard worker
+  /// is the engine in use; on sing-box the same codes talk about the tunnel.
   String? _humanise(String detail, String? message) {
+    final bool wg = engine == TunnelEngine.wireGuard;
     switch (detail) {
       case 'driver_unavailable':
+        // Raised before the engine is decided: neither data plane nor
+        // wintun.dll is next to the service, whichever one it would have run.
         return _ru
-            ? 'Не хватает драйвера WireGuard. Переустановите GlukVPN — установщик поставит его сам.'
-            : 'The WireGuard driver files are missing. Reinstall GlukVPN.';
+            ? 'Не хватает файлов туннеля (sing-box, WireGuard или wintun.dll). Переустановите GlukVPN — установщик поставит их сам.'
+            : 'The tunnel components (sing-box, WireGuard or wintun.dll) are missing. Reinstall GlukVPN.';
       case 'service_unavailable':
       case 'service_missing':
         return _ru
             ? 'Служба GlukVPN не запущена. Нажмите «Установить службу».'
             : 'The GlukVPN service is not running. Use "Install service".';
       case 'tunnel_start_failed':
+        if (wg) {
+          return _ru
+              ? 'Туннель не поднялся: файлы WireGuard в сборке несовместимы. Переустановите GlukVPN последней версией.'
+              : 'The tunnel did not start: the bundled WireGuard files are mismatched. Reinstall the latest GlukVPN.';
+        }
         return _ru
-            ? 'Туннель не поднялся: файлы WireGuard в сборке несовместимы. Переустановите GlukVPN последней версией.'
-            : 'The tunnel did not start: the bundled WireGuard files are mismatched. Reinstall the latest GlukVPN.'; 
+            ? 'Туннель не поднялся: sing-box не смог создать адаптер. Переустановите GlukVPN последней версией.'
+            : 'The tunnel did not start: sing-box could not bring the adapter up. Reinstall the latest GlukVPN.';
       case 'tunnel_error':
         return _ru
             ? 'Туннель завершился с ошибкой. Интернет восстановлен, попробуйте подключиться снова.'

@@ -2,11 +2,14 @@ import type { FastifyInstance } from "fastify"
 import { config } from "../config"
 import { writeAudit } from "../lib/audit"
 import { prisma } from "../prisma"
+import { expireStaleOrders } from "./billing"
+import { purgeLinkRequests } from "./linkAuth"
 import { purgeOldLoginAttempts } from "./loginThrottle"
 import { requeueStaleCommands } from "./nodeCommands"
 import { sweepExpiredRegistrations } from "./registration"
 import { closeSession } from "./sessions"
 import { purgeExpiredCodes } from "./verification"
+import { purgeOldDomainStats } from "./vlessStats"
 
 export type MonitorTickResult = {
 	nodesMarkedOffline: number
@@ -172,6 +175,18 @@ export function startMonitor(app: FastifyInstance): MonitorHandle {
 				}
 				const codes = await purgeExpiredCodes(7)
 				if (codes > 0) app.log.debug({ codes }, "verification_codes_purged")
+
+				// Sign-in links are single-use and five minutes long; finished rows
+				// only need to outlive a straggling client by one more TTL.
+				const links = await purgeLinkRequests()
+				if (links > 0) app.log.debug({ links }, "link_requests_purged")
+
+				// Domain statistics have a retention window; a checkout nobody
+				// finished within a day is closed so it does not sit as "pending".
+				const domains = await purgeOldDomainStats()
+				if (domains > 0) app.log.debug({ domains }, "domain_stats_purged")
+				const orders = await expireStaleOrders()
+				if (orders > 0) app.log.debug({ orders }, "stale_orders_cancelled")
 			}
 		} catch (error) {
 			app.log.error({ err: error }, "monitor_tick_failed")

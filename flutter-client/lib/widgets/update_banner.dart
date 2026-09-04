@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../i18n/app_strings.dart';
 import '../services/update_checker.dart';
 import '../theme/tokens.dart';
 import 'glass.dart';
@@ -30,6 +31,7 @@ class UpdateBanner extends StatelessWidget {
     final UpdateChecker updates = context.watch<UpdateChecker>();
     if (!updates.bannerVisible) return const SizedBox.shrink();
 
+    final AppStrings s = context.strings;
     final TextTheme text = Theme.of(context).textTheme;
     final ReleaseInfo? release = updates.latest;
     final bool required = updates.updateRequired;
@@ -59,8 +61,8 @@ class UpdateBanner extends StatelessWidget {
                   Expanded(
                     child: Text(
                       required
-                          ? 'Update required \u00b7 ${release?.version ?? ''}'
-                          : 'Version ${release?.version ?? ''} is available',
+                          ? '${s.updateRequired} \u00b7 ${release?.version ?? ''}'
+                          : s.newVersion(release?.version ?? ''),
                       style: text.titleMedium?.copyWith(color: tone),
                     ),
                   ),
@@ -68,7 +70,7 @@ class UpdateBanner extends StatelessWidget {
                     IconButton(
                       icon: const Icon(Icons.close_rounded, size: 18),
                       color: GlukColors.text2,
-                      tooltip: 'Hide until next launch',
+                      tooltip: s.hideUntilNextLaunch,
                       onPressed: updates.dismiss,
                     ),
                 ],
@@ -84,11 +86,7 @@ class UpdateBanner extends StatelessWidget {
               ],
               if (required) ...<Widget>[
                 const SizedBox(height: 4),
-                Text(
-                  'This build is older than the oldest version the servers '
-                  'still accept.',
-                  style: text.bodySmall,
-                ),
+                Text(s.buildTooOld, style: text.bodySmall),
               ],
               const SizedBox(height: 10),
               Row(
@@ -103,9 +101,10 @@ class UpdateBanner extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   TextButton.icon(
-                    onPressed: () => _copy(context, updates.downloadUrl),
+                    onPressed: () =>
+                        _copy(context, updates.downloadUrl, s.downloadLinkCopied),
                     icon: const Icon(Icons.copy_rounded, size: 15),
-                    label: const Text('Copy link'),
+                    label: Text(s.copyLink),
                     style: TextButton.styleFrom(foregroundColor: tone),
                   ),
                 ],
@@ -117,10 +116,10 @@ class UpdateBanner extends StatelessWidget {
     );
   }
 
-  void _copy(BuildContext context, String url) {
+  void _copy(BuildContext context, String url, String said) {
     Clipboard.setData(ClipboardData(text: url));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Download link copied')),
+      SnackBar(content: Text(said)),
     );
   }
 }

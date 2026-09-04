@@ -19,10 +19,15 @@ json::Array StringArray(const std::vector<std::string>& items) {
 // which can only ever carry TCP to a handful of ports.
 //
 // auto_route replaces every route, metric and socket-binding trick the
-// WireGuard worker performed by hand over the last twenty-three rounds, and
+// WireGuard worker performed by hand over the last twenty-three rounds.
+//
 // strict_route adds the WFP filters that stop Windows from resolving names on
 // the physical NIC while the tunnel is up - the multihomed DNS leak the old
-// engine never closed.
+// engine never closed. ROUND 26: it follows the kill-switch switch instead of
+// being always on. Kill switch = the block-all WFP filters from wfp.cpp plus
+// strict_route here; with the switch off the tunnel still carries everything
+// through auto_route, but a dropped tunnel falls back to the plain internet
+// instead of cutting it, which is the default users expect.
 json::Object TunInbound(const SingBoxOptions& options) {
     std::vector<std::string> address;
     address.push_back(options.tunAddress.empty() ? std::string(kSingBoxTunPrefix)
@@ -37,7 +42,7 @@ json::Object TunInbound(const SingBoxOptions& options) {
     tun.emplace("address", json::Value(StringArray(address)));
     if (options.mtu > 0) tun.emplace("mtu", json::Value(options.mtu));
     tun.emplace("auto_route", json::Value(true));
-    tun.emplace("strict_route", json::Value(true));
+    tun.emplace("strict_route", json::Value(options.strictRoute));
     // system TCP with a gvisor UDP stack: the combination the official
     // Windows builds default to, and the only one that keeps UDP latency
     // predictable for games.

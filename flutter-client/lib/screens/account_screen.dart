@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../i18n/app_strings.dart';
 import '../models/models.dart';
 import '../services/api_client.dart';
 import '../state/auth_controller.dart';
@@ -11,6 +12,7 @@ import '../state/vpn_controller.dart';
 import '../theme/tokens.dart';
 import '../utils/format.dart' hide countryFlag;
 import '../widgets/glass.dart';
+import 'devices_screen.dart' show SessionRow, TonePill;
 
 /// ROUND 10 (4.2): the "Account" screen the desktop client and the website
 /// already had - profile, plan, and the live sessions with a way to end them.
@@ -69,27 +71,25 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Future<void> _revoke(DeviceInfo device) async {
+    final AppStrings s = context.strings;
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
         backgroundColor: GlukColors.bg,
-        title: Text('Revoke ${device.deviceName}?'),
+        title: Text(s.revokeDeviceTitle(
+          device.deviceName.isEmpty ? s.unnamedDevice : device.deviceName,
+        )),
         content: Text(
-          device.isCurrent
-              ? 'This is the phone you are holding. The tunnel is closed, the '
-                'WireGuard peer is removed from the node and a fresh key pair '
-                'is registered right away, so you stay signed in.'
-              : 'The session is closed and the WireGuard peer is removed from '
-                'the node. That device has to sign in again.',
+          device.isCurrent ? s.revokeCurrentBody : s.revokeOtherBody,
         ),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
+            child: Text(s.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Revoke'),
+            child: Text(s.revoke),
           ),
         ],
       ),
@@ -124,6 +124,7 @@ class _AccountScreenState extends State<AccountScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
     final TextTheme text = Theme.of(context).textTheme;
     final AuthController auth = context.watch<AuthController>();
     final AuthUser? user = auth.user;
@@ -138,12 +139,12 @@ class _AccountScreenState extends State<AccountScreen> {
     return Scaffold(
       backgroundColor: GlukColors.pageBg,
       appBar: AppBar(
-        title: const Text('Account'),
+        title: Text(s.account),
         backgroundColor: Colors.transparent,
         actions: <Widget>[
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Reload',
+            tooltip: s.reload,
             onPressed: _loading ? null : _load,
           ),
         ],
@@ -161,84 +162,85 @@ class _AccountScreenState extends State<AccountScreen> {
               const SizedBox(height: 14),
             ],
             if (auth.sessionUnconfirmed) ...<Widget>[
-              const InlineNotice(
-                message: 'Showing the last known state \u2014 the server has '
-                    'not confirmed this session yet.',
-              ),
+              InlineNotice(message: s.showingLastKnownState),
               const SizedBox(height: 14),
             ],
 
             // --- profile ---------------------------------------------------
             _Card(
-              title: 'Profile',
+              title: s.profile,
               children: <Widget>[
-                _Row(label: 'Username', value: user?.username ?? '\u2014'),
+                _Row(label: s.username, value: user?.username ?? '\u2014'),
                 _Row(
-                  label: 'Email',
-                  value: user?.email ?? 'not set',
+                  label: s.email,
+                  value: user?.email ?? s.notSet,
                   trailing: user?.email == null
                       ? null
-                      : _Pill(
+                      : TonePill(
                           label: (user?.emailVerified ?? false)
-                              ? 'verified'
-                              : 'unverified',
+                              ? s.verified
+                              : s.unverified,
                           tone: (user?.emailVerified ?? false)
                               ? GlukColors.connected
                               : GlukColors.amber,
                         ),
                 ),
                 _Row(
-                  label: 'Account number',
+                  label: s.accountNumber,
                   value: (user?.publicId ?? '').isEmpty
                       ? '\u2014'
                       : user!.publicId,
                   mono: true,
                   onTapValue: (user?.publicId ?? '').isEmpty
                       ? null
-                      : () => _copy(user!.publicId, 'Account ID copied'),
+                      : () => _copy(user!.publicId, s.accountIdCopied),
                 ),
-                _Row(label: 'Status', value: user?.status.toLowerCase() ?? '\u2014'),
+                _Row(
+                  label: s.status,
+                  value: user?.status.toLowerCase() ?? '\u2014',
+                ),
                 if ((user?.originLabel ?? '').isNotEmpty)
-                  _Row(label: 'Signed up from', value: user!.originLabel!),
-                _Row(label: 'Member since', value: formatDateTime(user?.createdAt)),
+                  _Row(label: s.signedUpFrom, value: user!.originLabel!),
+                _Row(
+                  label: s.memberSince,
+                  value: formatDateTime(user?.createdAt),
+                ),
               ],
             ),
             const SizedBox(height: 12),
 
             // --- subscription ----------------------------------------------
             _Card(
-              title: 'Subscription',
-              trailing: _Pill(
+              title: s.subscription,
+              trailing: TonePill(
                 label: auth.subscriptionActive
-                    ? 'active'
-                    : (plan?.status.toLowerCase() ?? 'none'),
+                    ? s.active
+                    : (plan?.status.toLowerCase() ?? s.none),
                 tone: auth.subscriptionActive
                     ? GlukColors.connected
                     : GlukColors.amber,
               ),
               children: <Widget>[
                 _Row(
-                  label: 'Valid until',
+                  label: s.validUntil,
                   value: plan?.expiresAt == null
                       ? '\u2014'
                       : formatDateTime(plan!.expiresAt),
                 ),
                 _Row(
-                  label: 'Device slots',
-                  value: '${active.length} of '
-                      '${_devices?.maxDevices ?? user?.maxDevices ?? 3} in use',
+                  label: s.deviceSlots,
+                  value: s.usedOfTotal(
+                    active.length,
+                    _devices?.maxDevices ?? user?.maxDevices ?? 3,
+                  ),
                 ),
                 _Row(
-                  label: 'Tunnels at once',
+                  label: s.tunnelsAtOnce,
                   value: '${user?.maxConcurrentSessions ?? 1}',
                 ),
                 if (!auth.subscriptionActive) ...<Widget>[
                   const SizedBox(height: 6),
-                  Text(
-                    'Without an active plan the servers refuse new tunnels. '
-                    'Nothing on the account is deleted.',
-                    style: text.bodySmall,
-                  ),
+                  Text(s.noActivePlanBody, style: text.bodySmall),
                 ],
               ],
             ),
@@ -247,7 +249,7 @@ class _AccountScreenState extends State<AccountScreen> {
             // --- sessions ---------------------------------------------------
             Row(
               children: <Widget>[
-                Text('ACTIVE SESSIONS', style: text.labelMedium),
+                Text(s.activeSessions.toUpperCase(), style: text.labelMedium),
                 const Spacer(),
                 if (_loading)
                   const SizedBox(
@@ -259,12 +261,11 @@ class _AccountScreenState extends State<AccountScreen> {
             ),
             const SizedBox(height: 8),
             if (active.isEmpty && !_loading)
-              Text(
-                'No devices are signed in.',
-                style: text.bodySmall,
-              ),
+              Text(s.noDevicesSignedIn, style: text.bodySmall),
+            // The same row the Devices screen draws. This screen used to carry
+            // a private, English-only copy of it.
             for (final DeviceInfo device in active) ...<Widget>[
-              _SessionRow(
+              SessionRow(
                 device: device,
                 revoking: _revoking == device.id,
                 onRevoke: _revoking == null ? () => _revoke(device) : null,
@@ -273,136 +274,19 @@ class _AccountScreenState extends State<AccountScreen> {
             ],
             if (revoked.isNotEmpty) ...<Widget>[
               const SizedBox(height: 12),
-              Text('REVOKED', style: text.labelMedium),
+              Text(s.revoked.toUpperCase(), style: text.labelMedium),
               const SizedBox(height: 8),
               for (final DeviceInfo device in revoked) ...<Widget>[
-                _SessionRow(device: device, revoking: false),
+                SessionRow(device: device, revoking: false),
                 const SizedBox(height: 8),
               ],
             ],
             const SizedBox(height: 16),
-            Text(
-              'Revoking closes the tunnel and removes the WireGuard peer from '
-              'the node. Byte counters and session times are kept for '
-              'accounting \u2014 addresses and payloads never are.',
-              style: text.bodySmall,
-            ),
+            Text(s.revokeNotice, style: text.bodySmall),
           ],
         ),
       ),
     );
-  }
-}
-
-/// One signed-in device, presented as the session it carries.
-class _SessionRow extends StatelessWidget {
-  const _SessionRow({
-    required this.device,
-    required this.revoking,
-    this.onRevoke,
-  });
-
-  final DeviceInfo device;
-  final bool revoking;
-  final VoidCallback? onRevoke;
-
-  @override
-  Widget build(BuildContext context) {
-    final TextTheme text = Theme.of(context).textTheme;
-    final bool live = device.connected;
-
-    return GlassPanel(
-      radius: GlukSizes.cellRadius,
-      padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Container(
-            width: 32,
-            height: 32,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: (live ? GlukColors.connected : GlukColors.violet)
-                  .withOpacity(0.16),
-            ),
-            child: Icon(
-              _iconFor(device.platform),
-              size: 16,
-              color: live ? GlukColors.connected : GlukColors.violetLight,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Flexible(
-                      child: Text(
-                        device.deviceName.isEmpty
-                            ? 'unnamed device'
-                            : device.deviceName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: text.titleMedium,
-                      ),
-                    ),
-                    if (device.isCurrent) ...<Widget>[
-                      const SizedBox(width: 8),
-                      const _Pill(
-                        label: 'this device',
-                        tone: GlukColors.violetLight,
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  live
-                      ? 'Connected via ${device.connectedNodeName ?? 'a node'}'
-                      : device.isActive
-                          ? 'Signed in \u00b7 last seen '
-                              '${formatRelative(device.lastSeen)}'
-                          : 'Revoked',
-                  style: text.bodySmall,
-                ),
-                Text(
-                  '${device.platform ?? 'unknown platform'} \u00b7 registered '
-                  '${formatDateTime(device.createdAt)}',
-                  style: text.bodySmall?.copyWith(fontSize: 10.5),
-                ),
-              ],
-            ),
-          ),
-          if (device.isActive)
-            TextButton(
-              onPressed: revoking ? null : onRevoke,
-              style: TextButton.styleFrom(foregroundColor: GlukColors.danger),
-              child: revoking
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Revoke'),
-            ),
-        ],
-      ),
-    );
-  }
-
-  static IconData _iconFor(String? platform) {
-    final String value = (platform ?? '').toLowerCase();
-    if (value.contains('windows')) return Icons.desktop_windows_rounded;
-    if (value.contains('chrome') || value.contains('extension')) {
-      return Icons.extension_rounded;
-    }
-    if (value.contains('android') || value.contains('ios')) {
-      return Icons.smartphone_rounded;
-    }
-    return Icons.devices_other_rounded;
   }
 }
 
@@ -482,32 +366,6 @@ class _Row extends StatelessWidget {
             trailing!,
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _Pill extends StatelessWidget {
-  const _Pill({required this.label, required this.tone});
-
-  final String label;
-  final Color tone;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-      decoration: BoxDecoration(
-        color: tone.withOpacity(0.14),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: tone.withOpacity(0.40)),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context)
-            .textTheme
-            .labelSmall
-            ?.copyWith(color: tone, fontSize: 10),
       ),
     );
   }

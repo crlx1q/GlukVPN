@@ -66,10 +66,54 @@
 @keyframes spin{to{transform:rotate(360deg)}}
 .btn[data-busy="1"]{pointer-events:none;opacity:.75}
 
-.auth-alt{display:grid;gap:9px;margin-top:18px;padding-top:18px;border-top:1px solid var(--stroke-soft)}
-.auth-alt__btn{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;border:1px solid var(--stroke-soft);background:rgba(255,255,255,.02);color:var(--text-1);font-size:13.5px;text-align:left}
-.auth-alt__btn svg{width:17px;height:17px;opacity:.75;flex:none}
-.auth-alt__btn .chip{margin-left:auto}
+/* ---------------------------------------------------------------- 0.8.0 --
+ * Вход через Telegram и Google под формой пароля (.auth-alt).
+ * Telegram — тёмная ghost-кнопка с фирменным #26A5E4 акцентом; Google —
+ * официальная кнопка GIS, рисуется скриптом Google в [data-google-btn].
+ * Обе секции скрываются JS, если /api/auth/config говорит, что провайдер
+ * выключен; без JS ряд остаётся hidden целиком. */
+.auth-alt{display:grid;gap:10px;margin-top:16px}
+.auth-alt[hidden]{display:none}
+.auth-alt__div{display:flex;align-items:center;gap:12px;color:var(--text-2);font-size:11.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+.auth-alt__div::before,.auth-alt__div::after{content:"";flex:1;height:1px;background:var(--stroke-soft)}
+.auth-alt__btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:48px;padding:12px 16px;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.035);color:var(--text-0);font:inherit;font-size:14px;font-weight:650;text-align:center;cursor:pointer;text-decoration:none;transition:border-color .18s ease,background .18s ease,transform .18s ease}
+.auth-alt__btn svg{width:18px;height:18px;flex:none}
+.auth-alt__btn:hover{transform:translateY(-1px)}
+.auth-alt__btn:disabled{opacity:.6;cursor:default;transform:none}
+.auth-alt__btn[hidden]{display:none}
+.auth-alt__btn--tg{border-color:rgba(38,165,228,.32);background:rgba(38,165,228,.08)}
+.auth-alt__btn--tg svg{color:#26a5e4}
+.auth-alt__btn--tg:hover{border-color:rgba(38,165,228,.55);background:rgba(38,165,228,.14)}
+.auth-alt__google{display:flex;justify-content:center;min-height:44px}
+.auth-alt__google[hidden]{display:none}
+.auth-alt__google>div{max-width:100%}
+.auth-alt__note{margin:0;font-size:12px;line-height:1.5;color:var(--text-2);text-align:center}
+.auth-alt__note[hidden]{display:none}
+
+/* /pricing/: результат создания заказа (инструкции ручной оплаты, ошибки). */
+.billing-notice{margin:0 0 16px;padding:16px 18px;border-radius:16px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.035);font-size:13.5px;line-height:1.55;color:var(--text-1)}
+.billing-notice[hidden]{display:none}
+.billing-notice b{color:var(--text-0)}
+.billing-notice--ok{border-color:rgba(94,231,163,.3);background:rgba(94,231,163,.07)}
+.billing-notice--err{border-color:rgba(255,120,120,.32);background:rgba(255,90,90,.08)}
+.billing-notice__text{margin:8px 0 0;white-space:pre-line}
+.billing-notice__meta{margin:8px 0 0;font-size:12.5px;color:var(--text-2)}
+.billing-notice a{color:#c9a9ff;text-decoration:none;border-bottom:1px solid rgba(201,169,255,.32)}
+.plan__cta:disabled{opacity:.7;pointer-events:none}
+
+/* Ожидание подтверждения в Telegram: код, ссылка, таймер и отмена. */
+.sso-wait{display:grid;gap:12px;padding:16px;border-radius:16px;border:1px solid rgba(38,165,228,.3);background:rgba(38,165,228,.07)}
+.sso-wait[hidden]{display:none}
+.sso-wait__head{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:650}
+.sso-wait__head .spinner{border-top-color:#26a5e4}
+.sso-wait__text{margin:0;font-size:13px;line-height:1.5;color:var(--text-1)}
+.sso-wait__code{display:grid;gap:6px;justify-items:center;padding:12px;border-radius:12px;border:1px dashed rgba(255,255,255,.14);background:rgba(10,7,20,.45)}
+.sso-wait__code b{font-size:26px;letter-spacing:.3em;font-variant-numeric:tabular-nums}
+.sso-wait__code span{font-size:12px;color:var(--text-2)}
+.sso-wait__code a{color:#9fd8ff;text-decoration:none;border-bottom:1px solid rgba(159,216,255,.35);word-break:break-all}
+.sso-wait__row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.sso-wait__timer{font-size:12.5px;color:var(--text-2);font-variant-numeric:tabular-nums}
+.sso-wait__timer.is-low{color:var(--amber)}
 
 .auth-side{display:grid;gap:14px}
 .auth-fact{display:flex;gap:14px;padding:16px 18px;border-radius:18px}
@@ -285,203 +329,13 @@
 }
 
 /* ============================ v3: личный кабинет ============================ */
-.acc-load {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 44px 0;
-  color: var(--text-1);
-}
-.acc-guest {
-  max-width: 540px;
-  margin: 0 auto;
-  padding: 30px;
-  border-radius: 22px;
-  display: grid;
-  gap: 12px;
-  justify-items: center;
-  text-align: center;
-}
-.acc-guest__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: center;
-  margin-top: 6px;
-}
-.acc-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 18px 20px;
-  border-radius: 22px;
-}
-.acc-top__id {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.acc-top__name {
-  font-family: var(--font-display);
-  font-size: 19px;
-  font-weight: 800;
-}
-.acc-top__sub {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  margin-top: 3px;
-  font-size: 13px;
-  color: var(--text-2);
-}
-.acc-top__right {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
+/* 0.8.0: старый блок .acc-* (acc-top/acc-stats/acc-card…) удалён — ни одна
+   страница его не использовала; кабинет /app/ живёт в dash.css. Единственное,
+   что от него осталось нужным: крупный аватар в меню аккаунта. */
 .avatar--lg {
   width: 52px;
   height: 52px;
   font-size: 20px;
-}
-.acc-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-  margin: 18px 0;
-}
-.acc-stat {
-  padding: 16px 18px;
-  border-radius: 18px;
-  display: grid;
-  gap: 4px;
-}
-.acc-stat__label {
-  font-size: 11.5px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-2);
-}
-.acc-stat__value {
-  font-size: 25px;
-  line-height: 1.15;
-}
-.acc-stat__hint {
-  font-size: 12.5px;
-  color: var(--text-2);
-}
-.acc-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-.acc-card {
-  padding: 22px;
-  border-radius: 22px;
-  display: grid;
-  gap: 14px;
-  align-content: start;
-}
-.acc-card__head {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-.acc-rows {
-  display: grid;
-  gap: 8px;
-}
-.acc-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.035);
-  font-size: 14px;
-  color: var(--text-1);
-}
-.acc-row b {
-  color: var(--text-0);
-  font-weight: 700;
-}
-.acc-meter {
-  display: grid;
-  gap: 8px;
-}
-.acc-meter__top {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13.5px;
-  color: var(--text-1);
-}
-.acc-bar {
-  display: block;
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.07);
-  overflow: hidden;
-}
-.acc-bar i {
-  display: block;
-  height: 100%;
-  width: 0;
-  border-radius: 999px;
-  background: var(--grad-cta);
-  transition: width 0.85s var(--ease-soft);
-}
-.acc-card__actions {
-  display: grid;
-  gap: 8px;
-}
-.acc-note {
-  font-size: 12.5px;
-  line-height: 1.6;
-  color: var(--text-2);
-}
-.acc-actions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  margin-top: 18px;
-}
-.acc-action {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 18px;
-  border-radius: 18px;
-  color: var(--text-0);
-  text-decoration: none;
-}
-.acc-action span {
-  display: grid;
-  gap: 2px;
-}
-.acc-action i {
-  font-style: normal;
-  font-size: 12.5px;
-  color: var(--text-2);
-}
-.acc-action svg {
-  width: 18px;
-  height: 18px;
-  color: var(--violet-light);
-  flex: none;
-}
-@media (max-width: 900px) {
-  .acc-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .acc-grid,
-  .acc-actions {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* ===================== v6: экран входа — форма слева, живая карта справа ===================== */

@@ -6,6 +6,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'config.dart';
 import 'desktop/i18n/desktop_strings.dart';
+import 'desktop/logic/startup_plan.dart';
 import 'desktop/screens/desktop_login_screen.dart';
 import 'desktop/screens/desktop_shell.dart';
 import 'desktop/services/app_paths.dart';
@@ -36,8 +37,10 @@ Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // --hidden is passed by the autostart registry entry when the user asked to
-  // start minimised.
-  final bool startHidden = args.contains('--hidden');
+  // start minimised. It is only ever one of two reasons to start hidden: the
+  // saved setting is the other, and it applies to a manual launch as well.
+  // The combined decision is startsHidden() below, once settings are loaded.
+  final bool hiddenFlag = args.contains(kStartHiddenFlag);
 
   final AppPaths paths = AppPaths();
   paths.ensureCreated();
@@ -65,12 +68,22 @@ Future<void> main(List<String> args) async {
   SingleInstance.armShowRequests();
 
   await windowManager.ensureInitialized();
-  dlog.write('boot', 'GlukVPN desktop starting (hidden=$startHidden)');
 
   final SettingsStore settings = SettingsStore(paths: paths);
   await settings.load();
 
   final DesktopSettings saved = settings.value;
+
+  // ROUND 26: one decision, made once, from the flag and the setting. The
+  // window options below, WindowController.attach and the shell all read this
+  // value; none of them re-derives it.
+  final bool startHidden = startsHidden(settings: saved, args: args);
+  dlog.write(
+    'boot',
+    'GlukVPN desktop starting (hidden=$startHidden flag=$hiddenFlag '
+        'startMinimized=${saved.startMinimized} '
+        'autoConnect=${saved.autoConnect})',
+  );
 
   // ROUND 9 (1.3): restore the developer channel before anything touches the
   // network.
@@ -124,7 +137,12 @@ Future<void> main(List<String> args) async {
       // "Start minimised" is a primary feature, not an autostart detail. The
       // autostart entry passes --hidden, but launching by hand has to obey the
       // switch as well - that is why the setting looked broken.
-      if (startHidden || saved.startMinimized) {
+      //
+      // Nothing here ever calls show() on a hidden start, and the vendored
+      // runner (windows_overrides/runner/flutter_window.cpp) no longer shows
+      // the window on the first frame either, so a tray-only start paints
+      // nothing at all.
+      if (startHidden) {
         dlog.write('boot', 'starting hidden, tray only');
       } else {
         await windowManager.show();
@@ -137,7 +155,7 @@ Future<void> main(List<String> args) async {
     GlukDesktopApp(
       paths: paths,
       settings: settings,
-      startHidden: startHidden || saved.startMinimized,
+      startHidden: startHidden,
     ),
   );
 }
@@ -233,6 +251,17 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
     // GET /api/nodes.
     _auth.addListener(_onAuthChanged);
 
+    // Order matters for a tray-only start (ROUND 26):
+    //
+    //  1. the window is attached hidden - nothing is shown;
+    //  2. the tray icon exists, so a connect that follows has somewhere to
+    //     report to (TrayController listens to the controller, not to the
+    //     window, so it tracks the phase whether or not a window ever opens);
+    //  3. the session is restored; the auth listener above runs the
+    //     controller's bootstrap, which probes the service, adopts a tunnel the
+    //     service may already hold, and only then decides on auto-connect via
+    //     startupPlan(). A bootstrap that arrives while one is running is
+    //     replayed, never dropped, so a slow service probe cannot swallow it.
     await _window.attach(startHidden: widget.startHidden);
     await _tray.attach();
 

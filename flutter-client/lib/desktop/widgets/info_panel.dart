@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/tokens.dart';
+import '../../widgets/skeleton.dart';
 import '../theme/desktop_theme.dart';
 
 /// One label/value pair inside an [InfoCard].
 ///
 /// Values use tabular figures so a ticking duration or byte counter never
 /// shifts the layout sideways.
+///
+/// ROUND 26: three states, not two. A null [value] is a dash ("—", the value
+/// is genuinely absent - the VPN address while disconnected); [loading] draws
+/// a shimmer the size of the expected text instead, so an address that is on
+/// its way is never shown as "missing" and an old one is never shown at all.
 class InfoRow extends StatelessWidget {
   const InfoRow({
     super.key,
@@ -17,10 +23,16 @@ class InfoRow extends StatelessWidget {
     this.icon,
     this.iconColor,
     this.compact = false,
+    this.loading = false,
+    this.skeletonCharacters = 12,
+    this.animate = true,
+    this.emptyLabel = '\u2014',
   });
 
   final String label;
-  final String value;
+
+  /// Null or empty renders [emptyLabel] unless [loading] is set.
+  final String? value;
   final Color? valueColor;
 
   /// Rendered small and muted after the value, e.g. "ms · tunnel".
@@ -32,8 +44,35 @@ class InfoRow extends StatelessWidget {
 
   final bool compact;
 
+  /// Show a skeleton instead of the value.
+  final bool loading;
+
+  /// Expected length of the value, so the skeleton matches ("000.000.000.000"
+  /// is 15, "00:00:00" is 8).
+  final int skeletonCharacters;
+
+  /// False under reduce-motion: the skeleton then holds still.
+  final bool animate;
+
+  final String emptyLabel;
+
   @override
   Widget build(BuildContext context) {
+    final TextStyle valueStyle = TextStyle(
+      color: valueColor ?? GlukColors.text0,
+      fontSize: compact ? 16 : 19,
+      fontWeight: FontWeight.w700,
+      height: 1.1,
+      letterSpacing: -0.2,
+      decoration: TextDecoration.none,
+      fontFeatures: const <FontFeature>[
+        FontFeature.tabularFigures(),
+      ],
+    );
+    // ValueOrSkeleton only draws the shimmer while there is nothing to show;
+    // the unit follows the same rule so "ms" never dangles after a bar.
+    final bool showsSkeleton = loading && (value == null || value!.isEmpty);
+
     return Padding(
       padding: EdgeInsets.symmetric(vertical: compact ? 10 : 13),
       child: Column(
@@ -67,24 +106,16 @@ class InfoRow extends StatelessWidget {
             textBaseline: TextBaseline.alphabetic,
             children: <Widget>[
               Flexible(
-                child: Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: valueColor ?? GlukColors.text0,
-                    fontSize: compact ? 16 : 19,
-                    fontWeight: FontWeight.w700,
-                    height: 1.1,
-                    letterSpacing: -0.2,
-                    decoration: TextDecoration.none,
-                    fontFeatures: const <FontFeature>[
-                      FontFeature.tabularFigures(),
-                    ],
-                  ),
+                child: ValueOrSkeleton(
+                  value: value,
+                  loading: loading,
+                  characters: skeletonCharacters,
+                  style: valueStyle,
+                  animate: animate,
+                  emptyLabel: emptyLabel,
                 ),
               ),
-              if (unit != null && unit!.isNotEmpty) ...<Widget>[
+              if (!showsSkeleton && unit != null && unit!.isNotEmpty) ...<Widget>[
                 const SizedBox(width: 6),
                 Text(
                   unit!,

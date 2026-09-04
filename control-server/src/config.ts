@@ -74,6 +74,13 @@ const EnvSchema = z.object({
 	// by node-agent/deploy/install-singbox.sh. An empty VLESS_UUID means "no
 	// gateway", and every client keeps using WireGuard, so filling these in is
 	// what actually switches the fleet over.
+	//
+	// ROUND 26: these are now the *fallback* only. Each node reports its own
+	// gateway (host / port / SNI / flow) in the heartbeat and each device owns
+	// a personal `vless_uuid`, so a fleet with two nodes no longer shares one
+	// credential. VLESS_UUID keeps working for devices that predate the column
+	// and is provisioned on every node as the legacy "gluk" user while
+	// VLESS_LEGACY_USER_ENABLED is true.
 	VLESS_UUID: z.string().default(""),
 	VLESS_PORT: z.coerce.number().int().min(1).max(65535).default(443),
 	// Defaults to the node's own hostname, which is the name its certificate is
@@ -81,6 +88,47 @@ const EnvSchema = z.object({
 	VLESS_HOST: z.string().default(""),
 	VLESS_SNI: z.string().default(""),
 	VLESS_FLOW: z.string().default("xtls-rprx-vision"),
+	VLESS_LEGACY_USER_ENABLED: envFlag("true"),
+
+	// ------------------------- traffic attribution ---------------------------
+	// The node agent reads sing-box's sniffer (SNI / HTTP host / QUIC) and sends
+	// per-device domain totals. Only the host name and byte counters are kept -
+	// never a URL, never a payload - and rows older than the retention are
+	// purged by the monitor. Off = the agent still sends bytes, domains are
+	// dropped on arrival.
+	DOMAIN_STATS_ENABLED: envFlag("true"),
+	DOMAIN_STATS_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+
+	// ------------------------------- Google ----------------------------------
+	// "Continue with Google" on the website. The site takes the client id from
+	// /api/auth/config, so this is the only place it lives. Empty = the button
+	// is hidden. Client ID only - Google Identity Services returns a signed ID
+	// token to the browser, and this server verifies it against Google's JWKS,
+	// so no client secret is ever needed.
+	GOOGLE_CLIENT_ID: z.string().default(""),
+	// A brand-new Google account still has to pass the Telegram contact step
+	// (one human = one account). Set to false to create the account instantly.
+	GOOGLE_REQUIRE_TELEGRAM: envFlag("true"),
+
+	// ------------------------------ billing ----------------------------------
+	// Payment gateway adapter: "" (billing hidden), "manual" (orders are
+	// created, an admin marks them paid), "stripe" (Checkout + webhook).
+	BILLING_PROVIDER: z.enum(["", "manual", "stripe"]).default(""),
+	BILLING_CURRENCY: z.string().min(3).max(3).default("KZT"),
+	// Where the gateway sends the browser afterwards. Defaults derive from
+	// SITE_BASE_URL when empty.
+	BILLING_SUCCESS_URL: z.string().default(""),
+	BILLING_CANCEL_URL: z.string().default(""),
+	// Shown to the user after a "manual" order is created. {orderId} and
+	// {amount} are substituted.
+	BILLING_MANUAL_INSTRUCTIONS: z
+		.string()
+		.default(
+			"Заказ {orderId} на {amount} создан. Напишите в поддержку @glukvpn, укажите номер заказа — после оплаты подписка активируется вручную.",
+		),
+	// !! SECRETS !! Stripe only.
+	STRIPE_SECRET_KEY: z.string().default(""),
+	STRIPE_WEBHOOK_SECRET: z.string().default(""),
 
 	MAX_DEVICES_PER_USER: z.coerce.number().int().min(1).max(100).default(3),
 	MAX_CONCURRENT_SESSIONS: z.coerce.number().int().min(1).max(50).default(1),
@@ -156,6 +204,10 @@ export type Config = z.infer<typeof EnvSchema> & {
 	corsOrigins: string[]
 	/** True once SMTP is configured. Until then codes are issued but not sent. */
 	emailEnabled: boolean
+	/** True when GOOGLE_CLIENT_ID is set: the site shows "Continue with Google". */
+	googleEnabled: boolean
+	/** True when a billing provider is configured. */
+	billingEnabled: boolean
 	/**
 	 * Which deployed release is answering, e.g. "20260821-174500".
 	 *
@@ -235,6 +287,10 @@ function loadConfig(): Config {
 			env.SMTP_HOST.trim().length > 0 &&
 			env.SMTP_USER.trim().length > 0 &&
 			env.SMTP_PASSWORD.length > 0,
+		googleEnabled: env.GOOGLE_CLIENT_ID.trim().length > 0,
+		billingEnabled:
+			env.BILLING_PROVIDER === "manual" ||
+			(env.BILLING_PROVIDER === "stripe" && env.STRIPE_SECRET_KEY.trim().length > 0),
 		corsOrigins: env.CORS_ALLOWED_ORIGINS.split(",")
 			.map((origin) => origin.trim())
 			.filter((origin) => origin.length > 0),

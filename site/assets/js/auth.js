@@ -127,6 +127,31 @@
     return json;
   }
 
+  /* 0.8.0: вход через Telegram (/api/auth/link/poll) и Google (/api/auth/google)
+     возвращают тот же набор токенов, что и /api/auth/login. Принимаем их одной
+     функцией, чтобы сессия хранилась ровно так же, как после пароля: refresh в
+     localStorage, access в памяти, затем /api/auth/me за каноническим
+     состоянием (activeDevices, isTester и т.д.). Если /me недоступен, а в
+     ответе уже есть user — не теряем вход, показываем что есть. */
+  function adoptTokens(payload) {
+    if (!payload || !payload.accessToken) {
+      return Promise.reject({ status: 400, code: "bad_payload", message: "No access token in payload." });
+    }
+    setSession(payload);
+    return request("/api/auth/me", { auth: true })
+      .then(applyMe)
+      .catch(function (e) {
+        if (payload.user && !(e && (e.status === 401 || e.status === 403))) {
+          return applyMe({
+            user: payload.user,
+            subscription: payload.subscription || null,
+            activeDevices: typeof payload.activeDevices === "number" ? payload.activeDevices : 0
+          });
+        }
+        throw e;
+      });
+  }
+
   function rotate() {
     var rt = read();
     if (!rt) return Promise.reject({ status: 401, code: "no_session" });
@@ -134,7 +159,7 @@
   }
 
   /* --------------------------------------------------------------- состояние */
-  var state = { status: "loading", user: null, subscription: null, devices: 0, offline: false };
+  var state = { status: "loading", user: null, subscription: null, devices: 0, currentDeviceId: null, offline: false };
 
   function emit() {
     document.dispatchEvent(new CustomEvent("gluk:auth", { detail: state }));
@@ -146,6 +171,7 @@
     state.user = json.user || null;
     state.subscription = json.subscription || null;
     state.devices = typeof json.activeDevices === "number" ? json.activeDevices : 0;
+    state.currentDeviceId = json.currentDeviceId || null;
     state.offline = false;
     emit();
     return state;
@@ -156,6 +182,7 @@
     state.user = null;
     state.subscription = null;
     state.devices = 0;
+    state.currentDeviceId = null;
     state.offline = !!offline;
     emit();
   }
@@ -199,16 +226,25 @@
     return { text: T("Неактивна"), ok: false };
   }
 
+  /* Кабинет живёт под тем же языковым префиксом, что и страница: на /en/
+     ссылка ведёт в /en/app/. Явный accountUrl из конфига уважаем, только если
+     он не дефолтный. */
+  function accountUrl() {
+    var u = AC.accountUrl || "";
+    if (!u || u === "/app/") return root + "app/";
+    return u;
+  }
+
   function render() {
     var slots = document.querySelectorAll("[data-acct]");
     if (!slots.length) return;
     var html;
     if (state.status === "loading") {
-      html = '<div class="acct__skel" aria-hidden="true"></div><span class="sr-only">Загрузка аккаунта</span>';
+      html = '<div class="acct__skel" aria-hidden="true"></div><span class="sr-only">' + esc(T("Загрузка аккаунта")) + "</span>";
     } else if (state.status === "out") {
       html =
         '<div class="acct__guest">' +
-        '<a class="btn btn--primary btn--sm" href="' + root + 'login/?mode=register">Регистрация</a>' +
+        '<a class="btn btn--primary btn--sm" href="' + root + 'login/?mode=register">' + esc(T("Регистрация")) + "</a>" +
         "</div>";
     } else {
       var u = state.user || {};
@@ -216,22 +252,22 @@
       html =
         '<button class="acct__chip" type="button" aria-haspopup="true" aria-expanded="false" data-acct-toggle>' +
         '<span class="avatar avatar--online">' + esc(initials(u)) + "</span>" +
-        '<span class="acct__name">' + esc(u.username || "Аккаунт") + "</span>" + IC.caret +
+        '<span class="acct__name">' + esc(u.username || T("Аккаунт")) + "</span>" + IC.caret +
         "</button>" +
         '<div class="acct__menu" data-acct-menu role="menu">' +
         '<div class="acct__head"><span class="avatar avatar--lg">' + esc(initials(u)) + "</span>" +
         '<span class="acct__id"><b>' + esc(u.username || "") + "</b><span>" +
         esc(u.email || (u.publicId ? "№ " + u.publicId : "")) + "</span></span></div>" +
         '<div class="acct__rows">' +
-        '<div class="acct__row"><span>Подписка</span><b class="' + (sub.ok ? "ok" : "") + '">' + esc(sub.text) + "</b></div>" +
-        '<div class="acct__row"><span>Устройства</span><b>' + state.devices + " / " + (u.maxDevices || 3) + "</b></div>" +
-        (u.publicId ? '<div class="acct__row"><span>Номер аккаунта</span><b>' + esc(u.publicId) + "</b></div>" : "") +
+        '<div class="acct__row"><span>' + esc(T("Подписка")) + '</span><b class="' + (sub.ok ? "ok" : "") + '">' + esc(sub.text) + "</b></div>" +
+        '<div class="acct__row"><span>' + esc(T("Устройства")) + "</span><b>" + state.devices + " / " + (u.maxDevices || 3) + "</b></div>" +
+        (u.publicId ? '<div class="acct__row"><span>' + esc(T("Номер аккаунта")) + "</span><b>" + esc(u.publicId) + "</b></div>" : "") +
         "</div>" +
         '<div class="acct__links">' +
-        '<a class="acct__link" href="' + esc(AC.accountUrl || "/app/") + '">' + IC.user + "Личный кабинет</a>" +
-        (AC.webAppUrl ? '<a class="acct__link" href="' + esc(AC.webAppUrl) + '">' + IC.grid + "Веб-приложение</a>" : "") +
-        '<a class="acct__link" href="' + root + 'download/">' + IC.down + "Скачать приложение</a>" +
-        '<button class="acct__link acct__link--danger" type="button" data-acct-logout>' + IC.out + "Выйти</button>" +
+        '<a class="acct__link" href="' + esc(accountUrl()) + '">' + IC.user + esc(T("Личный кабинет")) + "</a>" +
+        (AC.webAppUrl ? '<a class="acct__link" href="' + esc(AC.webAppUrl) + '">' + IC.grid + esc(T("Веб-приложение")) + "</a>" : "") +
+        '<a class="acct__link" href="' + root + 'download/">' + IC.down + esc(T("Скачать приложение")) + "</a>" +
+        '<button class="acct__link acct__link--danger" type="button" data-acct-logout>' + IC.out + esc(T("Выйти")) + "</button>" +
         "</div></div>";
     }
     Array.prototype.forEach.call(slots, function (slot) {
@@ -274,7 +310,19 @@
   /* ------------------------------------------------------------- публичное API */
   var api = {
     channel: CHANNEL,
+    /* Базовый адрес API выбранного канала — для скриптов, которым нужен тот же
+       инстанс, что и у сессии (sso.js: link/start и link/poll обязаны идти
+       туда же, куда потом пойдёт /api/auth/me). */
+    base: BASE,
     get state() { return state; },
+    /* Публичный запрос без токена (config, google, link/start|poll,
+       billing/plans). Тот же transport и та же обработка ошибок, что у call. */
+    public: function (path, opts) {
+      opts = opts || {};
+      opts.auth = false;
+      return request(path, opts);
+    },
+    adoptTokens: adoptTokens,
     login: function (identifier, password) {
       return request("/api/auth/login", {
         method: "POST",

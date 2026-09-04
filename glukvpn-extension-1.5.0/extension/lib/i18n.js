@@ -168,6 +168,14 @@ const en = {
 	'settings.autoConnectHint': 'Connect automatically when the browser starts.',
 	'settings.killSwitch': 'Kill switch',
 	'settings.killSwitchHint': 'Block traffic instead of leaking if the gateway dies.',
+	// Incognito toggle. Chrome keeps the actual permission behind its own
+	// per-extension switch, so the row also has to explain where that lives.
+	'settings.incognito': 'Tunnel incognito windows',
+	'settings.incognitoHint':
+		'Off \u2014 the VPN covers regular windows only. On \u2014 Incognito windows are protected too. For that Chrome must allow this extension in Incognito.',
+	'settings.incognitoOpenPermission': 'Open chrome://extensions to grant permission',
+	'settings.incognitoNotAllowed': 'Chrome has not allowed this extension in Incognito yet',
+	'settings.incognitoAllowed': 'Permission granted',
 	'settings.devices': 'Devices',
 	// ROUND 9: popup.html has asked for these three since round 5 and the table
 	// never had them, so t() fell through to its last resort - printing the key.
@@ -193,6 +201,9 @@ const en = {
 	'settings.apiBase': 'API address',
 	'settings.siteBase': 'Website address',
 	'settings.gateway': 'Gateway',
+	// popup.html has referenced this hint all along; without an entry t() printed
+	// the raw key under the gateway fields.
+	'settings.gatewayHint': 'Browser gateway host and port. Leave empty to use the selected server.',
 	'settings.gatewayHost': 'Host',
 	'settings.gatewayPort': 'Port',
 	'settings.gatewayScheme': 'Scheme',
@@ -236,11 +247,18 @@ const en = {
 	'login.forgot': 'Forgot your password?',
 	'login.registerClosed': 'Registration is closed on the beta channel.',
 
-	// ROUND 9 (block 4.2): developer channel.
+	// ROUND 9 (block 4.2): developer channel. The card itself is the one shared
+	// with the desktop and mobile clients: two pills, a version under each, a
+	// "using" line and an availability check before the switch happens.
 	'dev.title': 'Developer menu',
 	'dev.channel': 'Channel',
-	'dev.channelHint': 'Prod uses gateway port 8443, beta uses 8444. Switching signs this browser out.',
+	'dev.channelHint': 'Separate database and accounts. Switching signs you out.',
 	'dev.channelSwitched': 'Channel switched to {channel}. Sign in again.',
+	'dev.channelUsing': 'Using: {channel} \u00b7 {version}',
+	'dev.channelOff': 'off',
+	'dev.channelUnavailableBeta': 'The beta server is currently unavailable',
+	'dev.channelUnavailableProd': 'The production server is currently unavailable',
+	'dev.channelDisconnectFirst': 'Disconnect the VPN first',
 	'dev.version': 'Version {version}',
 
 	// ROUND 9 (block 4.4): update banner.
@@ -381,6 +399,12 @@ const ru = {
 	'settings.autoConnectHint': 'Подключаться автоматически при старте браузера.',
 	'settings.killSwitch': 'Kill switch',
 	'settings.killSwitchHint': 'Блокировать трафик, а не пускать мимо VPN, если шлюз упал.',
+	'settings.incognito': 'Туннелировать режим инкогнито',
+	'settings.incognitoHint':
+		'Выключено \u2014 VPN работает только в обычных вкладках. Включено \u2014 защищает и окна инкогнито. Для этого Chrome должен разрешить расширению работать в инкогнито.',
+	'settings.incognitoOpenPermission': 'Открыть chrome://extensions для выдачи разрешения',
+	'settings.incognitoNotAllowed': 'Chrome пока не разрешил расширению работать в инкогнито',
+	'settings.incognitoAllowed': 'Разрешение выдано',
 	'settings.devices': 'Устройства',
 	'devices.filterAll': 'Все',
 	'devices.filterActive': 'Активные',
@@ -402,6 +426,7 @@ const ru = {
 	'settings.apiBase': 'Адрес API',
 	'settings.siteBase': 'Адрес сайта',
 	'settings.gateway': 'Шлюз',
+	'settings.gatewayHint': 'Хост и порт шлюза браузера. Оставьте пустым, чтобы использовать сервер из списка.',
 	'settings.gatewayHost': 'Хост',
 	'settings.gatewayPort': 'Порт',
 	'settings.gatewayScheme': 'Схема',
@@ -443,8 +468,13 @@ const ru = {
 
 	'dev.title': 'Меню разработчика',
 	'dev.channel': 'Канал',
-	'dev.channelHint': 'Prod работает через порт шлюза 8443, beta — через 8444. При переключении расширение выйдет из аккаунта.',
+	'dev.channelHint': 'Отдельная база и аккаунты. При переключении вы выйдете из аккаунта.',
 	'dev.channelSwitched': 'Канал переключён на {channel}. Войдите заново.',
+	'dev.channelUsing': 'Сейчас: {channel} \u00b7 {version}',
+	'dev.channelOff': 'выкл.',
+	'dev.channelUnavailableBeta': 'Бета-сервер сейчас недоступен',
+	'dev.channelUnavailableProd': 'Сервер PROD сейчас недоступен',
+	'dev.channelDisconnectFirst': 'Сначала отключите VPN',
 	'dev.version': 'Версия {version}',
 
 	'update.title': 'Доступно обновление',

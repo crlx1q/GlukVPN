@@ -596,12 +596,16 @@ void Tunnel::WorkerMain(std::wstring configPath) {
                         ? std::string("The tunnel could not be started.")
                         : "The tunnel could not be started: " + detail;
             } else {
+                // ROUND 26: name the engine that actually died. This text
+                // reaches the user, and "WireGuard tunnel stopped" on a
+                // sing-box session sent people looking for the wrong thing.
+                const std::string engineName =
+                    singBox ? "sing-box" : "WireGuard";
                 status_.errorCode = "tunnel_error";
                 status_.errorMessage =
                     detail.empty()
-                        ? std::string(
-                              "WireGuard tunnel terminated unexpectedly")
-                        : "WireGuard tunnel stopped: " + detail;
+                        ? engineName + " tunnel terminated unexpectedly"
+                        : engineName + " tunnel stopped: " + detail;
             }
         } else {
             status_.state = TunnelState::Down;
@@ -722,6 +726,10 @@ bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
         options.mtu = request.mtu;
         options.dns = request.dns;
         options.directRoutes = request.bypassRoutes;
+        // ROUND 26: the kill switch is one user-facing switch with two halves
+        // on this engine - the WFP block-all filters armed below and sing-box's
+        // own strict_route. Both follow the same flag from the "up" request.
+        options.strictRoute = request.killSwitch;
         prepared = BuildSingBoxConfig(request.gateway, options);
         configPath_ = AppData::RunDir() + L"\\singbox.json";
     } else {
@@ -742,6 +750,7 @@ bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
     status_.state = TunnelState::Starting;
     status_.sessionId = request.sessionId;
     status_.adapter = AppData::ToUtf8(adapter_);
+    status_.engine = singBox ? "sing-box" : "wireguard";
     // In sing-box mode the interface address is ours rather than the node's,
     // so it is a constant; the address the outside world sees is measured
     // separately by the app and shown as the external IP.
@@ -770,6 +779,11 @@ bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
 
     // The kill switch must be armed while the tunnel comes up, not after, so
     // there is no window where traffic escapes on the physical interface.
+    //
+    // ROUND 26: on the sing-box engine these block-all filters are one half of
+    // the kill switch; the other half is strict_route in the generated config
+    // (see SingBoxOptions::strictRoute), which follows the same flag. Neither
+    // is armed when the user left the switch off, which is the default.
     if (request.killSwitch) {
         std::string wfpCode, wfpMessage;
         if (Wfp::Instance().EnableKillSwitch(request.endpointIps, wfpCode,
@@ -825,6 +839,10 @@ void Tunnel::Down() {
         status_.txBytes = 0;
         status_.lastHandshakeUnix = 0;
         status_.sessionId.clear();
+        // ROUND 26: the address belonged to the tunnel that is going away.
+        // Left in the status it was read back by the UI and shown next to
+        // "Disconnected" as if a tunnel still existed.
+        status_.vpnIp.clear();
         running_ = false;
     }
 

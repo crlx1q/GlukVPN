@@ -85,6 +85,44 @@ const Schema = z.object({
 	WG_MTU: positiveInt(1420),
 	WG_EGRESS_INTERFACE: optionalString,
 
+	// sing-box VLESS gateway (ROUND 26).
+	//
+	// When SINGBOX_MANAGE is true the agent owns the *users* and *route rules*
+	// of the sing-box config: it merges the policy from the control plane into
+	// SINGBOX_CONFIG (everything else in the file - TLS, listen port, log - is
+	// left untouched), and reads sing-box's Clash API to attribute traffic to
+	// devices. Only one agent per machine may manage a given config file: the
+	// beta agent runs with SINGBOX_MANAGE=false.
+	SINGBOX_MANAGE: z
+		.enum(["true", "false", "1", "0"])
+		.default("true")
+		.transform((value) => value === "true" || value === "1"),
+	SINGBOX_CONFIG: z.string().trim().default("/etc/glukvpn/singbox.json"),
+	SINGBOX_BIN: z.string().trim().default("/usr/local/bin/sing-box"),
+	// host:port of experimental.clash_api.external_controller. Loopback only.
+	SINGBOX_CLASH_API: z
+		.string()
+		.trim()
+		.regex(/^(127\.\d+\.\d+\.\d+|localhost|\[::1\]):\d{2,5}$/, "SINGBOX_CLASH_API must be a loopback host:port")
+		.default("127.0.0.1:9090"),
+	// Bearer secret for the Clash API. Generated and written back to this file
+	// on first run when empty.
+	SINGBOX_CLASH_SECRET: optionalString,
+	// What clients connect to. Defaults: the TLS server_name from the config
+	// and 443 - the public port when nginx stream fronts sing-box on 443 and
+	// hands the VPN SNI to sing-box's own (internal) listen_port.
+	SINGBOX_PUBLIC_HOST: optionalString,
+	SINGBOX_PUBLIC_PORT: positiveInt(443),
+	// How often /connections is sampled. Short-lived connections that live
+	// entirely between two samples are still counted (their final bytes show
+	// up in the sample where they last appeared), so 3s is plenty.
+	SINGBOX_STATS_INTERVAL_SEC: positiveInt(3),
+	// Send sniffed host names per device along with the byte counters.
+	SINGBOX_REPORT_DOMAINS: z
+		.enum(["true", "false", "1", "0"])
+		.default("true")
+		.transform((value) => value === "true" || value === "1"),
+
 	// Timings
 	HEARTBEAT_INTERVAL_SEC: positiveInt(10),
 	COMMAND_POLL_INTERVAL_SEC: positiveInt(3),
@@ -92,7 +130,7 @@ const Schema = z.object({
 	HTTP_TIMEOUT_MS: positiveInt(15000),
 
 	LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
-	AGENT_VERSION: z.string().trim().default("0.1.0"),
+	AGENT_VERSION: z.string().trim().default("0.2.0"),
 })
 
 export type AgentConfig = z.infer<typeof Schema>

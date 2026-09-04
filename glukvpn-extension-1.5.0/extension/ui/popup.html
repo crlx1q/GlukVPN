@@ -209,6 +209,25 @@
 					<button class="switch" id="sw-kill" type="button" role="switch" aria-checked="false"><span class="knob"></span></button>
 				</div>
 
+				<!-- Incognito windows are a separate proxy scope in Chrome, and the
+				     scope is only writable once the user ticks "Allow in Incognito"
+				     on chrome://extensions - a page a popup cannot link to with a
+				     plain <a>. The footer says whether that permission exists and
+				     opens the page through chrome.tabs. -->
+				<div class="row-card" id="incognito-card">
+					<div class="row">
+						<span class="rt">
+							<span class="t" data-i18n="settings.incognito">Туннелировать режим инкогнито</span>
+							<span class="s" data-i18n="settings.incognitoHint">Выключено — VPN работает только в обычных вкладках. Включено — защищает и окна инкогнито. Для этого Chrome должен разрешить расширению работать в инкогнито.</span>
+						</span>
+						<button class="switch" id="sw-incognito" type="button" role="switch" aria-checked="false"><span class="knob"></span></button>
+					</div>
+					<div class="row-foot" id="incognito-foot">
+						<span class="hint" id="incognito-state" hidden></span>
+						<button class="link-btn" id="btn-incognito-perm" type="button" data-i18n="settings.incognitoOpenPermission">Открыть chrome://extensions для выдачи разрешения</button>
+					</div>
+				</div>
+
 				<div class="section-label">
 					<span data-i18n="settings.devices">Устройства</span>
 					<span class="count" id="dev-count"></span>
@@ -236,13 +255,28 @@
 					<!-- ROUND 5: admins only. The beta control plane refuses non-admin
 					     accounts and has no registration, so offering the switch to an
 					     ordinary user only produced a login failure. popup.js reveals
-					     this field when /api/auth/me reports isAdmin. -->
+					     this field when the account reports isAdmin or isTester.
+
+					     The card is the one all three GlukVPN clients share: two pills
+					     with the live version of each channel under them, a "using"
+					     line, and an availability check before anything is switched. -->
 					<div class="field hidden" id="field-channel" hidden>
-						<label for="s-channel" data-i18n="settings.channel">Канал</label>
-						<select id="s-channel">
-							<option value="prod">prod</option>
-							<option value="beta">beta</option>
-						</select>
+						<label data-i18n="settings.channel">Канал</label>
+						<div class="chan-card">
+							<div class="chan-pills" role="group">
+								<button class="chan-pill prod" id="chan-prod" type="button" data-channel="prod" aria-pressed="false">
+									<span class="chan-name">PROD</span>
+									<span class="chan-ver" id="chan-ver-prod"><i class="chan-dot"></i><span class="chan-ver-text">…</span></span>
+								</button>
+								<button class="chan-pill beta" id="chan-beta" type="button" data-channel="beta" aria-pressed="false">
+									<span class="chan-name">BETA</span>
+									<span class="chan-ver" id="chan-ver-beta"><i class="chan-dot"></i><span class="chan-ver-text">…</span></span>
+								</button>
+							</div>
+							<span class="chan-status" id="chan-status"></span>
+							<span class="chan-error hidden" id="chan-error" hidden role="alert"></span>
+							<span class="hint" data-i18n="dev.channelHint">Отдельная база и аккаунты. При переключении вы выйдете из аккаунта.</span>
+						</div>
 					</div>
 
 					<!-- ROUND 5: HTTP is gone. The node no longer serves plain HTTP, so
@@ -287,7 +321,7 @@
 							<!-- ROUND 5: address the node by its domain, not by digits.
 							     de-01.gluk.tech follows the node if its IP changes; a
 							     hard-coded address does not. -->
-							<span class="hint" data-i18n="settings.gatewayHint">Домен узла, например de-01.gluk.tech — не IP-адрес.</span>
+							<span class="hint" data-i18n="settings.gatewayHint">Хост и порт шлюза браузера. Оставьте пустым, чтобы использовать сервер из списка.</span>
 							<button class="ghost-btn wide" id="btn-test-gw" type="button">
 								<span class="gb-ic" data-icon="plug"></span>
 								<span data-i18n="settings.testGateway">Проверить шлюз</span>

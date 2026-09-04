@@ -7,6 +7,10 @@
 
   var msg = document.querySelector("[data-login-msg]");
   var submit = form ? form.querySelector('button[type="submit"]') : null;
+  /* 0.8.0: /en/login/ теперь полная копия русской страницы, поэтому строки,
+     которые пишет сам скрипт, берутся по языку документа. */
+  var EN = (document.documentElement.getAttribute("data-lang") || "ru").toLowerCase() === "en";
+  function t(ru, en) { return EN ? en : ru; }
 
   function show(text, kind) {
     if (!msg) return;
@@ -20,21 +24,24 @@
     if (!submit) return;
     submit.disabled = on;
     submit.setAttribute("data-busy", on ? "1" : "0");
-    submit.textContent = on ? "Проверяем…" : "Войти";
+    submit.textContent = on ? t("Проверяем…", "Checking…") : t("Войти", "Sign in");
   }
   function human(e) {
-    if (!e) return "Не удалось войти. Попробуйте ещё раз.";
-    if (e.status === 0) return "Сервер не отвечает. Проверьте соединение и попробуйте снова.";
-    if (e.status === 400) return "Проверьте поля: логин от 3 символов, пароль от 8.";
-    if (e.status === 401) return "Неверный логин или пароль.";
-    if (e.status === 403) return e.message || "Доступ к аккаунту ограничен.";
+    if (!e) return t("Не удалось войти. Попробуйте ещё раз.", "Could not sign in. Try again.");
+    if (e.status === 0) return t("Сервер не отвечает. Проверьте соединение и попробуйте снова.", "The server is not responding. Check your connection and try again.");
+    if (e.status === 400) return t("Проверьте поля: логин от 3 символов, пароль от 8.", "Check the fields: login at least 3 characters, password at least 8.");
+    if (e.status === 401) return t("Неверный логин или пароль.", "Wrong login or password.");
+    if (e.status === 403) return e.message || t("Доступ к аккаунту ограничен.", "Access to this account is restricted.");
     if (e.status === 429) {
       var s = e.retryAfter || 0;
       var m = Math.ceil(s / 60);
-      return "Слишком много попыток. Повторите " + (m > 1 ? "через " + m + " мин." : "через минуту.");
+      return t(
+        "Слишком много попыток. Повторите " + (m > 1 ? "через " + m + " мин." : "через минуту."),
+        "Too many attempts. Try again in " + (m > 1 ? m + " min." : "a minute.")
+      );
     }
-    if (e.status >= 500) return "Сервис временно недоступен. Попробуйте позже.";
-    return e.message || "Не удалось войти.";
+    if (e.status >= 500) return t("Сервис временно недоступен. Попробуйте позже.", "The service is temporarily unavailable. Try again later.");
+    return e.message || t("Не удалось войти.", "Could not sign in.");
   }
 
   /* Куда вернуться после входа.
@@ -88,11 +95,11 @@
   if (form) {
     form.addEventListener("submit", function (e) {
       e.preventDefault();
-      if (!window.GlukAuth) return show("Авторизация не загрузилась. Обновите страницу.", "err");
+      if (!window.GlukAuth) return show(t("Авторизация не загрузилась. Обновите страницу.", "Sign-in did not load. Reload the page."), "err");
       var id = String(form.identifier.value || "").trim();
       var pass = String(form.password.value || "");
-      if (id.length < 3) return show("Логин или email — от 3 символов.", "err");
-      if (pass.length < 8) return show("Пароль — минимум 8 символов.", "err");
+      if (id.length < 3) return show(t("Логин или email — от 3 символов.", "Login or email must be at least 3 characters."), "err");
+      if (pass.length < 8) return show(t("Пароль — минимум 8 символов.", "Password must be at least 8 characters."), "err");
       clear();
       busy(true);
       window.GlukAuth.login(id, pass).then(
@@ -101,11 +108,11 @@
           form.reset();
           var next = nextTarget();
           if (next) {
-            show("Готово. Возвращаемся…", "ok");
+            show(t("Готово. Возвращаемся…", "Done. Taking you back…"), "ok");
             window.location.href = next;
             return;
           }
-          show("Готово. Вы вошли.", "ok");
+          show(t("Готово. Вы вошли.", "Done. You are signed in."), "ok");
         },
         function (err) {
           busy(false);
@@ -189,7 +196,21 @@
   var title = document.querySelector("[data-auth-title]");
   var sub = document.querySelector("[data-auth-sub]");
   var panes = [].slice.call(document.querySelectorAll("[data-auth-pane]"));
-  var COPY = {
+  var EN = (document.documentElement.getAttribute("data-lang") || "ru").toLowerCase() === "en";
+  var COPY = EN ? {
+    login: {
+      t: "Sign in",
+      s: "The same login and password as in the GlukVPN app.",
+    },
+    register: {
+      t: "Create account",
+      s: "Email and password, a code from the email, confirmation in Telegram — three steps.",
+    },
+    recover: {
+      t: "Recover access",
+      s: "We will send a code by email or to Telegram — whichever is handier.",
+    },
+  } : {
     login: {
       t: "Вход в аккаунт",
       s: "Те же логин и пароль, что и в приложении GlukVPN.",

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 import { config } from "../config"
@@ -6,6 +7,7 @@ import { badRequest, conflict, notFound } from "../lib/errors"
 import { wireGuardKeySchema } from "../lib/wg"
 import { clientIp, getAuthUser, requireUser } from "../middleware/auth"
 import { prisma } from "../prisma"
+import { requestPolicySync } from "../services/policy"
 import { closeSessionsForDevice, findLiveSessionForDevice } from "../services/sessions"
 import { issueTokens, revokeRefreshTokens } from "../services/tokens"
 
@@ -74,6 +76,8 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
 							deviceName,
 							platform: platform ?? existing.platform,
 							lastSeen: new Date(),
+							// Rows from before the column get their personal credential here.
+							...(existing.vlessUuid ? {} : { vlessUuid: randomUUID() }),
 							...(reactivating ? { status: "ACTIVE", revokedAt: null } : {}),
 						},
 					})
@@ -82,10 +86,18 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
 							userId: user.id,
 							deviceName,
 							publicKey,
+							// One VLESS credential per device, minted here and never shared.
+							vlessUuid: randomUUID(),
 							platform: platform ?? null,
 							lastSeen: new Date(),
 						},
 					})
+
+			// A new or re-activated credential has to reach sing-box on the nodes
+			// before this device tries to connect through it.
+			if (!existing || reactivating || !existing.vlessUuid) {
+				await requestPolicySync().catch(() => 0)
+			}
 
 			// Device-scoped tokens: /api/vpn/* accepts only these.
 			const tokens = await issueTokens(app, user, device)
@@ -190,6 +202,8 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
 		let removed = true
 		try {
 			await prisma.device.delete({ where: { id: device.id } })
+			// Its VLESS credential must stop working on the nodes as well.
+			await requestPolicySync().catch(() => 0)
 		} catch {
 			// A foreign key outside this transaction's control (retained audit
 			// history) can refuse the delete. Never fail the user's request over
@@ -200,6 +214,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
 				where: { id: device.id },
 				data: { status: "REVOKED", revokedAt: new Date() },
 			})
+			await requestPolicySync().catch(() => 0)
 		}
 
 		return reply.send({ ok: true, removed, closedSessions, revokedTokens })

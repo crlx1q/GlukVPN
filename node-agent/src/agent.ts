@@ -9,10 +9,14 @@
  *   - add a WireGuard peer with exactly one /32 allowed-ip
  *   - remove a WireGuard peer
  *   - report per-peer byte counters and handshake times
+ *   - ROUND 26: keep the sing-box gateway's *users* and *reject rules* equal
+ *     to the control plane's policy, and read sing-box's Clash API to report
+ *     per-device traffic and sniffed host names
  *   - rotate its own node token
  *
  * There is deliberately no way to make this agent execute an arbitrary command:
- * the command handler is a closed switch over three known types.
+ * the command handler is a closed switch over four known types, and the policy
+ * can only ever become `direct` outbounds and `reject` rules.
  */
 import {
 	config,
@@ -22,8 +26,10 @@ import {
 import {
 	ApiError,
 	ControlApi,
+	type HeartbeatBody,
 	type NodeCommand,
 	type PeerReport,
+	type VlessUserReport,
 } from "./lib/api"
 import { errorMessage, log, shortKey } from "./lib/logger"
 import { collectHostMetrics } from "./lib/metrics"
@@ -35,6 +41,7 @@ import {
 	isValidWgKey,
 	removePeer,
 } from "./lib/wg"
+import { SingboxManager } from "./singboxManager"
 
 const TOKEN_ROTATION_MARGIN_MS = 3 * 24 * 60 * 60 * 1000 // rotate 3 days before expiry
 const MAX_AUTH_FAILURES = 5
@@ -48,6 +55,9 @@ type AgentState = {
 	consecutiveAuthFailures: number
 	backoffMs: number
 	nodePublicKey: string | null
+	singbox: SingboxManager | null
+	/** Desired policy version from the last heartbeat; null until known. */
+	desiredPolicyVersion: string | null
 }
 
 const state: AgentState = {
@@ -58,6 +68,8 @@ const state: AgentState = {
 	consecutiveAuthFailures: 0,
 	backoffMs: 0,
 	nodePublicKey: null,
+	singbox: null,
+	desiredPolicyVersion: null,
 }
 
 function sleep(ms: number): Promise<void> {
@@ -88,8 +100,13 @@ function parsePublicKey(payload: Record<string, unknown>): string | null {
  * Executes one command. Returns an error message on failure so the control
  * plane can mark the command (and its session) as failed.
  */
-async function runCommand(command: NodeCommand): Promise<string | null> {
+async function runCommand(api: ControlApi, command: NodeCommand): Promise<string | null> {
 	switch (command.type) {
+		case "SYNC_POLICY": {
+			if (!state.singbox) return "this agent does not manage a sing-box gateway"
+			await state.singbox.syncPolicy(api, "command")
+			return null
+		}
 		case "ADD_PEER": {
 			const publicKey = parsePublicKey(command.payload)
 			const assignedIp = parseAssignedIp(command.payload)
@@ -128,7 +145,7 @@ async function handleCommands(api: ControlApi, commands: NodeCommand[]): Promise
 	for (const command of commands) {
 		let failure: string | null = null
 		try {
-			failure = await runCommand(command)
+			failure = await runCommand(api, command)
 		} catch (error) {
 			failure = errorMessage(error)
 		}
@@ -148,7 +165,7 @@ async function handleCommands(api: ControlApi, commands: NodeCommand[]): Promise
 	}
 }
 
-/** Sends WireGuard counters and reconciles peer drift. */
+/** Sends WireGuard counters (and sing-box deltas) and reconciles peer drift. */
 async function sendReport(api: ControlApi): Promise<void> {
 	const wgState = await dumpInterface(config.WG_INTERFACE)
 	const peers: PeerReport[] = wgState.peers.map((peer) => ({
@@ -158,8 +175,22 @@ async function sendReport(api: ControlApi): Promise<void> {
 		lastHandshakeAt: peer.lastHandshakeAt,
 	}))
 
-	const result = await api.report(peers)
+	// Take the sing-box deltas out of the tracker; if the request fails they
+	// go back in, so a control-plane hiccup never loses traffic.
+	const vless: VlessUserReport[] | undefined = state.singbox ? state.singbox.drainReport() : undefined
+	let result
+	try {
+		result = await api.report(peers, vless)
+	} catch (error) {
+		if (vless && state.singbox) state.singbox.restoreReport(vless)
+		throw error
+	}
 	state.lastReportMs = Date.now()
+	if (result.vless?.unknownUsers?.length) {
+		log.debug("vless traffic for users without a live session", {
+			users: result.vless.unknownUsers.length,
+		})
+	}
 
 	// Peers the control plane has no live session for: remove them.
 	for (const publicKey of result.removePeers ?? []) {
@@ -208,7 +239,11 @@ async function tick(api: ControlApi): Promise<void> {
 	const now = Date.now()
 	const withMetrics = now - state.lastMetricsHeartbeatMs >= config.HEARTBEAT_INTERVAL_SEC * 1000
 
-	let body: Parameters<ControlApi["heartbeat"]>[0] = {}
+	// sing-box counters are sampled on every tick (the interval is enforced
+	// inside), independent of whether this tick carries metrics.
+	if (state.singbox) await state.singbox.sample(now)
+
+	let body: HeartbeatBody = {}
 	if (withMetrics) {
 		const [metrics, wgState] = await Promise.all([
 			collectHostMetrics(config.WG_INTERFACE),
@@ -222,6 +257,11 @@ async function tick(api: ControlApi): Promise<void> {
 			peerCount: wgState?.peers.length ?? 0,
 			agentVersion: config.AGENT_VERSION,
 			...(state.nodePublicKey ? { wireguardPublicKey: state.nodePublicKey } : {}),
+			// Only an agent that manages a gateway speaks about it: an explicit
+			// null means "this node runs none", absence means "not my business".
+			...(state.singbox
+				? { gateway: state.singbox.gateway(), policyVersion: state.singbox.appliedVersion ?? "" }
+				: {}),
 		}
 		state.lastMetricsHeartbeatMs = now
 	}
@@ -237,11 +277,25 @@ async function tick(api: ControlApi): Promise<void> {
 			cpu: body.cpuPercent,
 			ram: body.ramPercent,
 			commands: heartbeat.commands?.length ?? 0,
+			policy: heartbeat.policyVersion ?? null,
 		})
 	}
 
 	if (heartbeat.commands?.length) {
 		await handleCommands(api, heartbeat.commands)
+	}
+
+	// Policy drift: the control plane names the version it wants, the file on
+	// disk says which one it holds. A difference costs one GET and one reload.
+	if (state.singbox && heartbeat.policyVersion) {
+		state.desiredPolicyVersion = heartbeat.policyVersion
+		if (heartbeat.policyVersion !== state.singbox.appliedVersion) {
+			try {
+				await state.singbox.syncPolicy(api, "heartbeat")
+			} catch (error) {
+				log.warn("policy sync failed", { reason: errorMessage(error) })
+			}
+		}
 	}
 
 	if (Date.now() - state.lastReportMs >= config.STATS_REPORT_INTERVAL_SEC * 1000) {
@@ -279,6 +333,8 @@ async function main(): Promise<void> {
 		nodeToken: config.NODE_TOKEN as string,
 	})
 
+	state.singbox = await SingboxManager.create()
+
 	log.info("agent started", {
 		controlApi: config.CONTROL_API_URL,
 		iface: config.WG_INTERFACE,
@@ -286,6 +342,7 @@ async function main(): Promise<void> {
 		heartbeatSec: config.HEARTBEAT_INTERVAL_SEC,
 		pollSec: config.COMMAND_POLL_INTERVAL_SEC,
 		reportSec: config.STATS_REPORT_INTERVAL_SEC,
+		singbox: state.singbox ? "managed" : "off",
 	})
 
 	const shutdown = (signal: string) => {

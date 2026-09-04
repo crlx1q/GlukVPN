@@ -53,7 +53,7 @@
   <script src="/assets/js/fx.js?v=0.7.4" defer></script>
   <script src="/assets/js/auth.js?v=0.7.4" defer></script>
   <script src="/assets/js/fonts.js?v=0.7.4" defer></script>
-  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Можно ли пользоваться бесплатно?", "acceptedAnswer": {"@type": "Answer", "text": "Да. Тариф Free доступен без оплаты и без привязки карты: один регион, одно устройство и ограниченная скорость."}}, {"@type": "Question", "name": "Когда появится оплата?", "acceptedAnswer": {"@type": "Answer", "text": "Оплата включится вместе с запуском биллинга. До этого момента цены на сайте носят предварительный характер и могут измениться."}}, {"@type": "Question", "name": "Можно ли перейти между тарифами?", "acceptedAnswer": {"@type": "Answer", "text": "Да, тариф меняется в приложении в любой момент. Аккаунт и список устройств при этом сохраняются."}}, {"@type": "Question", "name": "Сколько устройств можно подключить?", "acceptedAnswer": {"@type": "Answer", "text": "Free — одно устройство, Basic — до трёх, Pro — до десяти. Список устройств виден в приложении, лишние можно отключить."}}]}</script>
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Can I use it for free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. The Free plan needs no payment and no card: one region, one device and limited speed."}}, {"@type": "Question", "name": "When do payments go live?", "acceptedAnswer": {"@type": "Answer", "text": "Payments switch on together with billing. Until then the prices on the site are preliminary and may change."}}, {"@type": "Question", "name": "Can I switch plans?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, you can change the plan in the app at any time. Your account and device list stay in place."}}, {"@type": "Question", "name": "How many devices can I connect?", "acceptedAnswer": {"@type": "Answer", "text": "Free covers one device, Basic up to three, Pro up to ten. The device list lives in the app and extra devices can be disconnected."}}]}</script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -193,6 +193,10 @@
       </div>
     </div>
   </section>
+
+  <!-- 0.8.0: plans and checkout buttons from /api/billing/plans; without billing —
+       cards from config.js and "Coming soon" on paid plans. -->
+  <script src="/assets/js/billing.js?v=0.8.0" defer></script>
 
   </main>
 

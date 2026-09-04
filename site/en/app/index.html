@@ -43,6 +43,7 @@
   <link rel="stylesheet" href="/assets/css/utilities.css?v=0.7.4">
   <link rel="stylesheet" href="/assets/css/fx.css?v=0.7.4">
   <link rel="stylesheet" href="/assets/css/auth.css?v=0.7.4">
+  <link rel="stylesheet" href="/assets/css/dash.css?v=0.8.0">
   <script src="/assets/js/config.js?v=0.7.4" defer></script>
   <script src="/assets/js/i18n.js?v=0.7.4" defer></script>
   <script src="/assets/js/world-dots.js?v=0.7.4" defer></script>
@@ -118,7 +119,7 @@
             <span class="gate__badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.6" y="10.4" width="14.8" height="9.6" rx="2.6" stroke="currentColor" stroke-width="1.6"/><path d="M8.3 10.4V8a3.7 3.7 0 0 1 7.4 0v2.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="15.2" r="1.25" fill="currentColor"/></svg>Dashboard</span>
             <h1 class="gate__title">Sign in to open your dashboard</h1>
             <p class="gate__text">Subscription, devices, sessions and keys in one place. Same login and password as in the GlukVPN app.</p>
-            <ul class="gate__list"><li><span class="gate__ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.9L19 9.8l-5.1 1.9L12 17l-1.9-5.3L5 9.8l5.1-1.9L12 3z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></svg></span><b>Plan and renewal</b><span>tier, next charge and payment status</span></li><li><span class="gate__ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="13" height="9.5" rx="1.8" stroke="currentColor" stroke-width="1.6"/><rect x="16" y="9" width="5.5" height="10.5" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M6 17.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><b>Devices and sessions</b><span>who is connected and through which node</span></li><li><span class="gate__ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 9.5h17M3.5 14.5h17" stroke="currentColor" stroke-width="1.6"/><path d="M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z" stroke="currentColor" stroke-width="1.6"/></svg></span><b>Connection map</b><span>region, ping and the active protocol</span></li><li><span class="gate__ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l7 3v5.2c0 4.3-2.9 8.2-7 9.8-4.1-1.6-7-5.5-7-9.8V6l7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.2 12.2l2 2 3.6-3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><b>Keys and Kill switch</b><span>WireGuard configs and leak protection</span></li></ul>
+            <ul class="gate__list"><li><span class="gate__ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.9L19 9.8l-5.1 1.9L12 17l-1.9-5.3L5 9.8l5.1-1.9L12 3z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></svg></span><b>Plan and renewal</b><span>tier, renewal date and payment status</span></li><li><span class="gate__ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="13" height="9.5" rx="1.8" stroke="currentColor" stroke-width="1.6"/><rect x="16" y="9" width="5.5" height="10.5" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M6 17.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><b>Devices and sessions</b><span>who is connected right now and through which node</span></li><li><span class="gate__ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 9.5h17M3.5 14.5h17" stroke="currentColor" stroke-width="1.6"/><path d="M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z" stroke="currentColor" stroke-width="1.6"/></svg></span><b>Connection map</b><span>region, latency and the active protocol</span></li><li><span class="gate__ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l7 3v5.2c0 4.3-2.9 8.2-7 9.8-4.1-1.6-7-5.5-7-9.8V6l7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.2 12.2l2 2 3.6-3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><b>Keys and Kill switch</b><span>WireGuard configs and leak protection</span></li></ul>
             <div class="gate__actions"><a class="btn btn--primary" href="/en/login/">Sign in</a><a class="btn btn--ghost" href="/en/login/?mode=register">Create account</a></div>
             <p class="gate__note">No app yet? <a href="/en/download/" data-download-android>Download GlukVPN</a></p>
           </div>
@@ -136,10 +137,11 @@
               <span class="dash-badge dash-badge--plan" data-d="plan-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.9L19 9.8l-5.1 1.9L12 17l-1.9-5.3L5 9.8l5.1-1.9L12 3z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></svg><span data-d="plan">—</span></span>
               <span class="dash-badge" data-d="status-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-d="status">—</span></span>
               <span class="dash-badge" data-d="id-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="8" cy="12" r="4" stroke="currentColor" stroke-width="1.6"/><path d="M12 12h8m-3 0v3m3-3v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span data-d="public-id">—</span></span>
+              <span class="dash-badge dash-badge--tester" data-d="tester-badge" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6"/><path d="M10 3v6.2L4.6 18a2 2 0 0 0 1.7 3h11.4a2 2 0 0 0 1.7-3L14 9.2V3"/></svg><span>Tester</span></span>
             </div>
           </div>
           <div class="dash-actions">
-            <button class="dash-ibtn" type="button" data-dash-refresh aria-label="Refresh data" title="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2.5-7 5 14L17.5 12H21"/></svg></button>
+            <button class="dash-ibtn" type="button" data-dash-refresh aria-label="Refresh data" title="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>
             <a class="dash-ibtn" href="/en/download/" data-download-android aria-label="Download the app" title="Download"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></a>
             <button class="dash-ibtn dash-ibtn--danger" type="button" data-dash-logout aria-label="Sign out" title="Sign out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></button>
           </div>
@@ -159,12 +161,12 @@
           <div class="dash-stat">
             <span class="dash-stat__k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2.5-7 5 14L17.5 12H21"/></svg>Sessions</span>
             <b class="dash-stat__v" data-d="sessions">—</b>
-            <span class="dash-stat__s" data-d="sessions-note">concurrent connections</span>
+            <span class="dash-stat__s" data-d="sessions-note">active now of the limit</span>
           </div>
           <div class="dash-stat">
             <span class="dash-stat__k"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Channel</span>
             <b class="dash-stat__v" data-d="channel">—</b>
-            <span class="dash-stat__s" data-d="channel-note">active medium</span>
+            <span class="dash-stat__s" data-d="channel-note">active environment</span>
           </div>
         </div>
 
@@ -188,9 +190,20 @@
                 </div>
               </div>
 
-              <ul class="dev-list" data-dash-devices></ul>
+              <ul class="dev-list" data-dash-devices><li class="dash-skel dash-skel--row"></li><li class="dash-skel dash-skel--row"></li></ul>
               <p class="dash-msg" data-dash-msg role="status" aria-live="polite"></p>
               <p class="dash-note">Disconnecting ends the device session: the tunnel drops at once, and signing in again in the app recreates it.</p>
+            </article>
+
+            <!-- 0.8.0: connection history from GET /api/vpn/sessions — the last 20. -->
+            <article class="dash-card" data-dash-sessions-card>
+              <div class="dash-card__head">
+                <h2 class="dash-card__title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2.5-7 5 14L17.5 12H21"/></svg>Recent sessions</h2>
+                <span class="dash-card__hint">node, traffic and duration</span>
+              </div>
+              <ul class="ses-list" data-dash-sessions><li class="dash-skel dash-skel--row"></li><li class="dash-skel dash-skel--row"></li><li class="dash-skel dash-skel--row"></li></ul>
+              <div class="dash-cta"><button class="btn btn--ghost btn--sm" type="button" data-dash-sessions-more hidden>Show all</button></div>
+              <p class="dash-note">We keep only service-level session metrics — node, traffic volume and time. Visited sites and traffic contents are never recorded.</p>
             </article>
 
             <article class="dash-card">
@@ -204,8 +217,55 @@
                 <div class="dash-row"><span>Session limit</span><b data-d="sec-max-ses">—</b></div>
                 <div class="dash-row"><span>Sign-up method</span><b data-d="sec-origin">—</b></div>
               </div>
+              <!-- 0.8.0: the same three security actions as on the Russian page;
+                   account.js reads the page language and localises its messages. -->
+              <div class="sec-actions" data-sec>
+                <div class="sec-tabs">
+                  <button class="btn btn--ghost btn--sm" type="button" data-sec-open="password">Change password</button>
+                  <button class="btn btn--ghost btn--sm" type="button" data-sec-open="email">Change email</button>
+                  <button class="btn btn--ghost btn--sm" type="button" data-sec-open="telegram">Re-link Telegram</button>
+                </div>
+
+                <form class="form sec-form" data-sec-form="password" hidden novalidate>
+                  <label class="field">
+                    <span class="field__label">Current password</span>
+                    <span class="field__box"><input class="input" type="password" name="currentPassword" autocomplete="current-password" required></span>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">New password</span>
+                    <span class="field__box"><input class="input" type="password" name="password" autocomplete="new-password" placeholder="At least 8 characters" required></span>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Repeat the new password</span>
+                    <span class="field__box"><input class="input" type="password" name="password2" autocomplete="new-password" required></span>
+                  </label>
+                  <button class="btn btn--primary btn--sm" type="submit">Save password</button>
+                  <p class="auth-msg" data-sec-msg="password" role="status" aria-live="polite"></p>
+                  <p class="dash-note">After a password change every session is signed out — you will need to sign in again on all devices.</p>
+                </form>
+
+                <form class="form sec-form" data-sec-form="email" hidden novalidate>
+                  <label class="field">
+                    <span class="field__label">New email</span>
+                    <span class="field__box"><input class="input" type="email" name="email" autocomplete="email" placeholder="you@example.com" required></span>
+                  </label>
+                  <label class="field" data-sec-code hidden>
+                    <span class="field__label">Code from the email</span>
+                    <span class="field__box"><input class="input input--code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"></span>
+                  </label>
+                  <button class="btn btn--primary btn--sm" type="submit">Send code</button>
+                  <p class="auth-msg" data-sec-msg="email" role="status" aria-live="polite"></p>
+                </form>
+
+                <div class="sec-form" data-sec-form="telegram" hidden>
+                  <p class="dash-note">Re-linking is needed if your Telegram account changed. The bot will ask you to share your contact again.</p>
+                  <button class="btn btn--primary btn--sm" type="button" data-sec-tg>Get the bot link</button>
+                  <p class="auth-msg" data-sec-msg="telegram" role="status" aria-live="polite"></p>
+                  <p class="dash-note" data-sec-tg-out hidden>Open <a class="auth-link" data-sec-tg-link href="#" target="_blank" rel="noopener">the bot</a> and send the code <b class="mono" data-sec-tg-code></b>.</p>
+                </div>
+              </div>
+
               <div class="dash-cta">
-                <a class="btn btn--ghost btn--sm" href="/en/support/">Change password</a>
                 <button class="btn btn--ghost btn--sm" type="button" data-dash-logout>Sign out on this device</button>
               </div>
             </article>
@@ -221,29 +281,45 @@
                 <div class="dash-row"><span>Plan</span><b data-d="plan2">—</b></div>
                 <div class="dash-row"><span>Status</span><b data-d="sub-status">—</b></div>
                 <div class="dash-row"><span>Valid until</span><b data-d="sub-date">—</b></div>
-                <div class="dash-row"><span>Left</span><b data-d="sub-left">—</b></div>
+                <div class="dash-row"><span>Days left</span><b data-d="sub-left">—</b></div>
               </div>
-              <div class="dash-meter"><i class="dash-bar" data-d="sub-bar"></i></div>
+              <div class="dash-meter" role="progressbar" aria-label="Remaining paid period"><i class="dash-bar" data-d="sub-bar"></i></div>
               <p class="dash-note" data-d="sub-note">During the beta, payment and renewal are handled manually.</p>
               <div class="dash-cta">
-                <a class="btn btn--primary btn--sm" href="/en/pricing/">Renew or change plan</a>
+                <a class="btn btn--primary btn--sm" href="/en/pricing/" data-dash-upgrade>Renew or change plan</a>
                 <a class="btn btn--ghost btn--sm" href="/en/support/">Contact support</a>
               </div>
             </article>
 
-            <article class="dash-card">
+            <!-- 0.8.0: orders from GET /api/billing/orders. Hidden while billing is
+                 off or there are no orders yet — app.js reveals it. -->
+            <article class="dash-card" data-dash-orders hidden>
+              <div class="dash-card__head">
+                <h2 class="dash-card__title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19"/><path d="M6.5 15h4"/></svg>My orders</h2>
+                <span class="dash-card__hint">recent payments</span>
+              </div>
+              <ul class="ord-list" data-dash-orders-list></ul>
+              <p class="dash-note">A paid order extends the subscription automatically. If the payment went through but the expiry date did not move, contact support with the order number.</p>
+            </article>
+
+            <!-- 0.8.0: live connection from /api/vpn/sessions instead of made-up
+                 "recommended node" numbers. Hidden when session history is unavailable. -->
+            <article class="dash-card" data-dash-conn>
               <div class="dash-card__head">
                 <h2 class="dash-card__title"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 9h17M3.5 15h17" stroke="currentColor" stroke-width="1.6"/><path d="M12 3c2.6 2.5 3.9 5.5 3.9 9s-1.3 6.5-3.9 9c-2.6-2.5-3.9-5.5-3.9-9S9.4 5.5 12 3Z" stroke="currentColor" stroke-width="1.6"/></svg>Connection</h2>
-                <span class="dash-card__hint">current values</span>
+                <span class="dash-card__hint" data-d="conn-hint">—</span>
               </div>
               <div class="dash-rows">
-                <div class="dash-row"><span>Recommended node</span><b data-d="node">—</b></div>
-                <div class="dash-row"><span>Latency</span><b data-d="node-ping">—</b></div>
-                <div class="dash-row"><span>Node load</span><b data-d="node-load">—</b></div>
+                <div class="dash-row"><span>Status</span><b data-d="conn-state">—</b></div>
+                <div class="dash-row" data-conn-row hidden><span>Node</span><b data-d="conn-node">—</b></div>
+                <div class="dash-row" data-conn-row hidden><span>Device</span><b data-d="conn-dev">—</b></div>
+                <div class="dash-row" data-conn-row hidden><span>Tunnel address</span><b class="mono" data-d="conn-ip">—</b></div>
+                <div class="dash-row" data-conn-row hidden><span>Connected</span><b data-d="conn-since">—</b></div>
+                <div class="dash-row" data-conn-row hidden><span>Last handshake</span><b data-d="conn-hs">—</b></div>
                 <div class="dash-row"><span>Protocol</span><b>WireGuard</b></div>
                 <div class="dash-row"><span>DNS</span><b>internal, leak-free</b></div>
               </div>
-              <p class="dash-note">Nodes are picked in the app: the Best Server button takes the lowest-latency option.</p>
+              <p class="dash-note">The node is picked in the app: the Best Server button takes the lowest-latency option.</p>
             </article>
 
             <article class="dash-card">
@@ -252,7 +328,7 @@
               </div>
               <ul class="dash-dl">
                 <li class="dash-dl__item"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993.0001.5511-.4482.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4482.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.2439 13.8533 7.8508 12 7.8508s-3.5902.3931-5.1367 1.0989L4.841 5.4467a.4161.4161 0 00-.5677-.1521.4157.4157 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3435-4.1021-2.6892-7.5743-6.1185-9.4396"/></svg><b>Android</b><a class="btn btn--primary btn--sm" href="/en/download/" data-download-android>APK</a></li>
-                <li class="dash-dl__item"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-13.051-1.801"/></svg><b>Windows</b><span class="dash-soon">Soon</span></li>
+                <li class="dash-dl__item"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-13.051-1.801"/></svg><b>Windows</b><a class="btn btn--primary btn--sm" href="/downloads/GlukVPN-Setup-1.2.0.exe" download data-download-windows>EXE</a></li>
                 <li class="dash-dl__item"><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='4' y='2.5' width='16' height='19' rx='2.4'/><rect x='6.6' y='5' width='10.8' height='8.4' rx='1.2'/><circle cx='10' cy='8.6' r='.85' fill='currentColor' stroke='none'/><circle cx='14' cy='8.6' r='.85' fill='currentColor' stroke='none'/><path d='M10 10.9c.55.6 1.2.9 2 .9s1.45-.3 2-.9'/><path d='M7 16.4h5.2M7 18.7h3.2'/><circle cx='16.6' cy='17.6' r='1.5'/></svg><b>macOS</b><span class="dash-soon">Soon</span></li>
                 <li class="dash-dl__item"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.035 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.088-4.61 1.088zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg><b>iOS</b><span class="dash-soon">Soon</span></li>
                 <li class="dash-dl__item"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0C8.21 0 4.831 1.757 2.632 4.501l3.953 6.848A5.454 5.454 0 0 1 12 6.545h10.691A12 12 0 0 0 12 0zM1.931 5.47A11.943 11.943 0 0 0 0 12c0 6.012 4.42 10.991 10.189 11.864l3.953-6.847a5.45 5.45 0 0 1-6.865-2.29zm13.342 2.166a5.446 5.446 0 0 1 1.45 7.09l.002.001h-.002l-5.344 9.257c.206.01.413.016.621.016 6.627 0 12-5.373 12-12 0-1.54-.29-3.011-.818-4.364zM12 16.364a4.364 4.364 0 1 1 0-8.728 4.364 4.364 0 0 1 0 8.728z"/></svg><b>Chrome extension</b><span class="dash-soon">Soon</span></li>
@@ -264,7 +340,9 @@
     </div>
   </section>
 
-  <script src="/assets/js/app.js?v=0.7.4" defer></script>
+  <script src="/assets/js/app.js?v=0.8.0" defer></script>
+  <!-- Account security block lives in account.js (same script as the Russian page). -->
+  <script src="/assets/js/account.js?v=0.8.0" defer></script>
 
   </main>
 

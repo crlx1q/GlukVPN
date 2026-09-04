@@ -105,6 +105,11 @@ class UsageStore extends ChangeNotifier {
   DateTime? _lastSampleAt;
 
   bool _dirty = false;
+  bool _loaded = false;
+
+  /// True once [load] has run, whatever it found. Until then the statistics
+  /// screen shows skeletons rather than zeros that are about to change.
+  bool get loaded => _loaded;
 
   static String dayKey(DateTime at) {
     final local = at.toLocal();
@@ -142,6 +147,7 @@ class UsageStore extends ChangeNotifier {
     if (owner != null) _owner = owner;
 
     _prune(DateTime.now());
+    _loaded = true;
     notifyListeners();
   }
 

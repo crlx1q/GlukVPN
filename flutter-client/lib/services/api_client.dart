@@ -253,6 +253,35 @@ class ApiClient {
         await _request('GET', '/api/version', authenticated: false),
       );
 
+  /// Quick reachability probe of another control plane, used *before* the user
+  /// is moved to it.
+  ///
+  /// Flipping the channel switch while BETA is switched off used to drop the
+  /// session and leave the app signed out against a dead host. This asks
+  /// `GET /api/version` on [baseUrl] with a short [timeout] (1.5 s by default)
+  /// and answers `null` when the stack is down, unreachable or not a GlukVPN
+  /// control plane - so the caller can say "the beta server is unavailable"
+  /// and keep the current session untouched. Never throws.
+  Future<ChannelVersion?> probeChannel(
+    String baseUrl, {
+    Duration timeout = const Duration(milliseconds: 1500),
+  }) async {
+    final Uri uri = Uri.parse('${_normalise(baseUrl)}/api/version');
+    try {
+      final http.Response response = await _http
+          .get(uri, headers: const <String, String>{'accept': 'application/json'})
+          .timeout(timeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) return null;
+      final Map<String, dynamic> json = _map(jsonDecode(response.body));
+      if (json['service'] != 'glukvpn-control' && json['channel'] == null) {
+        return null;
+      }
+      return ChannelVersion.fromJson(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Signs in with a username **or** an email address.
   ///
   /// `identifier` is what this build sends; `username` is kept alongside it so

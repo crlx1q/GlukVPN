@@ -28,6 +28,7 @@ import { config } from "../config"
 import { hashPassword } from "../lib/crypto"
 import { badRequest, conflict } from "../lib/errors"
 import { prisma } from "../prisma"
+import { grantDefaultSubscription } from "./billing"
 import { consumeCode, issueCode, normalizeEmail } from "./verification"
 
 /** The whole funnel. Long enough to go find the email, short enough to be junk. */
@@ -282,6 +283,50 @@ export async function startGoogleRegistration(params: {
 	}
 }
 
+/**
+ * Instant Google account, used only when GOOGLE_REQUIRE_TELEGRAM=false: the
+ * address is proven by Google, the operator has waived the phone step. The
+ * account gets the same free subscription a Telegram-completed sign-up gets
+ * (see `attachTelegram`), the Google link, and a random password nobody knows.
+ */
+export async function createUserFromGoogle(params: {
+	email: string
+	googleSub: string
+	name?: string | null
+}): Promise<import("@prisma/client").User> {
+	const email = normalizeEmail(params.email)
+	const existing = await prisma.user.findFirst({ where: { email } })
+	if (existing) throw conflict("An account with this email already exists")
+
+	const username = await uniqueUsername(email)
+	const passwordHash = await hashPassword(`google:${params.googleSub}:${newToken()}${newToken()}`)
+	const created = await prisma.user.create({
+		data: {
+			username,
+			email,
+			emailVerifiedAt: new Date(),
+			passwordHash,
+			maxDevices: config.MAX_DEVICES_PER_USER,
+			maxSessions: config.MAX_CONCURRENT_SESSIONS,
+			identityLinks: {
+				create: [
+					{
+						provider: "GOOGLE",
+						providerUserId: params.googleSub,
+						providerEmail: email,
+						providerName: params.name ?? null,
+					},
+				],
+			},
+		},
+	})
+	// A finished pending row for the same address (Google -> abandoned Telegram
+	// step) must not keep the email reserved.
+	await prisma.pendingRegistration.deleteMany({ where: { email } }).catch(() => undefined)
+	await grantDefaultSubscription(created.id).catch(() => undefined)
+	return created
+}
+
 export async function registrationStatus(email: string): Promise<{
 	state: RegistrationState
 	telegramUrl?: string
@@ -463,8 +508,11 @@ export async function attachTelegram(params: {
 			telegramVerifiedAt: new Date(),
 			identityLinks: { create: identityLinks },
 		},
-		select: { username: true },
+		select: { id: true, username: true },
 	})
+	// Every new account starts on the Free plan, so "connect" works right away
+	// instead of answering "No active subscription" until an admin intervenes.
+	await grantDefaultSubscription(created.id).catch(() => undefined)
 
 	// The pending row has served its purpose. Deleting it here (rather than
 	// leaving it to the sweeper) is what frees the address for the unique index

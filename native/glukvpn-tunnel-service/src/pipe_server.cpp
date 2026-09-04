@@ -48,6 +48,10 @@ void FillStatus(json::Object& root, const TunnelStatus& status) {
     root.emplace("since", json::Value(static_cast<double>(status.sinceUnix)));
     root.emplace("killSwitch", json::Value(status.killSwitchActive));
     root.emplace("splitEngine", json::Value(status.splitEngine));
+    // ROUND 26: additive, so the protocol version stays at 2. A client that
+    // does not know the key ignores it; one that does can word its status
+    // texts for the engine that is actually running.
+    root.emplace("engine", json::Value(status.engine));
 
     if (!status.errorCode.empty()) {
         root.emplace("errorCode", json::Value(status.errorCode));

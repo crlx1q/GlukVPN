@@ -270,7 +270,7 @@ class SessionRow extends StatelessWidget {
                       ? s.connectedVia(device.connectedNodeName ?? '\u2014')
                       : device.isActive
                           ? '${s.signedIn} \u00b7 ${s.lastSeen} '
-                              '${formatRelative(device.lastSeen)}'
+                              '${s.relativeTime(device.lastSeen)}'
                           : s.revoked,
                   style: text.bodySmall,
                 ),

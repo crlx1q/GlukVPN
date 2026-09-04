@@ -46,6 +46,11 @@ class VpnController extends ChangeNotifier {
   VpnSessionInfo? _session;
   TunnelConfig? _tunnel;
   String? _exitIp;
+
+  /// The address the world sees while *no* tunnel is up: the phone's own
+  /// public IP. Probed after a disconnect settles and once at start-up, never
+  /// carried over from a session.
+  String? _homeIp;
   PingSample _pingSample = const PingSample.empty();
   String? _error;
   String? _notice;
@@ -62,7 +67,30 @@ class VpnController extends ChangeNotifier {
   TunnelStage get tunnelStage => _tunnelStage;
   VpnSessionInfo? get session => _session;
   TunnelConfig? get tunnel => _tunnel;
+
+  /// Public address as probed *through* the tunnel. Null until the first probe
+  /// after connecting answers, and cleared the moment the tunnel goes away.
   String? get exitIp => _exitIp;
+
+  /// Public address without a tunnel, when known. See [_homeIp].
+  String? get homeIp => _homeIp;
+
+  /// What the "Public IP" cell should show for the current state: the exit IP
+  /// while connected, the home IP while disconnected, nothing in between. The
+  /// two are never mixed, so a stale exit address cannot be shown as the home
+  /// address or the other way round.
+  String? get publicIp {
+    switch (_state) {
+      case VpnUiState.connected:
+        return _exitIp;
+      case VpnUiState.disconnected:
+        return _homeIp;
+      case VpnUiState.connecting:
+      case VpnUiState.disconnecting:
+        return null;
+    }
+  }
+
   PingSample get ping => _pingSample;
   String? get error => _error;
   String? get notice => _notice;
@@ -77,7 +105,16 @@ class VpnController extends ChangeNotifier {
 
   int get bytesRx => _session?.bytesRx ?? 0;
   int get bytesTx => _session?.bytesTx ?? 0;
-  String? get assignedIp => _session?.assignedVpnIp ?? _tunnel?.assignedIp;
+
+  /// The address the control plane leased for this session.
+  ///
+  /// Null while disconnected, whatever the last status poll may have echoed
+  /// back: a VPN IP belongs to a tunnel, and showing yesterday's lease next to
+  /// an "inactive" badge reads as a leak.
+  String? get assignedIp {
+    if (_state == VpnUiState.disconnected) return null;
+    return _session?.assignedVpnIp ?? _tunnel?.assignedIp;
+  }
 
   String get statusLabel {
     switch (_state) {
@@ -110,6 +147,7 @@ class VpnController extends ChangeNotifier {
     }
     await loadNodes();
     await _syncWithServer(initial: true);
+    if (_state == VpnUiState.disconnected) _probeHomeIp().ignore();
   }
 
   @override
@@ -196,7 +234,11 @@ class VpnController extends ChangeNotifier {
     _busy = true;
     _error = null;
     _notice = null;
+    // A fresh session starts with nothing on the readouts: no exit address, no
+    // lease and no latency from the previous one may survive into this one.
     _exitIp = null;
+    _session = null;
+    _tunnel = null;
     _pingSample = const PingSample.empty();
     _state = VpnUiState.connecting;
     _safeNotify();
@@ -258,6 +300,7 @@ class VpnController extends ChangeNotifier {
       _state = VpnUiState.disconnected;
       _busy = false;
       _safeNotify();
+      _probeHomeIp(settle: const Duration(milliseconds: 1200)).ignore();
     }
   }
 
@@ -266,6 +309,7 @@ class VpnController extends ChangeNotifier {
     await _closeServerSession(reason: 'connect failed');
     _resetConnectionState();
     _state = VpnUiState.disconnected;
+    _probeHomeIp(settle: const Duration(milliseconds: 1200)).ignore();
   }
 
   Future<void> _closeServerSession({required String reason}) async {
@@ -313,6 +357,7 @@ class VpnController extends ChangeNotifier {
         _notice = 'The session was closed by the server.';
         _resetConnectionState();
         _state = VpnUiState.disconnected;
+        _probeHomeIp(settle: const Duration(milliseconds: 1200)).ignore();
       }
 
       // Subscription expiry / user disable must also end an active tunnel.
@@ -397,8 +442,28 @@ class VpnController extends ChangeNotifier {
       if (_disposed || _state != VpnUiState.connected) return;
     }
     final String? ip = await _api.probeExitIp();
-    if (ip == null) return;
+    // The tunnel may have gone while the probe was out; an answer that arrives
+    // for a session that no longer exists must not be painted.
+    if (ip == null || _disposed || _state != VpnUiState.connected) return;
     _exitIp = ip;
+    _safeNotify();
+  }
+
+  /// Reads the phone's own public address while no tunnel is up.
+  ///
+  /// [settle] gives the platform time to move traffic back off the tunnel after
+  /// a disconnect; without it the first answer is still the node's address.
+  /// The result is only kept if the app is *still* disconnected when it lands,
+  /// so a connect started in the meantime never sees its home IP appear.
+  Future<void> _probeHomeIp({Duration settle = Duration.zero}) async {
+    if (settle > Duration.zero) {
+      await Future<void>.delayed(settle);
+    }
+    if (_disposed || _state != VpnUiState.disconnected) return;
+    final String? ip = await _api.probeExitIp();
+    if (ip == null || _disposed || _state != VpnUiState.disconnected) return;
+    if (ip == _homeIp) return;
+    _homeIp = ip;
     _safeNotify();
   }
 
@@ -450,6 +515,7 @@ class VpnController extends ChangeNotifier {
           _closeServerSession(reason: 'tunnel dropped').ignore();
           _resetConnectionState();
           _state = VpnUiState.disconnected;
+          _probeHomeIp(settle: const Duration(milliseconds: 1200)).ignore();
         }
         break;
       case TunnelStage.connecting:

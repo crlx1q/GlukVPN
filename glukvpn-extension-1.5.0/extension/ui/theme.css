@@ -524,6 +524,30 @@ body.signed-out .rail { opacity: 0.5; }
 .k { font-size: 9.5px; font-weight: var(--fw-strong); letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-2); }
 .v { font-size: 13.5px; font-weight: var(--fw-strong); color: var(--text-0); font-variant-numeric: tabular-nums; }
 
+/* skeleton: a value that is on its way. Sized in ch so the bar is as wide as
+ * the number it stands in for, which keeps the grid from jumping when the
+ * real value lands. --skel-w is set per cell from popup.js. */
+.skel {
+	display: inline-block;
+	width: var(--skel-w, 6ch);
+	max-width: 100%;
+	height: 0.85em;
+	border-radius: 6px;
+	vertical-align: -0.05em;
+	background: linear-gradient(
+		90deg,
+		rgba(255, 255, 255, 0.07) 0%,
+		rgba(196, 181, 253, 0.22) 45%,
+		rgba(255, 255, 255, 0.07) 90%
+	);
+	background-size: 220% 100%;
+	animation: shimmer 1.4s ease-in-out infinite;
+}
+@keyframes shimmer {
+	from { background-position: 120% 0; }
+	to { background-position: -120% 0; }
+}
+
 .traffic { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .t-item {
 	display: flex;
@@ -729,6 +753,40 @@ body.signed-out .rail { opacity: 0.5; }
 .switch.on { background: rgba(139, 92, 246, 0.30); border-color: var(--stroke-violet); }
 .switch.on .knob { transform: translateX(18px); background: var(--violet-light); box-shadow: 0 0 10px rgba(168, 85, 247, 0.7); }
 
+/* a switch row with a footer line under it (incognito permission state). The
+ * frame moves to the wrapper so the row and its footer read as one card. */
+.row-card {
+	display: flex;
+	flex-direction: column;
+	border-radius: var(--r-sm);
+	background: var(--glass);
+	border: 1px solid var(--stroke-soft);
+}
+.row-card > .row { background: none; border: 0; }
+.row-foot {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 4px 12px;
+	padding: 0 12px 10px;
+	margin-top: -4px;
+}
+.row-foot .hint { display: inline-flex; align-items: center; gap: 6px; font-weight: var(--fw-medium); }
+.row-foot .hint::before {
+	content: '';
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: currentColor;
+	flex: 0 0 auto;
+}
+.row-foot .hint.ok { color: #8ff0c4; }
+.row-foot .hint.warn { color: #f3c98b; }
+/* the label is long for a 300px card: let it shrink and wrap instead of
+ * inheriting .link-btn's flex: 0 0 auto and pushing past the frame */
+.row-foot .link-btn { flex: 1 1 auto; min-width: 0; padding: 0; font-size: 10.5px; text-align: left; white-space: normal; line-height: 1.4; }
+
 /* --------------------------------------------------------- device list - */
 
 .section-label {
@@ -827,6 +885,120 @@ body.signed-out .rail { opacity: 0.5; }
 	border: 1px solid var(--stroke-soft);
 	animation: fadeUp 0.24s var(--ease-soft) both;
 }
+
+/* ------------------------------------------------- channel card (dev) -- */
+/* PROD / BETA, the same card as the desktop and mobile clients: two pills,
+ * the live version of each channel under its name, a "using" line, and an
+ * inline error when the target channel does not answer. Violet = prod,
+ * amber = beta, everywhere in the product. */
+
+.chan-card {
+	display: flex;
+	flex-direction: column;
+	gap: 9px;
+	padding: 11px 12px 12px;
+	border-radius: var(--r-sm);
+	background: var(--glass);
+	border: 1px solid var(--stroke-soft);
+}
+.chan-pills { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.chan-pill {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 5px;
+	padding: 9px 8px 8px;
+	border-radius: var(--r-xs);
+	border: 1px solid var(--stroke-soft);
+	background: rgba(255, 255, 255, 0.04);
+	color: var(--text-1);
+	cursor: pointer;
+	transition:
+		background var(--t-fast) linear,
+		border-color var(--t-fast) linear,
+		color var(--t-fast) linear,
+		box-shadow var(--t-fast) linear,
+		transform var(--t-fast) var(--ease-soft),
+		opacity var(--t-fast) linear;
+}
+.chan-pill:hover:not(.on):not(.locked) { border-color: var(--stroke-violet); color: var(--text-0); background: rgba(139, 92, 246, 0.09); }
+.chan-pill.beta:hover:not(.on):not(.locked) { border-color: rgba(240, 181, 103, 0.46); background: rgba(240, 181, 103, 0.09); }
+.chan-pill:active:not(.locked) { transform: scale(0.98); }
+.chan-pill:focus-visible { outline: 2px solid #a78bfa; outline-offset: 2px; }
+.chan-pill.locked { cursor: not-allowed; opacity: 0.55; }
+
+.chan-name { font-size: 12px; font-weight: var(--fw-display); letter-spacing: 0.1em; line-height: 1; }
+
+/* active: prod in the brand violet, beta in amber */
+.chan-pill.prod.on {
+	color: #fff;
+	background: linear-gradient(140deg, var(--violet-bright) 0%, var(--violet-2) 60%, var(--violet-deep) 100%);
+	border-color: rgba(215, 201, 255, 0.55);
+	box-shadow: 0 8px 22px rgba(96, 45, 220, 0.34);
+}
+.chan-pill.beta.on {
+	color: #2b1a04;
+	background: linear-gradient(140deg, #f7d19b 0%, var(--amber) 55%, #dd9a4f 100%);
+	border-color: rgba(240, 181, 103, 0.75);
+	box-shadow: 0 8px 22px rgba(240, 181, 103, 0.26);
+}
+
+/* the version line: status dot + "1.2.0" or "off" */
+.chan-ver {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 2px 8px;
+	border-radius: var(--r-pill);
+	font-size: 10px;
+	font-weight: var(--fw-strong);
+	font-variant-numeric: tabular-nums;
+	color: var(--text-2);
+	background: rgba(0, 0, 0, 0.22);
+	max-width: 100%;
+	white-space: nowrap;
+}
+.chan-pill.on .chan-ver { color: inherit; background: rgba(0, 0, 0, 0.18); }
+.chan-pill.beta.on .chan-ver { background: rgba(255, 255, 255, 0.30); }
+.chan-dot {
+	width: 6px;
+	height: 6px;
+	flex: 0 0 auto;
+	border-radius: 50%;
+	background: rgba(255, 255, 255, 0.26);
+	transition: background var(--t-fast) linear, box-shadow var(--t-fast) linear;
+}
+.chan-ver.up .chan-dot { background: var(--green); box-shadow: 0 0 7px rgba(94, 231, 163, 0.75); }
+.chan-ver.down .chan-dot { background: #6d6880; }
+.chan-pill.beta.on .chan-ver.down .chan-dot { background: rgba(43, 26, 4, 0.45); }
+/* probing: the dot becomes a small spinner */
+.chan-pill.busy .chan-dot {
+	background: transparent;
+	box-shadow: none;
+	border: 1.5px solid currentColor;
+	border-right-color: transparent;
+	animation: spin 0.8s linear infinite;
+}
+
+.chan-status {
+	font-size: 11px;
+	font-weight: var(--fw-strong);
+	color: var(--text-1);
+	font-variant-numeric: tabular-nums;
+}
+.chan-status.beta { color: #f3c98b; }
+.chan-status:empty { display: none; }
+
+.chan-error {
+	font-size: 10.5px;
+	line-height: 1.4;
+	font-weight: var(--fw-strong);
+	color: #f3c98b;
+	animation: fadeUp 0.2s var(--ease-soft) both;
+}
+.chan-error.bad { color: var(--danger-soft); }
 
 /* ------------------------------------------------------------ buttons -- */
 
@@ -1092,6 +1264,8 @@ body.signed-out .rail { opacity: 0.5; }
 		animation-iteration-count: 1 !important;
 		transition-duration: 0.001ms !important;
 	}
+	/* a still, slightly lit bar instead of a sweep */
+	.skel { animation: none !important; background-position: 50% 0; }
 }
 
 /* ------------------------------------------------------- ROUND 9 additions */

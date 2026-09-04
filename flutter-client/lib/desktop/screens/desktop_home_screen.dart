@@ -117,7 +117,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           onOpenServers: widget.onOpenServers,
         );
 
-        final Widget rail = _MetricsRail(vpn: vpn, strings: s);
+        final Widget rail = _MetricsRail(
+          vpn: vpn,
+          strings: s,
+          reduceMotion: widget.reduceMotion,
+        );
         final Widget banner = _HomeBanner(vpn: vpn, strings: s);
 
         if (!wide) {
@@ -345,10 +349,15 @@ class _MapCard extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _MetricsRail extends StatelessWidget {
-  const _MetricsRail({required this.vpn, required this.strings});
+  const _MetricsRail({
+    required this.vpn,
+    required this.strings,
+    required this.reduceMotion,
+  });
 
   final DesktopVpnController vpn;
   final DesktopStrings strings;
+  final bool reduceMotion;
 
   String _pingSourceLabel() {
     switch (vpn.pingSource) {
@@ -364,9 +373,25 @@ class _MetricsRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final DesktopStrings s = strings;
-    final bool connected = vpn.phase.isConnected;
-    final Duration? duration = vpn.connectedFor;
-    final int? ping = vpn.currentPingMs;
+    final ConnectionPhase phase = vpn.phase;
+    final bool connected = phase.isConnected;
+    final bool connecting = phase == ConnectionPhase.connecting;
+    final bool animate = !reduceMotion;
+
+    // ROUND 26: three honest states per value.
+    //
+    //  * connecting - every value is on its way: skeletons, never the old
+    //    tunnel address or the home IP;
+    //  * connected but not measured yet - skeleton until the probe answers;
+    //  * anything else - a dash, except the public IP, which is the home
+    //    address once the probe has answered, and the counters, which are 0 B.
+    //
+    // vpn.vpnIp is null outside connecting/connected by construction, so the
+    // address of a tunnel that is already gone cannot reach this card.
+    final String? publicIp = vpn.publicIp;
+    final String? vpnIp = vpn.vpnIp;
+    final Duration? duration = connected ? vpn.connectedFor : null;
+    final int? ping = connected ? vpn.currentPingMs : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -377,20 +402,36 @@ class _MetricsRail extends StatelessWidget {
           rows: <InfoRow>[
             InfoRow(
               label: s.publicIp,
-              value: vpn.publicIp ?? s.dash,
+              value: connecting ? null : publicIp,
+              loading: connecting || (connected && publicIp == null),
+              skeletonCharacters: 15,
+              animate: animate,
+              emptyLabel: s.dash,
             ),
             InfoRow(
               label: s.vpnIp,
-              value: vpn.snapshot.vpnIp ?? s.dash,
+              value: connecting ? null : vpnIp,
+              loading: connecting || (connected && vpnIp == null),
+              skeletonCharacters: 15,
+              animate: animate,
+              emptyLabel: s.dash,
               valueColor: connected ? GlukColors.connected : null,
             ),
             InfoRow(
               label: s.duration,
-              value: duration == null ? s.dash : formatDuration(duration),
+              value: duration == null ? null : formatDuration(duration),
+              loading: connecting || (connected && duration == null),
+              skeletonCharacters: 8,
+              animate: animate,
+              emptyLabel: s.dash,
             ),
             InfoRow(
               label: s.ping,
-              value: ping == null ? s.dash : formatPing(ping),
+              value: ping == null ? null : formatPing(ping),
+              loading: connecting || (connected && ping == null),
+              skeletonCharacters: 5,
+              animate: animate,
+              emptyLabel: s.dash,
               unit: ping == null ? null : _pingSourceLabel(),
             ),
           ],
@@ -443,6 +484,13 @@ class _HomeBanner extends StatelessWidget {
 
     final String copyLabel = ru ? 'Копировать журнал' : 'Copy log';
 
+    // ROUND 26: the raw verifier code (handshake_pending, bringing_up) used to
+    // be printed as the subtitle. It is translated here, and worded for the
+    // engine that is actually running - a sing-box tunnel has no WireGuard
+    // handshake to wait for.
+    final String? detail =
+        s.describeStatusDetail(vpn.statusDetail, vpn.engine);
+
     // 1. Tunnel is verified up: the calm state from the reference.
     if (phase.isConnected) {
       return SecureBanner(
@@ -490,9 +538,8 @@ class _HomeBanner extends StatelessWidget {
         tone: SecureTone.danger,
         title: s.phaseLabel(phase),
         subtitle: vpn.userMessage ??
-            (vpn.statusDetail.isEmpty
-                ? (ru ? 'Не удалось подключиться' : 'Could not connect')
-                : vpn.statusDetail),
+            detail ??
+            (ru ? 'Не удалось подключиться' : 'Could not connect'),
         actionLabel: s.retry,
         onAction: () => vpn.connect(),
         secondaryActionLabel: copyLabel,
@@ -505,9 +552,9 @@ class _HomeBanner extends StatelessWidget {
       return SecureBanner(
         tone: SecureTone.warning,
         title: s.phaseLabel(phase),
-        subtitle: vpn.statusDetail.isEmpty
-            ? (ru ? 'Поднимаю туннель…' : 'Bringing the tunnel up…')
-            : vpn.statusDetail,
+        subtitle: detail ??
+            s.describeStatusDetail('bringing_up', vpn.engine) ??
+            vpn.statusDetail,
       );
     }
 

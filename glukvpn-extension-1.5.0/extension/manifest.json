@@ -25,6 +25,7 @@
 		"service_worker": "background.js",
 		"type": "module"
 	},
+	"incognito": "spanning",
 	"permissions": [
 		"proxy",
 		"storage",

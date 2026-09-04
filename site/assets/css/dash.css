@@ -1,0 +1,203 @@
+/* ==========================================================================
+   GlukVPN — личный кабинет /app/ (dash-*).
+
+   До 0.8.0 разметка кабинета уже использовала классы dash-*, dev-*, а в CSS
+   существовал только старый блок .acc-* из v3 — поэтому подписанный кабинет
+   рисовался «голым» HTML. Здесь весь визуальный слой кабинета: шапка
+   аккаунта, плитки статистики, карточки (стекло из tokens.css), карта,
+   список устройств, последние сессии, платежи, скелетон загрузки.
+
+   Скелетон переиспользует keyframes acct-shimmer из auth.css — обе таблицы
+   стилей подключены на страницах кабинета.
+   ========================================================================== */
+
+/* ------------------------------------------------------------ скелетон */
+.dash-load{display:grid;gap:14px;max-width:1080px;margin:0 auto}
+.dash-skel{height:88px;border-radius:20px;border:1px solid var(--stroke-soft);background:linear-gradient(90deg,rgba(255,255,255,.03) 0%,rgba(255,255,255,.085) 40%,rgba(255,255,255,.03) 80%);background-size:220% 100%;animation:acct-shimmer 1.35s linear infinite}
+.dash-skel--tall{height:300px}
+.dash-skel--row{height:58px;border-radius:14px}
+.dash-skel--inline{display:inline-block;width:110px;height:1em;vertical-align:middle;border-radius:6px;border:0}
+
+/* ------------------------------------------------------------ каркас */
+.dash-in{display:grid;gap:16px}
+.dash-grid{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr);gap:16px;align-items:start}
+.dash-col{display:grid;gap:16px;min-width:0}
+
+/* ------------------------------------------------------------ шапка аккаунта */
+.dash-top{display:flex;align-items:center;gap:18px;padding:20px 22px;border-radius:22px;border:1px solid rgba(167,139,250,.16);background:linear-gradient(165deg,rgba(29,17,54,.86),rgba(11,7,22,.92));box-shadow:0 26px 70px rgba(4,2,10,.5)}
+.dash-avatar{width:60px;height:60px;flex:none;border-radius:20px;display:grid;place-items:center;font-size:24px;font-weight:800;color:#07040f;background:var(--grad-cta);box-shadow:0 0 0 1px rgba(255,255,255,.16) inset,0 14px 34px rgba(109,77,224,.35)}
+.dash-id{min-width:0;flex:1;display:grid;gap:4px}
+.dash-name{margin:0;font-family:var(--font-display);font-size:20px;font-weight:800;letter-spacing:-.01em;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-mail{font-size:13.5px;color:var(--text-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.dash-badge{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text-1);font-size:12px;font-weight:650;white-space:nowrap;max-width:100%}
+.dash-badge svg{width:13px;height:13px;flex:none;opacity:.8}
+.dash-badge>span{overflow:hidden;text-overflow:ellipsis}
+.dash-badge--plan{color:#e2d6ff;border-color:rgba(168,85,247,.32);background:rgba(124,58,237,.16)}
+.dash-badge--plan[data-tier="2"]{color:#fff;border-color:rgba(201,169,255,.5);background:linear-gradient(135deg,rgba(168,85,247,.42),rgba(93,32,197,.36))}
+.dash-badge--ok{color:var(--green);border-color:rgba(94,231,163,.3);background:rgba(94,231,163,.09)}
+.dash-badge--warn{color:var(--amber);border-color:rgba(240,181,103,.3);background:rgba(240,181,103,.09)}
+.dash-badge--tester{color:#9fd8ff;border-color:rgba(56,189,248,.32);background:rgba(56,189,248,.1)}
+.dash-badge[hidden]{display:none}
+.dash-actions{display:flex;align-items:center;gap:8px;flex:none}
+.dash-ibtn{width:40px;height:40px;display:grid;place-items:center;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text-0);cursor:pointer;text-decoration:none;transition:border-color .18s ease,background .18s ease,transform .18s ease}
+.dash-ibtn:hover{border-color:rgba(168,85,247,.36);background:rgba(124,58,237,.14);transform:translateY(-1px)}
+.dash-ibtn svg{width:18px;height:18px}
+.dash-ibtn--danger{color:#ff9a9a}
+.dash-ibtn--danger:hover{border-color:rgba(255,120,120,.4);background:rgba(255,90,90,.12)}
+.dash-ibtn.is-busy svg{animation:dash-spin .9s linear infinite}
+@keyframes dash-spin{to{transform:rotate(360deg)}}
+
+/* ------------------------------------------------------------ плитки статистики */
+.dash-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.dash-stat{display:grid;gap:5px;padding:16px 18px;border-radius:18px;border:1px solid var(--stroke-soft);background:rgba(255,255,255,.028);min-width:0}
+.dash-stat__k{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:750;letter-spacing:.09em;text-transform:uppercase;color:var(--text-2)}
+.dash-stat__k svg{width:14px;height:14px;color:#c9a9ff;flex:none}
+.dash-stat__v{font-family:var(--font-display);font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.15;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-stat__v.is-ok{color:var(--green)}
+.dash-stat__v.is-warn{color:var(--amber)}
+.dash-stat__s{font-size:12.5px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ------------------------------------------------------------ карточки */
+.dash-card{position:relative;padding:20px 20px 18px;border-radius:22px;border:1px solid rgba(167,139,250,.13);background:linear-gradient(180deg,rgba(30,19,54,.62),rgba(11,6,22,.56));backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);display:grid;gap:14px;align-content:start;min-width:0}
+.dash-card[hidden]{display:none}
+.dash-card__head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.dash-card__title{display:flex;align-items:center;gap:9px;margin:0;font-size:15.5px;font-weight:750;letter-spacing:-.01em}
+.dash-card__title svg{width:17px;height:17px;color:#c9a9ff;flex:none}
+.dash-card__hint{font-size:12.5px;color:var(--text-2);text-align:right;flex:1;min-width:0}
+.dash-rows{display:grid;gap:6px}
+.dash-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.03);font-size:13.5px;color:var(--text-1)}
+.dash-row b{color:var(--text-0);font-weight:650;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+.dash-row b.is-ok{color:var(--green)}
+.dash-row b.is-warn{color:var(--amber)}
+.dash-row[hidden]{display:none}
+.dash-note{margin:0;font-size:12.5px;line-height:1.55;color:var(--text-2)}
+.dash-note a{color:#c9a9ff;text-decoration:none;border-bottom:1px solid rgba(201,169,255,.32)}
+.dash-cta{display:flex;flex-wrap:wrap;gap:8px}
+.dash-cta .btn{white-space:normal;text-align:center}
+.dash-msg{margin:0;min-height:0;font-size:12.5px;line-height:1.5;color:var(--text-1)}
+.dash-msg:empty{display:none}
+.dash-msg.is-ok{color:var(--green)}
+.dash-msg.is-err{color:#ffb4b4}
+.dash-empty{list-style:none;padding:16px 14px;border-radius:14px;border:1px dashed rgba(255,255,255,.12);color:var(--text-2);font-size:13px;line-height:1.55;text-align:center}
+
+/* подписка: индикатор оставшегося срока */
+.dash-meter{position:relative;height:8px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden}
+.dash-bar{display:block;height:100%;width:0;border-radius:999px;background:var(--grad-cta);transition:width .85s var(--ease-soft)}
+.dash-bar.is-low{background:linear-gradient(90deg,#f0b567,#e0603c)}
+.dash-bar.is-off{background:rgba(255,255,255,.14)}
+
+/* ------------------------------------------------------------ карта устройств */
+.dash-map{display:grid;gap:10px}
+.dash-map__stage{position:relative;border-radius:16px;border:1px solid var(--stroke-soft);background:radial-gradient(120% 120% at 50% 0%,rgba(124,77,234,.14),rgba(6,4,14,.55));overflow:hidden;aspect-ratio:2/1}
+.dash-map__canvas{display:block;width:100%;height:100%}
+.dash-map__overlay{position:absolute;inset:0;pointer-events:none}
+.dash-pin{position:absolute;transform:translate(-50%,-100%);display:inline-flex;align-items:center;gap:6px;padding:4px 9px 4px 6px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(10,7,20,.82);color:var(--text-0);font-size:11px;font-weight:650;white-space:nowrap;box-shadow:0 8px 22px rgba(0,0,0,.45)}
+.dash-pin svg{width:12px;height:12px;color:#c9a9ff}
+.dash-pin__dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
+.dash-pin--node{border-color:rgba(168,85,247,.4);background:rgba(76,29,149,.78)}
+.dash-map__legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--text-2)}
+.dash-map__legend span{display:inline-flex;align-items:center;gap:7px}
+.dash-map__legend i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dash-map__legend i.is-dev{background:var(--green);box-shadow:0 0 6px var(--green)}
+.dash-map__legend i.is-node{background:#a855f7;box-shadow:0 0 6px #a855f7}
+
+/* ------------------------------------------------------------ устройства */
+.dev-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.dev{display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:center;gap:12px;padding:11px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);transition:border-color .18s ease,background .18s ease}
+.dev:hover{border-color:rgba(168,85,247,.24);background:rgba(124,58,237,.07)}
+.dev--current{border-color:rgba(168,85,247,.3);background:rgba(124,58,237,.1)}
+.dev__ic{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;border:1px solid rgba(168,85,247,.22);background:rgba(124,58,237,.13);color:#c9a9ff}
+.dev__ic svg{width:19px;height:19px}
+.dev__body{display:grid;gap:3px;min-width:0}
+.dev__name{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:650;min-width:0}
+.dev__name>span:first-child,.dev__name>b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dev__tag{flex:none;display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;border:1px solid rgba(168,85,247,.32);background:rgba(124,58,237,.18);color:#e2d6ff;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.dev__meta{font-size:12.5px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dev__right{display:flex;align-items:center;gap:10px;flex:none}
+.dev__state{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:650;color:var(--text-2);white-space:nowrap}
+.dev__state i{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.22);flex:none}
+.dev__state.is-on{color:var(--green)}
+.dev__state.is-on i{background:var(--green);box-shadow:0 0 8px var(--green);animation:dash-pulse 2.2s ease-in-out infinite}
+@keyframes dash-pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.dev__btn{height:32px;padding:0 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text-0);font:inherit;font-size:12.5px;font-weight:650;cursor:pointer;white-space:nowrap;transition:border-color .18s ease,background .18s ease,color .18s ease}
+.dev__btn:hover{border-color:rgba(255,120,120,.4);background:rgba(255,90,90,.12);color:#ffc9c9}
+.dev__btn:disabled{opacity:.4;cursor:default;pointer-events:none}
+
+/* ------------------------------------------------------------ последние сессии */
+.ses-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.ses{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:11px;padding:9px 11px;border-radius:13px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.022)}
+.ses--live{border-color:rgba(94,231,163,.22);background:rgba(94,231,163,.05)}
+.ses__flag{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);font-size:18px;line-height:1}
+.ses__flag .flag-ic{width:22px;height:15px}
+.ses__body{display:grid;gap:2px;min-width:0}
+.ses__title{display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:650;min-width:0}
+.ses__title>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ses__live{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--green)}
+.ses__live i{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:dash-pulse 2.2s ease-in-out infinite}
+.ses__meta{font-size:12px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ses__right{display:grid;gap:2px;justify-items:end;text-align:right;flex:none}
+.ses__traffic{font-size:12.5px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ses__traffic svg{width:11px;height:11px;vertical-align:-1px;margin-right:2px;opacity:.7}
+.ses__dur{font-size:11.5px;color:var(--text-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* ------------------------------------------------------------ платежи */
+.ord-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.ord{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;padding:10px 12px;border-radius:13px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.022)}
+.ord__body{display:grid;gap:2px;min-width:0}
+.ord__title{font-size:13.5px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ord__meta{font-size:12px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ord__right{display:grid;gap:4px;justify-items:end;flex:none}
+.ord__amount{font-size:14px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ord__status{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text-1);font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.ord__status.is-paid{color:var(--green);border-color:rgba(94,231,163,.3);background:rgba(94,231,163,.09)}
+.ord__status.is-pending{color:var(--amber);border-color:rgba(240,181,103,.3);background:rgba(240,181,103,.09)}
+.ord__status.is-failed{color:#ffb4b4;border-color:rgba(255,120,120,.32);background:rgba(255,90,90,.09)}
+.ord__pay{height:28px;padding:0 10px;border-radius:9px;font-size:12px}
+
+/* ------------------------------------------------------------ безопасность */
+/* account.js пишет в сообщения формы классы is-ok / is-err, а .auth-msg из
+   auth.css показывается только с .is-on — сообщения «Пароль изменён» и ошибки
+   в кабинете были невидимы. Здесь они получают display и цвет. */
+.sec-form .auth-msg.is-ok,.sec-form .auth-msg.is-err{display:flex;margin-top:10px}
+.sec-form .auth-msg.is-ok{border:1px solid rgba(94,231,163,.3);background:rgba(94,231,163,.09);color:#a9f0c8}
+.sec-form .auth-msg.is-err{border:1px solid rgba(255,120,120,.32);background:rgba(255,90,90,.09);color:#ffc9c9}
+
+/* ------------------------------------------------------------ загрузки */
+.dash-dl{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.dash-dl__item{display:flex;align-items:center;gap:12px;padding:9px 10px 9px 12px;border-radius:13px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.022)}
+.dash-dl__item>svg{width:20px;height:20px;flex:none;color:var(--text-1)}
+.dash-dl__item>b{flex:1;font-size:13.5px;font-weight:650;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-dl__item .btn--sm{height:32px;padding:0 12px;border-radius:10px;font-size:12.5px}
+.dash-soon{display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:999px;border:1px dashed rgba(255,255,255,.16);color:var(--text-2);font-size:11.5px;font-weight:650;white-space:nowrap}
+
+/* ------------------------------------------------------------ адаптив */
+@media (max-width:1040px){
+  .dash-grid{grid-template-columns:1fr}
+  .dash-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:640px){
+  .dash-top{flex-wrap:wrap;padding:18px 16px;gap:14px}
+  .dash-avatar{width:52px;height:52px;font-size:21px;border-radius:17px}
+  .dash-id{flex:1 1 calc(100% - 66px)}
+  .dash-actions{width:100%;justify-content:flex-end;padding-top:12px;border-top:1px solid rgba(255,255,255,.07)}
+  .dash-card{padding:16px 14px;border-radius:18px}
+  .dash-card__hint{flex-basis:100%;text-align:left}
+  .dash-stat{padding:13px 14px}
+  .dash-stat__v{font-size:19px}
+  .dev{grid-template-columns:36px minmax(0,1fr);row-gap:8px}
+  .dev__ic{width:36px;height:36px}
+  .dev__right{grid-column:1/-1;justify-content:space-between;padding-top:8px;border-top:1px solid rgba(255,255,255,.06)}
+  .ses{grid-template-columns:30px minmax(0,1fr)}
+  .ses__flag{width:30px;height:30px;font-size:16px}
+  .ses__right{grid-column:2;justify-items:start;text-align:left;display:flex;gap:10px}
+  .dash-map__stage{aspect-ratio:16/10}
+}
+@media (max-width:420px){
+  .dash-stats{grid-template-columns:1fr}
+  .dash-cta .btn{width:100%}
+}
+@media (prefers-reduced-motion:reduce){
+  .dash-skel,.dev__state.is-on i,.ses__live i,.dash-ibtn.is-busy svg{animation:none}
+  .dash-bar{transition:none}
+}

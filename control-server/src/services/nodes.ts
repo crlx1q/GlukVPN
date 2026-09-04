@@ -87,11 +87,22 @@ export type PublicNodeView = {
 	loadPercent: number
 	activePeers: number
 	capacity: number
+	/** Minimum plan tier that may connect here (0 = free). */
+	tier: number
+	tierLabel: string
+	/** True when the node runs the sing-box VLESS-over-TLS gateway. */
+	hasGateway: boolean
 	cpuPercent: number | null
 	ramPercent: number | null
 	uptimeSeconds: number | null
 	agentVersion: string | null
 	lastHeartbeat: string | null
+}
+
+export function nodeTierLabel(tier: number): string {
+	if (tier >= 2) return "Pro"
+	if (tier === 1) return "Basic"
+	return "Free"
 }
 
 /**
@@ -119,6 +130,9 @@ export function toPublicNode(node: VpnNode): PublicNodeView {
 		loadPercent: nodeLoadPercent(node),
 		activePeers: node.activePeers,
 		capacity: node.capacity,
+		tier: node.tier,
+		tierLabel: nodeTierLabel(node.tier),
+		hasGateway: Boolean(node.gatewayHost && node.gatewayPort),
 		cpuPercent: node.cpuPercent ?? null,
 		ramPercent: node.ramPercent ?? null,
 		uptimeSeconds: node.uptimeSeconds ?? null,

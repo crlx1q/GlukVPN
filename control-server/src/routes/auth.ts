@@ -1,3 +1,4 @@
+import type { User } from "@prisma/client"
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 import { writeAudit } from "../lib/audit"
@@ -12,7 +13,11 @@ import {
 } from "../lib/errors"
 import { clientIp, getAuthUser, requireUser } from "../middleware/auth"
 import { prisma } from "../prisma"
+import { config } from "../config"
+import { latestSubscription, subscriptionPayload, userPayload } from "../services/accountView"
 import { refreshUserOrigin } from "../services/geo"
+import { googleConfigured, verifyGoogleIdToken } from "../services/googleAuth"
+import { startGoogleRegistration, telegramConfigured } from "../services/registration"
 import { closeSessionsForDevice } from "../services/sessions"
 import { checkLoginThrottle, recordLoginAttempt } from "../services/loginThrottle"
 import {
@@ -61,6 +66,19 @@ const ChangeUsernameBody = z.object({
 const RefreshBody = z.object({
 	refreshToken: z.string().min(20).max(512),
 })
+
+const GoogleBody = z.object({
+	// The ID token Google Identity Services hands to the page.
+	credential: z.string().min(20).max(4096),
+	mode: z.enum(["login", "register"]).optional(),
+})
+
+/** Wording for a refused account: blocked is said out loud, disabled stays neutral. */
+export function accountRefusedMessage(status: string): string {
+	return status === "BLOCKED"
+		? "This account has been blocked. Contact support."
+		: "User is disabled"
+}
 
 const LogoutBody = z
 	.object({
@@ -127,7 +145,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 			if (user.status !== "ACTIVE") {
 				await recordLoginAttempt(throttleKey, ip, false)
 				await writeAudit({ action: "auth.login.disabled_user", userId: user.id, ip })
-				throw forbidden("User is disabled")
+				throw forbidden(accountRefusedMessage(user.status))
 			}
 
 			await recordLoginAttempt(throttleKey, ip, true)
@@ -144,10 +162,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 				geoUpdatedAt: user.geoUpdatedAt,
 			})
 
-			const subscription = await prisma.subscription.findFirst({
-				where: { userId: user.id },
-				orderBy: { expiresAt: "desc" },
-			})
+			const subscription = await latestSubscription(user.id)
 
 			return reply.send({
 				tokenType: "Bearer",
@@ -155,29 +170,145 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 				expiresIn: tokens.accessTokenExpiresInSec,
 				refreshToken: tokens.refreshToken,
 				refreshTokenExpiresAt: tokens.refreshTokenExpiresAt.toISOString(),
-				user: {
-					id: user.id,
-					publicId: user.publicId,
-					username: user.username,
-					email: user.email,
-					emailVerified: user.emailVerifiedAt !== null,
-					isAdmin: user.isAdmin,
-					status: user.status,
-					maxDevices: user.maxDevices,
-					maxConcurrentSessions: user.maxSessions,
-					origin: {
-						country: user.lastCountry,
-						countryCode: user.lastCountryCode,
-						region: user.lastRegion,
-					},
-				},
-				subscription: subscription
-					? {
-							status: subscription.status,
-							expiresAt: subscription.expiresAt.toISOString(),
-						}
-					: null,
+				user: userPayload(user),
+				subscription: subscriptionPayload(subscription),
 			})
+		},
+	)
+
+	/**
+	 * "Continue with Google" (website). The browser posts the ID token that
+	 * Google Identity Services produced; we verify it against Google's keys and
+	 * then, in order:
+	 *
+	 *   1. an existing Google link -> sign that account in;
+	 *   2. an account with the same (verified) email -> link Google to it and
+	 *      sign in, so "I registered with a password, now I press Google" just
+	 *      works and never creates a duplicate;
+	 *   3. nobody -> start a registration. The address is already proven, so the
+	 *      code step is skipped; the Telegram contact step still applies unless
+	 *      GOOGLE_REQUIRE_TELEGRAM=false, in which case the account is created
+	 *      right here and signed in.
+	 */
+	app.post(
+		"/api/auth/google",
+		{ config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+		async (request, reply) => {
+			if (!googleConfigured()) {
+				throw serviceUnavailable("Google sign-in is not enabled on this server")
+			}
+			const parsed = GoogleBody.safeParse(request.body)
+			if (!parsed.success) throw badRequest("A Google credential is required")
+			const ip = clientIp(request)
+
+			const identity = await verifyGoogleIdToken(parsed.data.credential)
+			if (!identity.emailVerified) {
+				throw badRequest("Google reports this email as unverified")
+			}
+
+			const signIn = async (user: User) => {
+				if (user.status !== "ACTIVE") throw forbidden(accountRefusedMessage(user.status))
+				const tokens = await issueTokens(app, user, null)
+				void refreshUserOrigin({
+					userId: user.id,
+					ip,
+					knownCountryCode: user.lastCountryCode,
+					geoUpdatedAt: user.geoUpdatedAt,
+				})
+				const subscription = await latestSubscription(user.id)
+				return reply.send({
+					outcome: "signed_in",
+					tokenType: "Bearer",
+					accessToken: tokens.accessToken,
+					expiresIn: tokens.accessTokenExpiresInSec,
+					refreshToken: tokens.refreshToken,
+					refreshTokenExpiresAt: tokens.refreshTokenExpiresAt.toISOString(),
+					user: userPayload(user),
+					subscription: subscriptionPayload(subscription),
+				})
+			}
+
+			// 1. Already linked.
+			const link = await prisma.identityLink.findUnique({
+				where: { provider_providerUserId: { provider: "GOOGLE", providerUserId: identity.sub } },
+				include: { user: true },
+			})
+			const linked = link?.user ?? null
+			if (linked) {
+				await writeAudit({ action: "auth.login.google", userId: linked.id, ip })
+				return signIn(linked)
+			}
+
+			// 2. Same email -> link and sign in.
+			const byEmail = await prisma.user.findFirst({
+				where: { email: normalizeEmail(identity.email) },
+			})
+			if (byEmail) {
+				await prisma.identityLink.create({
+					data: {
+						userId: byEmail.id,
+						provider: "GOOGLE",
+						providerUserId: identity.sub,
+						providerEmail: identity.email,
+						providerName: identity.name,
+					},
+				})
+				// Google vouched for the address; a pending "verify your email" nag
+				// is now pointless.
+				const user = byEmail.emailVerifiedAt
+					? byEmail
+					: await prisma.user.update({
+							where: { id: byEmail.id },
+							data: { emailVerifiedAt: new Date() },
+						})
+				await writeAudit({
+					action: "auth.google.linked",
+					userId: user.id,
+					ip,
+					metadata: { email: identity.email },
+				})
+				return signIn(user)
+			}
+
+			// 3. New person.
+			if (!config.SELF_REGISTRATION_ENABLED) {
+				throw forbidden("Sign-up is closed on this server")
+			}
+			if (config.GOOGLE_REQUIRE_TELEGRAM) {
+				if (!telegramConfigured()) throw serviceUnavailable("Sign-up is temporarily unavailable")
+				const started = await startGoogleRegistration({
+					email: identity.email,
+					googleSub: identity.sub,
+					ip,
+				})
+				await writeAudit({
+					action: "auth.register.google_started",
+					ip,
+					metadata: { email: identity.email },
+				})
+				return reply.send({
+					outcome: "registration",
+					state: started.state,
+					email: identity.email,
+					telegramUrl: started.telegramUrl,
+					telegramCode: started.telegramCode,
+				})
+			}
+
+			// Instant account: Google proved the address, the operator waived Telegram.
+			const { createUserFromGoogle } = await import("../services/registration")
+			const created = await createUserFromGoogle({
+				email: identity.email,
+				googleSub: identity.sub,
+				name: identity.name,
+			})
+			await writeAudit({
+				action: "auth.register.google_completed",
+				userId: created.id,
+				ip,
+				metadata: { email: identity.email },
+			})
+			return signIn(created)
 		},
 	)
 
@@ -400,38 +531,13 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 		const { user, device } = getAuthUser(request)
 		const [deviceCount, subscription] = await Promise.all([
 			prisma.device.count({ where: { userId: user.id, status: "ACTIVE" } }),
-			prisma.subscription.findFirst({
-				where: { userId: user.id },
-				orderBy: { expiresAt: "desc" },
-			}),
+			latestSubscription(user.id),
 		])
 		return reply.send({
-			user: {
-				id: user.id,
-				publicId: user.publicId,
-				username: user.username,
-				email: user.email,
-				emailVerified: user.emailVerifiedAt !== null,
-				status: user.status,
-				isAdmin: user.isAdmin,
-				maxDevices: user.maxDevices,
-				maxConcurrentSessions: user.maxSessions,
-				createdAt: user.createdAt.toISOString(),
-				// Country/region only — the app draws the marker at a country centre.
-				origin: {
-					country: user.lastCountry,
-					countryCode: user.lastCountryCode,
-					region: user.lastRegion,
-				},
-			},
+			user: userPayload(user),
 			activeDevices: deviceCount,
 			currentDeviceId: device?.id ?? null,
-			subscription: subscription
-				? {
-						status: subscription.status,
-						expiresAt: subscription.expiresAt.toISOString(),
-					}
-				: null,
+			subscription: subscriptionPayload(subscription),
 		})
 	})
 }

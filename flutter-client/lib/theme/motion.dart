@@ -33,7 +33,8 @@ class MotionController extends ChangeNotifier with WidgetsBindingObserver {
 	StreamSubscription<BatteryState>? _batterySubscription;
 
 	/// Below this, animations stop even without the OS saver enabled.
-	static const _lowBatteryThreshold = 15;
+	static const int lowBatteryThreshold = 15;
+	static const _lowBatteryThreshold = lowBatteryThreshold;
 
 	bool _powerSaveMode = false;
 	bool _lowBattery = false;
@@ -42,6 +43,11 @@ class MotionController extends ChangeNotifier with WidgetsBindingObserver {
 
 	bool get powerSaveMode => _powerSaveMode;
 	bool get lowBattery => _lowBattery;
+
+	/// "Remove animations" in the accessibility settings. Exposed so the UI can
+	/// name the reason in the interface language; [reduceMotionReason] is the
+	/// English fallback for logs.
+	bool get systemDisablesAnimations => _systemDisablesAnimations;
 
 	/// True when looping animations should hold still.
 	bool get reduceMotion =>

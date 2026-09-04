@@ -71,19 +71,32 @@ class GlassPanel extends StatelessWidget {
 
 /// `.cell` - a labelled readout. The label is uppercase 10 px, the value
 /// 15 px bold with tabular figures so ticking numbers do not shift.
+///
+/// The value is either a plain [value] string or a ready-made [child] (a
+/// skeleton while the figure is loading, for instance). [valueStyle] is the
+/// style a child should adopt to sit exactly where the text would.
 class StatCell extends StatelessWidget {
 	const StatCell({
 		super.key,
 		required this.label,
-		required this.value,
+		this.value,
+		this.child,
 		this.valueColor,
 		this.trailing,
-	});
+	}) : assert(value != null || child != null, 'StatCell needs a value or a child');
 
 	final String label;
-	final String value;
+	final String? value;
+
+	/// Replaces the value text when set. Laid out in the same slot, so a
+	/// skeleton swapped for the real figure does not move the row.
+	final Widget? child;
 	final Color? valueColor;
 	final Widget? trailing;
+
+	/// The text style a [child] should use to match the plain [value] rendering.
+	static TextStyle? valueStyle(BuildContext context, {Color? color}) =>
+			Theme.of(context).textTheme.labelLarge?.copyWith(color: color);
 
 	@override
 	Widget build(BuildContext context) {
@@ -98,12 +111,13 @@ class StatCell extends StatelessWidget {
 					Row(
 						children: [
 							Flexible(
-								child: Text(
-									value,
-									maxLines: 1,
-									overflow: TextOverflow.ellipsis,
-									style: text.labelLarge?.copyWith(color: valueColor),
-								),
+								child: child ??
+										Text(
+											value ?? '',
+											maxLines: 1,
+											overflow: TextOverflow.ellipsis,
+											style: text.labelLarge?.copyWith(color: valueColor),
+										),
 							),
 							if (trailing != null) ...[const SizedBox(width: 6), trailing!],
 						],

@@ -5,6 +5,36 @@ import '../models/models.dart';
 import '../services/api_client.dart';
 import '../services/secure_store.dart';
 
+/// What [ChannelController.trySwitch] decided.
+///
+/// The UI renders these; it never has to know why a switch was refused in
+/// terms of HTTP. Only [switched] means the app now talks to another control
+/// plane - every other value leaves the active channel and its session intact.
+enum ChannelSwitchResult {
+  /// The app now talks to the target channel and the session was rebuilt from
+  /// that channel's own stored credentials.
+  switched,
+
+  /// The target was already the active channel; nothing happened.
+  alreadyActive,
+
+  /// Another switch (or its availability probe) is still in flight.
+  busy,
+
+  /// This build, or this account, may not use the target channel.
+  notAllowed,
+
+  /// `GET /api/version` on the target did not answer within the probe timeout.
+  /// Nothing changed: the current channel stays selected and its session is
+  /// untouched, so a flip towards a dead BETA host can no longer sign the user
+  /// out into the void.
+  targetUnavailable,
+}
+
+/// Reachability probe of one control plane: the version it reports, or `null`
+/// when it is down. Injected in tests so the decision logic runs offline.
+typedef ChannelProbe = Future<ChannelVersion?> Function(String baseUrl);
+
 /// Owns the answer to "which control plane is this app talking to": PROD
 /// (`api.gluk.tech`) or BETA (`beta-api.gluk.tech`).
 ///
@@ -25,13 +55,18 @@ class ChannelController extends ChangeNotifier {
     required ApiClient api,
     required SecureStore store,
     Future<void> Function(AppChannel channel)? onChannelChanged,
+    ChannelProbe? probeChannel,
   })  : _api = api,
         _store = store,
-        _onChannelChanged = onChannelChanged;
+        _onChannelChanged = onChannelChanged,
+        _probeChannel = probeChannel;
 
   final ApiClient _api;
   final SecureStore _store;
   final Future<void> Function(AppChannel channel)? _onChannelChanged;
+
+  /// Overrides [ApiClient.probeChannel]; `null` means the real network.
+  final ChannelProbe? _probeChannel;
 
   AppChannel _active = AppConfig.defaultChannel;
 
@@ -45,15 +80,37 @@ class ChannelController extends ChangeNotifier {
   bool _probing = false;
   String? _error;
 
+  /// The channel a [trySwitch] is currently probing or moving to.
+  AppChannel? _pendingTarget;
+
+  /// Outcome of the last [trySwitch], and which channel it was aimed at.
+  ChannelSwitchResult? _lastResult;
+  AppChannel? _lastTarget;
+
   final Map<AppChannel, ChannelVersion> _versions = <AppChannel, ChannelVersion>{};
   final Map<AppChannel, String> _unreachable = <AppChannel, String>{};
 
   AppChannel get active => _active;
   bool get isBeta => _active.isBeta;
-  bool get switching => _switching;
+
+  /// True from the moment a switch is requested until the new session has been
+  /// bootstrapped - the availability probe included.
+  bool get switching => _switching || _pendingTarget != null;
   bool get probing => _probing;
   String? get error => _error;
   String get baseUrl => AppConfig.baseUrlFor(_active);
+
+  /// The channel being switched to right now, for the spinner in its pill.
+  AppChannel? get pendingTarget => _pendingTarget;
+
+  ChannelSwitchResult? get lastSwitchResult => _lastResult;
+  AppChannel? get lastSwitchTarget => _lastTarget;
+
+  /// The channel the last switch attempt could not reach, or `null` when the
+  /// last attempt did not fail that way. The UI turns this into "the beta
+  /// server is currently unavailable" in the interface language.
+  AppChannel? get unavailableChannel =>
+      _lastResult == ChannelSwitchResult.targetUnavailable ? _lastTarget : null;
 
   /// The switch is hidden when beta was compiled out, and when the build was
   /// pinned to a custom host with `--dart-define=API_BASE_URL=...`, where a
@@ -61,16 +118,26 @@ class ChannelController extends ChangeNotifier {
   bool get canSwitch =>
       AppConfig.betaChannelAvailable && !AppConfig.hasBaseUrlOverride;
 
-  /// ROUND 5: the BETA switch belongs to admins only.
+  /// Who may see and use the channel switch: administrators, accounts flagged
+  /// as beta testers, and anybody running an internal build.
   ///
-  /// A normal account gets PROD and nothing else. The server enforces this
-  /// anyway - a non-admin is refused on the beta control plane and cannot
-  /// register there - so showing the switch only ever produced a confusing
-  /// failure. Hiding it is the honest UI, and hiding it here rather than in one
-  /// screen means the phone, the PC and the diagnostics panel all agree.
-  bool canSwitchAs(AuthUser? user) => canSwitch && (user?.isAdmin ?? false);
+  /// ROUND 5 made the switch admin-only, because the beta control plane
+  /// refuses everyone else and a switch that can only fail is a trap. Testers
+  /// are now let in by the server too (`AuthUser.isTester`), so the rule grows
+  /// by exactly that flag - one predicate, shared by the card in Settings and
+  /// by the start-up demotion below, so the two can never disagree.
+  bool isEntitled(AuthUser? user) =>
+      (user?.canUseBetaChannel ?? false) || AppConfig.internalBuild;
 
-  /// ROUND 12: nobody stays on BETA without an admin session.
+  /// The channel card is shown when the build can switch at all ([canSwitch])
+  /// *and* the person in front of the screen is entitled to ([isEntitled]).
+  bool canSwitchFor(AuthUser? user) => canSwitch && isEntitled(user);
+
+  /// Old name for [canSwitchFor]; testers were not part of the rule then.
+  @Deprecated('Use canSwitchFor(user): testers count as well as admins.')
+  bool canSwitchAs(AuthUser? user) => canSwitchFor(user);
+
+  /// ROUND 12: nobody stays on BETA without an entitled session.
   ///
   /// Round 11 hid the channel switch from non-admins and left a trap behind. A
   /// device moved to BETA by an earlier build kept talking to the beta plane
@@ -79,12 +146,10 @@ class ChannelController extends ChangeNotifier {
   /// account is not there at all: the whole thing reads as "my password stopped
   /// working", with nothing to suggest the app is asking the wrong server.
   ///
-  /// Signed out counts as "not an admin" on purpose - a login screen pointed
-  /// at beta can only ever refuse the person typing into it.
-  ///
   /// Safe to call repeatedly: once the channel is PROD this returns at once,
   /// so the [switchTo] callback re-running bootstrap cannot loop.
-  /// ROUND 25: signed out is not the same as "not an admin".
+  ///
+  /// ROUND 25: signed out is not the same as "not entitled".
   ///
   /// Round 12 demoted a signed-out app to PROD unconditionally, and that broke
   /// the only way into BETA: an admin flipped the switch, the demotion fired
@@ -93,14 +158,23 @@ class ChannelController extends ChangeNotifier {
   /// exist. A channel chosen by hand in this run therefore survives until a
   /// session actually says otherwise; a channel merely restored from storage
   /// still gets demoted, which is the trap Round 12 was written for.
-  Future<void> demoteIfNotAdmin(AuthUser? user) async {
+  ///
+  /// Testers are treated exactly like admins here, for the same reason they
+  /// see the switch: the beta plane accepts them, so there is no trap to
+  /// spring. Internal builds are never demoted - the card is always on screen
+  /// there, so the way back is one tap away.
+  Future<void> demoteIfNotEntitled(AuthUser? user) async {
     if (!_active.isBeta) return;
-    if (user?.isAdmin ?? false) return;
+    if (isEntitled(user)) return;
     if (user == null && _explicitBetaChoice) return;
-    debugPrint('channel: beta is admin-only, moving back to prod');
+    debugPrint('channel: beta is for admins and testers, moving back to prod');
     _explicitBetaChoice = false;
     await switchTo(AppChannel.prod);
   }
+
+  /// Old name for [demoteIfNotEntitled].
+  @Deprecated('Use demoteIfNotEntitled(user): testers may stay on beta.')
+  Future<void> demoteIfNotAdmin(AuthUser? user) => demoteIfNotEntitled(user);
 
   /// Version reported by `GET /api/version`, or null if never probed / down.
   ChannelVersion? versionOf(AppChannel channel) => _versions[channel];
@@ -108,9 +182,13 @@ class ChannelController extends ChangeNotifier {
   /// Why the last probe of [channel] failed, for the "BETA is off" hint.
   String? unreachableReason(AppChannel channel) => _unreachable[channel];
 
+  /// True when [channel] answered its last probe - the green dot under the
+  /// pill. A channel that was never probed counts as unreachable.
+  bool isReachable(AppChannel channel) => _versions.containsKey(channel);
+
   /// True when BETA answered its last probe: the BETA service is up and
   /// switching to it will not strand the user on a dead host.
-  bool get betaReachable => _versions.containsKey(AppChannel.beta);
+  bool get betaReachable => isReachable(AppChannel.beta);
 
   /// "PROD 1.0.0" / "PROD 1.0.0 · BETA 1.2.0" for the Settings header.
   String get versionSummary {
@@ -123,9 +201,13 @@ class ChannelController extends ChangeNotifier {
     return parts.join(' \u00b7 ');
   }
 
+  /// Dismisses the error line: both the free-text [error] and the outcome of
+  /// the last [trySwitch].
   void clearError() {
-    if (_error == null) return;
+    if (_error == null && _lastResult == null) return;
     _error = null;
+    _lastResult = null;
+    _lastTarget = null;
     notifyListeners();
   }
 
@@ -146,7 +228,15 @@ class ChannelController extends ChangeNotifier {
     _api.setBaseUrl(AppConfig.baseUrlFor(channel));
   }
 
-  Future<bool> switchTo(AppChannel channel) async {
+  /// Moves to [channel] unconditionally: no availability check.
+  ///
+  /// This is the path back to PROD for the start-up demotion, which must work
+  /// even while PROD is briefly down. Everything driven by a tap goes through
+  /// [trySwitch] instead, which probes the target first.
+  Future<bool> switchTo(AppChannel channel) =>
+      _switchTo(channel, reprobe: true);
+
+  Future<bool> _switchTo(AppChannel channel, {required bool reprobe}) async {
     if (_switching) return false;
     if (channel == _active) return true;
     if (channel.isBeta && !canSwitch) {
@@ -163,7 +253,9 @@ class ChannelController extends ChangeNotifier {
       _explicitBetaChoice = channel.isBeta;
       await _store.writeActiveChannel(channel.id);
       await _onChannelChanged?.call(channel);
-      await probe(channel);
+      // trySwitch has just read the version it is switching to; asking again
+      // would only delay the spinner.
+      if (reprobe) await probe(channel);
       return true;
     } finally {
       _switching = false;
@@ -171,9 +263,74 @@ class ChannelController extends ChangeNotifier {
     }
   }
 
-  /// Settings exposes this as a plain BETA on/off switch.
-  Future<bool> setBetaEnabled(bool enabled) =>
-      switchTo(enabled ? AppChannel.beta : AppChannel.prod);
+  /// The channel card's tap handler: check that [target] answers, then switch.
+  ///
+  /// `GET /api/version` is asked on the target host with a 1.5 s budget, in
+  /// both directions - PROD can be mid-deploy just as BETA can be switched
+  /// off. When there is no answer the result is [ChannelSwitchResult
+  /// .targetUnavailable] and *nothing else happens*: the active channel, its
+  /// tokens and the signed-in session are exactly as they were. The outcome is
+  /// kept in [lastSwitchResult] / [unavailableChannel] so the card can render
+  /// it after the future completes, and cleared by [clearError] or by the next
+  /// attempt.
+  Future<ChannelSwitchResult> trySwitch(AppChannel target) async {
+    // The public getter: a probe in flight counts as switching too.
+    if (switching) return ChannelSwitchResult.busy;
+    if (target == _active) return ChannelSwitchResult.alreadyActive;
+    if (target.isBeta && !canSwitch) {
+      _record(target, ChannelSwitchResult.notAllowed);
+      return ChannelSwitchResult.notAllowed;
+    }
+
+    _pendingTarget = target;
+    _lastResult = null;
+    _lastTarget = null;
+    _error = null;
+    notifyListeners();
+    try {
+      final String url = AppConfig.baseUrlFor(target);
+      final ChannelVersion? version = await _probeTarget(url);
+      if (version == null) {
+        _versions.remove(target);
+        _unreachable[target] = 'No answer from $url.';
+        _record(target, ChannelSwitchResult.targetUnavailable);
+        return ChannelSwitchResult.targetUnavailable;
+      }
+      _versions[target] = version;
+      _unreachable.remove(target);
+
+      final bool moved = await _switchTo(target, reprobe: false);
+      final ChannelSwitchResult result =
+          moved ? ChannelSwitchResult.switched : ChannelSwitchResult.busy;
+      _record(target, result);
+      return result;
+    } finally {
+      _pendingTarget = null;
+      notifyListeners();
+    }
+  }
+
+  Future<ChannelVersion?> _probeTarget(String baseUrl) {
+    final ChannelProbe? custom = _probeChannel;
+    if (custom != null) return custom(baseUrl);
+    return _api.probeChannel(baseUrl);
+  }
+
+  void _record(AppChannel target, ChannelSwitchResult result) {
+    _lastTarget = target;
+    _lastResult = result;
+    notifyListeners();
+  }
+
+  /// Settings used to expose this as a plain BETA on/off switch. Kept for
+  /// callers that still think in on/off; it now goes through [trySwitch], so
+  /// a dead target is refused instead of signing the user out.
+  Future<bool> setBetaEnabled(bool enabled) async {
+    final ChannelSwitchResult result =
+        await trySwitch(enabled ? AppChannel.beta : AppChannel.prod);
+    return result == ChannelSwitchResult.switched ||
+        result == ChannelSwitchResult.alreadyActive;
+  }
 
   /// Reads `GET /api/version` for one channel.
   ///
