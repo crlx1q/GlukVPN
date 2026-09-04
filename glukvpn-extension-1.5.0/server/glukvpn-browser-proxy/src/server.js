@@ -53,6 +53,7 @@ const log = (level, ...args) => {
 /* ------------------------------------------------------------------- stats */
 
 const stats = new Map() // deviceId -> counters
+const userStats = new Map() // userId -> counters
 const totals = { bytesRx: 0, bytesTx: 0, connections: 0, active: 0 }
 
 function counters(deviceId) {
@@ -62,6 +63,28 @@ function counters(deviceId) {
 		stats.set(deviceId, entry)
 	}
 	return entry
+}
+
+function userCounters(userId) {
+	if (!userId) return null
+	let entry = userStats.get(userId)
+	if (!entry) {
+		entry = { bytesRx: 0, bytesTx: 0, connections: 0, active: 0, since: Date.now() }
+		userStats.set(userId, entry)
+	}
+	return entry
+}
+
+function extractUserId(token) {
+	if (!token || typeof token !== 'string') return null
+	try {
+		const part = token.split('.')[1]
+		if (!part) return null
+		const json = JSON.parse(Buffer.from(part, 'base64url').toString('utf8'))
+		return json.sub || null
+	} catch {
+		return null
+	}
 }
 
 /* -------------------------------------------------------------------- auth */
@@ -95,8 +118,10 @@ async function verifyWith(apiBase, credentials) {
 			} else if (REQUIRE_SESSION && body.connected !== true) {
 				return { ok: false, reason: 'no-active-session', until: Date.now() + 10_000 }
 			} else {
+				const userId = extractUserId(credentials.token)
 				return {
 					ok: true,
+					userId,
 					deviceId: credentials.username || body.session?.deviceId || 'browser',
 					until: Date.now() + AUTH_TTL_MS,
 				}
@@ -115,7 +140,15 @@ async function verify(credentials) {
 	if (!credentials?.token) return { ok: false, reason: 'missing-credentials' }
 	const key = crypto.createHash('sha256').update(credentials.token).digest('hex')
 	const cached = authCache.get(key)
-	if (cached && cached.until > Date.now()) return cached
+	if (cached && cached.until > Date.now()) {
+		if (credentials.username && cached.deviceId !== credentials.username) {
+			cached.deviceId = credentials.username
+		}
+		if (!cached.userId) {
+			cached.userId = extractUserId(credentials.token)
+		}
+		return cached
+	}
 
 	let result = await verifyWith(CONTROL_API, credentials)
 	if (!result || !result.ok) {
@@ -207,17 +240,27 @@ async function handleControl(req, res, path) {
 		return
 	}
 	const mine = counters(auth.deviceId)
-	log('info', `Control stats allowed for device ${auth.deviceId} from ${req.socket.remoteAddress}: rx=${mine.bytesRx}, tx=${mine.bytesTx}, active=${mine.active}`)
+	const uStat = userCounters(auth.userId)
+	const bytesRx = Math.max(mine.bytesRx, uStat?.bytesRx ?? 0)
+	const bytesTx = Math.max(mine.bytesTx, uStat?.bytesTx ?? 0)
+	const active = Math.max(mine.active, uStat?.active ?? 0)
+	const totalConnections = Math.max(mine.connections, uStat?.connections ?? 0)
+
+	// Keep device counters in sync with the user's total proxy usage
+	mine.bytesRx = bytesRx
+	mine.bytesTx = bytesTx
+
+	log('info', `Control stats allowed for device ${auth.deviceId} (user ${auth.userId}) from ${req.socket.remoteAddress}: rx=${bytesRx}, tx=${bytesTx}, active=${active}`)
 	sendJson(res, 200, {
 		ok: true,
 		version: VERSION,
 		requireSession: REQUIRE_SESSION,
 		uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
 		// The extension shows these as Downloaded / Uploaded, from the browser's view.
-		bytesRx: mine.bytesRx,
-		bytesTx: mine.bytesTx,
-		connections: mine.active,
-		totalConnections: mine.connections,
+		bytesRx,
+		bytesTx,
+		connections: active,
+		totalConnections,
 		gateway: { activeConnections: totals.active, totalConnections: totals.connections },
 	})
 }
@@ -239,7 +282,7 @@ async function handleRequest(req, res) {
 	const auth = await verify(credentials)
 	if (!auth.ok) {
 		res.writeHead(407, {
-			'proxy-authenticate': 'Basic realm="GlukVPN"',
+			'proxy-authenticate': 'Basic realm="GlukVPN-Browser"',
 			'content-type': 'application/json',
 		})
 		res.end(JSON.stringify({ error: { code: auth.reason ?? 'unauthorized' } }))
@@ -268,6 +311,7 @@ async function handleRequest(req, res) {
 	}
 
 	const stat = counters(auth.deviceId)
+	const uStat = userCounters(auth.userId)
 	const headers = { ...req.headers }
 	delete headers['proxy-authorization']
 	delete headers['proxy-connection']
@@ -279,6 +323,7 @@ async function handleRequest(req, res) {
 			res.writeHead(upstreamRes.statusCode || 502, upstreamRes.headers)
 			upstreamRes.on('data', (chunk) => {
 				stat.bytesRx += chunk.length
+				if (uStat) uStat.bytesRx += chunk.length
 				totals.bytesRx += chunk.length
 			})
 			upstreamRes.pipe(res)
@@ -291,6 +336,7 @@ async function handleRequest(req, res) {
 	})
 	req.on('data', (chunk) => {
 		stat.bytesTx += chunk.length
+		if (uStat) uStat.bytesTx += chunk.length
 		totals.bytesTx += chunk.length
 	})
 	req.pipe(upstream)
@@ -305,7 +351,7 @@ function denyConnect(socket, code, reason) {
 		code === 429 ? 'Too Many Requests' :
 		code === 502 ? 'Bad Gateway' : (reason || 'Error')
 	const extra =
-		code === 407 ? 'Proxy-Authenticate: Basic realm="GlukVPN"\r\n' : ''
+		code === 407 ? 'Proxy-Authenticate: Basic realm="GlukVPN-Browser"\r\n' : ''
 	const payload = `HTTP/1.1 ${code} ${statusText}\r\n${extra}Proxy-Agent: GlukVPN-Gateway/${VERSION}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`
 	try {
 		socket.end(payload)
@@ -324,7 +370,7 @@ async function handleConnect(req, clientSocket, head) {
 		denyConnect(clientSocket, auth.reason === 'token-rejected' || !credentials ? 407 : 403, auth.reason ?? 'Forbidden')
 		return
 	}
-	log('info', `CONNECT allowed for device ${auth.deviceId} from ${clientSocket.remoteAddress} to ${req.url}`)
+	log('info', `CONNECT allowed for device ${auth.deviceId} (user ${auth.userId}) from ${clientSocket.remoteAddress} to ${req.url}`)
 
 	const [rawHost, rawPort] = String(req.url || '').split(':')
 	const port = Number(rawPort || 443)
@@ -334,6 +380,7 @@ async function handleConnect(req, clientSocket, head) {
 	}
 
 	const stat = counters(auth.deviceId)
+	const uStat = userCounters(auth.userId)
 	if (stat.active >= MAX_PER_DEVICE) {
 		denyConnect(clientSocket, 429, 'Too Many Connections')
 		return
@@ -350,19 +397,30 @@ async function handleConnect(req, clientSocket, head) {
 	const upstream = net.connect({ host: address, port }, () => {
 		stat.connections += 1
 		stat.active += 1
+		if (uStat) {
+			uStat.connections += 1
+			uStat.active += 1
+		}
 		totals.connections += 1
 		totals.active += 1
 		clientSocket.write(
 			`HTTP/1.1 200 Connection Established\r\nProxy-Agent: GlukVPN-Gateway/${VERSION}\r\n\r\n`,
 		)
-		if (head?.length) upstream.write(head)
+		if (head?.length) {
+			upstream.write(head)
+			stat.bytesTx += head.length
+			if (uStat) uStat.bytesTx += head.length
+			totals.bytesTx += head.length
+		}
 
 		clientSocket.on('data', (chunk) => {
 			stat.bytesTx += chunk.length
+			if (uStat) uStat.bytesTx += chunk.length
 			totals.bytesTx += chunk.length
 		})
 		upstream.on('data', (chunk) => {
 			stat.bytesRx += chunk.length
+			if (uStat) uStat.bytesRx += chunk.length
 			totals.bytesRx += chunk.length
 		})
 		clientSocket.pipe(upstream)
@@ -374,6 +432,7 @@ async function handleConnect(req, clientSocket, head) {
 		if (closed) return
 		closed = true
 		if (stat.active > 0) stat.active -= 1
+		if (uStat && uStat.active > 0) uStat.active -= 1
 		if (totals.active > 0) totals.active -= 1
 		upstream.destroy()
 		clientSocket.destroy()
