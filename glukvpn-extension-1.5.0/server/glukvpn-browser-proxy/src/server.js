@@ -167,13 +167,31 @@ function sendJson(res, code, body) {
 		'content-length': Buffer.byteLength(payload),
 		'cache-control': 'no-store',
 		'access-control-allow-origin': '*',
+		'access-control-allow-methods': 'GET, POST, OPTIONS',
+		'access-control-allow-headers': 'authorization, proxy-authorization, content-type',
 	})
 	res.end(payload)
 }
 
 async function handleControl(req, res, path) {
+	if (req.method === 'OPTIONS') {
+		res.writeHead(204, {
+			'access-control-allow-origin': '*',
+			'access-control-allow-methods': 'GET, POST, OPTIONS',
+			'access-control-allow-headers': 'authorization, proxy-authorization, content-type',
+			'access-control-max-age': '86400',
+			'cache-control': 'no-store',
+		})
+		res.end()
+		return
+	}
 	if (path === '/__gluk/ping') {
-		res.writeHead(204, { 'access-control-allow-origin': '*', 'cache-control': 'no-store' })
+		res.writeHead(204, {
+			'access-control-allow-origin': '*',
+			'access-control-allow-methods': 'GET, POST, OPTIONS',
+			'access-control-allow-headers': 'authorization, proxy-authorization, content-type',
+			'cache-control': 'no-store',
+		})
 		res.end()
 		return
 	}

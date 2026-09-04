@@ -584,7 +584,12 @@ async function poll() {
 			return
 		}
 		const gateway = runtime.gateway
-		const credentials = await ProxyEngine.credentials()
+		const session = await Store.session()
+		const device = await Store.device()
+		const token = session?.tokens?.accessToken
+		const credentials = token
+			? { username: device?.id ?? 'browser', password: token }
+			: await ProxyEngine.credentials()
 		const [stats, publicIp] = await Promise.all([
 			gateway ? gatewayStats(gateway, credentials) : null,
 			runtime.stats?.publicIp ? Promise.resolve(runtime.stats.publicIp) : Api.probeExitIp(),
@@ -815,6 +820,7 @@ const HANDLERS = {
 		// seconds, so coming back to it right after approving on the website
 		// collects the tokens at once instead of waiting for the alarm.
 		void runLinkPoll()
+		void poll()
 		return state()
 	},
 	login,
