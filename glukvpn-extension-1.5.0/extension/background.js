@@ -556,7 +556,13 @@ async function disconnect({ silent } = {}) {
 	chrome.alarms.clear(POLL_ALARM)
 	try {
 		const runtime = await Store.runtime()
-		if ((await Store.session())?.tokens) await Api.disconnect(runtime?.session?.id ?? null)
+		if ((await Store.session())?.tokens) {
+			await Api.disconnect({
+				sessionId: runtime?.session?.id ?? undefined,
+				downloadBytes: runtime?.stats?.bytesRx ?? 0,
+				uploadBytes: runtime?.stats?.bytesTx ?? 0,
+			})
+		}
 	} catch {}
 	const signedIn = Boolean((await Store.session())?.tokens)
 	await patchRuntime({
@@ -614,6 +620,14 @@ async function poll() {
 			},
 			gatewayMisses: stats === null ? (runtime.gatewayMisses ?? 0) + 1 : 0,
 		})
+		if (stats && (stats.bytesRx > 0 || stats.bytesTx > 0)) {
+			Api.reportStats({
+				sessionId: runtime.session?.id ?? undefined,
+				downloadBytes: stats.bytesRx,
+				uploadBytes: stats.bytesTx,
+				transport: 'browser',
+			}).catch(() => {})
+		}
 		// Two misses in a row (~30s) means the gateway went away. Fail loudly and
 		// hand the browser its internet back instead of faking a live tunnel.
 		if (stats === null && (runtime.gatewayMisses ?? 0) + 1 >= 2) {

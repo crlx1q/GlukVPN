@@ -18,8 +18,23 @@ const ConnectBody = z
 	.optional()
 
 const DisconnectBody = z
-	.object({ sessionId: z.string().uuid("Invalid session id").optional() })
+	.object({
+		sessionId: z.string().uuid("Invalid session id").optional(),
+		bytesRx: z.coerce.number().min(0).optional(),
+		bytesTx: z.coerce.number().min(0).optional(),
+		downloadBytes: z.coerce.number().min(0).optional(),
+		uploadBytes: z.coerce.number().min(0).optional(),
+	})
 	.optional()
+
+const StatsBody = z.object({
+	sessionId: z.string().uuid("Invalid session id").optional(),
+	bytesRx: z.coerce.number().min(0).optional(),
+	bytesTx: z.coerce.number().min(0).optional(),
+	downloadBytes: z.coerce.number().min(0).optional(),
+	uploadBytes: z.coerce.number().min(0).optional(),
+	transport: z.string().trim().max(40).optional(),
+})
 
 export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 	// Device-scoped token required: a plain login token cannot open a tunnel.
@@ -81,6 +96,25 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 			// A device may only close its own sessions.
 			if (session.deviceId !== device.id) throw notFound("Session not found")
 
+			// Update final byte counters if provided before closing session
+			const upload = parsed.data?.uploadBytes ?? parsed.data?.bytesRx
+			const download = parsed.data?.downloadBytes ?? parsed.data?.bytesTx
+			if (upload !== undefined || download !== undefined) {
+				await prisma.session.update({
+					where: { id: session.id },
+					data: {
+						...(upload !== undefined
+							? { bytesRx: BigInt(Math.max(Number(session.bytesRx), Math.floor(upload))) }
+							: {}),
+						...(download !== undefined
+							? { bytesTx: BigInt(Math.max(Number(session.bytesTx), Math.floor(download))) }
+							: {}),
+						lastHandshakeAt: new Date(),
+						...(session.transport === "wireguard" ? { transport: "browser" } : {}),
+					},
+				}).catch(() => undefined)
+			}
+
 			await closeSession({
 				sessionId: session.id,
 				reason: "user_request",
@@ -95,6 +129,65 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 				ok: true,
 				session: closed ? toSessionView(closed) : null,
 			})
+		},
+	)
+
+	app.post(
+		"/api/vpn/stats",
+		{
+			preHandler: requireUser,
+			config: { rateLimit: { max: 120, timeWindow: "1 minute" } },
+		},
+		async (request, reply) => {
+			const parsed = StatsBody.safeParse(request.body ?? {})
+			if (!parsed.success) throw badRequest("Invalid stats payload")
+			const { user, device } = getAuthUser(request)
+
+			const requestedId = parsed.data.sessionId
+			const session = requestedId
+				? await prisma.session.findUnique({ where: { id: requestedId } })
+				: device
+					? await findLiveSessionForDevice(device.id)
+					: (await findLiveSessionsForUser(user.id))[0]
+
+			if (!session) {
+				return reply.send({ ok: false, reason: "no_active_session" })
+			}
+
+			// A device/user may only report stats for their own sessions
+			if (session.userId !== user.id) throw notFound("Session not found")
+
+			const upload = parsed.data.uploadBytes ?? parsed.data.bytesRx
+			const download = parsed.data.downloadBytes ?? parsed.data.bytesTx
+			const now = new Date()
+
+			const updated = await prisma.session.update({
+				where: { id: session.id },
+				data: {
+					...(upload !== undefined
+						? { bytesRx: BigInt(Math.max(Number(session.bytesRx), Math.floor(upload))) }
+						: {}),
+					...(download !== undefined
+						? { bytesTx: BigInt(Math.max(Number(session.bytesTx), Math.floor(download))) }
+						: {}),
+					lastHandshakeAt: now,
+					transport:
+						parsed.data.transport ||
+						(session.transport === "wireguard" ? "browser" : session.transport),
+				},
+				include: { node: true },
+			})
+
+			if (device) {
+				await prisma.device
+					.update({
+						where: { id: device.id },
+						data: { lastSeen: now },
+					})
+					.catch(() => undefined)
+			}
+
+			return reply.send({ ok: true, session: toSessionView(updated) })
 		},
 	)
 

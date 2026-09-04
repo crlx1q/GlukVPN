@@ -285,7 +285,14 @@ export const Api = {
 	revokeDevice: (id) => request('DELETE', `/api/devices/${id}`),
 
 	connect: (nodeId) => request('POST', '/api/vpn/connect', { body: nodeId ? { nodeId } : {} }),
-	disconnect: (sessionId) => request('POST', '/api/vpn/disconnect', { body: sessionId ? { sessionId } : {} }),
+	disconnect: (payload) =>
+		request('POST', '/api/vpn/disconnect', {
+			body: payload && typeof payload === 'object' ? payload : payload ? { sessionId: payload } : {},
+		}),
+	reportStats: ({ downloadBytes, uploadBytes, sessionId, transport = 'browser' } = {}) =>
+		request('POST', '/api/vpn/stats', {
+			body: { downloadBytes, uploadBytes, sessionId, transport },
+		}),
 	status: () => request('GET', '/api/vpn/status'),
 
 	/** Public IP as seen from the current path. While the gateway is up this must

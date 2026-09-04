@@ -59,7 +59,7 @@ const totals = { bytesRx: 0, bytesTx: 0, connections: 0, active: 0 }
 function counters(deviceId) {
 	let entry = stats.get(deviceId)
 	if (!entry) {
-		entry = { bytesRx: 0, bytesTx: 0, connections: 0, active: 0, since: Date.now() }
+		entry = { bytesRx: 0, bytesTx: 0, connections: 0, active: 0, since: Date.now(), token: null, reportedRx: 0, reportedTx: 0 }
 		stats.set(deviceId, entry)
 	}
 	return entry
@@ -69,7 +69,7 @@ function userCounters(userId) {
 	if (!userId) return null
 	let entry = userStats.get(userId)
 	if (!entry) {
-		entry = { bytesRx: 0, bytesTx: 0, connections: 0, active: 0, since: Date.now() }
+		entry = { bytesRx: 0, bytesTx: 0, connections: 0, active: 0, since: Date.now(), token: null, reportedRx: 0, reportedTx: 0 }
 		userStats.set(userId, entry)
 	}
 	return entry
@@ -166,6 +166,52 @@ setInterval(() => {
 	for (const [key, value] of authCache) if (value.until <= now) authCache.delete(key)
 }, 60_000).unref()
 
+async function reportToControlPlane(apiBase, token, deviceId, bytesRx, bytesTx) {
+	if (!token || (!bytesRx && !bytesTx)) return
+	try {
+		const payload = JSON.stringify({
+			downloadBytes: bytesRx,
+			uploadBytes: bytesTx,
+			transport: 'browser',
+		})
+		let res = await fetch(`${apiBase}/api/vpn/stats`, {
+			method: 'POST',
+			headers: {
+				'authorization': `Bearer ${token}`,
+				'content-type': 'application/json',
+			},
+			body: payload,
+		})
+		if (!res.ok && apiBase === CONTROL_API) {
+			const fallbackApi = CONTROL_API.includes('8082') ? 'http://127.0.0.1:8081' : 'http://127.0.0.1:8082'
+			await fetch(`${fallbackApi}/api/vpn/stats`, {
+				method: 'POST',
+				headers: {
+					'authorization': `Bearer ${token}`,
+					'content-type': 'application/json',
+				},
+				body: payload,
+			}).catch(() => {})
+		}
+	} catch (err) {
+		log('debug', `Failed to report stats to ${apiBase} for device ${deviceId}:`, err.message)
+	}
+}
+
+async function flushStatsToControlPlane() {
+	for (const [deviceId, stat] of stats) {
+		if (!stat.token) continue
+		const rx = stat.bytesRx || 0
+		const tx = stat.bytesTx || 0
+		if (rx === stat.reportedRx && tx === stat.reportedTx) continue
+		stat.reportedRx = rx
+		stat.reportedTx = tx
+		await reportToControlPlane(CONTROL_API, stat.token, deviceId, rx, tx)
+	}
+}
+
+setInterval(flushStatsToControlPlane, 10_000).unref()
+
 /* ------------------------------------------------------------ target rules */
 
 const PRIVATE_V4 =
@@ -241,6 +287,10 @@ async function handleControl(req, res, path) {
 	}
 	const mine = counters(auth.deviceId)
 	const uStat = userCounters(auth.userId)
+	if (credentials?.token) {
+		mine.token = credentials.token
+		if (uStat) uStat.token = credentials.token
+	}
 	const bytesRx = Math.max(mine.bytesRx, uStat?.bytesRx ?? 0)
 	const bytesTx = Math.max(mine.bytesTx, uStat?.bytesTx ?? 0)
 	const active = Math.max(mine.active, uStat?.active ?? 0)
@@ -249,6 +299,9 @@ async function handleControl(req, res, path) {
 	// Keep device counters in sync with the user's total proxy usage
 	mine.bytesRx = bytesRx
 	mine.bytesTx = bytesTx
+
+	// Synchronize with control plane so admin panel and database session reflect active traffic
+	void reportToControlPlane(CONTROL_API, credentials?.token, auth.deviceId, bytesRx, bytesTx)
 
 	log('info', `Control stats allowed for device ${auth.deviceId} (user ${auth.userId}) from ${req.socket.remoteAddress}: rx=${bytesRx}, tx=${bytesTx}, active=${active}`)
 	sendJson(res, 200, {
@@ -312,6 +365,10 @@ async function handleRequest(req, res) {
 
 	const stat = counters(auth.deviceId)
 	const uStat = userCounters(auth.userId)
+	if (credentials?.token) {
+		stat.token = credentials.token
+		if (uStat) uStat.token = credentials.token
+	}
 	const headers = { ...req.headers }
 	delete headers['proxy-authorization']
 	delete headers['proxy-connection']
@@ -381,6 +438,10 @@ async function handleConnect(req, clientSocket, head) {
 
 	const stat = counters(auth.deviceId)
 	const uStat = userCounters(auth.userId)
+	if (credentials?.token) {
+		stat.token = credentials.token
+		if (uStat) uStat.token = credentials.token
+	}
 	if (stat.active >= MAX_PER_DEVICE) {
 		denyConnect(clientSocket, 429, 'Too Many Connections')
 		return
