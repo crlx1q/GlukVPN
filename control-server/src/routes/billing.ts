@@ -12,9 +12,14 @@ import {
 	planView,
 	verifyStripeSignature,
 } from "../services/billing"
+import { normalizeCurrency, resolveMarket } from "../services/pricing"
 
 const CreateOrderBody = z.object({
 	planCode: z.string().trim().min(2).max(32),
+	// Optional: the client echoes back the currency it was quoted in, so a
+	// visitor who saw roubles is charged in roubles even if the edge changes
+	// its mind about their country between the two requests.
+	currency: z.string().trim().min(3).max(3).optional(),
 })
 
 /**
@@ -25,13 +30,21 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 	app.get(
 		"/api/billing/plans",
 		{ config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
-		async (_request, reply) => {
+		async (request, reply) => {
+			// Price follows the visitor, not the server. Cloudflare adds
+			// CF-IPCountry at the edge; ?currency= lets a client override it.
+			// `market` is in the reply so the site and the apps can also pick
+			// their language from the same answer instead of guessing twice.
+			const market = resolveMarket(request)
+			const asked = (request.query as { currency?: string } | undefined)?.currency
+			const currency = normalizeCurrency(asked) ?? market.currency
 			const plans = await listPlans()
 			return reply.send({
 				billingEnabled: config.billingEnabled,
 				provider: config.billingEnabled ? config.BILLING_PROVIDER : null,
-				currency: config.BILLING_CURRENCY,
-				plans: plans.map(planView),
+				currency,
+				market,
+				plans: plans.map((plan) => planView(plan, currency)),
 			})
 		},
 	)
@@ -47,6 +60,9 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 				user,
 				planCode: parsed.data.planCode,
 				ip: clientIp(request),
+				// Charge in the currency the visitor was actually quoted.
+				currency:
+					normalizeCurrency(parsed.data.currency) ?? resolveMarket(request).currency,
 			})
 			return reply.code(201).send({
 				order: orderView(order),

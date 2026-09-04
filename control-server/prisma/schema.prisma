@@ -501,16 +501,45 @@ model Plan {
   currency    String   @default("KZT")
   maxDevices  Int      @default(3) @map("max_devices")
   maxSessions Int      @default(1) @map("max_sessions")
+  /// Monthly traffic cap in GB. NULL = uncapped, so an unmetered tier needs no
+  /// sentinel value.
+  trafficGb   Int?     @map("traffic_gb")
   features    Json     @default("[]") @db.JsonB
   featured    Boolean  @default(false)
   active      Boolean  @default(true)
+  /// Whether the plan appears in the public catalogue. Distinct from `active`,
+  /// which governs whether it may be granted or renewed at all: the internal
+  /// beta tier has to stay grantable while never being offered for sale.
+  isPublic    Boolean  @default(true) @map("is_public")
   sortOrder   Int      @default(0) @map("sort_order")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   orders Order[]
+  prices PlanPrice[]
 
   @@map("plans")
+}
+
+/// What one plan costs in one currency, in minor units.
+///
+/// A separate table rather than columns on `plans` so opening a new market is
+/// an INSERT instead of a migration. `Plan.priceMinor` remains the fallback for
+/// a currency nobody has priced yet, which keeps the catalogue answerable for
+/// every visitor regardless of where they are.
+model PlanPrice {
+  id         String   @id @default(uuid()) @db.Uuid
+  planId     String   @map("plan_id") @db.Uuid
+  /// ISO-4217, uppercase.
+  currency   String
+  priceMinor Int      @map("price_minor")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, currency])
+  @@map("plan_prices")
 }
 
 /// One purchase attempt. `provider` names the gateway adapter ("manual",

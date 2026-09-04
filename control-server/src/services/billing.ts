@@ -24,6 +24,7 @@ import { writeAudit } from "../lib/audit"
 import { badRequest, conflict, notFound, serviceUnavailable } from "../lib/errors"
 import { prisma } from "../prisma"
 import { requestPolicySync } from "./policy"
+import { type PlanWithPrices, resolvePlanPrice } from "./pricing"
 
 // --------------------------------------------------------------- plans -----
 
@@ -37,6 +38,8 @@ export type PlanView = {
 	priceLabel: string
 	maxDevices: number
 	maxSessions: number
+	/** Monthly traffic cap in GB, or null when uncapped. */
+	trafficGb: number | null
 	features: string[]
 	featured: boolean
 }
@@ -59,27 +62,47 @@ export function priceLabel(minor: number, currency: string): string {
 	return symbol === "$" || symbol === "€" ? `${symbol}${text}` : `${text} ${symbol}`
 }
 
-export function planView(plan: Plan): PlanView {
+/**
+ * One plan as the clients render it.
+ *
+ * `currency` chooses which of the plan's prices to quote. Without it the plan's
+ * own base price is used, which leaves every existing caller (the admin panel)
+ * behaving exactly as before.
+ */
+export function planView(plan: PlanWithPrices, currency?: string | null): PlanView {
 	const features = Array.isArray(plan.features)
 		? (plan.features as unknown[]).map((item) => String(item))
 		: []
+	const price = resolvePlanPrice(plan, currency)
 	return {
 		code: plan.code,
 		name: plan.name,
 		tier: plan.tier,
 		days: plan.days,
-		priceMinor: plan.priceMinor,
-		currency: plan.currency,
-		priceLabel: plan.priceMinor === 0 ? "0" : priceLabel(plan.priceMinor, plan.currency),
+		priceMinor: price.priceMinor,
+		currency: price.currency,
+		priceLabel: price.priceMinor === 0 ? "0" : priceLabel(price.priceMinor, price.currency),
 		maxDevices: plan.maxDevices,
 		maxSessions: plan.maxSessions,
+		trafficGb: plan.trafficGb,
 		features,
 		featured: plan.featured,
 	}
 }
 
-export async function listPlans(): Promise<Plan[]> {
-	return prisma.plan.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" } })
+/**
+ * The public catalogue: active, publicly listed, with every currency attached.
+ *
+ * `isPublic` is what keeps the internal beta tier out of the shop while leaving
+ * it grantable from the admin panel. `active` cannot do that job, because an
+ * inactive plan cannot be granted at all.
+ */
+export async function listPlans(): Promise<PlanWithPrices[]> {
+	return prisma.plan.findMany({
+		where: { active: true, isPublic: true },
+		include: { prices: true },
+		orderBy: { sortOrder: "asc" },
+	})
 }
 
 // -------------------------------------------------------- subscriptions ----
@@ -272,13 +295,21 @@ export async function createOrder(params: {
 	user: User
 	planCode: string
 	ip?: string | null
+	/** Which currency to charge in. Defaults to the plan's own. */
+	currency?: string | null
 }): Promise<{ order: Order & { plan: Plan }; checkout: CheckoutResult }> {
 	const gateway = provider()
 	const plan = await prisma.plan.findFirst({
-		where: { code: params.planCode.toLowerCase(), active: true },
+		where: { code: params.planCode.toLowerCase(), active: true, isPublic: true },
+		include: { prices: true },
 	})
 	if (!plan) throw notFound("Plan not found")
 	if (plan.priceMinor <= 0) throw badRequest("This plan is free and needs no order")
+
+	// The order carries the amount actually charged, and both gateway adapters
+	// read the amount from the order rather than from the plan - so quoting a
+	// visitor in roubles and then billing them in tenge cannot happen.
+	const price = resolvePlanPrice(plan, params.currency)
 
 	// One open order per plan per user: a double click should not make two.
 	const open = await prisma.order.findFirst({
@@ -309,8 +340,8 @@ export async function createOrder(params: {
 		data: {
 			userId: params.user.id,
 			planId: plan.id,
-			amountMinor: plan.priceMinor,
-			currency: plan.currency,
+			amountMinor: price.priceMinor,
+			currency: price.currency,
 			provider: gateway.name,
 		},
 		include: { plan: true },
