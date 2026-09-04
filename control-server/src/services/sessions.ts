@@ -4,6 +4,7 @@ import { config } from "../config"
 import { writeAudit } from "../lib/audit"
 import { conflict, forbidden, notFound, serviceUnavailable } from "../lib/errors"
 import { usableHostIps } from "../lib/ip"
+import { effectiveSessionLimit } from "../lib/sessionLimit"
 import { bytesToNumber, prisma } from "../prisma"
 import { enqueueCommand, hasOpenCommand } from "./nodeCommands"
 import {
@@ -279,7 +280,8 @@ export async function connectSession(params: {
 		await closeSession({ sessionId: session.id, reason: "reconnect" })
 	}
 
-	const maxSessions = Math.min(user.maxSessions, config.MAX_CONCURRENT_SESSIONS)
+	const planSessions = subscription.tier >= 2 ? 5 : subscription.tier >= 1 ? 3 : 1
+	const maxSessions = Math.max(effectiveSessionLimit(user), planSessions)
 	const liveSessions = await prisma.session.count({
 		where: { userId: user.id, status: { in: [...ACTIVE_SESSION_STATES] } },
 	})
