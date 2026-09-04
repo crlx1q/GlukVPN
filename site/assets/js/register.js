@@ -120,6 +120,16 @@
 
   function human(e) {
     if (!e) return t("Не получилось. Попробуйте ещё раз.", "Something went wrong. Try again.");
+    /* Капча живёт недолго: пока человек заполняет форму, токен успевает
+       протухнуть, и сервер отказывает на anti-bot проверке. Раньше это
+       выглядело как «непонятная ошибка» — теперь причина названа, а код
+       рядом уже перезагружен (captchaRecover ниже).                     */
+    if (captchaFailure(e)) {
+      return t(
+        "Проверка «я не робот» устарела. Мы обновили её — подтвердите ещё раз и отправьте форму.",
+        "The anti-bot check expired. We refreshed it - confirm again and resubmit."
+      );
+    }
     if (e.status === 429) {
       var s = e.retryAfter || 0;
       var min = Math.ceil(s / 60);
@@ -189,11 +199,37 @@
   function labelCaptchaSlots() {
     Array.prototype.forEach.call(document.querySelectorAll("[data-turnstile]"), function (host) {
       var prev = host.previousElementSibling;
-      if (prev && prev.className === "captcha__cap") return;
+      if (prev && prev.className === "captcha__head") return;
+      var key = host.getAttribute("data-turnstile") || "register";
+
+      /* Подпись и кнопка обновления — одной строкой над слотом: ⟳ должна быть
+         там, куда человек смотрит на капчу, а не под кнопкой отправки. */
+      var head = document.createElement("div");
+      head.className = "captcha__head";
+
       var cap = document.createElement("span");
       cap.className = "captcha__cap";
       cap.textContent = t("Проверка, что вы человек", "Quick check that you are human");
-      if (host.parentNode) host.parentNode.insertBefore(cap, host);
+      head.appendChild(cap);
+
+      var refresh = document.createElement("button");
+      refresh.type = "button";
+      refresh.className = "captcha__refresh";
+      refresh.setAttribute("data-captcha-refresh", key);
+      refresh.title = t("Обновить проверку", "Refresh the check");
+      refresh.setAttribute("aria-label", t("Обновить проверку", "Refresh the check"));
+      refresh.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+        '<path d="M19.5 11a7.5 7.5 0 1 0-2.2 5.3" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>' +
+        '<path d="M19.5 5.8V11H14.3" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      refresh.addEventListener("click", function () {
+        refresh.classList.add("is-spin");
+        window.setTimeout(function () { refresh.classList.remove("is-spin"); }, 640);
+        refreshCaptcha(key, false);
+      });
+      head.appendChild(refresh);
+
+      if (host.parentNode) host.parentNode.insertBefore(head, host);
     });
   }
 
@@ -214,10 +250,17 @@
         appearance: "always",
         callback: function () { captchaNote(key, ""); },
         "expired-callback": function () {
+          /* CAPTCHA_EXPIRED. Не заставляем искать кнопку: сами перезагружаем
+             код и говорим, что произошло. Через таймаут — Turnstile не любит
+             reset() прямо из своего же колбэка.                            */
           captchaNote(key, t(
-            "Проверка устарела — пройдите её заново.",
-            "The check expired - please do it again."
+            "Проверка устарела — обновляем код…",
+            "The check expired - refreshing it…"
           ));
+          window.setTimeout(function () { refreshCaptcha(key, true); }, 60);
+        },
+        "timeout-callback": function () {
+          window.setTimeout(function () { refreshCaptcha(key, true); }, 60);
         },
         "error-callback": function () {
           /* Сервер при недоступности Cloudflare пропускает проверку,
@@ -244,6 +287,42 @@
   function captchaReset(key) {
     if (widgets[key] === undefined || !window.turnstile) return;
     try { window.turnstile.reset(widgets[key]); } catch (e) {}
+  }
+
+  /* «Сервер отверг именно капчу». Контрол-сервер отвечает на это обычным 400:
+     verifyCaptcha не выдаёт отдельного кода, поэтому смотрим и на код, и на
+     текст. CAPTCHA_EXPIRED от Turnstile и «anti-bot check» от нашего API
+     ведут к одному и тому же действию — перезагрузить код.              */
+  function captchaFailure(e) {
+    if (!e) return false;
+    var code = String(e.code || "").toLowerCase();
+    var text = String(e.message || "").toLowerCase();
+    if (code.indexOf("captcha") >= 0) return true;
+    return e.status === 400 && (text.indexOf("anti-bot") >= 0 || text.indexOf("captcha") >= 0);
+  }
+
+  /* Мгновенное обновление кода: кнопка ⟳ и любой протухший токен приходят
+     сюда. Turnstile не умеет «перерисовать» виджет, но reset() выдаёт новый
+     вызов — для человека это и есть обновление.                          */
+  function refreshCaptcha(key, quiet) {
+    if (widgets[key] === undefined) {
+      /* Виджет ещё не смонтирован: капча грузилась медленнее формы. */
+      loadCaptcha().then(function (ok) { if (ok) mountCaptcha(key); });
+      return;
+    }
+    captchaReset(key);
+    captchaNote(key, quiet ? "" : t("Готово — новая проверка загружена.", "Done - a fresh check has loaded."));
+  }
+
+  /* После отказа сервера токен заведомо израсходован, поэтому обновляем его
+     сразу, а не после второй неудачной попытки.                          */
+  function captchaRecover(e, key) {
+    if (!captchaFailure(e)) {
+      captchaReset(key);
+      return;
+    }
+    refreshCaptcha(key, true);
+    captchaNote(key, t("Проверка устарела — загрузили новую.", "The check expired - a fresh one has loaded."));
   }
 
   /* -------------------------------------------------------------------- шаги */
@@ -364,7 +443,7 @@
         },
         function (err) {
           busy(regBtn, false, "", t("Продолжить", "Continue"));
-          captchaReset("register");
+          captchaRecover(err, "register");
           msg(box, human(err), "err");
         }
       );
@@ -483,7 +562,7 @@
         },
         function (err) {
           busy(recBtn, false, "", t("Прислать код", "Send the code"));
-          captchaReset("recover");
+          captchaRecover(err, "recover");
           msg(box, human(err), "err");
         }
       );

@@ -84,6 +84,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       if (widget.vpn.phase.isConnected) setState(() {});
     });
     widget.vpn.addListener(_onVpnChanged);
+    // The verdict can predate this screen. The window is surfaced from the
+    // tray *because* the limit was hit, and a Home that mounts only then would
+    // otherwise sit and wait for a notification that has already been sent.
+    if (widget.vpn.deviceLimitBlocked) {
+      scheduleMicrotask(() {
+        if (mounted) unawaited(_openDeviceLimit());
+      });
+    }
   }
 
   @override

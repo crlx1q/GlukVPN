@@ -17,6 +17,7 @@ import { linkAuthRoutes } from "./routes/link"
 import { nodeAgentRoutes } from "./routes/node"
 import { nodeCatalogRoutes } from "./routes/nodes"
 import { registrationRoutes } from "./routes/register"
+import { telemetryRoutes } from "./routes/telemetry"
 import { vpnRoutes } from "./routes/vpn"
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -143,6 +144,9 @@ export async function buildApp(): Promise<FastifyInstance> {
 	await app.register(deviceRoutes)
 	await app.register(vpnRoutes)
 	await app.register(nodeAgentRoutes)
+	// Crash reports from every client. Unauthenticated on purpose: the errors
+	// worth having are the ones that happen instead of a successful sign-in.
+	await app.register(telemetryRoutes)
 	// Plans, orders and the payment webhook. Public catalogue, user-scoped
 	// orders; the webhook verifies the gateway signature itself.
 	await app.register(billingRoutes)

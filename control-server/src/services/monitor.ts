@@ -8,6 +8,7 @@ import { purgeOldLoginAttempts } from "./loginThrottle"
 import { requeueStaleCommands } from "./nodeCommands"
 import { sweepExpiredRegistrations } from "./registration"
 import { closeSession } from "./sessions"
+import { purgeOldClientErrors } from "./telemetry"
 import { purgeExpiredCodes } from "./verification"
 import { purgeOldDomainStats } from "./vlessStats"
 
@@ -185,6 +186,16 @@ export function startMonitor(app: FastifyInstance): MonitorHandle {
 				// finished within a day is closed so it does not sit as "pending".
 				const domains = await purgeOldDomainStats()
 				if (domains > 0) app.log.debug({ domains }, "domain_stats_purged")
+
+				// Crash reports age out on the same schedule. Without this the
+				// table only ever grows, and a single bad release can add tens of
+				// thousands of rows in an afternoon.
+				const clientErrors = await purgeOldClientErrors(
+					config.CLIENT_ERROR_RETENTION_DAYS,
+				)
+				if (clientErrors > 0) {
+					app.log.debug({ clientErrors }, "client_errors_purged")
+				}
 				const orders = await expireStaleOrders()
 				if (orders > 0) app.log.debug({ orders }, "stale_orders_cancelled")
 			}

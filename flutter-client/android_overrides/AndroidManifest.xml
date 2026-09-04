@@ -46,6 +46,39 @@
             </intent-filter>
         </activity>
 
+        <!--
+          The ongoing notification that carries the "Disconnect" button in the
+          shade.
+
+          wireguard_flutter posts its own foreground-service notification for
+          the tunnel and builds it internally, so an action cannot be added to
+          it. GlukVPN therefore runs its own small foreground service whose
+          only job is to draw a notification with that button; the tunnel
+          itself stays owned by the plugin. specialUse is the honest type for
+          it - the service neither owns the VPN interface nor plays media - and
+          it matches the FOREGROUND_SERVICE_SPECIAL_USE permission above.
+
+          stopWithTask="false": swiping the app off the recents list must not
+          take the control away while the tunnel is still up.
+        -->
+        <service
+            android:name=".TunnelNotificationService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Ongoing VPN control notification with a disconnect action" />
+        </service>
+
+        <!--
+          Receives the Disconnect action from the shade. Not exported: only our
+          own notification may fire it.
+        -->
+        <receiver
+            android:name=".TunnelActionReceiver"
+            android:exported="false" />
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

@@ -1045,3 +1045,154 @@ td.actions {
 		transition: none;
 	}
 }
+
+/* ---------------- client bug logs ---------------- */
+
+/* One colour per client so a spike in a single platform is obvious without
+   reading a word: violet for Windows, green for Android, blue for the browser
+   extension, amber for the website. */
+.plat {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 3px 9px;
+	border-radius: var(--r-pill, 999px);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	white-space: nowrap;
+	border: 1px solid transparent;
+}
+
+.plat-windows {
+	color: var(--violet-light);
+	background: rgba(139, 92, 246, 0.14);
+	border-color: rgba(139, 92, 246, 0.32);
+}
+
+.plat-android {
+	color: var(--ok);
+	background: rgba(61, 220, 151, 0.12);
+	border-color: rgba(61, 220, 151, 0.3);
+}
+
+.plat-extension {
+	color: #8ab4ff;
+	background: rgba(79, 124, 255, 0.14);
+	border-color: rgba(79, 124, 255, 0.32);
+}
+
+.plat-web {
+	color: var(--amber);
+	background: rgba(240, 181, 103, 0.13);
+	border-color: rgba(240, 181, 103, 0.3);
+}
+
+/* The error itself: name on the first line, message under it. Long messages
+   wrap instead of stretching the table sideways. */
+.err-name {
+	display: block;
+	font-weight: 600;
+	color: var(--danger);
+	font-size: 12px;
+}
+
+.err-message {
+	display: block;
+	margin-top: 2px;
+	color: var(--text-1);
+	font-size: 12px;
+	max-width: 380px;
+	white-space: normal;
+	word-break: break-word;
+}
+
+.err-context {
+	display: inline-block;
+	padding: 2px 7px;
+	border-radius: var(--r-xs, 6px);
+	background: rgba(255, 255, 255, 0.05);
+	border: 1px solid rgba(255, 255, 255, 0.07);
+	color: var(--text-1);
+	font-size: 11px;
+	max-width: 220px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Stack traces are collapsed by default: a support session needs the list
+   first and the trace only for the one row that matters. <details> keeps that
+   free - no modal, no state to lose, and two rows can be compared at once. */
+.stack {
+	max-width: 460px;
+}
+
+.stack > summary {
+	cursor: pointer;
+	user-select: none;
+	color: var(--violet-light);
+	font-size: 11px;
+	font-weight: 600;
+	padding: 3px 9px;
+	border: 1px solid rgba(139, 92, 246, 0.3);
+	border-radius: var(--r-pill, 999px);
+	background: rgba(139, 92, 246, 0.1);
+	display: inline-block;
+	transition: background var(--t-fast, 0.18s) ease;
+}
+
+.stack > summary:hover {
+	background: rgba(139, 92, 246, 0.2);
+}
+
+.stack > summary::marker,
+.stack > summary::-webkit-details-marker {
+	display: none;
+	content: "";
+}
+
+.stack[open] > summary {
+	margin-bottom: 8px;
+}
+
+.stack pre {
+	margin: 0;
+	padding: 10px 12px;
+	border-radius: var(--r-sm, 10px);
+	background: rgba(0, 0, 0, 0.42);
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	color: var(--text-1);
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 11px;
+	line-height: 1.5;
+	max-height: 260px;
+	overflow: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.stack-meta {
+	display: block;
+	margin-top: 6px;
+	color: var(--text-2);
+	font-size: 10px;
+}
+
+/* The platform filter sits in the section head next to the counters. */
+.head-tools select {
+	appearance: none;
+	padding: 7px 12px;
+	border-radius: var(--r-sm, 10px);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	background: rgba(255, 255, 255, 0.04);
+	color: var(--text-0);
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.head-tools select:focus-visible {
+	outline: 2px solid var(--violet);
+	outline-offset: 1px;
+}

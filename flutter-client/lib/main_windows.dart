@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
@@ -25,6 +26,7 @@ import 'desktop/widgets/desktop_splash.dart';
 import 'services/api_client.dart';
 import 'services/ping_service.dart';
 import 'services/secure_store.dart';
+import 'services/telemetry_service.dart';
 import 'state/auth_controller.dart';
 
 /// Windows entry point.
@@ -35,6 +37,24 @@ import 'state/auth_controller.dart';
 /// The Android entry point (lib/main.dart) is untouched.
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Uncaught errors reach the control server's bug log. Installed first, so a
+  // crash during startup - the hardest kind to get a log file for - is
+  // reported as well. dlog keeps writing locally either way.
+  final TelemetryService telemetry = TelemetryService();
+  TelemetryService.instance = telemetry;
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    telemetry.report(
+      details.exception,
+      details.stack,
+      context: details.library ?? 'flutter',
+    );
+  };
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    telemetry.report(error, stack, context: 'windows:platformDispatcher');
+    return true;
+  };
 
   // --hidden is passed by the autostart registry entry when the user asked to
   // start minimised. It is only ever one of two reasons to start hidden: the
@@ -197,6 +217,12 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
   bool _ready = false;
   bool _splashDone = false;
 
+  /// Whether the window has already been brought forward for the current
+  /// device-limit verdict. An edge, not a state: the controller notifies on
+  /// every status poll, and re-raising the window several times a second would
+  /// fight the user for focus.
+  bool _deviceLimitSurfaced = false;
+
   @override
   void initState() {
     super.initState();
@@ -235,6 +261,12 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
     // Banners and failure reasons produced inside the controller are read by
     // the user, so it has to know which language the UI is in.
     _vpn.russian = _strings.isRussian;
+
+    // A 5/5 refusal has to reach the user even when the window is in the tray
+    // or collapsed to the mini panel: neither has room for the device picker,
+    // and the mini panel cannot push a modal at all. Bring the window to the
+    // front instead - the Home screen opens the sheet as it mounts.
+    _vpn.addListener(_onVpnDeviceLimit);
 
     // Battery and power-saver state feed the single Animations switch. This is
     // purely cosmetic: the tunnel never reacts to it.
@@ -304,6 +336,20 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
     if (mounted) setState(() {});
   }
 
+  /// Surfaces the window when a connect is refused for want of a device slot.
+  void _onVpnDeviceLimit() {
+    if (!_vpn.deviceLimitBlocked) {
+      // Either a slot was freed or the verdict was dropped: arm the automatic
+      // surfacing again for the next time the account fills up.
+      _deviceLimitSurfaced = false;
+      return;
+    }
+    if (_deviceLimitSurfaced) return;
+    _deviceLimitSurfaced = true;
+    dlog.write('window', 'device limit verdict -> surfacing the window');
+    unawaited(_window.showMain());
+  }
+
   void _onLanguageChanged(String preference) {
     setState(() => _strings = DesktopStrings.resolve(preference));
     _tray.updateStrings(_strings);
@@ -327,6 +373,7 @@ class _GlukDesktopAppState extends State<GlukDesktopApp> {
     _auth.removeListener(_onAuthChanged);
     _power.dispose();
     _window.dispose();
+    _vpn.removeListener(_onVpnDeviceLimit);
     _vpn.dispose();
     super.dispose();
   }

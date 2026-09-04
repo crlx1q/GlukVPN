@@ -588,6 +588,37 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+/// One uncaught error reported by a client: desktop, mobile, extension or the
+/// website. Written by POST /api/telemetry/error.
+///
+/// The endpoint is unauthenticated on purpose - the failures worth seeing are
+/// the ones that happen instead of a successful sign-in. `userId` and
+/// `deviceId` are therefore plain columns rather than relations: a crash report
+/// must never fail on a foreign key, and both are filled in from a verified
+/// token when one is present, never from the request body.
+///
+/// Stack traces are scrubbed before they get here (see services/telemetry.ts):
+/// tokens, passwords and keys are replaced, so this table stays safe to read.
+model ClientErrorLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  /// "windows" | "android" | "extension" | "web"
+  platform     String
+  appVersion   String   @map("app_version")
+  errorName    String   @map("error_name")
+  errorMessage String   @map("error_message")
+  stackTrace   String?  @map("stack_trace") @db.Text
+  /// Where it happened: screen, action or request path.
+  context      String?  @db.Text
+  deviceId     String?  @map("device_id")
+  userId       String?  @map("user_id") @db.Uuid
+  ip           String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([platform, createdAt])
+  @@index([createdAt])
+  @@map("client_error_logs")
+}
+
 // --------------------------- deployments -----------------------------------
 
 /// Queue between the admin panel and the local deploy worker.

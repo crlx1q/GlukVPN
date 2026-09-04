@@ -1,3 +1,5 @@
+import 'dart:ui' show PlatformDispatcher;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -8,6 +10,7 @@ import 'services/api_client.dart';
 import 'services/connectivity_service.dart';
 import 'services/ping_service.dart';
 import 'services/secure_store.dart';
+import 'services/telemetry_service.dart';
 import 'services/update_checker.dart';
 import 'services/vpn_service.dart';
 import 'state/auth_controller.dart';
@@ -19,6 +22,27 @@ import 'theme/motion.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(GlukTheme.systemOverlay);
+
+  // Uncaught errors now leave the phone instead of only reaching a console
+  // nobody is attached to. Both hooks are installed before anything else is
+  // wired up, so a failure during startup is reported too, and the local
+  // output is unchanged - presentError still runs, the report is an addition.
+  final TelemetryService telemetry = TelemetryService();
+  TelemetryService.instance = telemetry;
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    telemetry.report(
+      details.exception,
+      details.stack,
+      context: details.library ?? 'flutter',
+    );
+  };
+  // Everything the framework itself does not catch: async gaps, platform
+  // channel replies, throws from timers.
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    telemetry.report(error, stack, context: 'android:platformDispatcher');
+    return true;
+  };
 
   // Wired up once here so the whole app shares a single HTTP client, a single
   // secure store, a single tunnel handle and one battery/motion listener.
@@ -51,6 +75,11 @@ Future<void> main() async {
   // ROUND 11: interface language. Not channel-scoped and not tied to a
   // session - it belongs to the person holding the phone.
   final LocaleController locale = LocaleController(store: store);
+
+  // The Android notification that carries the Disconnect button is written in
+  // the interface language, so the VPN controller has to follow the switch.
+  void applyLanguage() => vpn.russian = locale.strings.isRussian;
+  locale.addListener(applyLanguage);
 
   final ChannelController channel = ChannelController(
     api: api,
@@ -85,6 +114,7 @@ Future<void> main() async {
   // Before the first frame, so the app never flashes English at somebody who
   // chose Russian last time.
   await locale.restore();
+  applyLanguage();
 
   runApp(
     GlukVpnApp(

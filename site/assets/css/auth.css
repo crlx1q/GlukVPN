@@ -659,3 +659,77 @@
   .auth-hero__stage{display:none}
   .auth-hero__sub{max-width:none}
 }
+
+/* ===================== МЕГА-СПРИНТ, БЛОК B: космическая сцена входа ===================== */
+/* Старая планета (.auth-hero__stage и три градиентных span) остаётся в файле:
+   её всё ещё использует английская страница и окно привязки устройства. Здесь только
+   оправа для canvas-сцены: размер, свечение и поведение на узких экранах.
+   Порог скрытия — те же 900px, что у старого stage: выше в файле .auth-split уже
+   схлопывается в одну колонку с max-width:520px, то есть форма сама встаёт по центру. */
+.auth-hero--cosmic{
+  background:
+    radial-gradient(120% 95% at 76% 4%,rgba(124,58,237,.30),transparent 60%),
+    radial-gradient(95% 75% at 10% 96%,rgba(94,231,163,.10),transparent 58%),
+    linear-gradient(180deg,#0b0818 0%,#07060e 100%);
+}
+.auth-hero--cosmic .auth-hero__copy{position:relative;z-index:2}
+
+/* Плашка «сеть на связи»: та же роль, что у статуса в окне входа Cloudflare —
+   показать, что сервис жив, ещё до ввода пароля. */
+.auth-hero__badge{display:inline-flex;align-items:center;gap:8px;margin:0 0 10px;padding:5px 11px;border-radius:999px;border:1px solid rgba(94,231,163,.26);background:rgba(94,231,163,.09);color:#9defc4;font-size:11.5px;font-weight:var(--fw-medium);letter-spacing:.01em}
+.auth-hero__pulse{width:7px;height:7px;border-radius:50%;background:#5ee7a3;box-shadow:0 0 0 0 rgba(94,231,163,.55);animation:gluk-cosmos-pulse 2.4s var(--ease-soft) infinite}
+@keyframes gluk-cosmos-pulse{
+  0%{box-shadow:0 0 0 0 rgba(94,231,163,.5)}
+  70%{box-shadow:0 0 0 9px rgba(94,231,163,0)}
+  100%{box-shadow:0 0 0 0 rgba(94,231,163,0)}
+}
+
+/* Сцена. Высота в clamp, а не aspect-ratio: панель стоит рядом с карточкой формы,
+   и её высота не должна тянуться за шириной колонки. */
+.auth-cosmos{position:relative;height:clamp(260px,30vw,380px);margin:6px -8px -2px;isolation:isolate}
+.auth-cosmos__canvas{display:block;width:100%;height:100%;border-radius:20px}
+/* Виньетка: края canvas гаснут, поэтому звёздное поле не обрезается резкой
+   линией, а уходит в фон панели. */
+.auth-cosmos__veil{position:absolute;inset:0;pointer-events:none;border-radius:20px;background:
+  radial-gradient(120% 100% at 50% 50%,transparent 52%,rgba(7,6,14,.55) 84%,rgba(7,6,14,.9) 100%)}
+/* Орбита поверх сцены — единственный декор, который дешевле сделать CSS-ом,
+   чем считать каждый кадр. */
+.auth-cosmos__ring{position:absolute;top:50%;left:50%;width:min(78%,300px);aspect-ratio:1;transform:translate(-50%,-50%) rotate3d(1,.35,0,74deg);border:1px solid rgba(196,181,253,.20);border-radius:50%;pointer-events:none;animation:gluk-cosmos-orbit 26s linear infinite}
+@keyframes gluk-cosmos-orbit{
+  from{transform:translate(-50%,-50%) rotate3d(1,.35,0,74deg) rotate(0)}
+  to{transform:translate(-50%,-50%) rotate3d(1,.35,0,74deg) rotate(360deg)}
+}
+
+@media (max-width:900px){
+  /* Форма остаётся по центру, сцена уходит совсем: canvas на телефоне только
+     отодвигал бы поля вниз и грел батарею. login.js видит display:none и
+     вовсе не монтирует сцену. */
+  .auth-cosmos{display:none}
+  .auth-hero--cosmic{background:linear-gradient(180deg,rgba(30,21,52,.72),rgba(11,8,22,.78))}
+}
+@media (prefers-reduced-motion:reduce){
+  .auth-cosmos__ring,.auth-hero__pulse{animation:none}
+}
+
+/* ===================== БЛОК B: капча — обновление и узкие экраны ===================== */
+/* Строка над слотом: подпись слева, кнопка ⟳ справа. Разметку строит register.js,
+   поэтому при выключенной капче пустого заголовка не остаётся. */
+.captcha__head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0 -6px}
+.captcha__head .captcha__cap{margin:0}
+.captcha__refresh{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;flex:0 0 auto;padding:0;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:var(--violet-light);cursor:pointer;transition:border-color var(--t-fast) var(--ease-soft),background var(--t-fast) var(--ease-soft),color var(--t-fast) var(--ease-soft)}
+.captcha__refresh:hover{border-color:rgba(139,92,246,.55);background:rgba(139,92,246,.14);color:#fff}
+.captcha__refresh:focus-visible{outline:2px solid var(--violet);outline-offset:2px}
+.captcha__refresh svg{width:16px;height:16px;display:block}
+.captcha__refresh.is-spin svg{animation:gluk-captcha-spin .64s var(--ease-soft)}
+@keyframes gluk-captcha-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.captcha__refresh.is-spin svg{animation:none}}
+
+/* Мобильная адаптация. Виджет Turnstile — жёсткие 300×65 в iframe: на экране 320px
+   с паддингами карточки он вылезал за край. max-width сам iframe не сжимает
+   содержимое, поэтому на самых узких масштабируем блок целиком. */
+.captcha{overflow:hidden}
+@media (max-width:380px){
+  .captcha{padding:6px 4px}
+  .captcha>div{transform:scale(.9);transform-origin:center center}
+  .captcha__head{margin-bottom:-4px}
+}

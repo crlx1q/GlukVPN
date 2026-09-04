@@ -94,6 +94,7 @@
 				<button type="button" class="tab" data-tab="devices">Devices</button>
 				<button type="button" class="tab" data-tab="sessions">Sessions</button>
 				<button type="button" class="tab" data-tab="audit">Audit</button>
+				<button type="button" class="tab" data-tab="errors">Client Bug Logs</button>
 			</nav>
 
 			<div id="dashboard-view" hidden>
@@ -313,6 +314,45 @@
 							<tbody id="audit-body"></tbody>
 						</table>
 					</div>
+				</section>
+
+				<!-- client bug logs -->
+				<section class="tabview" data-view="errors" hidden>
+					<div class="block-head standalone">
+						<h3>Client bug logs</h3>
+						<div class="head-tools">
+							<select id="error-platform" aria-label="Filter by platform">
+								<option value="">All platforms</option>
+								<option value="windows">Windows</option>
+								<option value="android">Android</option>
+								<option value="extension">Extension</option>
+								<option value="web">Web</option>
+							</select>
+							<span class="muted small" id="errors-summary"></span>
+						</div>
+					</div>
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Time</th>
+									<th>Platform</th>
+									<th>Version</th>
+									<th>Error</th>
+									<th>Context</th>
+									<th>Account</th>
+									<th>Stack trace</th>
+								</tr>
+							</thead>
+							<tbody id="errors-body"></tbody>
+						</table>
+					</div>
+					<p class="muted small">
+						Reports arrive from every client, including the ones that never got as
+						far as signing in. Tokens, passwords and keys are stripped before a row
+						is written, identical reports are collapsed to one a minute, and rows are
+						deleted once the retention window passes.
+					</p>
 				</section>
 
 				<p class="muted small footnote">

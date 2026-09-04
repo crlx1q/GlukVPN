@@ -18,6 +18,8 @@ const state = {
 	userQuery: "",
 	searchTimer: null,
 	canDeploy: false,
+	// Client Bug Logs filter: "" = every platform.
+	errorPlatform: "",
 }
 
 const el = (id) => document.getElementById(id)
@@ -609,6 +611,144 @@ function renderAudit(logs) {
 	}
 }
 
+/* ---------------- client bug logs ---------------- */
+
+/* Every client posts its uncaught errors to /api/telemetry/error and they
+   surface here. The table is built to answer one question fast: which platform
+   is breaking, on which version, and where in the app.
+
+   Credentials are stripped server-side before a row is written, so the trace
+   below can be shown verbatim without leaking a token to whoever is on
+   support. */
+
+const PLATFORM_LABELS = {
+	windows: "Windows",
+	android: "Android",
+	extension: "Extension",
+	web: "Web",
+}
+
+function platformBadge(platform) {
+	const key = String(platform || "").toLowerCase()
+	const span = document.createElement("span")
+	span.className = `plat plat-${key}`
+	span.textContent = PLATFORM_LABELS[key] || platform || "?"
+	return span
+}
+
+/** Error name over its message: the name groups, the message explains. */
+function errorCell(error) {
+	const wrap = document.createElement("div")
+	const name = document.createElement("span")
+	name.className = "err-name"
+	name.textContent = error.errorName || "Error"
+	const message = document.createElement("span")
+	message.className = "err-message"
+	message.textContent = error.errorMessage || ""
+	wrap.append(name, message)
+	return wrap
+}
+
+function contextCell(error) {
+	const span = document.createElement("span")
+	if (!error.context) {
+		span.className = "muted small"
+		span.textContent = "unknown"
+		return span
+	}
+	span.className = "err-context"
+	span.textContent = error.context
+	// The cell is clipped, the tooltip is not.
+	span.title = error.context
+	return span
+}
+
+/**
+ * The stack trace behind a disclosure button.
+ *
+ * A <details> element rather than a modal: nothing to dismiss, nothing lost on
+ * refresh, and two traces can stay open side by side while comparing a Windows
+ * crash with the Android one that looks just like it.
+ */
+function stackCell(error) {
+	if (!error.stackTrace) {
+		const none = document.createElement("span")
+		none.className = "muted small"
+		none.textContent = "no trace"
+		return none
+	}
+
+	const details = document.createElement("details")
+	details.className = "stack"
+	const summary = document.createElement("summary")
+	summary.textContent = "Show stack trace"
+	const pre = document.createElement("pre")
+	pre.textContent = error.stackTrace
+	details.append(summary, pre)
+
+	const bits = []
+	if (error.deviceId) bits.push(`device ${error.deviceId}`)
+	if (error.ip) bits.push(`ip ${error.ip}`)
+	if (bits.length > 0) {
+		const meta = document.createElement("span")
+		meta.className = "stack-meta"
+		meta.textContent = bits.join(" \u00b7 ")
+		details.appendChild(meta)
+	}
+	return details
+}
+
+function renderClientErrors(payload) {
+	const body = el("errors-body")
+	const errors = (payload && payload.errors) || []
+	body.replaceChildren()
+
+	const counts = (payload && payload.counts) || {}
+	const parts = Object.keys(counts)
+		.sort()
+		.map((key) => `${PLATFORM_LABELS[key] || key} ${counts[key]}`)
+	el("errors-summary").textContent =
+		parts.length > 0
+			? `${payload.total} stored \u00b7 ${parts.join(" \u00b7 ")}`
+			: "nothing reported yet"
+
+	if (errors.length === 0) {
+		const row = document.createElement("tr")
+		const td = cell(row, "No client errors in this window \u2014 quiet is good.")
+		td.colSpan = 7
+		td.className = "muted small"
+		body.appendChild(row)
+		return
+	}
+
+	for (const error of errors) {
+		const row = document.createElement("tr")
+		const time = cell(row, new Date(error.createdAt).toLocaleString())
+		time.title = ago(error.createdAt)
+		cell(row, platformBadge(error.platform))
+		cell(row, error.appVersion)
+		cell(row, errorCell(error))
+		cell(row, contextCell(error))
+		cell(row, ownerCell(error.user))
+		cell(row, stackCell(error))
+		body.appendChild(row)
+	}
+}
+
+/** Tolerates a 404 like the egress block does: an older control server on the
+    other channel simply has no telemetry route yet. */
+async function loadClientErrors() {
+	try {
+		const filter = state.errorPlatform
+			? `&platform=${encodeURIComponent(state.errorPlatform)}`
+			: ""
+		renderClientErrors(await request(`/api/admin/client-errors?limit=100${filter}`))
+	} catch (error) {
+		if (error.status === 404) return
+		throw error
+	}
+}
+
 /* ---------------- oracle cloud egress budget ---------------- */
 
 /** Oracle bills egress in decimal terabytes, so 1 TB is 1e12 bytes here too. */
@@ -871,7 +1011,7 @@ async function loadAll() {
 		renderSessions(sessions.sessions)
 		renderAudit(audit.logs)
 		// Both tolerate a 404 from an older control server.
-		await Promise.all([loadEgressBudget(), loadDeploy()])
+		await Promise.all([loadEgressBudget(), loadDeploy(), loadClientErrors()])
 	} catch (error) {
 		if (error.status === 401 || error.status === 403) signOut(error.message)
 		else toast(error.message, true)
@@ -1007,6 +1147,11 @@ el("refresh-btn").addEventListener("click", () => {
 el("auto-refresh").addEventListener("change", startAutoRefresh)
 el("live-only").addEventListener("change", () => {
 	void loadAll()
+})
+
+el("error-platform").addEventListener("change", (event) => {
+	state.errorPlatform = event.target.value
+	void loadClientErrors().catch((error) => toast(error.message, true))
 })
 
 for (const button of document.querySelectorAll(".tab")) {

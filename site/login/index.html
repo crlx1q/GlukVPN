@@ -42,8 +42,10 @@
   <link rel="stylesheet" href="/assets/css/app-ui.css?v=1.3.0">
   <link rel="stylesheet" href="/assets/css/utilities.css?v=1.3.0">
   <link rel="stylesheet" href="/assets/css/fx.css?v=1.3.0">
-  <link rel="stylesheet" href="/assets/css/auth.css?v=0.11.0">
+  <link rel="stylesheet" href="/assets/css/auth.css?v=0.12.0">
   <script src="/assets/js/config.js?v=1.3.0" defer></script>
+  <script src="/assets/js/telemetry.js?v=1.4.0" defer></script>
+  <script src="/assets/js/cosmos.js?v=1.4.0" defer></script>
   <script src="/assets/js/i18n.js?v=1.3.0" defer></script>
   <script src="/assets/js/world-dots.js?v=1.3.0" defer></script>
   <script src="/assets/js/globe.js?v=1.3.0" defer></script>
@@ -376,16 +378,23 @@
              строки о продукте. Планета — градиенты в CSS, а не картинка и не
              canvas: панель ничего не грузит, ничего не считает каждый кадр и
              одинаково выглядит на любом экране. -->
-        <div class="auth-aside__card auth-hero">
+        <div class="auth-aside__card auth-hero auth-hero--cosmic">
           <div class="auth-hero__copy">
+            <span class="auth-hero__badge"><span class="auth-hero__pulse" aria-hidden="true"></span>Сеть GlukVPN на связи</span>
             <h2 class="auth-hero__title">Своя сеть, свои правила</h2>
             <p class="auth-hero__sub">WireGuard, свои узлы и системный туннель Windows — без прокси в браузере.</p>
           </div>
-          <div class="auth-hero__stage" aria-hidden="true">
-            <span class="auth-hero__glow"></span>
-            <span class="auth-hero__globe"></span>
-            <span class="auth-hero__orbit auth-hero__orbit--a"></span>
-            <span class="auth-hero__orbit auth-hero__orbit--b"></span>
+          <!-- МЕГА-СПРИНТ, БЛОК B: вместо четырёх CSS-градиентов — живая
+               сцена на canvas (assets/js/cosmos.js): звёздное поле,
+               вращающаяся сфера с сеткой параллелей и меридианов, точки
+               реальных узлов сети из GLUK_CONFIG.network и бегущие между
+               ними нити. Сцену монтирует login.js и только тогда, когда
+               панель действительно видна: на телефоне её прячет CSS, и
+               считать кадры там незачем. -->
+          <div class="auth-cosmos" data-cosmos-stage>
+            <canvas class="auth-cosmos__canvas" data-cosmos width="640" height="640" aria-hidden="true"></canvas>
+            <span class="auth-cosmos__veil" aria-hidden="true"></span>
+            <span class="auth-cosmos__ring" aria-hidden="true"></span>
           </div>
           <ul class="auth-hero__list">
             <li class="auth-hero__row">
@@ -414,8 +423,8 @@
   <!-- register.js ведёт три шага регистрации и восстановление, login.js — вход
        и переключение вкладок. Оба работают на одной карточке и не делят
        между собой ни одного элемента, кроме самих панелей. -->
-  <script src="/assets/js/register.js?v=0.8.0" defer></script>
-  <script src="/assets/js/login.js?v=0.8.0" defer></script>
+  <script src="/assets/js/register.js?v=0.9.0" defer></script>
+  <script src="/assets/js/login.js?v=0.9.0" defer></script>
   <!-- 0.8.0: sso.js — вход через Telegram (device-link) и Google (GIS).
        Идёт после login.js: переключение вкладок и редирект после входа берёт
        оттуда, токены складывает через GlukAuth.adoptTokens. -->

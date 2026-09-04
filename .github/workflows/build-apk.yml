@@ -72,6 +72,20 @@ jobs:
           set -euo pipefail
           cp android_overrides/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
           cp -R android_overrides/res/* android/app/src/main/res/
+          # Our Kotlin layer: MainActivity (which replaces the scaffold's own),
+          # the foreground service that draws the ongoing notification with the
+          # Disconnect button, its broadcast receiver and the Dart bridge.
+          # The destination is read back from where `flutter create` put
+          # MainActivity.kt, so changing --org can never silently skip it.
+          MAIN_ACTIVITY="$(find android/app/src/main/kotlin -name MainActivity.kt -print -quit)"
+          if [ -z "$MAIN_ACTIVITY" ]; then
+            echo "::error::could not find the generated MainActivity.kt to override."
+            exit 1
+          fi
+          KOTLIN_DIR="$(dirname "$MAIN_ACTIVITY")"
+          cp android_overrides/kotlin/*.kt "$KOTLIN_DIR"/
+          echo "--- Kotlin sources in $KOTLIN_DIR ---"
+          ls -1 "$KOTLIN_DIR"
           cat android_overrides/namespace_patch.gradle >> android/build.gradle
           # Persistent release signing. Reads android/key.properties (written by
           # the step below from the repository secrets) or the ANDROID_* env

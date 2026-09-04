@@ -19,6 +19,22 @@ import { ProxyEngine } from './lib/proxy.js'
 import { pickNode as chooseNode } from './lib/pick.js'
 import { DEFAULT_SETTINGS, Store } from './lib/store.js'
 import { generateKeyPair, isValidKey, publicKeyFor } from './lib/x25519.js'
+import { Telemetry } from './lib/telemetry.js'
+
+// ------------------------------------------------------------ bug reports ----
+//
+// This is an MV3 service worker: there is no `window` here, so the two global
+// hooks live on `self`. Anything that escapes a handler - a rejected promise
+// from a poll, a throw inside an alarm - now lands in the control server's bug
+// log together with the phase it happened in, instead of dying quietly in a
+// worker nobody has devtools open on.
+self.addEventListener('unhandledrejection', (event) => {
+	Telemetry.report(event?.reason, 'background:unhandledrejection')
+})
+
+self.addEventListener('error', (event) => {
+	Telemetry.report(event?.error ?? event?.message, 'background:error')
+})
 
 const POLL_ALARM = 'gluk-poll'
 const PHASE = {

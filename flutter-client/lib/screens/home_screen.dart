@@ -325,7 +325,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
 /// The map, the "you" marker, the node marker and the animated cable between
 /// them.
-class _MapBackdrop extends StatelessWidget {
+///
+/// ROUND 29: the map spawns instead of being thrown at the screen.
+///
+/// Two different things made the first second of a cold start look broken, and
+/// both are fixed here rather than papered over by slowing the sway down:
+///
+///  * **Framing.** [FlatMapView.topAnchored] is computed from `centre`, and
+///    `centre` moves twice while the app settles: once when the node list
+///    arrives (there is suddenly an exit to frame) and once when the profile's
+///    origin country arrives (the "you" marker stops being a locale guess).
+///    Each recompute used to land on the very next frame - that is the jump.
+///    Zoom and focus are tweened now, so the camera glides to the new framing
+///    instead of teleporting to it.
+///  * **Spawn.** The map fades in over 280 ms and the idle sway is held dead
+///    centre until that fade is over, so the first thing on screen is the
+///    centred world rather than a world already sliding sideways.
+class _MapBackdrop extends StatefulWidget {
   const _MapBackdrop({
     required this.motion,
     required this.selfPoint,
@@ -343,7 +359,56 @@ class _MapBackdrop extends StatelessWidget {
   final bool live;
 
   @override
+  State<_MapBackdrop> createState() => _MapBackdropState();
+}
+
+class _MapBackdropState extends State<_MapBackdrop>
+    with SingleTickerProviderStateMixin {
+  /// The spawn fade, inside the 250-300 ms the design asks for: long enough to
+  /// read as an appearance, short enough that nobody waits for the screen.
+  static const Duration spawnDuration = Duration(milliseconds: 280);
+
+  /// A camera move. Long enough to read as a glide, short enough that the
+  /// picture has settled before a thumb reaches CONNECT.
+  static const Duration reframeDuration = Duration(milliseconds: 620);
+
+  late final AnimationController _fade = AnimationController(
+    vsync: this,
+    duration: widget.motion.transition(spawnDuration),
+  );
+
+  late final Animation<double> _spawn = CurvedAnimation(
+    parent: _fade,
+    curve: Curves.easeOut,
+  );
+
+  /// True once the map is all the way in. Only then does anything move.
+  bool _spawnDone = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fade.addStatusListener(_onFadeStatus);
+    _fade.forward();
+  }
+
+  void _onFadeStatus(AnimationStatus status) {
+    if (_spawnDone || status != AnimationStatus.completed) return;
+    setState(() => _spawnDone = true);
+  }
+
+  @override
+  void dispose() {
+    _fade.removeStatusListener(_onFadeStatus);
+    _fade.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final MapPoint selfPoint = widget.selfPoint;
+    final MapPoint? serverPoint = widget.serverPoint;
+
     // The map is pinned to the top of the screen and covers most of its
     // height, so it reads as a world instead of a band sitting behind the
     // readouts. Those numbers depend on the viewport, so they are computed
@@ -353,8 +418,8 @@ class _MapBackdrop extends StatelessWidget {
     final MapPoint centre = serverPoint == null
         ? selfPoint
         : MapPoint(
-            (selfPoint.x + serverPoint!.x) / 2,
-            (selfPoint.y + serverPoint!.y) / 2,
+            (selfPoint.x + serverPoint.x) / 2,
+            (selfPoint.y + serverPoint.y) / 2,
           );
     final FlatMapView view = FlatMapView.topAnchored(
       viewport: MediaQuery.sizeOf(context),
@@ -362,6 +427,38 @@ class _MapBackdrop extends StatelessWidget {
       coverage: 0.88,
       topPadding: -6,
     );
+    final Duration glide = widget.motion.transition(reframeDuration);
+
+    return FadeTransition(
+      opacity: _spawn,
+      // Neither tween carries a `begin`, on purpose: the first build lands on
+      // the real framing instead of gliding towards it from an invented one,
+      // and every later change animates from wherever the camera is now.
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(end: view.zoom),
+        duration: glide,
+        curve: Curves.easeOutCubic,
+        builder: (BuildContext context, double zoom, Widget? _) =>
+            TweenAnimationBuilder<Offset>(
+          tween: Tween<Offset>(end: view.focus),
+          duration: glide,
+          curve: Curves.easeOutCubic,
+          builder: (BuildContext context, Offset focus, Widget? _) =>
+              _world(context, zoom, focus),
+        ),
+      ),
+    );
+  }
+
+  /// The world at the framing the camera has reached: the dots, the two
+  /// markers, the arc between them and the idle loops.
+  Widget _world(BuildContext context, double zoom, Offset focus) {
+    final MotionController motion = widget.motion;
+    final MapPoint selfPoint = widget.selfPoint;
+    final MapPoint? serverPoint = widget.serverPoint;
+    final List<MapPoint> fleet = widget.fleet;
+    final bool connected = widget.connected;
+    final bool live = widget.live;
 
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: live ? 1 : 0),
@@ -387,12 +484,16 @@ class _MapBackdrop extends StatelessWidget {
                     // and wallpaper - and a full 360 loop wraps seamlessly.
                     return LoopingBuilder(
                       duration: const Duration(seconds: 240),
-                      reduceMotion: motion.reduceMotion,
+                      // ROUND 29: the sway waits for the spawn fade. While the
+                      // map is appearing the loop is held at its centre, so
+                      // the picture cannot slide sideways before it is even
+                      // fully visible.
+                      reduceMotion: motion.reduceMotion || !_spawnDone,
                       frozenValue: 0,
                       builder: (BuildContext context, double drift) {
                         return DottedWorld(
-                          zoom: view.zoom,
-                          focus: view.focus,
+                          zoom: zoom,
+                          focus: focus,
                           dotOpacity: 0.58,
                           // ROUND 6: the map used to scroll one way for ever,
                           // like a marquee. Folding the 0 -> 1 drift into a

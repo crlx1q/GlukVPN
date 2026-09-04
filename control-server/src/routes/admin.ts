@@ -23,6 +23,7 @@ import {
 	closeSessionsForNode,
 	closeSessionsForUser,
 } from "../services/sessions"
+import { listClientErrors } from "../services/telemetry"
 import { revokeRefreshTokens } from "../services/tokens"
 
 const IdParams = z.object({ id: z.string().uuid("Invalid id") })
@@ -1112,5 +1113,25 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 				createdAt: log.createdAt.toISOString(),
 			})),
 		})
+	})
+
+	/**
+	 * Uncaught errors reported by the clients (desktop, mobile, extension, web).
+	 * `?platform=` narrows to one client, `?limit=` up to 500, newest first.
+	 *
+	 * Everything here was scrubbed of credentials on the way in, so the panel can
+	 * show the raw stack trace without leaking a token to whoever is on support.
+	 */
+	app.get("/api/admin/client-errors", async (request, reply) => {
+		const parsed = z
+			.object({
+				platform: z.enum(["windows", "android", "extension", "web"]).optional(),
+				limit: z.coerce.number().int().min(1).max(500).default(100),
+			})
+			.safeParse(request.query ?? {})
+
+		const limit = parsed.success ? parsed.data.limit : 100
+		const platform = parsed.success ? parsed.data.platform : undefined
+		return reply.send(await listClientErrors({ platform, limit }))
 	})
 }

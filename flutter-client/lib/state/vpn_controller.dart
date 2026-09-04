@@ -7,6 +7,7 @@ import '../desktop/logic/node_selector.dart';
 import '../models/models.dart';
 import '../services/api_client.dart';
 import '../services/ping_service.dart';
+import '../services/tunnel_notification.dart';
 import '../services/vpn_service.dart';
 import 'auth_controller.dart';
 
@@ -23,17 +24,24 @@ class VpnController extends ChangeNotifier {
     required VpnService vpn,
     required PingService ping,
     required AuthController auth,
+    TunnelNotifications? notifications,
   })  : _api = api,
         _vpn = vpn,
         _pingService = ping,
-        _auth = auth;
+        _auth = auth,
+        _notifications = notifications ?? TunnelNotifications();
 
   final ApiClient _api;
   final VpnService _vpn;
   final PingService _pingService;
   final AuthController _auth;
 
+  /// The ongoing Android notification with the Disconnect button. Every call
+  /// on it is a no-op off Android, so the controller stays host-agnostic.
+  final TunnelNotifications _notifications;
+
   StreamSubscription<TunnelStage>? _stageSubscription;
+  StreamSubscription<void>? _shadeSubscription;
   Timer? _statusTimer;
   Timer? _pingTimer;
   Timer? _tickTimer;
@@ -58,6 +66,13 @@ class VpnController extends ChangeNotifier {
   bool _busy = false;
   bool _peerReady = false;
   bool _disposed = false;
+  bool _russian = false;
+
+  /// True while the shade is showing our notification. Guards the redraw: the
+  /// status poll runs every few seconds and starting a foreground service on
+  /// each pass would be pure waste.
+  bool _notificationShown = false;
+
   DateTime? _connectedSince;
   Duration _connectedFor = Duration.zero;
 
@@ -98,6 +113,18 @@ class VpnController extends ChangeNotifier {
   bool get busy => _busy;
   bool get peerReady => _peerReady;
   Duration get connectedFor => _connectedFor;
+
+  /// Which language the notification in the shade is written in.
+  ///
+  /// Set from the interface language, exactly like the desktop controller does
+  /// it: the shade is read by the user, not by a log.
+  bool get russian => _russian;
+  set russian(bool value) {
+    if (_russian == value) return;
+    _russian = value;
+    // Switching the language must not leave yesterday's wording on screen.
+    if (_notificationShown) _showTunnelNotification(force: true);
+  }
 
   bool get isConnected => _state == VpnUiState.connected;
   bool get isTransitioning =>
@@ -140,6 +167,9 @@ class VpnController extends ChangeNotifier {
 
   Future<void> init() async {
     _stageSubscription ??= _vpn.stages.listen(_onStage);
+    _shadeSubscription ??= _notifications.disconnectRequests.listen(
+      (void _) => _onShadeDisconnectRequest(),
+    );
     try {
       await _vpn.initialize();
     } catch (error) {
@@ -147,6 +177,9 @@ class VpnController extends ChangeNotifier {
     }
     await loadNodes();
     await _syncWithServer(initial: true);
+    // A Disconnect pressed in the shade while the app was not running is
+    // served here - before the first frame can claim the tunnel is still up.
+    await syncShadeStop();
     if (_state == VpnUiState.disconnected) _probeHomeIp().ignore();
   }
 
@@ -156,6 +189,8 @@ class VpnController extends ChangeNotifier {
     _stopTimers();
     _stageSubscription?.cancel();
     _stageSubscription = null;
+    _shadeSubscription?.cancel();
+    _shadeSubscription = null;
     super.dispose();
   }
 
@@ -324,6 +359,72 @@ class VpnController extends ChangeNotifier {
     }
   }
 
+  // --- the Disconnect button in the notification shade ---------------------
+
+  /// Draws the ongoing notification for a live tunnel.
+  void _showTunnelNotification({bool force = false}) {
+    if (_notificationShown && !force) return;
+    _notificationShown = true;
+    final String? place = _selectedNode?.name;
+    _notifications
+        .show(
+          title: _russian ? 'GlukVPN подключён' : 'GlukVPN is connected',
+          body: place == null
+              ? (_russian ? 'Туннель активен' : 'The tunnel is up')
+              : (_russian ? 'Через $place' : 'Through $place'),
+          actionLabel: _russian ? 'Отключить' : 'Disconnect',
+          stoppingLabel: _russian ? 'Отключаем…' : 'Disconnecting…',
+          channelName: _russian ? 'Состояние VPN' : 'VPN status',
+        )
+        .ignore();
+  }
+
+  /// The button was pressed while this isolate was alive.
+  void _onShadeDisconnectRequest() {
+    // The platform also recorded the request, in case the app died before it
+    // could be served. It is being served right now, so clear that record -
+    // otherwise the next tunnel the user raises would be torn down on resume.
+    _notifications.consumeStopRequest().ignore();
+    unawaited(_serveShadeStop());
+  }
+
+  /// Serves a Disconnect that was pressed while the app was not running.
+  ///
+  /// Called at start-up and on every resume. Reading the platform's record is
+  /// what keeps the screen from coming back as "Connected" over a tunnel the
+  /// user has already stopped from the shade.
+  Future<void> syncShadeStop() async {
+    if (!await _notifications.consumeStopRequest()) return;
+    await _serveShadeStop();
+  }
+
+  /// The teardown itself: the tunnel first, then the session on the control
+  /// plane (POST /api/vpn/disconnect through [_closeServerSession]).
+  ///
+  /// Deliberately not routed through [disconnect]: that one returns early when
+  /// the app already believes it is disconnected, and the app's idea of the
+  /// state is exactly what may be stale after a shade press.
+  Future<void> _serveShadeStop() async {
+    if (_state == VpnUiState.disconnecting) return;
+    debugPrint('vpn: serving Disconnect from the notification shade');
+    _state = VpnUiState.disconnecting;
+    _busy = true;
+    _safeNotify();
+    try {
+      await _vpn.stop();
+      await _closeServerSession(reason: 'notification shade');
+    } finally {
+      _resetConnectionState();
+      _state = VpnUiState.disconnected;
+      _busy = false;
+      _notice = _russian
+          ? 'Отключено из шторки уведомлений.'
+          : 'Disconnected from the notification shade.';
+      _safeNotify();
+      _probeHomeIp(settle: const Duration(milliseconds: 1200)).ignore();
+    }
+  }
+
   // --- status polling ------------------------------------------------------
 
   Future<void> refreshStatus() => _syncWithServer();
@@ -339,6 +440,9 @@ class VpnController extends ChangeNotifier {
         _state = VpnUiState.connected;
         _connectedSince ??= status.session?.connectedAt ?? DateTime.now();
         _startTimers();
+        // Also covers a tunnel adopted at start-up: whatever raised it, the
+        // shade gets the control while it is up.
+        _showTunnelNotification();
       } else if (status.connected && !stage.isConnected && initial) {
         // The server has a live session but no tunnel is running here: the app
         // was killed or the phone rebooted. Close it so the node drops the peer
@@ -478,6 +582,11 @@ class VpnController extends ChangeNotifier {
 
   void _resetConnectionState() {
     _stopTimers();
+    // The tunnel is gone: the shade must stop offering to stop it.
+    if (_notificationShown) {
+      _notificationShown = false;
+      _notifications.hide().ignore();
+    }
     _session = null;
     _tunnel = null;
     _exitIp = null;
@@ -498,6 +607,9 @@ class VpnController extends ChangeNotifier {
         _state = VpnUiState.connected;
         _connectedSince ??= DateTime.now();
         _startTimers();
+        // The tunnel is up: put the Disconnect button in the shade, so the
+        // user never has to open the app to stop it.
+        _showTunnelNotification();
         // Settle window before the first exit-IP read: probing the instant the
         // platform reports the tunnel up answers over the old link and flashes
         // the home address in the panel.

@@ -20,6 +20,25 @@ import { formatNodeLocation, localizeCountry, localizeCity } from '../lib/geo.js
 import { bestNode } from '../lib/pick.js'
 import { paintIcons, iconSvg } from './icons.js'
 import { flagSvg } from './flags.js'
+import { Telemetry } from '../lib/telemetry.js'
+
+/* Bug reports. The popup is a real document, so the DOM globals exist here.
+ * The open view travels with the report - it is usually the whole repro. */
+function crashContext(kind) {
+	try {
+		return `popup:${kind}:${state?.view ?? 'boot'}`
+	} catch {
+		return `popup:${kind}`
+	}
+}
+
+window.addEventListener('error', (event) => {
+	Telemetry.report(event?.error ?? event?.message, crashContext('error'))
+})
+
+window.addEventListener('unhandledrejection', (event) => {
+	Telemetry.report(event?.reason, crashContext('unhandledrejection'))
+})
 
 /* The shared modules hand out a translator factory and a flag element
  * builder. These adapters keep the rest of the file readable. */

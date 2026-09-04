@@ -408,7 +408,12 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     // Coming back from the background: re-sync with the real tunnel and session,
     // and re-check reachability so a stale offline banner clears itself.
     if (state == AppLifecycleState.resumed && mounted) {
-      context.read<VpnController>().refreshStatus();
+      final VpnController vpn = context.read<VpnController>();
+      // A Disconnect pressed in the notification shade while the app was in
+      // the background is served before the status poll, so the screen cannot
+      // repaint as "Connected" first and correct itself a second later.
+      vpn.syncShadeStop();
+      vpn.refreshStatus();
       context.read<ConnectivityService>().check();
     }
   }

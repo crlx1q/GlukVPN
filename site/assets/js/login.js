@@ -346,4 +346,30 @@
       pw.setAttribute("aria-label", shown ? "Скрыть пароль" : "Показать пароль");
     });
   }
+
+  /* МЕГА-СПРИНТ, БЛОК B: правая половина экрана входа — интерактивная
+     космическая сцена (assets/js/cosmos.js). Монтируем её отсюда, а не из
+     самого cosmos.js, по одной причине: на узких экранах панель скрыта
+     CSS-ом, и поднимать анимацию для того, чего никто не видит, — просто
+     расход батареи. Проверяем реальную видимость, а не ширину окна. */
+  function mountCosmos() {
+    var canvas = document.querySelector("[data-cosmos]");
+    if (!canvas || !window.GlukCosmos) return;
+    var visible = canvas.getClientRects().length > 0;
+    if (visible) {
+      try {
+        visible = window.getComputedStyle(canvas).display !== "none";
+      } catch (e) {
+        visible = true;
+      }
+    }
+    if (!visible) return;
+    window.GlukCosmos.mount(canvas);
+  }
+
+  mountCosmos();
+  /* Поворот телефона или растянутое окно могут открыть панель, которой не
+     было в момент загрузки. Повторный вызов безопасен: mount() помечает
+     canvas и второй раз сцену не поднимает. */
+  window.addEventListener("resize", mountCosmos);
 })();

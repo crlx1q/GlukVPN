@@ -137,6 +137,15 @@ const EnvSchema = z.object({
 	RATE_LIMIT_MAX: z.coerce.number().int().min(10).max(10000).default(120),
 	RATE_LIMIT_WINDOW: z.string().min(1).default("1 minute"),
 
+	// --------------------------- crash reporting -----------------------------
+	// Every client posts its uncaught errors to /api/telemetry/error, and the
+	// admin panel reads them back. Off = the route accepts the request and
+	// stores nothing, which is the switch to reach for if a broken release ever
+	// starts hammering it. Reports are scrubbed of credentials before storage
+	// (services/telemetry.ts) and swept once the retention window passes.
+	CLIENT_TELEMETRY_ENABLED: envFlag("true"),
+	CLIENT_ERROR_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+
 	// ------------------------------ identity ---------------------------------
 	// Email is a second login identity and the first step of sign-up. Delivery
 	// is live: services/mailer.ts speaks SMTP straight to Zoho over implicit TLS
