@@ -60,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _toggle(VpnController vpn) async {
     if (vpn.busy) return;
-    if (vpn.isConnected) {
+    if (vpn.isConnected || vpn.state == VpnUiState.connecting) {
       await vpn.disconnect();
       return;
     }

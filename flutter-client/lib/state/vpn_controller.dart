@@ -545,11 +545,16 @@ class VpnController extends ChangeNotifier {
       await Future<void>.delayed(settle);
       if (_disposed || _state != VpnUiState.connected) return;
     }
-    final String? ip = await _api.probeExitIp();
-    // The tunnel may have gone while the probe was out; an answer that arrives
-    // for a session that no longer exists must not be painted.
-    if (ip == null || _disposed || _state != VpnUiState.connected) return;
-    _exitIp = ip;
+    String? ip = await _api.probeExitIp();
+    if (_disposed || _state != VpnUiState.connected) return;
+    if (ip == null) {
+      // Retry once after 2.5 seconds if network took a moment to settle
+      await Future<void>.delayed(const Duration(milliseconds: 2500));
+      if (_disposed || _state != VpnUiState.connected) return;
+      ip = await _api.probeExitIp();
+    }
+    if (_disposed || _state != VpnUiState.connected) return;
+    _exitIp = ip ?? _selectedNode?.host;
     _safeNotify();
   }
 
@@ -622,11 +627,14 @@ class VpnController extends ChangeNotifier {
         _rollbackConnect().ignore();
         break;
       case TunnelStage.disconnected:
-        if (_state == VpnUiState.connected) {
-          _notice = 'The tunnel was closed.';
-          _closeServerSession(reason: 'tunnel dropped').ignore();
+        if (_state != VpnUiState.disconnected) {
+          if (_state == VpnUiState.connected) {
+            _notice = _russian ? 'Туннель был разорван.' : 'The tunnel was closed.';
+            _closeServerSession(reason: 'tunnel dropped').ignore();
+          }
           _resetConnectionState();
           _state = VpnUiState.disconnected;
+          _safeNotify();
           _probeHomeIp(settle: const Duration(milliseconds: 1200)).ignore();
         }
         break;

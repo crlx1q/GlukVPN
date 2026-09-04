@@ -92,7 +92,7 @@ class PingService {
   Future<int?> _icmpRtt(String host) async {
     try {
       final Ping ping = Ping(host, count: 1, timeout: 2);
-      await for (final PingData event in ping.stream) {
+      await for (final PingData event in ping.stream.handleError((Object _) {})) {
         final PingResponse? response = event.response;
         final Duration? time = response?.time;
         if (time != null) return time.inMilliseconds;
