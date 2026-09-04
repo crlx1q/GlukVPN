@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../../config.dart';
+import '../../models/device_limit.dart';
 import '../../models/models.dart';
 import '../../platform/tunnel_backend.dart';
 import '../../services/api_client.dart';
@@ -102,6 +103,11 @@ class DesktopVpnController extends ChangeNotifier {
   /// "Connect on launch" fires at most once per process.
   bool _autoConnectAttempted = false;
 
+  /// The last connect was refused because every device slot on the plan is
+  /// taken. Kept apart from the phase because `limitReached` also covers an
+  /// inactive subscription, and only this case can be fixed from the app.
+  bool _deviceLimitPending = false;
+
   /// Which data plane the current (or last) session runs on. Null until a
   /// tunnel has been requested or adopted; see [engine].
   TunnelEngine? _engine;
@@ -183,6 +189,38 @@ class DesktopVpnController extends ChangeNotifier {
 
   /// Set when Auto had to fall back to a less-than-ideal node.
   String? get autoFallbackReason => _autoFallbackReason;
+
+  /// The devices holding the account's slots, as sent with the refusal.
+  DeviceLimitDetails? get deviceLimit => _auth.deviceLimit;
+
+  /// True when this PC is blocked purely by the device ceiling AND the server
+  /// named the devices that could be signed out. Without a list the picker
+  /// would be an empty box, so the plain banner is shown instead.
+  bool get deviceLimitBlocked {
+    final DeviceLimitDetails? limit = _auth.deviceLimit;
+    return _deviceLimitPending && limit != null && limit.isActionable;
+  }
+
+  /// Frees one slot and registers this PC into it.
+  ///
+  /// Revoking closes that device's sessions and removes its peer from the node,
+  /// and [AuthController.freeDeviceSlot] clears the verdict only after the
+  /// re-registration succeeded - so a failure anywhere leaves the picker on
+  /// screen with the same list instead of silently doing nothing.
+  Future<void> freeDeviceSlot(String deviceId) async {
+    await _auth.freeDeviceSlot(deviceId);
+    _deviceLimitPending = false;
+    _notify();
+  }
+
+  /// Drops the verdict when the user dismisses the picker, so it does not keep
+  /// reopening itself on every notification.
+  void clearDeviceLimit() {
+    if (!_deviceLimitPending) return;
+    _deviceLimitPending = false;
+    _auth.clearDeviceLimit();
+    _notify();
+  }
 
   /// True on plans that may not choose a server by hand (requirement 8).
   bool get manualSelectionLocked => !manualSelectionAllowed(_auth.subscription);
@@ -520,10 +558,45 @@ class DesktopVpnController extends ChangeNotifier {
       // peer. Windows occupies exactly one device slot (requirement 17).
       try {
         await _auth.ensureDeviceRegistered();
+        _deviceLimitPending = false;
+      } on ApiException catch (e) {
+        // Running out of slots is not a generic registration failure. The 409
+        // carries the devices holding them, so this is the one case the user
+        // can fix from here - the home screen turns the verdict into a picker.
+        // Reporting it as "Could not register this PC as a device: 409" is what
+        // left the Windows client with a dead end while the phone offered a way
+        // out of the very same refusal.
+        if (e.isDeviceLimit) {
+          _deviceLimitPending = true;
+          dlog.error(
+            'connect',
+            'device limit reached',
+            '${e.statusCode} ${e.code} ${e.message}',
+          );
+          _fail(
+            ConnectionPhase.limitReached,
+            'device_limit_reached',
+            e.message,
+          );
+          return;
+        }
+        dlog.error(
+          'connect',
+          'device registration failed',
+          '${e.statusCode} ${e.code} ${e.message}',
+        );
+        // Anything else is a failed attempt, not a limit: mislabelling it as
+        // limitReached told the user to free a slot they had not filled.
+        _fail(
+          ConnectionPhase.connectionFailed,
+          'device_registration_failed',
+          _describeApi(e),
+        );
+        return;
       } catch (e) {
         dlog.error('connect', 'device registration failed', e);
         _fail(
-          ConnectionPhase.limitReached,
+          ConnectionPhase.connectionFailed,
           'device_registration_failed',
           'Could not register this PC as a device: $e',
         );

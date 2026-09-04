@@ -154,6 +154,25 @@ class DesktopStrings {
   String get channelProdUnavailable => _t('channelProdUnavailable');
   String get channelRefused => _t('channelRefused');
 
+  // ---- device limit ----
+
+  /// "Device limit reached (3 / 3)" - [usage] is the account's own allowance,
+  /// never a hard-coded 5.
+  String deviceLimitTitle(String usage) =>
+      _t('deviceLimitTitle').replaceFirst('{usage}', usage);
+  String get deviceLimitBody => _t('deviceLimitBody');
+  String get deviceLimitFreeSlot => _t('deviceLimitFreeSlot');
+  String get deviceLimitReleasing => _t('deviceLimitReleasing');
+  String get deviceLimitConnectedNow => _t('deviceLimitConnectedNow');
+  String deviceLimitLastSeen(String stamp) =>
+      _t('deviceLimitLastSeen').replaceFirst('{time}', stamp);
+  String deviceLimitVia(String node) =>
+      _t('deviceLimitVia').replaceFirst('{node}', node);
+  String get deviceLimitThisPc => _t('deviceLimitThisPc');
+  String get deviceLimitEmpty => _t('deviceLimitEmpty');
+  String get deviceLimitFailed => _t('deviceLimitFailed');
+  String get deviceLimitRefreshFailed => _t('deviceLimitRefreshFailed');
+
   /// Human label for a connection phase.
   String phaseLabel(ConnectionPhase phase) => _t(phase.labelKey);
 
@@ -272,6 +291,22 @@ class DesktopStrings {
     'channelBetaUnavailable': 'The beta server is currently unavailable',
     'channelProdUnavailable': 'The production server is currently unavailable',
     'channelRefused': 'This build cannot switch to the beta channel',
+    // device limit
+    'deviceLimitTitle': 'Device limit reached ({usage})',
+    'deviceLimitBody':
+        'Every device slot on your plan is taken. Sign one of them out to '
+            'free a slot - this PC connects right after.',
+    'deviceLimitFreeSlot': 'Free the slot',
+    'deviceLimitReleasing': 'Signing out…',
+    'deviceLimitConnectedNow': 'connected now',
+    'deviceLimitLastSeen': 'last seen {time}',
+    'deviceLimitVia': 'via {node}',
+    'deviceLimitThisPc': 'this PC',
+    'deviceLimitEmpty': 'The server sent no devices to choose from.',
+    'deviceLimitFailed': 'Could not sign that device out. Try another one.',
+    'deviceLimitRefreshFailed':
+        'Showing the list from the refusal: the device list could not be '
+            'refreshed, so the node column may be missing.',
     // phases
     'phase.disconnected': 'Disconnected',
     'phase.connecting': 'Connecting…',
@@ -305,6 +340,7 @@ class DesktopStrings {
     'detail.connectTimeout': 'The tunnel did not come up in time',
     'detail.notAuthenticated': 'Sign in again to connect',
     'detail.noNodes': 'No servers are available right now',
+    'detail.deviceLimit': 'Every device slot on your plan is taken',
   };
 
   static const Map<String, String> _ru = <String, String>{
@@ -411,6 +447,22 @@ class DesktopStrings {
     'channelBetaUnavailable': 'Бета-сервер сейчас недоступен',
     'channelProdUnavailable': 'Продакшен-сервер сейчас недоступен',
     'channelRefused': 'Эта сборка не умеет переключаться на бета-канал',
+    // device limit
+    'deviceLimitTitle': 'Лимит устройств достигнут ({usage})',
+    'deviceLimitBody':
+        'Все слоты устройств на тарифе заняты. Отвяжите одно из них, чтобы '
+            'освободить слот, — этот компьютер подключится сразу после.',
+    'deviceLimitFreeSlot': 'Освободить слот',
+    'deviceLimitReleasing': 'Отвязываем…',
+    'deviceLimitConnectedNow': 'подключено сейчас',
+    'deviceLimitLastSeen': 'было в сети {time}',
+    'deviceLimitVia': 'через {node}',
+    'deviceLimitThisPc': 'этот компьютер',
+    'deviceLimitEmpty': 'Сервер не прислал список устройств.',
+    'deviceLimitFailed': 'Не удалось отвязать устройство. Попробуйте другое.',
+    'deviceLimitRefreshFailed':
+        'Показан список из отказа: обновить список устройств не удалось, '
+            'поэтому нода может не отображаться.',
     // phases
     'phase.disconnected': 'Не подключено',
     'phase.connecting': 'Подключение…',
@@ -443,5 +495,6 @@ class DesktopStrings {
     'detail.connectTimeout': 'Туннель не поднялся вовремя',
     'detail.notAuthenticated': 'Войдите заново, чтобы подключиться',
     'detail.noNodes': 'Сейчас нет доступных серверов',
+    'detail.deviceLimit': 'Все слоты устройств на тарифе заняты',
   };
 }

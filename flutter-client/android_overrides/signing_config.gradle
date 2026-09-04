@@ -1,0 +1,96 @@
+// ---------------------------------------------------------------------------
+// Persistent release signing.
+//
+// CI appends this file to the generated android/app/build.gradle, next to the
+// AGP 8 namespace shim it appends to android/build.gradle.
+//
+// Why this exists: with no release keystore, `flutter build apk --release`
+// falls back to the debug key, and that key is generated per machine - so a
+// fresh CI runner invents a new one on every run. Android refuses to replace
+// an installed app with a build signed by a different certificate, which is
+// exactly the "app not installed" report: the only way to install a new
+// version was to delete the old one and lose its data with it.
+//
+// Where the credentials come from, in order:
+//   1. android/key.properties - written by CI from the repository secrets, and
+//      the file a developer creates locally. It must never be committed.
+//   2. the ANDROID_KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_ALIAS and
+//      KEY_PASSWORD environment variables.
+//
+// When neither source is complete the build falls back to the debug key,
+// exactly as before, so a clone without secrets still produces an APK - it
+// just cannot upgrade an installed one, and says so in the build log.
+// ---------------------------------------------------------------------------
+
+def glukTrim = { Object value ->
+    if (value == null) return null
+    String text = value.toString().trim()
+    return text.isEmpty() ? null : text
+}
+
+def glukProps = new Properties()
+def glukPropsFile = rootProject.file('key.properties')
+if (glukPropsFile.exists()) {
+    glukPropsFile.withInputStream { stream -> glukProps.load(stream) }
+}
+
+// key.properties wins over the environment: a developer who wrote the file by
+// hand means it, and CI writes the same file from its secrets.
+def glukPick = { String propertyName, String envName ->
+    return glukTrim(glukProps.getProperty(propertyName)) ?: glukTrim(System.getenv(envName))
+}
+
+def glukStorePath = glukPick('storeFile', 'ANDROID_KEYSTORE_PATH')
+def glukStorePassword = glukPick('storePassword', 'KEYSTORE_PASSWORD')
+def glukKeyAlias = glukPick('keyAlias', 'KEY_ALIAS')
+// A keystore generated with one password for both is the common case, so an
+// absent key password means "same as the store password" rather than a failure.
+def glukKeyPassword = glukPick('keyPassword', 'KEY_PASSWORD') ?: glukStorePassword
+
+def glukStoreFile = null
+if (glukStorePath != null) {
+    File candidate = new File(glukStorePath)
+    // A bare file name is resolved against android/, which is where CI decodes
+    // the keystore and where the Flutter documentation puts it.
+    glukStoreFile = candidate.isAbsolute() ? candidate : rootProject.file(glukStorePath)
+}
+
+def glukMissing = []
+if (glukStoreFile == null) {
+    glukMissing << 'storeFile / ANDROID_KEYSTORE_PATH'
+} else if (!glukStoreFile.exists()) {
+    glukMissing << "storeFile (${glukStoreFile} does not exist)"
+}
+if (glukStorePassword == null) glukMissing << 'storePassword / KEYSTORE_PASSWORD'
+if (glukKeyAlias == null) glukMissing << 'keyAlias / KEY_ALIAS'
+if (glukKeyPassword == null) glukMissing << 'keyPassword / KEY_PASSWORD'
+
+if (glukMissing.isEmpty()) {
+    android {
+        signingConfigs {
+            release {
+                storeFile glukStoreFile
+                storePassword glukStorePassword
+                keyAlias glukKeyAlias
+                keyPassword glukKeyPassword
+            }
+        }
+        buildTypes {
+            release {
+                // Overrides the `signingConfig signingConfigs.debug` line in the
+                // generated build.gradle: this block is evaluated after it, and
+                // the last assignment wins.
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+    // The path, never the passwords: build logs are readable by anyone who can
+    // see the run.
+    logger.lifecycle("GlukVPN: release builds are signed with ${glukStoreFile}")
+} else {
+    logger.warn(
+        'GlukVPN: no complete release keystore (' + glukMissing.join(', ') +
+            '). The release build falls back to the per-machine debug key, so ' +
+            'the resulting APK cannot upgrade an already installed GlukVPN.'
+    )
+}

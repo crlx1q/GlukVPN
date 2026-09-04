@@ -213,6 +213,8 @@ String? statusDetailKey(String code, TunnelEngine engine) {
       return 'detail.notAuthenticated';
     case 'no_available_nodes':
       return 'detail.noNodes';
+    case 'device_limit_reached':
+      return 'detail.deviceLimit';
     default:
       return null;
   }

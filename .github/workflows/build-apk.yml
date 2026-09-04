@@ -73,6 +73,10 @@ jobs:
           cp android_overrides/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
           cp -R android_overrides/res/* android/app/src/main/res/
           cat android_overrides/namespace_patch.gradle >> android/build.gradle
+          # Persistent release signing. Reads android/key.properties (written by
+          # the step below from the repository secrets) or the ANDROID_* env
+          # variables, and falls back to the debug key when neither is complete.
+          cat android_overrides/signing_config.gradle >> android/app/build.gradle
           rm -f android/app/src/debug/AndroidManifest.xml
           rm -f android/app/src/profile/AndroidManifest.xml
           echo "--- permissions compiled into the app ---"
@@ -86,6 +90,35 @@ jobs:
 
       - name: Unit tests
         run: flutter test
+
+      - name: Decode the release keystore
+        if: env.HAS_KEYSTORE == 'true'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # Gradle signs the APK while it is being built now, so the keystore
+          # has to be on disk before `flutter build apk` runs - not after it,
+          # the way the old apksigner step repacked an already debug-signed
+          # artefact.
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/glukvpn-release.jks
+          if [ ! -s android/glukvpn-release.jks ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 did not decode to a keystore file."
+            exit 1
+          fi
+          # This is the file signing_config.gradle reads. It is written here
+          # rather than committed, and deleted again after the build.
+          {
+            echo "storeFile=glukvpn-release.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
+          } > android/key.properties
+          chmod 600 android/key.properties android/glukvpn-release.jks
+          echo "Keystore staged for Gradle: $(wc -c < android/glukvpn-release.jks) bytes"
 
       - name: Build release APK
         run: |
@@ -111,29 +144,30 @@ jobs:
             --dart-define=API_BASE_URL="$API_BASE_URL" \
             --dart-define=ALLOW_BETA_CHANNEL=true
 
-      - name: Sign with the release keystore
+      - name: Verify the release signature
         if: env.HAS_KEYSTORE == 'true'
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          # Gradle has already signed and zipaligned this APK with the
+          # persistent keystore, so there is nothing left to re-sign. What is
+          # worth doing is checking *which* certificate ended up on it: the
+          # previous flow signed the artefact a second time, which worked but
+          # hid a missing keystore until an install failed on a real phone.
           BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
           echo "Using $BUILD_TOOLS"
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > /tmp/release.jks
-          "$BUILD_TOOLS/zipalign" -p -f 4 \
-            build/app/outputs/flutter-apk/app-release.apk /tmp/glukvpn-aligned.apk
-          "$BUILD_TOOLS/apksigner" sign \
-            --ks /tmp/release.jks \
-            --ks-pass env:KEYSTORE_PASSWORD \
-            --ks-key-alias "$KEY_ALIAS" \
-            --key-pass env:KEY_PASSWORD \
-            --out glukvpn-release.apk \
-            /tmp/glukvpn-aligned.apk
+          cp build/app/outputs/flutter-apk/app-release.apk glukvpn-release.apk
           "$BUILD_TOOLS/apksigner" verify --print-certs glukvpn-release.apk
-          rm -f /tmp/release.jks /tmp/glukvpn-aligned.apk
+          # A debug certificate here means the keystore never reached Gradle.
+          # Publishing that APK would ship another build nobody can upgrade to.
+          if "$BUILD_TOOLS/apksigner" verify --print-certs glukvpn-release.apk \
+            | grep -qi "CN=Android Debug"; then
+            echo "::error::The release APK carries a debug certificate - the keystore was not used."
+            exit 1
+          fi
+
+      - name: Remove the keystore from the workspace
+        if: always()
+        run: rm -f android/key.properties android/glukvpn-release.jks
 
       - name: Debug-key build (no keystore configured)
         if: env.HAS_KEYSTORE != 'true'

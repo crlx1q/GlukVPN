@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../models/device_limit.dart';
 import '../../models/models.dart';
 import '../../services/ping_service.dart';
 import '../../state/auth_controller.dart';
@@ -15,6 +16,7 @@ import '../logic/node_selector.dart';
 import '../state/desktop_vpn_controller.dart';
 import '../theme/desktop_theme.dart';
 import '../widgets/desktop_connect_button.dart';
+import '../widgets/device_limit_sheet.dart';
 import '../widgets/info_panel.dart';
 import '../widgets/secure_banner.dart';
 import '../widgets/server_pill.dart';
@@ -63,6 +65,15 @@ class DesktopHomeScreen extends StatefulWidget {
 class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   Timer? _tick;
 
+  /// The device-limit picker is a modal, so it must be pushed exactly once per
+  /// verdict: the controller notifies on every status poll, and without this
+  /// guard the dialog would stack on top of itself several times a second.
+  bool _deviceLimitOpen = false;
+
+  /// The user closed the picker without freeing anything. The banner keeps its
+  /// "Free the slot" button, but nothing pops up again on its own.
+  bool _deviceLimitDismissed = false;
+
   @override
   void initState() {
     super.initState();
@@ -72,12 +83,56 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       if (!mounted) return;
       if (widget.vpn.phase.isConnected) setState(() {});
     });
+    widget.vpn.addListener(_onVpnChanged);
   }
 
   @override
   void dispose() {
     _tick?.cancel();
+    widget.vpn.removeListener(_onVpnChanged);
     super.dispose();
+  }
+
+  void _onVpnChanged() {
+    if (!mounted) return;
+    if (!widget.vpn.deviceLimitBlocked) {
+      // Either a slot was freed or the verdict was dropped: arm the automatic
+      // prompt again for the next time the account fills up.
+      _deviceLimitDismissed = false;
+      return;
+    }
+    if (_deviceLimitOpen || _deviceLimitDismissed) return;
+    // The verdict arrives from inside notifyListeners(), i.e. during a build or
+    // a state change, and a route cannot be pushed from there.
+    scheduleMicrotask(() {
+      if (mounted) unawaited(_openDeviceLimit());
+    });
+  }
+
+  /// Shows the picker and, once a slot is free, connects this PC straight away
+  /// - which is the entire point of the dialog. Pressing Connect again would
+  /// only repeat the refusal the user just resolved.
+  Future<void> _openDeviceLimit() async {
+    final DeviceLimitDetails? limit = widget.vpn.deviceLimit;
+    if (_deviceLimitOpen || limit == null || !limit.isActionable) return;
+    _deviceLimitOpen = true;
+    try {
+      final bool freed = await showDeviceLimitSheet(
+        context: context,
+        strings: widget.strings,
+        details: limit,
+        api: widget.vpn.api,
+        onRelease: widget.vpn.freeDeviceSlot,
+      );
+      if (!mounted) return;
+      if (freed) {
+        await widget.vpn.connect();
+      } else {
+        _deviceLimitDismissed = true;
+      }
+    } finally {
+      _deviceLimitOpen = false;
+    }
   }
 
   DesktopStrings get s => widget.strings;
@@ -131,7 +186,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           strings: s,
           reduceMotion: widget.reduceMotion,
         );
-        final Widget banner = _HomeBanner(vpn: vpn, strings: s);
+        final Widget banner = _HomeBanner(
+          vpn: vpn,
+          strings: s,
+          onFreeSlot: () => unawaited(_openDeviceLimit()),
+        );
 
         if (!wide) {
           return SingleChildScrollView(
@@ -571,10 +630,18 @@ class _MetricsRail extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _HomeBanner extends StatelessWidget {
-  const _HomeBanner({required this.vpn, required this.strings});
+  const _HomeBanner({
+    required this.vpn,
+    required this.strings,
+    required this.onFreeSlot,
+  });
 
   final DesktopVpnController vpn;
   final DesktopStrings strings;
+
+  /// Opens the device-limit picker. Owned by the screen's State, because a
+  /// dialog needs a context that outlives this stateless rebuild.
+  final VoidCallback onFreeSlot;
 
   @override
   Widget build(BuildContext context) {
@@ -638,14 +705,23 @@ class _HomeBanner extends StatelessWidget {
 
     // 4. A connect attempt failed, or the session/subscription is the problem.
     if (phase.isError) {
+      // The one failure that can be fixed from this screen: every device slot
+      // is taken and the server named the devices holding them. "Try again"
+      // would only reproduce the same refusal, so the action opens the picker.
+      final DeviceLimitDetails? limit =
+          vpn.deviceLimitBlocked ? vpn.deviceLimit : null;
       return SecureBanner(
         tone: SecureTone.danger,
-        title: s.phaseLabel(phase),
-        subtitle: vpn.userMessage ??
-            detail ??
-            (ru ? 'Не удалось подключиться' : 'Could not connect'),
-        actionLabel: s.retry,
-        onAction: () => vpn.connect(),
+        title: limit == null
+            ? s.phaseLabel(phase)
+            : s.deviceLimitTitle(limit.usage),
+        subtitle: limit == null
+            ? (vpn.userMessage ??
+                detail ??
+                (ru ? 'Не удалось подключиться' : 'Could not connect'))
+            : s.deviceLimitBody,
+        actionLabel: limit == null ? s.retry : s.deviceLimitFreeSlot,
+        onAction: limit == null ? () => vpn.connect() : onFreeSlot,
         secondaryActionLabel: copyLabel,
         onSecondaryAction: copyLog,
       );
