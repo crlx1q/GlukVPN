@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:wireguard_flutter/wireguard_flutter.dart';
 import 'package:wireguard_flutter/wireguard_flutter_platform_interface.dart';
 
@@ -68,6 +69,19 @@ class VpnService {
         if (!_stages.isClosed) _stages.add(TunnelStage.error);
       },
     );
+  }
+
+  static const MethodChannel _wgControl =
+      MethodChannel('billion.group.wireguard_flutter/wgcontrol');
+
+  /// Synchronizes permission state with wireguard_flutter backend so its internal
+  /// havePermission flag is set to true before starting a connection.
+  Future<void> syncPermissions() async {
+    try {
+      await _wgControl.invokeMethod<void>('checkPermission');
+    } catch (error) {
+      debugPrint('vpn: syncPermissions failed: $error');
+    }
   }
 
   /// Brings the tunnel up.

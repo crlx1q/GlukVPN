@@ -37,6 +37,8 @@ class TunnelBridge(private val activity: Activity) :
     private var methods: MethodChannel? = null
     private var events: EventChannel? = null
     private var sink: EventChannel.EventSink? = null
+    private var pendingVpnResult: MethodChannel.Result? = null
+    private var pendingNotificationResult: MethodChannel.Result? = null
 
     fun attach(messenger: BinaryMessenger) {
         methods = MethodChannel(messenger, METHOD_CHANNEL).also {
@@ -51,6 +53,8 @@ class TunnelBridge(private val activity: Activity) :
     fun detach() {
         if (live === this) live = null
         sink = null
+        pendingVpnResult = null
+        pendingNotificationResult = null
         methods?.setMethodCallHandler(null)
         methods = null
         events?.setStreamHandler(null)
@@ -105,8 +109,111 @@ class TunnelBridge(private val activity: Activity) :
                 result.success(requested)
             }
 
+            "isVpnPrepared" -> {
+                val intent = android.net.VpnService.prepare(activity)
+                result.success(intent == null)
+            }
+
+            "prepareVpn" -> {
+                val intent = android.net.VpnService.prepare(activity)
+                if (intent == null) {
+                    result.success(true)
+                } else {
+                    if (pendingVpnResult != null) {
+                        try {
+                            pendingVpnResult?.success(false)
+                        } catch (_: Exception) {}
+                    }
+                    pendingVpnResult = result
+                    try {
+                        activity.startActivityForResult(intent, REQUEST_CODE_VPN)
+                    } catch (error: Exception) {
+                        Log.e(TAG, "failed to start VpnService.prepare intent: $error")
+                        pendingVpnResult = null
+                        result.success(false)
+                    }
+                }
+            }
+
+            "checkNotificationPermission" -> {
+                if (Build.VERSION.SDK_INT < 33) {
+                    result.success(true)
+                } else {
+                    val granted = activity.checkSelfPermission(POST_NOTIFICATIONS) ==
+                        PackageManager.PERMISSION_GRANTED
+                    result.success(granted)
+                }
+            }
+
+            "requestNotificationPermission" -> {
+                if (Build.VERSION.SDK_INT < 33) {
+                    result.success(true)
+                } else if (activity.checkSelfPermission(POST_NOTIFICATIONS) ==
+                    PackageManager.PERMISSION_GRANTED
+                ) {
+                    result.success(true)
+                } else {
+                    if (pendingNotificationResult != null) {
+                        try {
+                            pendingNotificationResult?.success(false)
+                        } catch (_: Exception) {}
+                    }
+                    pendingNotificationResult = result
+                    try {
+                        activity.requestPermissions(
+                            arrayOf(POST_NOTIFICATIONS),
+                            PERMISSION_REQUEST,
+                        )
+                    } catch (error: Exception) {
+                        Log.e(TAG, "failed to request notification permission: $error")
+                        pendingNotificationResult = null
+                        result.success(false)
+                    }
+                }
+            }
+
             else -> result.notImplemented()
         }
+    }
+
+    fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?): Boolean {
+        if (requestCode == REQUEST_CODE_VPN) {
+            val isOk = resultCode == Activity.RESULT_OK
+            val prepared = isOk || android.net.VpnService.prepare(activity) == null
+            val pending = pendingVpnResult
+            pendingVpnResult = null
+            main.post {
+                try {
+                    pending?.success(prepared)
+                } catch (e: Exception) {
+                    Log.w(TAG, "could not answer prepareVpn: $e")
+                }
+            }
+            return true
+        }
+        return false
+    }
+
+    fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ): Boolean {
+        if (requestCode == PERMISSION_REQUEST) {
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            val pending = pendingNotificationResult
+            pendingNotificationResult = null
+            main.post {
+                try {
+                    pending?.success(granted)
+                } catch (e: Exception) {
+                    Log.w(TAG, "could not answer notification permission: $e")
+                }
+            }
+            return true
+        }
+        return false
     }
 
     /**
@@ -153,6 +260,7 @@ class TunnelBridge(private val activity: Activity) :
         private const val POST_NOTIFICATIONS =
             "android.permission.POST_NOTIFICATIONS"
         private const val PERMISSION_REQUEST = 8321
+        private const val REQUEST_CODE_VPN = 10014
 
         private const val PREFS = "glukvpn_tunnel"
         private const val KEY_STOP_REQUESTED = "stop_requested"

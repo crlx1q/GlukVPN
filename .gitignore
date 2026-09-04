@@ -11,6 +11,8 @@ secrets/
 *.jks
 *.keystore
 key.properties
+android-keystore-credentials.json
+*-credentials.json
 node-secret*
 node_secret*
 wg0.conf

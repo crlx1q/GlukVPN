@@ -91,6 +91,51 @@ class TunnelNotifications {
     }
   }
 
+  /// Whether Android's VpnService is already prepared (permission granted).
+  Future<bool> isVpnPrepared() async {
+    if (!_android) return true;
+    try {
+      return await _methods.invokeMethod<bool>('isVpnPrepared') ?? false;
+    } catch (error) {
+      debugPrint('tunnel notification: isVpnPrepared failed: $error');
+      return true;
+    }
+  }
+
+  /// Prompts Android's system VPN permission dialog if not yet granted.
+  /// Returns true if permission is granted, false if declined.
+  Future<bool> prepareVpn() async {
+    if (!_android) return true;
+    try {
+      return await _methods.invokeMethod<bool>('prepareVpn') ?? false;
+    } catch (error) {
+      debugPrint('tunnel notification: prepareVpn failed: $error');
+      return true;
+    }
+  }
+
+  /// Checks if POST_NOTIFICATIONS permission is granted on Android 13+.
+  Future<bool> checkNotificationPermission() async {
+    if (!_android) return true;
+    try {
+      return await _methods.invokeMethod<bool>('checkNotificationPermission') ?? true;
+    } catch (error) {
+      debugPrint('tunnel notification: checkNotificationPermission failed: $error');
+      return true;
+    }
+  }
+
+  /// Requests POST_NOTIFICATIONS permission on Android 13+ if not yet granted.
+  Future<bool> requestNotificationPermission() async {
+    if (!_android) return true;
+    try {
+      return await _methods.invokeMethod<bool>('requestNotificationPermission') ?? true;
+    } catch (error) {
+      debugPrint('tunnel notification: requestNotificationPermission failed: $error');
+      return true;
+    }
+  }
+
   Future<void> _invoke(String method, [Map<String, Object?>? arguments]) async {
     if (!_android) return;
     try {

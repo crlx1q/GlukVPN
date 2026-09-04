@@ -175,6 +175,7 @@ class VpnController extends ChangeNotifier {
     } catch (error) {
       _error = 'The VPN engine could not be initialised: $error';
     }
+    _notifications.requestNotificationPermission().ignore();
     await loadNodes();
     await _syncWithServer(initial: true);
     // A Disconnect pressed in the shade while the app was not running is
@@ -279,6 +280,23 @@ class VpnController extends ChangeNotifier {
     _safeNotify();
 
     try {
+      // On Android, request notification permission early so the shade notification appears.
+      await _notifications.requestNotificationPermission();
+
+      // Ensure Android system VPN permission dialog is accepted BEFORE allocating server session.
+      final bool vpnPrepared = await _notifications.prepareVpn();
+      if (!vpnPrepared) {
+        _busy = false;
+        _state = VpnUiState.disconnected;
+        _error = _russian
+            ? 'Для подключения необходимо разрешение на создание VPN.'
+            : 'VPN permission is required to establish a connection.';
+        _safeNotify();
+        return;
+      }
+
+      await _vpn.syncPermissions();
+
       // 1. Our public key must be registered and the tokens device-scoped.
       await _auth.ensureDeviceRegistered();
 

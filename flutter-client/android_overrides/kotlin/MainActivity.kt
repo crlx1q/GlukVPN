@@ -33,4 +33,18 @@ class MainActivity : FlutterActivity() {
         bridge = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        bridge?.onActivityResult(requestCode, resultCode, data)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        bridge?.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
 }

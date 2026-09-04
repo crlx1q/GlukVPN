@@ -99,6 +99,34 @@ jobs:
       - name: Resolve dependencies
         run: flutter pub get
 
+      - name: Patch wireguard_flutter permission handling
+        run: |
+          set -euo pipefail
+          python3 -c '
+          import glob, os
+
+          pattern = os.path.expanduser("~/.pub-cache/hosted/pub.dev/wireguard_flutter-*/android/src/main/kotlin/billion/group/wireguard_flutter/WireguardFlutterPlugin.kt")
+          files = glob.glob(pattern)
+          if not files:
+              print("No wireguard_flutter found in pub cache to patch")
+          for f in files:
+              with open(f, "r") as fp:
+                  content = fp.read()
+              target1 = "this.activity = activityPluginBinding.activity as FlutterActivity"
+              replace1 = "this.activity = activityPluginBinding.activity as FlutterActivity\n        activityPluginBinding.addActivityResultListener(this)"
+              if target1 in content and "addActivityResultListener" not in content:
+                  content = content.replace(target1, replace1)
+
+              target2 = "checkPermission()\n                    throw Exception(\"Permissions are not given\")"
+              replace2 = "checkPermission()\n                    if (!havePermission) {\n                        throw Exception(\"Permissions are not given\")\n                    }"
+              if target2 in content:
+                  content = content.replace(target2, replace2)
+
+              with open(f, "w") as fp:
+                  fp.write(content)
+              print(f"Successfully patched {f}")
+          '
+
       - name: Analyze
         run: flutter analyze || true
 
