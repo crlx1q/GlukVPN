@@ -1179,11 +1179,8 @@ async function switchChannel(target) {
 	settings.channel = target
 	const field = $('s-api-base')
 	if (field) field.value = settings.apiBase?.[target] ?? ''
-	// ROUND 9 (block 4.2): prod is served on 8443, beta on 8444. Leaving the
-	// port behind pointed the browser at the prod listener while carrying beta
-	// credentials, which surfaces as an opaque TLS failure rather than as
-	// "wrong channel".
-	const port = target === 'beta' ? 8444 : 8443
+	// Port 8443 is the open gateway in OCI for all channels
+	const port = 8443
 	settings.gateway = { ...(settings.gateway ?? {}), port }
 	const portField = $('s-gw-port')
 	if (portField) portField.value = String(port)

@@ -318,7 +318,7 @@ function pickNode(nodes, preferredId) {
  */
 function gatewayFor(settings, node) {
 	const paired = (value) => value === 8443 || value === 8444
-	const channelPort = settings.channel === 'beta' ? 8444 : 8443
+	const channelPort = 8443
 	const advertised = Number(node?.browserProxyPort) || 0
 	const saved = Number(settings.gateway?.port) || 0
 	let port = channelPort

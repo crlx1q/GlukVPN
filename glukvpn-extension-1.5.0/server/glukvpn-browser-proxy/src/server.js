@@ -82,37 +82,48 @@ function parseBasic(req) {
 	return { username: decoded.slice(0, index), token: decoded.slice(index + 1) }
 }
 
-async function verify(credentials) {
-	if (!credentials?.token) return { ok: false, reason: 'missing-credentials' }
-	const key = crypto.createHash('sha256').update(credentials.token).digest('hex')
-	const cached = authCache.get(key)
-	if (cached && cached.until > Date.now()) return cached
-
-	let result = { ok: false, reason: 'control-plane-unreachable', until: Date.now() + 5_000 }
+async function verifyWith(apiBase, credentials) {
 	try {
-		const response = await fetch(`${CONTROL_API}/api/vpn/status`, {
+		const response = await fetch(`${apiBase}/api/vpn/status`, {
 			headers: { authorization: `Bearer ${credentials.token}` },
 			signal: AbortSignal.timeout(8_000),
 		})
-		if (response.status === 401 || response.status === 403) {
-			result = { ok: false, reason: 'token-rejected', until: Date.now() + AUTH_TTL_MS }
-		} else if (response.ok) {
+		if (response.ok) {
 			const body = await response.json()
 			if (body.subscriptionActive === false) {
-				result = { ok: false, reason: 'subscription-inactive', until: Date.now() + AUTH_TTL_MS }
+				return { ok: false, reason: 'subscription-inactive', until: Date.now() + AUTH_TTL_MS }
 			} else if (REQUIRE_SESSION && body.connected !== true) {
-				result = { ok: false, reason: 'no-active-session', until: Date.now() + 10_000 }
+				return { ok: false, reason: 'no-active-session', until: Date.now() + 10_000 }
 			} else {
-				result = {
+				return {
 					ok: true,
 					deviceId: credentials.username || body.session?.deviceId || 'browser',
 					until: Date.now() + AUTH_TTL_MS,
 				}
 			}
 		}
+		if (response.status === 401 || response.status === 403) {
+			return { ok: false, reason: 'token-rejected', until: Date.now() + AUTH_TTL_MS }
+		}
 	} catch (error) {
-		log('debug', 'control plane check failed:', error.message)
+		log('debug', `control plane (${apiBase}) check failed:`, error.message)
 	}
+	return null
+}
+
+async function verify(credentials) {
+	if (!credentials?.token) return { ok: false, reason: 'missing-credentials' }
+	const key = crypto.createHash('sha256').update(credentials.token).digest('hex')
+	const cached = authCache.get(key)
+	if (cached && cached.until > Date.now()) return cached
+
+	let result = await verifyWith(CONTROL_API, credentials)
+	if (!result || !result.ok) {
+		const fallbackApi = CONTROL_API.includes('8082') ? 'http://127.0.0.1:8081' : 'http://127.0.0.1:8082'
+		const altResult = await verifyWith(fallbackApi, credentials)
+		if (altResult?.ok) result = altResult
+	}
+	if (!result) result = { ok: false, reason: 'control-plane-unreachable', until: Date.now() + 5_000 }
 	authCache.set(key, result)
 	return result
 }
