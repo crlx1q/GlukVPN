@@ -172,6 +172,10 @@ const EnvSchema = z.object({
 	// Run the long-polling loop inside the API process. Turn it off to run
 	// `npm run bot` as its own unit, so a deploy restart does not drop the bot.
 	TELEGRAM_BOT_IN_PROCESS: envFlag("true"),
+	// Where operational alerts go (traffic budget, unexpected Oracle charges).
+	// A chat id, not a username: the bot can only message a chat it has seen.
+	// Empty means the alert is logged as a warning and not sent.
+	TELEGRAM_ALERT_CHAT_ID: z.string().default(""),
 
 	// ------------------------------- captcha ---------------------------------
 	// Cloudflare Turnstile guards sign-up and password reset: both are cheap for
@@ -193,6 +197,44 @@ const EnvSchema = z.object({
 
 	CORS_ALLOWED_ORIGINS: z.string().default(""),
 	TRUST_PROXY: z.string().default("127.0.0.1"),
+
+	// ---------------------------- Oracle Cloud -------------------------------
+	// Egress accounting against the always-free allowance. Every value is
+	// optional: with no credentials the meter never runs, the admin dashboard
+	// reports "not configured", and a checkout with no Oracle account starts
+	// normally.
+	//
+	// OCI_BILLING_CYCLE_START is the date the PAYG subscription began, e.g.
+	// "2026-03-17". The allowance resets on its anniversary, NOT on the 1st of
+	// the month - an account opened on the 20th would otherwise appear to reset
+	// twenty days early and every alert would fire after the fact.
+	OCI_TENANCY_OCID: z.string().default(""),
+	OCI_USER_OCID: z.string().default(""),
+	OCI_FINGERPRINT: z.string().default(""),
+	OCI_REGION: z.string().default("eu-frankfurt-1"),
+	// !! SECRET !! The API signing key, PEM. Prefer the path on a real host: a
+	// key in the environment shows up in `systemctl show` and in backups.
+	OCI_PRIVATE_KEY: z.string().default(""),
+	OCI_PRIVATE_KEY_PATH: z.string().default(""),
+	OCI_PRIVATE_KEY_PASSPHRASE: z.string().default(""),
+	// Empty compartment = the tenancy root, where a single always-free instance
+	// normally lives. Empty VNIC = every VNIC in the compartment, summed.
+	OCI_COMPARTMENT_OCID: z.string().default(""),
+	OCI_VNIC_OCID: z.string().default(""),
+	// The two namespaces that can answer this disagree on the metric name:
+	// oci_vcn exposes VnicBytesOut and needs nothing installed, while
+	// oci_computeagent exposes NetworksBytesOut and needs the monitoring plugin.
+	OCI_EGRESS_NAMESPACE: z.string().default("oci_vcn"),
+	OCI_EGRESS_METRIC: z.string().default("VnicBytesOut"),
+	// Decimal terabytes, matching how Oracle quotes and bills the allowance.
+	OCI_EGRESS_BUDGET_TB: z.coerce.number().min(0.1).max(1000).default(10),
+	OCI_EGRESS_ALERT_TB: z.string().default("7,8,9,9.5"),
+	OCI_BILLING_CYCLE_START: z.string().default(""),
+	OCI_POLL_INTERVAL_MIN: z.coerce.number().int().min(5).max(1440).default(30),
+	OCI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(15000),
+	// The $0.00 tripwire. Needs the Usage API permission; turn it off when the
+	// key is scoped to Monitoring only, so a 404 does not look like a failure.
+	OCI_USAGE_CHECK_ENABLED: envFlag("true"),
 
 	SEED_ADMIN_USERNAME: z.string().min(3).default("admin"),
 	SEED_ADMIN_PASSWORD: z.string().optional(),

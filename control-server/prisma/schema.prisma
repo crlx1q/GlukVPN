@@ -705,6 +705,35 @@ model LinkRequest {
   @@map("link_requests")
 }
 
+/// Outbound traffic against Oracle's always-free allowance, one row per PAYG
+/// billing cycle.
+///
+/// The alerted thresholds are stored rather than kept in memory because the
+/// meter is polled every few minutes: a deploy restart would otherwise re-send
+/// every alert the cycle had already passed.
+model EgressBudgetCycle {
+  id               String    @id @default(uuid()) @db.Uuid
+  /// First instant of the cycle, UTC. The anniversary of the subscription date.
+  cycleStart       DateTime  @unique @map("cycle_start")
+  cycleEnd         DateTime  @map("cycle_end")
+  /// Bytes out on the node VNIC, as last read from OCI Monitoring.
+  bytesOut         BigInt    @default(0) @map("bytes_out")
+  /// What the Usage API says the tenancy was charged. Expected to stay 0.00.
+  chargedAmount    Decimal?  @map("charged_amount") @db.Decimal(12, 2)
+  chargedCurrency  String?   @map("charged_currency")
+  /// Thresholds in TB already announced, so each one alerts once per cycle.
+  alertedTb        Json      @default("[]") @map("alerted_tb") @db.JsonB
+  chargesAlertedAt DateTime? @map("charges_alerted_at")
+  lastPolledAt     DateTime? @map("last_polled_at")
+  /// Why the last poll failed, so the dashboard can say so instead of showing
+  /// a stale number that looks current.
+  lastError        String?   @map("last_error")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@map("egress_budget_cycles")
+}
+
 enum VerificationPurpose {
   EMAIL_VERIFY
   EMAIL_CHANGE

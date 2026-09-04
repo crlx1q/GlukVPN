@@ -9,6 +9,7 @@ import { clientIp, getAuthUser, requireAdmin } from "../middleware/auth"
 import { bytesToNumber, prisma } from "../prisma"
 import { cancelOrder, grantPlan, markOrderPaid, orderView } from "../services/billing"
 import { categoryLabel } from "../services/domainCategories"
+import { egressBudgetView } from "../services/egressBudget"
 import { effectiveNodeStatus, nodeEndpoint, nodeLoadPercent } from "../services/nodes"
 import {
 	BUILTIN_RULES,
@@ -367,6 +368,24 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 			metadata: { queued },
 		})
 		return reply.send({ ok: true, queued })
+	})
+
+	// ----------------------------------------------------- traffic budget ----
+
+	/**
+	 * Outbound traffic for the current PAYG billing cycle against Oracle's free
+	 * allowance: used, remaining, percent, and whether anything has been charged.
+	 *
+	 * Served from the stored figure rather than by calling Oracle here. The meter
+	 * is polled in the background every OCI_POLL_INTERVAL_MIN minutes, so an
+	 * admin holding down refresh cannot make us hammer a rate-limited API - and
+	 * the reply stays fast enough to sit on a dashboard that auto-refreshes.
+	 *
+	 * `configured: false` means no Oracle credentials or no cycle anchor date;
+	 * the panel should say so rather than render a confident 0%.
+	 */
+	app.get("/api/admin/traffic-budget", async (_request, reply) => {
+		return reply.send(await egressBudgetView())
 	})
 
 	// ---------------------------------------------------------- activity ----

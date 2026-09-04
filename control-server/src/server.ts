@@ -1,6 +1,7 @@
 import { buildApp } from "./app"
 import { config } from "./config"
 import { disconnectPrisma, prisma } from "./prisma"
+import { startEgressBudget } from "./services/egressBudget"
 import { startMonitor } from "./services/monitor"
 import { startTelegramBot, stopTelegramBot } from "./services/telegramBot"
 
@@ -18,6 +19,11 @@ async function main(): Promise<void> {
 	}
 
 	const monitor = startMonitor(app)
+
+	// Oracle's free egress allowance, polled in the background. Without OCI
+	// credentials or a PAYG start date this returns a handle that does nothing,
+	// so the API starts identically on a checkout with no Oracle account.
+	const egressBudget = startEgressBudget(app)
 
 	// The sign-up bot. In-process by default because it is one long-polling
 	// loop with no state of its own; set TELEGRAM_BOT_IN_PROCESS=false to run
@@ -45,6 +51,7 @@ async function main(): Promise<void> {
 		shuttingDown = true
 		app.log.info({ signal }, "shutting_down")
 		monitor.stop()
+		egressBudget.stop()
 		stopTelegramBot()
 		try {
 			await app.close()
