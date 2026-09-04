@@ -177,18 +177,31 @@ class ValueOrSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String? text = value;
+    // Both branches must be measured against the *same* style, or the row
+    // changes height the moment the value lands - the jump this widget exists
+    // to prevent. The skeleton used to fall through to the inherited
+    // DefaultTextStyle while the value rendered with the local fallback below,
+    // so whenever `style` was null and the ambient font size was not 14, the
+    // placeholder and the text were different sizes. Merging the way Text
+    // itself does keeps one resolved style for both.
+    final TextStyle resolved = DefaultTextStyle.of(context).style.merge(
+          style ??
+              const TextStyle(
+                color: GlukColors.text0,
+                fontWeight: FontWeight.w600,
+              ),
+        );
     if (loading && (text == null || text.isEmpty)) {
       return SkeletonText(
         characters: characters,
-        style: style,
+        style: resolved,
         animate: animate,
         alignment: _alignmentFor(textAlign),
       );
     }
     return Text(
       text == null || text.isEmpty ? emptyLabel : text,
-      style: style ??
-          const TextStyle(color: GlukColors.text0, fontWeight: FontWeight.w600),
+      style: resolved,
       textAlign: textAlign,
       maxLines: maxLines,
       overflow: overflow,

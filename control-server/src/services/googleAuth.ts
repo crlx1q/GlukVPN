@@ -33,8 +33,18 @@ export type GoogleIdentity = {
 	hostedDomain: string | null
 }
 
+/**
+ * A forged token can name any `kid` it likes, and an unknown one sends us back
+ * to Google for a fresh key set. Without a floor on how often that may happen,
+ * a loop of junk tokens turns this endpoint into an outbound request amplifier
+ * against Google (and a five-second stall each time for us). Google rotates
+ * roughly daily, so once a minute is generous for the real case.
+ */
+const FORCED_REFRESH_MIN_MS = 60 * 1000
+
 type Cache = { keys: Map<string, KeyObject>; fetchedAt: number }
 let cache: Cache | null = null
+let lastForcedFetch = 0
 
 /** Test hook: preload keys so verification runs without the network. */
 export function __setGoogleJwksForTests(keys: Jwk[] | null): void {
@@ -56,6 +66,8 @@ function toKeyObjects(keys: Jwk[]): Map<string, KeyObject> {
 
 async function loadKeys(force = false): Promise<Map<string, KeyObject>> {
 	if (!force && cache && Date.now() - cache.fetchedAt < JWKS_TTL_MS) return cache.keys
+	if (force && cache && Date.now() - lastForcedFetch < FORCED_REFRESH_MIN_MS) return cache.keys
+	if (force) lastForcedFetch = Date.now()
 	let response: Response
 	try {
 		response = await fetch(JWKS_URL, {

@@ -367,12 +367,15 @@ class _MapBackdrop extends StatelessWidget {
                           // triangle wave makes it travel out and then back,
                           // which is what the desktop client already does and
                           // what reads as a living map instead of a ticker.
-                          driftDegrees:
-                              (((drift <= 0.5
-                                              ? drift * 2
-                                              : (1 - drift) * 2) *
-                                          24) -
-                                      12),
+                          // ROUND 28: the sway has to *start* in the middle
+                          // too. A 0 -> 1 -> 0 triangle begins at its own
+                          // minimum, so the first frame was twelve degrees to
+                          // the left - the map spawned off-centre with you and
+                          // the line pushed against the right edge, and only
+                          // drifted into place a minute later. Centred wave:
+                          // frame one is exactly the midpoint between you and
+                          // the exit.
+                          driftDegrees: centredSway(drift) * 12,
                           selfPoint: selfPoint,
                           serverPoint: serverPoint,
                           nodePoints: fleet,
@@ -393,6 +396,19 @@ class _MapBackdrop extends StatelessWidget {
       },
     );
   }
+}
+
+/// A sway that both starts and ends in the middle.
+///
+/// Returns -1..1 for a 0..1 input, running 0 -> +1 -> 0 -> -1 -> 0. A plain
+/// triangle wave starts at one extreme, which is what pushed the world to one
+/// side on the very first frame; this one opens dead centre and is symmetric
+/// around it. Both ends are 0, so the loop is still seamless.
+double centredSway(double t) {
+  final double phase = t - t.floorToDouble();
+  if (phase < 0.25) return phase * 4;
+  if (phase < 0.75) return 2 - phase * 4;
+  return phase * 4 - 4;
 }
 
 /// `.map-stage` mask - the map fades out towards the bottom so the readouts sit
