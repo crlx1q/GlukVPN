@@ -21,13 +21,13 @@
     if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}
     if(!reduced.matches&&last)angle+=Math.min(time-last,60)*.000045;
     last=time;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
-    var r=Math.min(w*.39,h*.44),cx=w*.54,cy=h*.5;
+    var r=Math.max(w*.48,h*.64),cx=w*.78,cy=h*.49;
     var gradient=ctx.createRadialGradient(cx-r*.35,cy-r*.5,0,cx,cy,r);
     gradient.addColorStop(0,'rgba(180,133,255,.36)');gradient.addColorStop(1,'rgba(19,7,47,.44)');
-    ctx.fillStyle=gradient;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();
+    /* Land dots only: no opaque sphere or decorative orbit. */
     var cos=Math.cos(angle),sin=Math.sin(angle);
-    points.forEach(function(p){var x=p[0]*cos+p[2]*sin,z=p[2]*cos-p[0]*sin;if(z<0)return;ctx.fillStyle='rgba(214,185,255,'+(.24+z*.66)+')';ctx.beginPath();ctx.arc(cx+x*r,cy-p[1]*r,Math.max(1,r/95)*(.65+z*.35),0,Math.PI*2);ctx.fill();});
-    ctx.strokeStyle='rgba(222,197,255,.2)';ctx.lineWidth=1;ctx.beginPath();ctx.ellipse(cx,cy,r*1.14,r*.26,-.25,0,Math.PI*2);ctx.stroke();
+    points.forEach(function(p){var x=p[0]*cos+p[2]*sin,z=p[2]*cos-p[0]*sin;if(z<0)return;ctx.fillStyle='rgba(214,185,255,'+(.24+z*.66)+')';var size=Math.max(1.3,r/110)*(.6+z*.4);ctx.fillRect(cx+x*r-size/2,cy-p[1]*r-size/2,size,size);});
+    
     if(!reduced.matches)raf=requestAnimationFrame(draw);
   }
   function restart(){cancelAnimationFrame(raf);last=0;draw(performance.now());}

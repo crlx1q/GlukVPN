@@ -174,7 +174,7 @@
   var TIER_NAMES = { 0: "Free", 1: "Basic", 2: "Pro" };
 
   function planName(sub) {
-    if (!sub) return "Free";
+    if (!sub) return EN ? 'No subscription' : 'Нет подписки';
     var code = String(sub.plan || sub.planCode || "").toLowerCase();
     if (code === "test") return T("Тестовый");
     var p = planByCode(code);
@@ -197,7 +197,7 @@
     var code = String((sub && sub.plan) || "").toLowerCase();
     var p = billing.plansByCode[code];
     if (p && p.days) return p.days;
-    return 30;
+    return null;
   }
 
   var SUB_STATUS = {
@@ -306,6 +306,13 @@
   }
 
   var state = { devices: [], sessions: [], orders: [], maxDevices: null, currentDeviceId: null, sessionsOk: null };
+  var epoch = 0, accountKey = ''; var D = window.GlukDashboard;
+  function resetAccount() {
+    epoch++; inflight = false; if(D)D.history=[]; state.devices = []; state.sessions = []; state.orders = []; state.maxDevices = null; state.sessionsOk = null;
+    $$('[data-d]').forEach(function(el){if(!el.querySelector('[data-d]')&&el.getAttribute('data-d')!=='sub-bar')el.textContent='—';});
+    ['[data-dash-devices]','[data-dash-sessions]','[data-dash-orders-list]'].forEach(function(sel){var el=$(sel);if(el)el.innerHTML='';});
+    var conn=$('[data-dash-conn]'); if(conn)conn.hidden=true;
+  }
   var billing = { enabled: null, currency: "KZT", plansByCode: {}, loaded: false };
 
   function renderDevices(list) {
@@ -337,6 +344,7 @@
   var pinData = [];
 
   function initMap() {
+    if (D) return; // The live-map renderer is the sole owner.
     var canvas = $("[data-dash-map]");
     if (!canvas || !window.GlukNetworkMap || map) return;
     var h = here();
@@ -355,7 +363,7 @@
   }
 
   function pinsFor(devices) {
-    if (document.querySelector(".dash-in[data-s2-root]")) return [];
+    if (D) return []; // Never invent locations from the browser timezone.
     var h = here();
     var out = [];
     var usedNodes = {};
@@ -385,6 +393,7 @@
   }
 
   function placePins() {
+    if (D) return;
     var box = $("[data-dash-pins]");
     if (!box || !map || !map.px) return;
     if (!map.scale) { try { map.resize(); } catch (e) {} }
@@ -410,7 +419,7 @@
       var stop = s.disconnectedAt ? new Date(s.disconnectedAt) : null;
       var dur = typeof s.durationSec === "number" ? s.durationSec
         : (start && !isNaN(start) ? ((stop && !isNaN(stop) ? stop : new Date()) - start) / 1000 : 0);
-      var live = status === "ACTIVE" || status === "CONNECTED" || (!stop && status !== "CLOSED" && status !== "DISCONNECTED" && !!start && status !== "EXPIRED");
+      var live = !stop && (status === 'ACTIVE' || status === 'CONNECTED');
       return {
         id: s.id || "",
         live: live,
@@ -485,6 +494,7 @@
      VPN-адрес, начало, последний handshake. Нет активной сессии — честно
      говорим, что не подключено. */
   function renderConnection(list) {
+    if(D){D.history=list;if(D.liveData)D.live(D.liveData);return;} // Match details only to server-confirmed sessions.
     var card = $("[data-dash-conn]");
     if (!card) return;
     card.hidden = false;
@@ -567,39 +577,41 @@
     set("sec-email", esc(u.email || "\u2014"));
     set("sec-verified", esc(u.emailVerified ? T("Подтверждена") : T("Не подтверждена")));
     setClass("sec-verified", "is-ok", !!u.emailVerified);
-    var maxDev = state.maxDevices || u.maxDevices || 3;
+    var maxDev = state.maxDevices ?? u.maxDevices ?? '—';
     set("sec-max-dev", esc(String(maxDev)));
-    set("sec-max-ses", esc(String(u.maxConcurrentSessions || 1)));
+    set("sec-max-ses", esc(String(u.maxConcurrentSessions ?? '—')));
     var ORIGIN = { admin: "выдан админом", self: "самостоятельно", register: "самостоятельно", google: "Google", telegram: "Telegram", invite: "по приглашению" };
-    var origin = String(u.origin || "").toLowerCase();
-    set("sec-origin", esc(origin ? (ORIGIN[origin] ? T(ORIGIN[origin]) : u.origin) : "\u2014"));
+    var origin = u.origin;
+    set('sec-origin', esc(origin && typeof origin === 'object' ? [origin.country, origin.region].filter(Boolean).join(' · ') || '—' : '—'));
 
     /* подписка */
-    var status = String((sub && sub.status) || "").toUpperCase();
-    var active = status === "ACTIVE" || status === "TRIAL";
-    var end = sub && sub.expiresAt ? new Date(sub.expiresAt) : null;
+    var model = D.subscription(sub, billing.plansByCode);
+    var status = model.status;
+    var active = model.active;
+    var end = model.end !== null ? new Date(model.end) : null;
     if (end && isNaN(end)) end = null;
-    var left = daysLeftOf(sub);
+    var left = model.left;
     var paid = tier > 0 && (active || status === "EXPIRED" || status === "PENDING");
 
-    set("sub-state", esc(active ? (tier > 0 ? name : T("Активна")) : subStatusLabel(sub)));
+    set('sub-state',esc(active ? name : subStatusLabel({status:status})));
     setClass("sub-state", "is-ok", active && tier > 0);
     setClass("sub-state", "is-warn", !active || (left != null && left <= 5 && tier > 0));
-    set("sub-until", esc(active && end && tier > 0 ? T("до") + " " + fmtDate(end) : tier > 0 ? subStatusLabel(sub) : T("бесплатный тариф")));
-    set("sub-status", esc(subStatusLabel(sub)));
+    set('sub-until',esc(end ? T('до')+' '+fmtDate(end) : subStatusLabel({status:status})));
+    set('sub-status', esc(subStatusLabel({status:status})));
     setClass("sub-status", "is-ok", active);
-    set("sub-date", esc(end ? fmtDate(end) : (tier > 0 ? "\u2014" : T("бессрочно"))));
+    set('sub-date', esc(end ? fmtDate(end) : '—'));
     set("sub-left", esc(left != null && end ? fmtDays(left) : "\u2014"));
     setClass("sub-left", "is-warn", left != null && end && left <= 5);
-    var days = planDays(sub);
-    set("sub-hint", esc(tier > 0 ? name + " \u00b7 " + fmtDays(days) : T("без карты и автосписаний")));
+    var days = model.days;
+    set('sub-hint', esc(days ? name + ' · ' + fmtDays(days) : name));
 
     var bar = $('[data-d="sub-bar"]');
     if (bar) {
       var pct;
       if (!end || left == null) pct = 100;
       else pct = Math.max(left > 0 ? 3 : 0, Math.min(100, (left / Math.max(1, days)) * 100));
-      bar.style.width = pct + "%";
+      bar.parentElement.hidden = model.percent === null;
+      bar.style.width = (model.percent ?? 0) + '%';
       bar.classList.toggle("is-low", !!end && left != null && left <= 5);
       bar.classList.toggle("is-off", !end || !active);
     }
@@ -609,9 +621,7 @@
       cta.textContent = paid && active ? T("Продлить") : tier > 0 ? T("Оплатить снова") : T("Перейти на платный тариф");
       cta.setAttribute("href", root + "pricing/");
     }
-    setText("sub-note", billing.enabled
-      ? T("Оплата и продление — на странице тарифов. Платёж зачисляется автоматически.")
-      : T("Оплата и продление на время беты оформляются вручную."));
+    setText('sub-note',billing.enabled===null ? (EN?'Payment options are unavailable. Refresh to retry.':'Способы оплаты не загрузились. Повторите обновление.') : billing.enabled ? T('Оплата и продление — на странице тарифов. Платёж зачисляется автоматически.') : T('Оплата и продление на время беты оформляются вручную.'));
 
     set("dev-count", esc((typeof st.devices === "number" ? st.devices : state.devices.length) + " / " + maxDev));
     set("dev-note", esc(T("лимит тарифа")));
@@ -632,7 +642,9 @@
   function loadBillingMeta() {
     var A = window.GlukAuth;
     if (billing.loaded || !A || !A.public) return Promise.resolve();
-    return A.public("/api/billing/plans").then(function (json) {
+    var version=epoch;
+    return D.request(A,'/api/billing/plans',null,true).then(function (json) {
+      if(version!==epoch)return;
       billing.loaded = true;
       billing.enabled = !!(json && json.billingEnabled);
       billing.currency = (json && json.currency) || billing.currency;
@@ -640,18 +652,22 @@
         if (p && p.code) billing.plansByCode[String(p.code).toLowerCase()] = p;
       });
     }).catch(function () {
-      billing.loaded = true;
-      billing.enabled = false;
+      if(version!==epoch)return;
+      billing.loaded = false;
+      billing.enabled = null;
     });
   }
 
   function loadDevices() {
     var A = window.GlukAuth;
-    return A.call("/api/devices").then(function (json) {
+    var version=epoch;
+    return D.request(A,'/api/devices').then(function (json) {
+      if(version!==epoch || !A.isAuthed())return;
+      msg('', '');
       state.devices = normalizeDevices(json);
       if (json && typeof json.maxDevices === "number") state.maxDevices = json.maxDevices;
       renderDevices(state.devices);
-      set("dev-count", esc(state.devices.length + " / " + (state.maxDevices || (A.state.user && A.state.user.maxDevices) || 3)));
+      set("dev-count", esc(state.devices.length + " / " + (state.maxDevices ?? (A.state.user && A.state.user.maxDevices) ?? '—')));
       if (state.maxDevices) set("sec-max-dev", esc(String(state.maxDevices)));
       var online = state.devices.filter(function (d) { return d.online; }).length;
       setText("dev-hint", online
@@ -660,8 +676,10 @@
       pinData = pinsFor(state.devices);
       placePins();
     }).catch(function (e) {
+      if(version!==epoch || !A.isAuthed())return;
       state.devices = [];
-      renderDevices([]);
+      var ul=$('[data-dash-devices]');if(ul)ul.innerHTML='<li class="dash-empty">'+esc(EN?'Devices could not be loaded. Refresh to retry.':'Не удалось загрузить устройства. Нажмите «Обновить».')+'</li>';
+      setText('dev-count','—');
       pinData = pinsFor([]);
       placePins();
       msg(human(e, T("Не удалось загрузить устройства.")), "is-err");
@@ -670,47 +688,58 @@
 
   function loadSessions() {
     var A = window.GlukAuth;
-    return A.call("/api/vpn/sessions").then(function (json) {
+    var version=epoch;
+    return D.request(A,'/api/vpn/sessions').then(function (json) {
+      if(version!==epoch || !A.isAuthed())return;
       state.sessions = normalizeSessions(json);
       state.sessionsOk = true;
       renderSessions(state.sessions, false);
     }).catch(function () {
+      if(version!==epoch || !A.isAuthed())return;
       state.sessions = [];
       state.sessionsOk = false;
       renderSessions([], true);
+      if(D)return;
       var card = $("[data-dash-conn]");
-      if (card) card.hidden = true;
+      if (card) card.hidden = false;
+      show('[data-conn-row]',false);
+      setText('conn-state',EN?'Unavailable':'Нет данных'); setClass('conn-state','is-ok',false);
+      setText('conn-hint',EN?'Could not load sessions. Refresh to retry.':'Сессии не загрузились. Повторите обновление.');
     });
   }
 
   function loadOrders() {
     var A = window.GlukAuth;
     if (!billing.enabled) { renderOrders([]); return Promise.resolve(); }
-    return A.call("/api/billing/orders").then(function (json) {
+    var version=epoch;
+    return D.request(A,'/api/billing/orders').then(function (json) {
+      if(version!==epoch || !A.isAuthed())return;
       state.orders = (json && Array.isArray(json.orders)) ? json.orders : [];
       renderOrders(state.orders);
     }).catch(function () {
+      if(version!==epoch || !A.isAuthed())return;
       renderOrders([]);
     });
   }
 
   function loadAll() {
     var A = window.GlukAuth;
-    if (!A || !A.call || inflight) return;
+    if (!A || !A.call || !A.isAuthed() || inflight) return;
     inflight = true;
     var btn = $("[data-dash-refresh]");
     if (btn) btn.classList.add("is-busy");
-    loadBillingMeta()
-      .then(function () {
-        renderAccount(A.state);
-        return Promise.all([loadDevices(), loadSessions(), loadOrders()]);
-      })
+    var version = epoch;
+    Promise.all([loadDevices(), loadSessions(), loadBillingMeta().then(function(){
+      if(version!==epoch || !A.isAuthed())return;
+      renderAccount(A.state); return loadOrders();
+    })])
       .then(function () {
         /* имена устройств в сессиях зависят от списка устройств */
-        if (state.sessionsOk) renderSessions(state.sessions, false);
+        if (version===epoch && state.sessionsOk) renderSessions(state.sessions, false);
       })
       .then(done, done);
     function done() {
+      if (version!==epoch) return;
       inflight = false;
       if (btn) btn.classList.remove("is-busy");
     }
@@ -774,11 +803,14 @@
     var st = (A && A.state) || { status: "loading" };
     if (st.status === "loading") { view("loading"); return; }
     if (st.status !== "in") {
-      view("guest");
-      wasIn = false;
+      view('guest');
+      if(wasIn || accountKey)resetAccount();
+      accountKey=''; wasIn = false;
       return;
     }
-    view("in");
+    var key = String(A.base||'') + ':' + String(st.user && st.user.id || '');
+    if(key!==accountKey){resetAccount();accountKey=key;wasIn=false;billing.loaded=false;billing.plansByCode={};}
+    view('in');
     renderAccount(st);
     initMap();
     if (!wasIn) {
@@ -812,7 +844,8 @@
         else { more.setAttribute("data-open", "1"); more.textContent = T("Свернуть"); }
       }
     });
-    document.addEventListener("gluk:auth", apply);
+    document.addEventListener('gluk:auth', apply);
+    document.addEventListener('gluk:devices-changed', refresh);
 
     /* Мягкое автообновление: раз в 45 с, только на видимой вкладке и только
        когда человек вошёл. Ничего не мигает — списки перерисовываются на месте. */
