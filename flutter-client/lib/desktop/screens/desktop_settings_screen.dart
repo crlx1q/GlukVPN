@@ -618,8 +618,8 @@ class _ProfileCard extends StatelessWidget {
     final String initial =
         name.trim().isEmpty ? '?' : name.trim().substring(0, 1).toUpperCase();
 
-    final bool active = auth.subscription?.isActive ?? false;
-    final Color accent = active ? GlukColors.connected : GlukColors.violetLight;
+    // Subscription name, not its lifecycle status, identifies the plan.
+    final Color accent = GlukColors.violetLight;
 
     // Pulled into locals so the null checks below are plain and unambiguous.
     final String publicId = user?.publicIdLabel ?? '';
@@ -694,9 +694,7 @@ class _ProfileCard extends StatelessWidget {
                         border: Border.all(color: accent.withOpacity(0.35)),
                       ),
                       child: Text(
-                        active
-                            ? (ru ? 'Активна' : 'Active')
-                            : (ru ? 'Бесплатный' : 'Free'),
+                        auth.subscription?.displayPlan ?? '—',
                         style: TextStyle(
                           color: accent,
                           fontSize: 10,

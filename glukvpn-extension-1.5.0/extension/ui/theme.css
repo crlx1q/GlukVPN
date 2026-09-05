@@ -1398,3 +1398,5 @@ body.signed-out .rail { opacity: 0.5; }
 .modal-device .d-text { flex:1; }
 .modal-device button { width:auto; padding:7px 9px; }
 .modal-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
+
+.prof-chip.plan-badge{border-radius:9px;padding:5px 10px;background:#382447;color:#e1c8fa;border:1px solid #674684;font-size:12px;font-weight:600;box-shadow:none}.account-origin,.account-node{pointer-events:all;cursor:help}.account-origin:focus,.account-node:focus{stroke:#fff;stroke-width:.4}

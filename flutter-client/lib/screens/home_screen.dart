@@ -49,12 +49,13 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late final AccountInsightsController _accountMap;
+  bool _inspectMap = false;
   @override void initState() {
     super.initState();
     _accountMap = AccountInsightsController(context.read<VpnController>().api)..addListener(_mapChanged)..setVisible(true);
     WidgetsBinding.instance.addObserver(this);
   }
-  void _mapChanged() { if (mounted) setState(() {}); }
+  void _mapChanged() { if (!mounted)return; if(_accountMap.snapshot!=null)context.read<VpnController>().handleServiceStatus(_accountMap.snapshot!.service);setState(() {}); }
   @override void didChangeAppLifecycleState(AppLifecycleState state) => _accountMap.setVisible(state == AppLifecycleState.resumed);
   @override void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -165,16 +166,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         Positioned.fill(
           child: _MapBackdrop(
             motion: motion,
+            overview: _inspectMap,
             selfPoint: self.point,
             serverPoint: serverPoint,
             fleet: fleet,
             accountArcs: accountMapArcs(_accountMap.snapshot),
-            connected: vpn.isConnected,
-            live: vpn.isConnected || vpn.state == VpnUiState.connecting,
+            connected: vpn.isConnected || (_accountMap.snapshot?.activeTunnels ?? 0) > 0,
+            live: vpn.isConnected || (_accountMap.snapshot?.activeTunnels ?? 0) > 0 || vpn.state == VpnUiState.connecting,
           ),
         ),
         const Positioned.fill(child: IgnorePointer(child: _MapFade())),
-        SafeArea(
+        IgnorePointer(ignoring:_inspectMap,child:AnimatedOpacity(opacity:_inspectMap ? 0.08 : 1.0,duration:const Duration(milliseconds:180),child:SafeArea(
           bottom: false,
           child: Column(
             children: <Widget>[
@@ -214,7 +216,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         onTap: widget.onOpenServers,
                       ),
                       const SizedBox(height: 10),
-                      ActiveAccountMap(api: vpn.api, controller: _accountMap, compact: true, russian: s.isRussian, reduceMotion: motion.reduceMotion, onServiceChanged: vpn.handleServiceStatus),
+                      // All account routes live on the backdrop; no second map card.
                       const SizedBox(height: 14),
                       Row(
                         children: <Widget>[
@@ -335,7 +337,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ],
           ),
-        ),
+        ))),
+        Positioned(top:MediaQuery.paddingOf(context).top+64,right:12,child:IconButton.filledTonal(tooltip:s.isRussian?(_inspectMap?'Назад':'Подключения на карте'):(_inspectMap?'Back':'Connections on map'),onPressed:()=>setState(()=>_inspectMap=!_inspectMap),icon:Icon(_inspectMap?Icons.close_rounded:Icons.hub_outlined))),
       ],
     );
   }
@@ -366,6 +369,7 @@ class _MapBackdrop extends StatefulWidget {
     required this.serverPoint,
     required this.fleet,
     required this.accountArcs,
+    this.overview = false,
     required this.connected,
     required this.live,
   });
@@ -375,6 +379,7 @@ class _MapBackdrop extends StatefulWidget {
   final MapPoint? serverPoint;
   final List<MapPoint> fleet;
   final List<ConnectionArc> accountArcs;
+  final bool overview;
   final bool connected;
   final bool live;
 
@@ -512,8 +517,8 @@ class _MapBackdropState extends State<_MapBackdrop>
                       frozenValue: 0,
                       builder: (BuildContext context, double drift) {
                         return DottedWorld(
-                          zoom: zoom,
-                          focus: focus,
+                          zoom: widget.overview ? 1 : zoom,
+                          focus: widget.overview ? const Offset(.5,.5) : focus,
                           dotOpacity: 0.58,
                           // ROUND 6: the map used to scroll one way for ever,
                           // like a marquee. Folding the 0 -> 1 drift into a

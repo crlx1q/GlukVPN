@@ -17,12 +17,18 @@ function request(A,path,opts,publicRequest){return new Promise(function(resolve,
 function vpn(data){
  var n=data&&data.activeTunnels,rows=data&&Array.isArray(data.devices)?data.devices:[];
  if(typeof n!=='number'||!Number.isFinite(n)||n<0)return 'unknown';
- if(n===0)return 'disconnected';
+ if(n===0)return Number(data.pendingTunnels)>0?'pending':'disconnected';
  if(rows.some(function(d){return d.status==='ACTIVE'||d.status==='CONNECTED';}))return 'connected';
  if(rows.length&&!data.truncated&&rows.every(function(d){return d.status==='PENDING';}))return 'pending';
  return 'unknown';
 }
-var api={subscription:subscription,request:request,vpn:vpn};root.GlukDashboard=api;
+function planLabel(sub){
+ if(!sub)return '—';
+ var code=String(sub.plan||sub.planName||'').toLowerCase().replace(/[\s_-]/g,'');
+ var beta=/beta|β/.test(code),base=code.indexOf('pro')>=0?'Pro':code.indexOf('basic')>=0?'Basic':code.indexOf('free')>=0?'Free':'—';
+ return beta&&base!=='—'?'β '+base:base;
+}
+var api={subscription:subscription,request:request,vpn:vpn,planLabel:planLabel};root.GlukDashboard=api;
 if(typeof module==='object'&&module.exports)module.exports=api;
 if(!root.document)return;
 var doc=root.document,EN=doc.documentElement.getAttribute('data-lang')==='en',tr=function(ru,en){return EN?en:ru;};

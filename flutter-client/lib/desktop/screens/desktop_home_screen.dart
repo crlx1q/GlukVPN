@@ -444,7 +444,7 @@ class _MapCard extends StatelessWidget {
                     context: context, isScrollControlled: true,
                     builder: (_) => SafeArea(child: Padding(
                       padding: const EdgeInsets.all(20),
-                      child: ActiveAccountMap(api: vpn.api, controller: accountMap, russian: s.isRussian, reduceMotion: reduceMotion),
+                      child: ActiveAccountMap(api: vpn.api, controller: accountMap, russian: s.isRussian, reduceMotion: reduceMotion, showMap: false),
                     )),
                   ),
                 ),

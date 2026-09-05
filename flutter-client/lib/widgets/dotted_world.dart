@@ -20,6 +20,11 @@ import '../utils/showcase.dart';
 /// an orthographic globe (1). That is what makes the "planet zooms into the
 /// map" transition possible - it is one widget changing a single number, not two
 /// different screens crossfading.
+class AccountConnectionArc extends ConnectionArc {
+  const AccountConnectionArc({required super.from, required super.to, required this.label, required this.platform, required this.serverLabel});
+  final String label, platform, serverLabel;
+}
+
 class DottedWorld extends StatelessWidget {
 	const DottedWorld({
 		super.key,
@@ -146,9 +151,7 @@ class DottedWorld extends StatelessWidget {
 
 	@override
 	Widget build(BuildContext context) {
-		return RepaintBoundary(
-			child: CustomPaint(
-				painter: _DottedWorldPainter(
+		final painter = _DottedWorldPainter(
 					globeness: globeness.clamp(0.0, 1.0),
 					rotationDegrees: rotationDegrees,
 					centreLongitude: centreLongitude,
@@ -173,10 +176,14 @@ class DottedWorld extends StatelessWidget {
 					showcaseSeconds: showcaseSeconds,
 					pulse: pulse,
 					connected: connected,
-				),
-				size: Size.infinite,
-			),
-		);
+    );
+    return RepaintBoundary(child: LayoutBuilder(builder: (context, constraints) {
+      final size = constraints.biggest;
+      return Stack(fit: StackFit.expand, children: <Widget>[
+        CustomPaint(painter: painter, size: size),
+        ...painter.connectionMarkers(size),
+      ]);
+    }));
 	}
 }
 
@@ -237,6 +244,32 @@ class _DottedWorldPainter extends CustomPainter {
 	/// Dots are bucketed by opacity so the whole map is drawn with a handful of
 	/// `drawPoints` calls instead of 3065 `drawCircle` calls.
 	static const _buckets = 5;
+
+  // Hit targets use the painter's exact projection, including globe culling.
+  List<Widget> connectionMarkers(Size size) {
+    if (accountArcs == null || size.isEmpty || !size.width.isFinite || !size.height.isFinite) return <Widget>[];
+    final scale = size.width / mapWidth * zoom;
+    final centre = Offset(size.width * .5 + (.5-focus.dx)*mapWidth*scale, size.height*.5 + (.5-focus.dy)*mapHeight*scale);
+    final groups = <String, ({Offset offset, List<String> labels, String platform, bool node})>{};
+    for (final arc in accountArcs!.whereType<AccountConnectionArc>()) {
+      for (final node in <bool>[false, true]) {
+        final p = _project(node ? arc.to : arc.from, flatScale: scale, flatCentre: centre, globeRadius: size.width*zoom/math.pi/2, globeCentre: Offset(size.width*globeAnchor.dx,size.height*globeAnchor.dy), size: size);
+        if (p == null || p.visibility < .15) continue;
+        var key = '${node}:${p.offset.dx.toStringAsFixed(1)}:${p.offset.dy.toStringAsFixed(1)}';
+        for(final entry in groups.entries){if(entry.value.node==node&&(entry.value.offset-p.offset).distance<30){key=entry.key;break;}}
+        final label = node ? '${arc.serverLabel}\n${arc.label}' : arc.label;
+        final group = groups[key];
+        if (group == null) { groups[key]=(offset:p.offset,labels:<String>[label],platform:arc.platform,node:node); }
+        else if (!group.labels.contains(label)) { group.labels.add(label); }
+      }
+    }
+    return groups.values.map((g) {
+      final p=g.platform.toLowerCase();
+      final icon=g.node ? Icons.dns_rounded : p.contains('android') || p.contains('ios') ? Icons.smartphone_rounded : p.contains('chrome') || p.contains('extension') ? Icons.web_rounded : Icons.computer_rounded;
+      final message=g.labels.join('\n\n');
+      return Positioned(left:g.offset.dx-18,top:g.offset.dy-18,width:36,height:36,child: Tooltip(message:message,triggerMode:TooltipTriggerMode.tap,waitDuration:const Duration(milliseconds:180),child: Semantics(label:message,button:true,child: MouseRegion(cursor:SystemMouseCursors.click,child: Center(child: Container(width:24,height:24,decoration:BoxDecoration(color:GlukColors.cell,borderRadius:BorderRadius.circular(12),border:Border.all(color:g.node?GlukColors.violetLight:GlukColors.connected)),child: g.labels.length>1 ? Center(child:Text('${g.labels.length}',style:const TextStyle(fontSize:11,color:GlukColors.text0))) : Icon(icon,size:14,color:g.node?GlukColors.violetLight:GlukColors.connected)))))));
+    }).toList();
+  }
 
 	@override
 	void paint(Canvas canvas, Size size) {
@@ -341,7 +374,7 @@ class _DottedWorldPainter extends CustomPainter {
 		// Account routes share the exact projection, culling and glow of the original
 		// map. No locale-derived self point is used for a live account snapshot.
 		if (accountArcs != null) {
-			for (final arc in accountArcs!.take(5)) {
+			for (final arc in accountArcs!) {
 				final from = _project(arc.from, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
 				final to = _project(arc.to, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
 				if (from == null || to == null) continue;
@@ -392,7 +425,7 @@ class _DottedWorldPainter extends CustomPainter {
 		final serverFade = facing(server) * serverOpacity;
 		final accent = connected ? GlukColors.connected : GlukColors.violetLight;
 
-		if (self != null && server != null && arcProgress > 0) {
+		if (accountArcs == null && self != null && server != null && arcProgress > 0) {
 			final routeFade = math.min(selfFade, serverFade);
 			if (routeFade > 0.02) {
 				_paintArc(

@@ -302,14 +302,22 @@ class UsernameChangeResult {
 }
 
 class SubscriptionInfo {
-  const SubscriptionInfo({required this.status, this.expiresAt});
+  const SubscriptionInfo({required this.status, this.expiresAt, this.plan = '', this.planName = ''});
 
   factory SubscriptionInfo.fromJson(Map<String, dynamic> json) => SubscriptionInfo(
+        plan: _asString(json['plan']), planName: _asString(json['planName']),
         status: _asString(json['status'], 'EXPIRED'),
         expiresAt: _asDate(json['expiresAt']),
       );
 
   final String status;
+  final String plan, planName;
+  String get displayPlan {
+    final code = (plan.isNotEmpty ? plan : planName).toLowerCase().replaceAll(RegExp(r'[\s_-]'), '');
+    final beta = code.contains('beta') || code.contains('β');
+    final base = code.contains('pro') ? 'Pro' : code.contains('basic') ? 'Basic' : code.contains('free') ? 'Free' : '—';
+    return beta && base != '—' ? 'β $base' : base;
+  }
   final DateTime? expiresAt;
 
   bool get isActive =>

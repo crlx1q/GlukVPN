@@ -22,7 +22,7 @@ export async function insightsRoutes(app: FastifyInstance): Promise<void> {
 	app.get("/api/user/analytics", { preHandler: requireUser, config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
 		const query = AnalyticsQuery.safeParse(request.query)
 		if (!query.success) throw badRequest("period must be day, week or month")
-		return reply.header("Cache-Control", "private, no-store").send(await accountAnalytics(getAuthUser(request).user.id, query.data.period))
+		return reply.header("Cache-Control", "private, no-store").send(await accountAnalytics(getAuthUser(request).user.id, query.data.period, new Date(), getAuthUser(request).user.isAdmin === true))
 	})
 	app.get("/api/admin/service-settings", { preHandler: requireAdmin }, async (_request, reply) => reply.header("Cache-Control", "no-store").send(await serviceSettings()))
 	app.post("/api/admin/service-settings", { preHandler: requireAdmin, config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (request, reply) => {

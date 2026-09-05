@@ -31,7 +31,7 @@ class AccountInsightsController extends ChangeNotifier {
     final generation = _generation;
     loading = snapshot == null; notifyListeners();
     try {
-      final next = await api.activeMap();
+      final next = await api.activeMap().timeout(const Duration(seconds: 15));
       if (_disposed || !_visible || generation != _generation || !api.isAuthenticated) return;
       snapshot = next; error = null;
     } catch (e) {

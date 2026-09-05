@@ -21,7 +21,7 @@
     if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}
     if(!reduced.matches&&last)angle+=Math.min(time-last,60)*.000045;
     last=time;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
-    var r=Math.max(w*.48,h*.64),cx=w*.78,cy=h*.49;
+    var r=Math.min(w*.42,h*.46),cx=w*.5,cy=h*.5;
     var gradient=ctx.createRadialGradient(cx-r*.35,cy-r*.5,0,cx,cy,r);
     gradient.addColorStop(0,'rgba(180,133,255,.36)');gradient.addColorStop(1,'rgba(19,7,47,.44)');
     /* Land dots only: no opaque sphere or decorative orbit. */

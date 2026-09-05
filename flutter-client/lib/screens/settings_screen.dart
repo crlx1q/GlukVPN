@@ -367,13 +367,11 @@ class _SubscriptionCard extends StatelessWidget {
                 color: GlukColors.violetLight,
               ),
               const SizedBox(width: 8),
-              Text(s.premium, style: text.titleMedium),
+              Text(s.isRussian ? 'Подписка' : 'Subscription', style: text.titleMedium),
               const Spacer(),
               _Pill(
-                label: active
-                    ? s.active
-                    : (subscription?.status.toLowerCase() ?? s.none),
-                tone: active ? GlukColors.connected : GlukColors.amber,
+                label: subscription?.displayPlan ?? '—',
+                tone: GlukColors.violetLight,
               ),
             ],
           ),

@@ -86,6 +86,7 @@ class _DesktopStatsScreenState extends State<DesktopStatsScreen> {
         else if (d.domains.isEmpty) _Empty(ru ? 'Сниффер ещё не записал домены' : 'The sniffer has not recorded any domains yet')
         else ...d.domains.take(12).map((x) => ListTile(contentPadding: EdgeInsets.zero, leading: _Favicon(x.faviconUrl), title: Text(x.domain), subtitle: Text('${x.category} · ${x.connections} ${ru ? 'соединений' : 'connections'}'), trailing: Text(formatBytes(x.downloadBytes + x.uploadBytes)))),
         if (d.domainsEnabled && d.categories.isNotEmpty) ...d.categories.map((x) => ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.category_outlined, size: 20), title: Text(x.category), trailing: Text(formatBytes(x.downloadBytes + x.uploadBytes)))),
+        if (d.budget.adminOnly) ...<Widget>[
         _Title(ru ? 'Месячный бюджет инфраструктуры' : 'Monthly infrastructure budget'),
         if (!d.budget.available) _Empty(ru ? 'Данные бюджета сейчас недоступны — нулевой расход не предполагается' : 'Budget data is unavailable — zero usage is not assumed')
         else GlassPanel(radius: 16, padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
@@ -95,6 +96,7 @@ class _DesktopStatsScreenState extends State<DesktopStatsScreen> {
           Text('${ru ? 'Обновлено' : 'Updated'}: ${_utc(d.budget.lastPolledAt)}', style: const TextStyle(color: GlukColors.text2, fontSize: 11)),
         ])),
         const SizedBox(height: 8), Text(ru ? 'Общий бюджет OCI для сервиса, не личная квота и не лимит вашего тарифа.' : 'Shared OCI service budget, not a personal quota or a limit on your plan.', style: const TextStyle(color: GlukColors.text2, fontSize: 12)),
+        ],
         Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: _reload, icon: const Icon(Icons.refresh, size: 18), label: Text(ru ? 'Обновить' : 'Refresh'))),
       ],
       const SizedBox(height: 20),

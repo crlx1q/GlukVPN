@@ -39,11 +39,11 @@ class GeoPoint {
 }
 
 class ActiveTunnelDevice {
-  const ActiveTunnelDevice({required this.id, required this.deviceName, required this.platform, required this.lastSeen, required this.isCurrent, required this.connectedAt, required this.durationSec, required this.node, this.origin});
+  const ActiveTunnelDevice({required this.id, required this.deviceName, required this.platform, required this.lastSeen, required this.isCurrent, required this.connectedAt, required this.durationSec, required this.node, this.origin, this.status = 'ACTIVE'});
   factory ActiveTunnelDevice.fromJson(Map<String, dynamic> json) {
     final originJson = _map(json['origin']);
     return ActiveTunnelDevice(
-      id: '${json['id'] ?? ''}', deviceName: '${json['deviceName'] ?? 'Device'}', platform: '${json['platform'] ?? ''}',
+      status: '${json['status'] ?? 'ACTIVE'}', id: '${json['id'] ?? ''}', deviceName: '${json['deviceName'] ?? 'Device'}', platform: '${json['platform'] ?? ''}',
       lastSeen: _date(json['lastSeen']), isCurrent: json['isCurrent'] == true, connectedAt: _date(json['connectedAt']),
       durationSec: _int(json['durationSec']), node: VpnNodeInfo.fromJson(_map(json['node'])),
       origin: originJson.isEmpty ? null : GeoPoint.fromJson(originJson),
@@ -51,6 +51,7 @@ class ActiveTunnelDevice {
   }
   final String id;
   final String deviceName;
+  final String status;
   final String platform;
   final DateTime? lastSeen;
   final bool isCurrent;
@@ -68,7 +69,7 @@ class ActiveMapSnapshot {
       serverTime: _date(json['serverTime']), pollAfterMs: _int(json['pollAfterMs']).clamp(3000, 60000).toInt(),
       activeTunnels: _int(json['activeTunnels']), maxDevices: _int(json['maxDevices']), truncated: json['truncated'] == true,
       service: ServiceStatus.fromJson(_map(json['service'])),
-      devices: raw is List ? raw.map((e) => ActiveTunnelDevice.fromJson(_map(e))).take(5).toList(growable: false) : const <ActiveTunnelDevice>[],
+      devices: raw is List ? raw.map((e) => ActiveTunnelDevice.fromJson(_map(e))).toList(growable: false) : const <ActiveTunnelDevice>[],
     );
   }
   final DateTime? serverTime;
@@ -116,9 +117,10 @@ class CategoryUsage {
 }
 
 class ServiceBudget {
-  const ServiceBudget({required this.available, required this.usedBytes, required this.budgetBytes, required this.usedPercent, this.cycleStart, this.cycleEnd, this.lastPolledAt});
-  factory ServiceBudget.fromJson(Map<String, dynamic> json) => ServiceBudget(available: json['available'] == true, usedBytes: _int(json['usedBytes']), budgetBytes: _int(json['budgetBytes']), usedPercent: _double(json['usedPercent']) ?? 0, cycleStart: _date(json['cycleStart']), cycleEnd: _date(json['cycleEnd']), lastPolledAt: _date(json['lastPolledAt']));
+  const ServiceBudget({required this.available, required this.usedBytes, required this.budgetBytes, required this.usedPercent, this.cycleStart, this.cycleEnd, this.lastPolledAt, this.adminOnly = false});
+  factory ServiceBudget.fromJson(Map<String, dynamic> json) => ServiceBudget(adminOnly: json['adminOnly'] == true, available: json['available'] == true, usedBytes: _int(json['usedBytes']), budgetBytes: _int(json['budgetBytes']), usedPercent: _double(json['usedPercent']) ?? 0, cycleStart: _date(json['cycleStart']), cycleEnd: _date(json['cycleEnd']), lastPolledAt: _date(json['lastPolledAt']));
   final bool available;
+  final bool adminOnly;
   final int usedBytes, budgetBytes;
   final double usedPercent;
   final DateTime? cycleStart, cycleEnd, lastPolledAt;

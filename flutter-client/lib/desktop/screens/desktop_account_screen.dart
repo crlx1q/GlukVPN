@@ -237,7 +237,7 @@ class _DesktopAccountScreenState extends State<DesktopAccountScreen> {
               items: <_Fact>[
                 _Fact(
                   label: s.plan,
-                  value: widget.auth.subscription?.status ?? s.free,
+                  value: widget.auth.subscription?.displayPlan ?? '—',
                 ),
                 _Fact(
                   label: s.expires,
@@ -492,10 +492,8 @@ class _ProfileHeader extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     _Chip(
-                      label: active
-                          ? (ru ? 'Активна' : 'Active')
-                          : (ru ? 'Бесплатный' : 'Free'),
-                      colour: accent,
+                      label: auth.subscription?.displayPlan ?? '—',
+                      colour: GlukColors.violetLight,
                     ),
                     if (user?.isAdmin ?? false) ...<Widget>[
                       const SizedBox(width: 6),

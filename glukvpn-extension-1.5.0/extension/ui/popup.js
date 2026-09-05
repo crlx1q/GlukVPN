@@ -140,6 +140,7 @@ let deviceFilter = 'all'
 let loginMode = 'site'
 let connectWatchdog = null
 let localPhase = null
+let activeMapRevision=0
 let activeMapData = null
 let activeMapBusy = false
 let limitModalFingerprint = ''
@@ -1471,6 +1472,11 @@ function devicePagerNode(pageCount) {
 }
 
 /** The profile screen mirrors the Flutter "My profile" page. */
+function displayPlan(sub) {
+ const code=String(sub?.plan||sub?.planName||'').toLowerCase().replace(/[\s_-]/g,'');
+ const base=code.includes('pro')?'Pro':code.includes('basic')?'Basic':code.includes('free')?'Free':'—';
+ return /beta|β/.test(code)&&base!=='—'?'β '+base:base;
+}
 function renderProfile() {
 	const user = state?.user ?? null
 	const sub = state?.subscription ?? null
@@ -1491,11 +1497,11 @@ function renderProfile() {
 		: t('profile.noSub')
 	const chip = $('prof-chip')
 	if (chip) {
-		chip.textContent = label
-		chip.className = 'prof-chip' + (status === 'ACTIVE' ? '' : status === 'EXPIRED' ? ' warn' : ' off')
+		chip.textContent = displayPlan(sub)
+		chip.className = 'prof-chip plan-badge'
 	}
 	set('prof-status', label)
-	set('prof-plan', status === 'ACTIVE' ? t('profile.active') : t('profile.free'))
+	set('prof-plan', displayPlan(sub))
 	const until = sub?.expiresAt ? new Date(sub.expiresAt) : null
 	set('prof-expires', until && Number.isFinite(until.getTime()) ? until.toLocaleDateString() : status === 'ACTIVE' ? t('profile.unlimited') : '\u2014')
 	const max = Number(user?.maxDevices ?? 0)
@@ -2400,11 +2406,12 @@ async function openDeviceLimitModal(error) {
 }
 
 function renderAccountMap() {
+  if(!activeMapData)activeMapRevision++
 	const group = $('account-map')
 	const count = $('map-count')
 	if (!group || !count) return
 	group.replaceChildren()
-	const devices = state?.signedIn === false ? [] : (activeMapData?.devices ?? []).slice(0, 5)
+	const devices = state?.signedIn === false ? [] : (activeMapData?.devices ?? []).filter(d=>d.status==='ACTIVE')
 	let placed = 0
 	for (const device of devices) {
 		const origin = device?.origin
@@ -2420,11 +2427,17 @@ function renderAccountMap() {
 		path.appendChild(title)
 		group.appendChild(path)
 		for (const [point, cls] of [[a, 'account-origin'], [b, 'account-node']]) {
+      const key=cls+':'+point.x+':'+point.y;
+      const existing=Array.from(group.querySelectorAll('circle')).find(el=>el.dataset.point===key);
+      if(existing){const t=existing.querySelector('title');t.textContent+='\n'+title.textContent;existing.setAttribute('aria-label',t.textContent);continue;}
 			const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+      dot.dataset.point=key;
 			dot.setAttribute('class', cls)
 			dot.setAttribute('cx', point.x)
 			dot.setAttribute('cy', point.y)
-			dot.setAttribute('r', '0.9')
+			dot.setAttribute('r', '1.2')
+      dot.setAttribute('tabindex','0');dot.setAttribute('aria-label',title.textContent);
+      dot.appendChild(title.cloneNode(true));
 			group.appendChild(dot)
 		}
 		placed += 1
@@ -2437,6 +2450,7 @@ function renderAccountMap() {
 async function refreshServiceAndMap() {
 	if (activeMapBusy) return
 	activeMapBusy = true
+  const revision=activeMapRevision, accountId=state?.user?.id;
 	try {
 		const serviceResponse = await call('serviceStatus')
 		const service = serviceResponse?.data?.service ?? serviceResponse?.service
@@ -2448,9 +2462,12 @@ async function refreshServiceAndMap() {
 			activeMapData = null
 		} else {
 			const mapResponse = await call('activeMap')
-			if (mapResponse?.ok) activeMapData = mapResponse?.data ?? mapResponse
+      if(revision!==activeMapRevision||accountId!==state?.user?.id||state?.signedIn===false||channelSwitching)return;
+      activeMapData=mapResponse?.ok ? (mapResponse?.data ?? mapResponse) : null;
 		}
 		renderAccountMap()
+  } catch(error) {
+    if(revision===activeMapRevision){activeMapData=null;renderAccountMap();}
 	} finally {
 		activeMapBusy = false
 	}

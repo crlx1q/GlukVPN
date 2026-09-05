@@ -9,9 +9,9 @@ import 'dotted_world.dart';
 
 bool _valid(double lat, double lon) => lat.isFinite && lon.isFinite && lat.abs() <= 90 && lon.abs() <= 180;
 List<ConnectionArc> accountMapArcs(ActiveMapSnapshot? snapshot) => <ConnectionArc>[
-  for (final d in snapshot?.devices.take(5) ?? <ActiveTunnelDevice>[])
-    if (d.origin != null && d.origin!.valid && d.node.location != null && _valid(d.node.location!.lat, d.node.location!.lon))
-      ConnectionArc(from: projectLatLon(d.origin!.lat, d.origin!.lon), to: projectLatLon(d.node.location!.lat, d.node.location!.lon)),
+  for (final d in snapshot?.devices ?? <ActiveTunnelDevice>[])
+    if (d.status == 'ACTIVE' && d.origin != null && d.origin!.valid && d.node.location != null && _valid(d.node.location!.lat, d.node.location!.lon))
+      AccountConnectionArc(from: projectLatLon(d.origin!.lat, d.origin!.lon), to: projectLatLon(d.node.location!.lat, d.node.location!.lon), label: '${d.deviceName} · ${d.platform}\n→ ${d.node.displayTitle}\n${formatDuration(Duration(seconds: d.durationSec))}', platform: d.platform, serverLabel: d.node.displayTitle),
 ];
 
 /// Reuses the production world projection; missing geography is never invented.
@@ -97,7 +97,7 @@ class _ActiveAccountMapState extends State<ActiveAccountMap> with WidgetsBinding
         if (s.service.maintenance) Padding(padding: const EdgeInsets.only(top: 7), child: Text(ru ? 'Сервис на техническом обслуживании. Скоро вернемся' : 'The service is under maintenance. We will be back soon.', style: const TextStyle(fontSize: 11, color: GlukColors.amber))),
         if (widget.showMap) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: SizedBox(height: widget.compact ? 106 : 170, child: AnimatedBuilder(animation: _flow, builder: (context, _) => DottedWorld(accountArcs: arcs, arcPhase: _flow.value, pulse: _flow.value, dotOpacity: .6, connected: s.activeTunnels > 0)))),
         if (s.devices.isEmpty) Padding(padding: const EdgeInsets.only(top: 7), child: Text(ru ? 'Нет активных туннелей' : 'No active tunnels', style: const TextStyle(color: GlukColors.text2, fontSize: 11)))
-        else Padding(padding: const EdgeInsets.only(top: 7), child: Wrap(spacing: 6, runSpacing: 5, children: s.devices.take(5).map((d) {
+        else Padding(padding: const EdgeInsets.only(top: 7), child: Wrap(spacing: 6, runSpacing: 5, children: s.devices.map((d) {
           final server = d.node.city?.isNotEmpty == true ? d.node.city! : d.node.displayTitle;
           final current = d.isCurrent ? (ru ? ' · Это устройство' : ' · This device') : '';
           final geo = d.origin?.valid == true ? '${d.origin!.country ?? d.origin!.countryCode ?? ''} · ${ru ? 'примерно по IP' : 'approximate IP location'}' : (ru ? 'Геопозиция неизвестна' : 'Location unavailable');

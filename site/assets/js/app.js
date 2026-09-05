@@ -309,7 +309,7 @@
   var epoch = 0, accountKey = ''; var D = window.GlukDashboard;
   function resetAccount() {
     epoch++; inflight = false; if(D)D.history=[]; state.devices = []; state.sessions = []; state.orders = []; state.maxDevices = null; state.sessionsOk = null;
-    $$('[data-d]').forEach(function(el){if(!el.querySelector('[data-d]')&&el.getAttribute('data-d')!=='sub-bar')el.textContent='—';});
+    $$('[data-d]').forEach(function(el){if(!el.querySelector('[data-d]')&&el.getAttribute('data-d')!=='sub-bar'&&!el.getAttribute('data-d').endsWith('-badge'))el.textContent='—';});
     ['[data-dash-devices]','[data-dash-sessions]','[data-dash-orders-list]'].forEach(function(sel){var el=$(sel);if(el)el.innerHTML='';});
     var conn=$('[data-dash-conn]'); if(conn)conn.hidden=true;
   }
@@ -561,7 +561,7 @@
     set("email", esc(u.email || "\u2014"));
     set("public-id", esc(u.publicId || u.id || "\u2014"));
 
-    var name = planName(sub);
+    var name = D.planLabel(sub);
     var tier = planTier(sub);
     set("plan", esc(name));
     set("plan2", esc(name));
@@ -573,6 +573,7 @@
     setClass("status-badge", "dash-badge--ok", ustatus === "ACTIVE");
     setClass("status-badge", "dash-badge--warn", !!ustatus && ustatus !== "ACTIVE");
     show('[data-d="tester-badge"]', !!u.isTester);
+    show('[data-d="status-badge"]', !!ustatus && ustatus!=='ACTIVE');
 
     set("sec-email", esc(u.email || "\u2014"));
     set("sec-verified", esc(u.emailVerified ? T("Подтверждена") : T("Не подтверждена")));

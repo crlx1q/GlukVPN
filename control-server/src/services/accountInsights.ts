@@ -35,23 +35,23 @@ export async function accountActiveMap(user: User, currentDeviceId?: string) {
 		}), serviceStatus(),
 	])
 	const unique = [...new Map(sessions.slice().reverse().map((s) => [s.deviceId, s])).values()].sort((a, b) => b.connectedAt.getTime() - a.connectedAt.getTime())
-	const selected = unique.slice(0, 5)
+	const selected = unique
 	const nodes = await loadPublicNodes(selected.map((s) => s.node))
 	const now = new Date()
 	const devices = await Promise.all(selected.map(async (s, i) => ({
 		id: s.deviceId, deviceName: s.device.deviceName, platform: s.device.platform,
 		lastSeen: s.device.lastSeen?.toISOString() ?? null, isCurrent: currentDeviceId === s.deviceId,
-		connected: true, sessionId: s.id, status: s.status, connectedAt: s.connectedAt.toISOString(),
+		connected: s.status === 'ACTIVE', sessionId: s.id, status: s.status, connectedAt: s.connectedAt.toISOString(),
 		durationSec: Math.max(0, Math.floor((now.getTime() - s.connectedAt.getTime()) / 1000)),
 		origin: await sessionOrigin(s.id, s.clientIp), node: nodes[i],
 	})))
-	return { serverTime: now.toISOString(), pollAfterMs: 5000, activeTunnels: sessions.length, maxDevices: effectiveDeviceLimit(user), truncated: unique.length > selected.length, service, devices }
+	return { serverTime: now.toISOString(), pollAfterMs: 5000, activeTunnels: selected.filter(s => s.status === 'ACTIVE').length, pendingTunnels: selected.filter(s => s.status === 'PENDING').length, maxDevices: effectiveDeviceLimit(user), truncated: unique.length > selected.length, service, devices }
 }
 
 type Counters = { downloadBytes: number; uploadBytes: number }
 const emptyCounters = (): Counters => ({ downloadBytes: 0, uploadBytes: 0 })
 const totalBytes = (v: Counters) => v.downloadBytes + v.uploadBytes
-export async function accountAnalytics(userId: string, period: UsagePeriod, now = new Date()) {
+export async function accountAnalytics(userId: string, period: UsagePeriod, now = new Date(), includeBudget = false) {
 	const window = usageWindow(period, now)
 	const domainCutoff = new Date(now.getTime() - config.DOMAIN_STATS_RETENTION_DAYS * 86400000)
 	const [rows, domains, budget, settings] = await Promise.all([
@@ -60,7 +60,7 @@ export async function accountAnalytics(userId: string, period: UsagePeriod, now 
 			by: ["domain", "category"], where: { userId, lastSeenAt: { gte: domainCutoff } },
 			_sum: { bytesRx: true, bytesTx: true, connections: true }, _max: { lastSeenAt: true },
 		}) : [],
-		egressBudgetView(now), serviceSettings(),
+		includeBudget ? egressBudgetView(now) : null, serviceSettings(),
 	])
 	const totals = emptyCounters()
 	const series = new Map<string, { start: string } & Counters>()
@@ -104,8 +104,8 @@ export async function accountAnalytics(userId: string, period: UsagePeriod, now 
 		categories: [...categories.values()].sort((a, b) => totalBytes(b) - totalBytes(a)),
 		// The OCI allowance belongs to the SERVICE, not every subscription. Cost,
 		// error strings, OCI resource identifiers and other users are never exposed.
-		budget: { scope: "service", source: "oci", available: budget.configured && Boolean(budget.lastPolledAt) && !budget.lastError,
+		budget: budget ? { adminOnly: true, scope: "service", source: "oci", available: budget.configured && Boolean(budget.lastPolledAt) && !budget.lastError,
 			usedBytes: budget.usedBytes, budgetBytes: budget.budgetBytes, usedPercent: budget.usedPercent,
-			cycleStart: budget.cycleStart, cycleEnd: budget.cycleEnd, lastPolledAt: budget.lastPolledAt },
+			cycleStart: budget.cycleStart, cycleEnd: budget.cycleEnd, lastPolledAt: budget.lastPolledAt } : null,
 	}
 }
