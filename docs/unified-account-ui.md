@@ -61,17 +61,28 @@ Site `/app`, Windows, Android and the Chrome popup all lay the hero out in the s
 
 ### Devices chip and anchored dropdown
 
-The chip is `icon + label + count badge + chevron` everywhere. Tapping it opens a translucent panel anchored under the chip:
+The chip carries **no text**. It is a single square icon tile, and the count sits **inside it** as a circular badge overlapping the bottom-right corner. The word "Devices"/"Устройства" and the separate chevron are deleted on every surface: at this size a label only collided with the status pill next to it. The count is announced through `title`/`aria-label` (`Устройства онлайн: N`), and the badge is hidden entirely at zero.
+
+Tapping it opens a translucent panel anchored under the chip:
 
 | token | value |
 | --- | --- |
-| panel surface | `rgba(23,18,42,.94-.97)` + `blur(18px)`, border `rgba(196,181,253,.20)`, radius 20, shadow `0 22px 54px rgba(0,0,0,.62)` |
-| chip | radius 14, bg `rgba(26,20,40,.90)`, border `rgba(139,92,246,.36)`, text `#c4b5fd` 600 |
-| count badge | radius 8, bg `rgba(139,92,246,.24)`, text `#efe7ff` 800 |
-| device row | `40-44px | 1fr | auto` grid, gap 11-12, padding 9-10, radius 16 |
-| icon tile | 40-44px, radius 13-14, bg `rgba(139,92,246,.20)`, glyph `#c4b5fd` |
-| row text | name `#f5f3fb` 700 / meta `#9b93ad` / route `#bfb4d4` |
-| online dot | 7-8px `#3ddc97` + `0 0 9-10px rgba(61,220,151,.85)` |
+| panel surface | `rgba(23,18,42,.94-.97)` + `blur(18px)`, border `rgba(196,181,253,.20)`, radius 18, padding 11, shadow `0 20px 48px rgba(0,0,0,.62)` |
+| panel width | `min(300px, 100vw - 32px)`, list `max-height min(52vh, 400px)` |
+| chip | icon-only 36-40px tile, radius 12-13, bg `rgba(26,20,40,.90)`, border `rgba(139,92,246,.38)` -> `.70` when open, glyph 19-20px `#c4b5fd` |
+| count badge | circular 17-18px at `right:-6 bottom:-6`, bg `#6d4de0`, 2px page-bg ring, text `#efe7ff` 800 10-10.5px |
+| device row | `36px | 1fr | auto` grid, gap 10, padding 8, radius 14 |
+| icon tile | 36px, radius 12, bg `rgba(139,92,246,.20)`, glyph 19px `#c4b5fd` |
+| row text | name 13 `#f5f3fb` 700 / meta 11 `#9b93ad` / route 11 `#bfb4d4` |
+| online dot | 7px `#3ddc97` + `0 0 9px rgba(61,220,151,.85)` |
+
+The panel is one step smaller than the second pass (width 320 -> 300, radius 20 -> 18, padding 13 -> 11, tile 44 -> 36) because it now has to sit next to the status pill on a 320px phone without overlapping it.
+
+### Device detail screen
+
+The `>` at the end of a row is a real 32-34px button, not decoration. Pressing it swaps the panel body for a detail view of that one device; the header grows a back arrow that returns to the list, and the "N connected" summary line is hidden while the detail is open. Rows are label-left / value-right: exit server, node city, uptime, location, accuracy, plus a violet note when the row is the current device. If the opened device disappears from a poll, the panel falls back to the list instead of showing a dead screen.
+
+Implementations: `_AccountDevicesPanelState._openedId` + `_DeviceDetail` (Flutter), `panel.dataset.glukDetail` + `detail(d)` (site), `accountDetailId` + `accountDeviceDetail()` (extension).
 
 What this replaces: the extension's `<dialog class="account-devices-sheet">` (its non-transparent backdrop painted over the server card, which is the bug in screenshot 5) and the Flutter `showModalBottomSheet` (an alien bottom sheet on Windows). Both are now the same anchored dropdown: `.account-devices-pop` in the extension, `_AccountDevicesPanel` behind `showGeneralDialog` with a transparent barrier in Flutter, `[data-gluk-panel]` on the site.
 
@@ -90,9 +101,14 @@ Accessibility is not reduced: the same device names, platforms, routes and state
 
 ### Connection threads and the two dots
 
-Styled after the original popup design: a thin dashed green thread with a soft lift instead of a flat line, a green origin dot and a violet exit-node dot, each with a translucent halo.
+Styled after the original desktop preset (`world_stage.dart` / `dotted_world.dart` in v3): a thin dashed thread with a soft lift instead of a flat line, one marker per end, each with a translucent halo.
 
-- Origin (device) `#3ddc97` / node `#c4b5fd` on ALL surfaces. `dotted_world.dart` previously painted these the other way round; `_paintArc` gained an optional `accentTo` so the account thread fades green -> violet.
+**Colour direction (corrected).** Violet is **me** - the device, placed by its own location. Green is the **exit server**, whether it was picked automatically or by hand. The second pass had this backwards; the thread now fades `#c4b5fd` (device) -> `#3ddc97` (server) on all four surfaces, and the gradient stop in the extension's `#pathGrad` was flipped to match.
+
+- Device marker: violet ring 26-30px (Flutter `radius max(7.5, 3.1 * flatScale)`), dark fill `rgba(26,19,48,.94)`, and the **platform glyph inside it** - laptop, phone or browser - so the map answers "which of my devices is this" without opening the panel. `paintDeviceMarker` (Flutter), `.gluk-pin` (site), `.account-pin` (extension).
+- Server marker: solid `#3ddc97` dot with a green halo, pulsing `r 1 -> 1.24`.
+- Grouping: devices sharing a point collapse into one marker with a violet count badge (`3` = three devices at that point). One thread per `(origin spot -> server)` pair, so two devices on the same server draw one thread and two devices on different servers draw two. The grouping key is `round(x*10):round(y*10)` - identical in Flutter, the site and the extension, so the three surfaces group the same way.
+- Draw-in animation restored from the zip: the thread is drawn over `.62s` and only then starts the flowing dash (`3.6s` linear, infinite). In Flutter the arc for the current device follows the real connect phase through `arcProgress`, while already-established threads of other devices render complete.
 - Site/extension: `stroke-width .4`, `stroke-dasharray 1.6 1.9`, `stroke-dashoffset` animated over 3.6s linear, halo `r 2.5`, dot `r .95`.
 - Quadratic lift is proportional to span: `max(3.5, |bx - ax| * 0.16)`, so short hops stay flat and long hops bow.
 - Every flow animation is disabled under `prefers-reduced-motion` / `MotionSettings.reduceMotion`.
@@ -103,7 +119,23 @@ The white/washed-out device glyphs came from painting the Material PNG sprite di
 
 ### Mobile
 
-No map card in the middle of the phone screen. The world stays a backdrop behind the hero; below 760px the site hides `.dash-map__stage` and `.dash-map__legend`, the chip goes full width and the panel becomes static instead of absolutely positioned.
+No map card in the middle of the phone screen. The world stays a backdrop behind the hero; below 760px the site hides `.dash-map__stage` and `.dash-map__legend`. The chip row stays horizontal and the panel stays anchored (`min(300px, 100vw - 32px)`, `max-height 60vh`) rather than going full width - a full-width static block was what pushed the status pill out of the frame.
+
+**Spawn framing fix.** On Android the map used to fly in from the right: the first frame had no server and no arcs, so it fell back to `legacyView`, and the un-seeded `TweenAnimationBuilder`s then animated from that fallback to `FlatMapView.fitConnections`. `_MapBackdropState` now holds the first framing still (`_framed`, `framingGrace = 650ms`, `_markFramed()`): until the route is known the transition duration is `Duration.zero`, so the app opens already centred on the frame between the device and its server, and only the slow ambient sway runs afterwards.
+
+### Session release: disconnect used to hang
+
+After disconnecting on Windows or Android the device stayed visible to everyone on the map and the session stayed `ACTIVE` in the admin panel. The Chrome extension was immune, which was the clue: it never raises a WireGuard tunnel, so its `POST /api/vpn/disconnect` always reaches the server.
+
+Root cause: both Flutter controllers tore the tunnel down **first** and only then called the API. By that point the routes were gone, the HTTP call failed, and the failure was deliberately swallowed (`// The server reaps stale sessions on its own`) - but nothing actually reaped it, because the monitor only closes sessions for maintenance, disabled users, revoked devices, expired subscriptions and offline nodes.
+
+Three changes, defence in depth:
+
+1. **Order.** `VpnController.disconnect()` and `DesktopVpnController.disconnect()` now release the session **before** `_vpn.stop()` / `_tunnel.down()`, while the route to the API still exists, and retry once afterwards over the restored plain network.
+2. **Persistence.** `_closeServerSession` / `_releaseServerSession` retry on a `0 / 400ms / 1200ms` backoff, stop early on `404` (already closed), and finish with a **session-less** `POST /api/vpn/disconnect`, which makes the server resolve the row itself via `findLiveSessionForDevice`. The id is held in `_pendingClose` until the server confirms, so a failed attempt is no longer lost - the desktop version used to null `_activeSessionId` before the call and could never retry.
+3. **Server safety net.** `POST /api/node/heartbeat` already computed `missingPeers` and only echoed it back to the agent. It now closes those rows with `reason: "peer_missing"`. The node is the source of truth: no peer means no tunnel. Guards: `ACTIVE` only (`PENDING` is still waiting for `ADD_PEER`), `transport === "wireguard"` only (VLESS and browser sessions have no peer by nature), and only after a grace period of `max(60, NODE_HEARTBEAT_INTERVAL_SEC * 6)` seconds so a tunnel that is coming up right now is never killed.
+
+The net effect is that a hung session can survive at most one grace period even if the client is force-killed, loses power or never regains network.
 
 ### Verification (third pass)
 

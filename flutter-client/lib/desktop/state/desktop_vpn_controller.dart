@@ -854,11 +854,18 @@ class DesktopVpnController extends ChangeNotifier {
       _cancelConnectDeadline();
       _setPhase(ConnectionPhase.disconnecting, detail: 'tearing_down');
 
+      // Сессия закрывается ДО обрыва туннеля: иначе маршруты уже
+      // перестроены, запрос не доходит, ошибка глотается, и строка
+      // сессии навсегда остаётся ACTIVE — устройство висит онлайн у
+      // всех и в админке. У расширения такой беды нет: оно не рвёт маршруты.
+      await _releaseServerSession();
+
       final TunnelResult down = await _tunnel.down();
       // Whatever the service answered, the tunnel address it carried belongs
       // to the session that just ended and must not survive on the panel.
       _snapshot = _withoutTunnelAddress(down.snapshot ?? TunnelSnapshot.down);
 
+      // Если первая попытка не прошла — добиваем уже без туннеля.
       await _releaseServerSession();
 
       _usage.endSession();
@@ -1454,14 +1461,40 @@ class DesktopVpnController extends ChangeNotifier {
     return suffix.isEmpty ? base : '$base ($suffix)';
   }
 
+  /// Паузы между попытками закрыть сессию на сервере.
+  static const List<Duration> _closeBackoff = <Duration>[
+    Duration.zero,
+    Duration(milliseconds: 400),
+    Duration(milliseconds: 1200),
+  ];
+
+  /// Сессия, закрытие которой сервер ещё не подтвердил.
+  String? _pendingClose;
+
+  /// Закрывает сессию настойчиво. Одной попытки мало: именно из-за
+  /// молча проглоченной ошибки сессия висела в админке и на карте.
   Future<void> _releaseServerSession() async {
-    final String? id = _activeSessionId;
+    final String? id = _activeSessionId ?? _pendingClose;
     if (id == null) return;
     _activeSessionId = null;
+    _pendingClose = id;
+    for (final Duration wait in _closeBackoff) {
+      if (wait > Duration.zero) await Future<void>.delayed(wait);
+      try {
+        await _api.disconnect(sessionId: id);
+        _pendingClose = null;
+        return;
+      } catch (error) {
+        dlog.write('disconnect', 'session close failed: $error');
+      }
+    }
+    // Последняя попытка — без sessionId: сервер сам найдёт живую сессию
+    // этого устройства, даже если локальный id устарел.
     try {
-      await _api.disconnect(sessionId: id);
+      await _api.disconnect();
+      _pendingClose = null;
     } catch (_) {
-      // The server reaps stale sessions on its own; nothing to do here.
+      dlog.write('disconnect', 'session $id left open');
     }
   }
 

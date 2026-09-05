@@ -21,9 +21,13 @@ import '../utils/showcase.dart';
 /// map" transition possible - it is one widget changing a single number, not two
 /// different screens crossfading.
 class AccountConnectionArc extends ConnectionArc {
-  const AccountConnectionArc({required super.from, required super.to, required this.label, required this.platform, required this.serverLabel, this.isCurrent = false});
+  const AccountConnectionArc({required super.from, required super.to, required this.label, required this.platform, required this.serverLabel, this.isCurrent = false, this.spotCount = 1});
   final String label, platform, serverLabel;
   final bool isCurrent;
+
+  /// Сколько устройств стоит в той же точке карты. 1 — обычный маркер,
+  /// больше — маркер с круглым бейджем «3» вместо трёх наложенных точек.
+  final int spotCount;
 }
 
 class DottedWorld extends StatelessWidget {
@@ -168,7 +172,7 @@ class DottedWorld extends StatelessWidget {
 					serverOpacity: serverOpacity.clamp(0.0, 1.0),
 					nodePoints: nodePoints,
 					accountArcs: accountArcs,
-					arcProgress: accountArcs == null ? arcProgress.clamp(0.0, 1.0) : 1.0,
+					arcProgress: arcProgress.clamp(0.0, 1.0),
 					arcPhase: arcPhase,
 					orbitalPhase: orbitalPhase,
 					orbitalAnchor: orbitalAnchor,
@@ -349,19 +353,44 @@ class _DottedWorldPainter extends CustomPainter {
 		// Account routes share the exact projection, culling and glow of the original
 		// map. No locale-derived self point is used for a live account snapshot.
 		if (accountArcs != null) {
+			final deviceSpots = <Offset, ({String platform, int count, double fade})>{};
+			final serverSpots = <Offset, double>{};
 			for (final arc in accountArcs!) {
 				final from = _project(arc.from, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
 				final to = _project(arc.to, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
 				if (from == null || to == null) continue;
 				final a = ui.lerpDouble(1, from.visibility.clamp(0.0, 1.0), globeness)!;
 				final b = ui.lerpDouble(1, to.visibility.clamp(0.0, 1.0), globeness)!;
-				// Единый язык с сайтом и расширением: зелёная точка — устройство
-				// (она же пульсирует), сиреневая — узел выхода, а нитка
-				// между ними перетекает из зелёного в сиреневый.
-				if (math.min(a, b) > 0.02) _paintArc(canvas, from: from.offset, to: to.offset, arc: arc, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, opacity: math.min(a, b), accent: GlukColors.connected, accentTo: GlukColors.violetLight);
-				if (a > 0.02) _paintMarker(canvas, from.offset, GlukColors.connected, a, flatScale, pulsing: true);
-				if (b > 0.02) _paintMarker(canvas, to.offset, GlukColors.violetLight, b, flatScale, pulsing: false);
+				// ЭТАП 2 — язык карты вернулся к старому клиенту на Windows:
+				// ФИОЛЕТОВЫЙ маркер с глифом пк / телефона / браузера — это
+				// устройство, ЗЕЛЁНАЯ точка — выбранный сервер, а нитка течёт от
+				// меня к серверу. Раньше здесь было ровно наоборот.
+				// Своя нитка вырисовывается по фазе подключения (вылетает при
+				// connect и втягивается при disconnect), чужие нитки уже целые —
+				// иначе они бы пропадали, пока ты сам отключён.
+				final double drawn = arc is AccountConnectionArc && !arc.isCurrent ? 1.0 : arcProgress.clamp(0.0, 1.0);
+				if (math.min(a, b) > 0.02 && drawn > 0.01) _paintArc(canvas, from: from.offset, to: to.offset, arc: arc, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, opacity: math.min(a, b), accent: GlukColors.violetLight, accentTo: GlukColors.connected, progress: drawn);
+				// Маркеры собираются в карты по позиции: две нитки из одной
+				// точки на разные серверы не должны рисовать маркер дважды.
+				final int spot = arc is AccountConnectionArc ? arc.spotCount : 1;
+				final String platform = arc is AccountConnectionArc ? arc.platform : '';
+				if (a > 0.02) {
+					final key = Offset(from.offset.dx.roundToDouble(), from.offset.dy.roundToDouble());
+					final kept = deviceSpots[key];
+					if (kept == null || spot > kept.count) {
+						deviceSpots[key] = (platform: platform, count: spot, fade: math.max(kept?.fade ?? 0, a));
+					}
+				}
+				if (b > 0.02) {
+					final key = Offset(to.offset.dx.roundToDouble(), to.offset.dy.roundToDouble());
+					serverSpots[key] = math.max(serverSpots[key] ?? 0, b);
+				}
 			}
+			// Серверы снизу, устройства сверху: если ты сам сидишь в том же
+			// городе, что и сервер, видно именно твоё устройство.
+			serverSpots.forEach((offset, fade) => _paintMarker(canvas, offset, GlukColors.connected, fade, flatScale, pulsing: true));
+			deviceSpots.forEach((offset, info) => paintDeviceMarker(canvas, offset,
+				platform: info.platform, count: info.count, opacity: info.fade, flatScale: flatScale, pulse: pulse));
 			return;
 		}
 
@@ -532,6 +561,9 @@ class _DottedWorldPainter extends CustomPainter {
 		required double opacity,
 		required Color accent,
 		Color? accentTo,
+		// Сколько нитки уже вырисовано. У чужих устройств нитка уже есть
+		// целиком, а своя вылетает по фазе подключения, как в старом клиенте.
+		double? progress,
 	}) {
 		final control = _project(
 			arc.control,
@@ -573,7 +605,7 @@ class _DottedWorldPainter extends CustomPainter {
 			);
 
 		canvas.drawPath(
-			_dashed(path, dash: dash, gap: gap, phase: arcPhase * (dash + gap), progress: arcProgress),
+			_dashed(path, dash: dash, gap: gap, phase: arcPhase * (dash + gap), progress: progress ?? arcProgress),
 			paint,
 		);
 	}
@@ -1016,4 +1048,114 @@ class _DottedWorldPainter extends CustomPainter {
 			old.pulse != pulse ||
 			!_sameFleet(old.nodePoints, nodePoints) ||
 			old.connected != connected;
+}
+
+/// Глиф платформы для маркера на карте. Те же три Material-иконки, что и в
+/// списке устройств, в расширении и на сайте: пк / телефон / браузер.
+///
+/// Сознательно отдельная функция, а не импорт из `active_account_map.dart`:
+/// тот файл сам импортирует этот, и связь в обе стороны была бы циклом.
+IconData platformGlyph(String platform) {
+	final p = platform.toLowerCase();
+	if (p.contains('android') || p.contains('ios') || p.contains('phone')) return Icons.smartphone;
+	if (p.contains('chrome') || p.contains('browser') || p.contains('extension')) return Icons.web;
+	return Icons.computer;
+}
+
+/// Маркер устройства на карте.
+///
+/// ЭТАП 2: вместо безымянной точки — фиолетовое кольцо с глифом платформы
+/// внутри и, если в этой точке несколько устройств, круглый бейдж с их
+/// числом в правом нижнем углу. Так три устройства в одном городе не
+/// превращаются в кашу из наложенных кружков.
+///
+/// Пульсация повторяет оригинальный `mapPulse` из zip: кольцо растёт и
+/// затухает, а не мигает.
+void paintDeviceMarker(
+	Canvas canvas,
+	Offset centre, {
+	required String platform,
+	required int count,
+	required double opacity,
+	required double flatScale,
+	double pulse = 0,
+}) {
+	if (opacity <= 0.02) return;
+	// Радиус привязан к масштабу карты, но не меньше 7.5 px: маркер должен
+	// оставаться читаемым и на широком обзоре всего мира.
+	final radius = math.max(7.5, 3.1 * flatScale);
+
+	// Мягкое свечение под маркером, чтобы он отделялся от точек мира.
+	canvas.drawCircle(
+		centre,
+		radius * 1.9,
+		Paint()
+			..color = GlukColors.violet.withOpacity(0.24 * opacity)
+			..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * 0.9),
+	);
+
+	if (pulse > 0) {
+		canvas.drawCircle(
+			centre,
+			radius * ui.lerpDouble(1.0, 2.1, pulse)!,
+			Paint()
+				..style = PaintingStyle.stroke
+				..strokeWidth = math.max(1.0, 0.22 * flatScale)
+				..color = GlukColors.violetLight.withOpacity((1 - pulse) * 0.5 * opacity),
+		);
+	}
+
+	// Тёмная таблетка под глифом и фиолетовое кольцо вокруг неё.
+	canvas.drawCircle(centre, radius, Paint()..color = const Color(0xFF1A1330).withOpacity(0.94 * opacity));
+	canvas.drawCircle(
+		centre,
+		radius,
+		Paint()
+			..style = PaintingStyle.stroke
+			..strokeWidth = math.max(1.2, 0.34 * flatScale)
+			..color = GlukColors.violetLight.withOpacity(0.95 * opacity),
+	);
+
+	_paintCentredGlyph(canvas, centre, platformGlyph(platform), radius * 1.08,
+		GlukColors.violetLight.withOpacity(opacity));
+
+	if (count > 1) {
+		final badge = Offset(centre.dx + radius * 0.86, centre.dy + radius * 0.86);
+		final badgeRadius = math.max(5.0, radius * 0.64);
+		// Обводка цветом фона отрезает бейдж от кольца маркера.
+		canvas.drawCircle(badge, badgeRadius + math.max(1.0, 0.22 * flatScale),
+			Paint()..color = GlukColors.bg.withOpacity(0.96 * opacity));
+		canvas.drawCircle(badge, badgeRadius, Paint()..color = GlukColors.violet2.withOpacity(0.98 * opacity));
+		_paintCentredText(canvas, badge, '$count', badgeRadius * 1.3, Colors.white.withOpacity(opacity));
+	}
+}
+
+void _paintCentredGlyph(Canvas canvas, Offset centre, IconData icon, double size, Color colour) {
+	final painter = TextPainter(
+		text: TextSpan(
+			text: String.fromCharCode(icon.codePoint),
+			style: TextStyle(
+				fontFamily: icon.fontFamily,
+				package: icon.fontPackage,
+				fontSize: size,
+				height: 1,
+				color: colour,
+			),
+		),
+		textDirection: TextDirection.ltr,
+	)..layout();
+	painter.paint(canvas, centre - Offset(painter.width / 2, painter.height / 2));
+	painter.dispose();
+}
+
+void _paintCentredText(Canvas canvas, Offset centre, String text, double size, Color colour) {
+	final painter = TextPainter(
+		text: TextSpan(
+			text: text,
+			style: TextStyle(fontSize: size, height: 1, fontWeight: FontWeight.w800, color: colour),
+		),
+		textDirection: TextDirection.ltr,
+	)..layout();
+	painter.paint(canvas, centre - Offset(painter.width / 2, painter.height / 2));
+	painter.dispose();
 }

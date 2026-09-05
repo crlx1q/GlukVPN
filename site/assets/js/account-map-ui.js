@@ -1,14 +1,20 @@
 /* Единая система «подключения аккаунта».
  *
  * Одинаково на всех клиентах — Windows, Android, расширение Chrome и сайт /app:
- *  • карта это только визуал: точки мира, зелёная точка «вы», сиреневая точка
- *    узла выхода и тонкая пунктирная нитка между ними;
- *  • на карте ничего не кликается. Точка размером в пиксель — недостижимая
- *    цель для мыши и тем более для пальца, поэтому все подробности живут в
- *    панели «Устройства», которая открывается чипом над картой;
+ *  • ФИОЛЕТОВЫЙ маркер с глифом пк / телефона / браузера — это устройство
+ *    по его местоположению, ЗЕЛЁНАЯ точка — выбранный сервер, нитка течёт от
+ *    меня к серверу и при появлении «вырисовывается» — точно как в старом
+ *    клиенте на Windows;
+ *  • три устройства в одной точке — один маркер с бейджем «3», а не куча
+ *    наложенных точек. Одна нитка на пару «точка → сервер»: если второе
+ *    устройство ушло на другой сервер — вторая нитка;
+ *  • на карте ничего не кликается. Все подробности живут в компактной
+ *    панели, которая открывается маленькой кнопкой-значком над картой;
+ *  • стрелка «>» в строке — настоящая кнопка, она открывает подробности
+ *    об устройстве внутри той же панели;
  *  • глифы устройств — готовые Material Icons из локального PNG-спрайта,
  *    подключённого маской, поэтому они окрашены темой, а не белые;
- *  • на телефоне карта скрыта (CSS), панель «Устройства» остаётся.
+ *  • на телефоне карта скрыта (CSS), панель устройств остаётся.
  */
 (function(D){
  if(!D||typeof document==='undefined')return;
@@ -24,12 +30,17 @@
   var canvas=document.querySelector('[data-dash-map]');if(!canvas)return;
   var stage=canvas.parentElement,card=stage&&stage.parentElement;if(!card)return;
   var snapshot=data&&typeof data==='object'?data:null;
+  // Последний снимок нужен, чтобы перерисовать панель при переходе
+  // в подробности и обратно, не дожидаясь следующего поллинга.
+  D.lastAccountMap=snapshot;
   var live=(snapshot&&Array.isArray(snapshot.devices)?snapshot.devices:[]).filter(function(d){return d&&d.status==='ACTIVE';});
   // Подсказка «Наведите или нажмите на точку» больше не имеет смысла: точки
   // не интерактивны, а список устройств всегда рядом.
   var stale=card.querySelector('[data-map-detail]');if(stale)stale.remove();
+  var routes=group(live);
   paintWorld(canvas);
-  paintThreads(stage,live);
+  paintThreads(stage,routes);
+  paintPins(stage,routes);
   paintPanel(card,snapshot,live);
  };
 
@@ -51,35 +62,74 @@
   }
  }
 
- // Нитки соединений и две точки. Карта живёт в системе координат 119x60 —
- // ровно как aspect-ratio сцены, поэтому масштаб равномерный и штрих не косой.
- function paintThreads(stage,live){
-  var old=stage.querySelector('.gluk-threads');if(old)old.remove();
-  var svg=node('svg',{'class':'gluk-threads',viewBox:'0 0 119 60',preserveAspectRatio:'none','aria-hidden':'true'});
-  var defs=node('defs'),grad=node('linearGradient',{id:'gluk-thread-grad',x1:'0',y1:'0',x2:'1',y2:'0'});
-  grad.appendChild(node('stop',{offset:'0%','stop-color':'#3ddc97'}));
-  grad.appendChild(node('stop',{offset:'100%','stop-color':'#c4b5fd'}));
-  defs.appendChild(grad);svg.appendChild(defs);
-  var seen={},drawn=0;
+ // Группировка устройств по точкам карты.
+ //
+ // `spots` — сколько всего устройств стоит в точке (цифра в бейдже).
+ // `pairs` — одна запись на пару «точка → сервер» (одна нитка).
+ function group(live){
+  var spots={},pairs={},order=[];
   live.forEach(function(d){
    var exit=d.node&&d.node.location;
    if(!place(d.origin)||!place(exit))return;
-   var a=project(d.origin),b=project(exit),lift=Math.max(3.5,Math.abs(b.x-a.x)*.16);
+   var a=project(d.origin),b=project(exit),from=spot(a),key=from+'>'+spot(b);
+   spots[from]=(spots[from]||0)+1;
+   if(!pairs[key]){pairs[key]={a:a,b:b,from:from,device:d};order.push(key);}
+   else if(d.isCurrent&&!pairs[key].device.isCurrent)pairs[key].device=d;
+  });
+  return order.map(function(key){
+   var pair=pairs[key];
+   return {a:pair.a,b:pair.b,device:pair.device,count:spots[pair.from]||1};
+  });
+ }
+
+ // Нитки соединений и зелёные точки серверов. Карта живёт в системе
+ // координат 119x60 — ровно как aspect-ratio сцены, поэтому масштаб
+ // равномерный и штрих не косой.
+ function paintThreads(stage,routes){
+  var old=stage.querySelector('.gluk-threads');if(old)old.remove();
+  var svg=node('svg',{'class':'gluk-threads',viewBox:'0 0 119 60',preserveAspectRatio:'none','aria-hidden':'true'});
+  var defs=node('defs'),grad=node('linearGradient',{id:'gluk-thread-grad',x1:'0',y1:'0',x2:'1',y2:'0'});
+  // От меня (фиолетовый) к серверу (зелёный) — как в старом клиенте.
+  grad.appendChild(node('stop',{offset:'0%','stop-color':'#c4b5fd'}));
+  grad.appendChild(node('stop',{offset:'100%','stop-color':'#3ddc97'}));
+  defs.appendChild(grad);svg.appendChild(defs);
+  var seen={},drawn=0;
+  routes.forEach(function(r){
+   var a=r.a,b=r.b,lift=Math.max(3.5,Math.abs(b.x-a.x)*.16);
    svg.appendChild(node('path',{'class':'gluk-thread',d:'M'+fix(a.x)+' '+fix(a.y)+' Q'+fix((a.x+b.x)/2)+' '+fix(Math.max(1.5,Math.min(a.y,b.y)-lift))+' '+fix(b.x)+' '+fix(b.y)}));
-   marker(svg,seen,a,'you');marker(svg,seen,b,'node');
+   var key='node:'+fix(b.x)+':'+fix(b.y);
+   if(!seen[key]){
+    seen[key]=1;
+    svg.appendChild(node('circle',{'class':'gluk-halo gluk-halo--node',cx:fix(b.x),cy:fix(b.y),r:'2.5'}));
+    svg.appendChild(node('circle',{'class':'gluk-dot gluk-dot--node',cx:fix(b.x),cy:fix(b.y),r:'1'}));
+   }
    drawn++;
   });
   svg.classList.toggle('is-empty',drawn===0);
   stage.appendChild(svg);
  }
 
- function marker(svg,seen,p,kind){
-  var key=kind+':'+fix(p.x)+':'+fix(p.y);if(seen[key])return;seen[key]=1;
-  svg.appendChild(node('circle',{'class':'gluk-halo gluk-halo--'+kind,cx:fix(p.x),cy:fix(p.y),r:'2.5'}));
-  svg.appendChild(node('circle',{'class':'gluk-dot gluk-dot--'+kind,cx:fix(p.x),cy:fix(p.y),r:'.95'}));
+ // Маркеры устройств — обычные HTML-элементы поверх карты, а не SVG:
+ // так внутри них работает ровно тот же глиф Material Icons, что и в списке
+ // устройств и в расширении — одна маска, один цвет, без белых квадратов.
+ function paintPins(stage,routes){
+  var old=stage.querySelector('.gluk-pins');if(old)old.remove();
+  var box=document.createElement('div');
+  box.className='gluk-pins';box.setAttribute('aria-hidden','true');
+  var seen={},html=[];
+  routes.forEach(function(r){
+   var key=fix(r.a.x)+':'+fix(r.a.y);if(seen[key])return;seen[key]=1;
+   html.push('<span class="gluk-pin'+(r.device.isCurrent?' is-self':'')+'" style="left:'+fix(r.a.x/119*100)+'%;top:'+fix(r.a.y/60*100)+'%">'+
+    D.deviceIcon(r.device.platform)+
+    (r.count>1?'<b class="gluk-pin__count">'+esc(r.count)+'</b>':'')+
+   '</span>');
+  });
+  box.innerHTML=html.join('');
+  box.classList.toggle('is-empty',html.length===0);
+  stage.appendChild(box);
  }
 
- /* -------------------------------------------- панель «Устройства» */
+ /* -------------------------------------------- панель устройств */
 
  function paintPanel(card,snapshot,live){
   var top=card.querySelector('[data-gluk-top]');
@@ -98,18 +148,28 @@
   var active=snapshot&&isNum(snapshot.activeTunnels)?snapshot.activeTunnels:live.length;
   var pending=snapshot&&isNum(snapshot.pendingTunnels)?snapshot.pendingTunnels:0;
 
-  chip.innerHTML=D.deviceIcon('devices')+
-   '<span class="gluk-chip__label">'+esc(tr('Устройства','Devices'))+'</span>'+
-   '<b class="gluk-chip__count">'+esc(active)+'</b>'+
-   '<i class="gluk-chev" aria-hidden="true"></i>';
+  // ЭТАП 2: только значок. Слова «Устройства» больше нет, шеврона тоже,
+  // а цифра сидит бейджем НА значке, а не рядом с ним.
+  chip.innerHTML=D.deviceIcon('devices')+(active>0?'<b class="gluk-chip__count">'+esc(active)+'</b>':'');
   chip.setAttribute('aria-label',tr('Устройства онлайн','Devices online')+': '+active);
+  chip.title=tr('Подключения аккаунта','Account connections');
 
   state.className='gluk-state'+(active>0?' is-on':'');
   state.querySelector('span').textContent=active>0
    ? tr('Активные подключения','Active connections')
-   : (pending>0?tr('Подключение…','Connecting…'):tr('Активных подключений нет','No active connections'));
+   : (pending>0?tr('Подключение…','Connecting…'):tr('Активных подключений нет','No active connections')));
 
-  panel.innerHTML='<div class="gluk-panel__head"><b>'+esc(tr('Устройства онлайн','Devices online'))+'</b><span>'+esc(summary(snapshot,active,pending))+'</span></div>'+
+  // Пока открыты подробности, обновление поллинга не выбрасывает из них —
+  // перерисовывается тот же экран с новыми данными.
+  panel.dataset.glukSummary=summary(snapshot,active,pending);
+  var opened=panel.dataset.glukDetail||'';
+  var current=opened?live.filter(function(d){return String(d.id)===opened;})[0]:null;
+  if(opened&&!current){opened='';delete panel.dataset.glukDetail;}
+  panel.innerHTML=current?detail(current):list(snapshot,live,panel.dataset.glukSummary);
+ }
+
+ function list(snapshot,live,note){
+  return '<div class="gluk-panel__head"><b>'+esc(tr('Устройства онлайн','Devices online'))+'</b><span>'+esc(note)+'</span></div>'+
    '<div class="gluk-panel__list">'+(live.length?live.map(row).join(''):'<p class="gluk-empty">'+esc(snapshot?tr('Нет активных подключений','No active connections'):tr('Подключения сейчас недоступны','Connections unavailable'))+'</p>')+'</div>';
  }
 
@@ -132,8 +192,45 @@
     '<span class="gluk-dev__route">'+esc('→ '+exitTitle(d.node))+'</span>'+
     (d.isCurrent?'<span class="gluk-dev__self">'+esc(tr('Это устройство','This device'))+'</span>':'')+
    '</span>'+
-   '<span class="gluk-dev__end"><i class="gluk-live'+(d.status==='ACTIVE'?' is-on':'')+'"></i><i class="gluk-chev gluk-chev--right" aria-hidden="true"></i></span>'+
+   '<span class="gluk-dev__end">'+
+    '<i class="gluk-live'+(d.status==='ACTIVE'?' is-on':'')+'"></i>'+
+    // ЭТАП 2: стрелка — кнопка 34x34, а не картинка.
+    '<button type="button" class="gluk-more" data-gluk-more="'+esc(d.id)+'" title="'+esc(tr('Подробнее об устройстве','Device details'))+'" aria-label="'+esc(tr('Подробнее об устройстве','Device details'))+'"><i class="gluk-chev gluk-chev--right" aria-hidden="true"></i></button>'+
+   '</span>'+
   '</div>';
+ }
+
+ /* --------------------------- подробности одного устройства */
+
+ function detail(d){
+  var live=d.status==='ACTIVE',origin=d.origin||null;
+  var where=origin?[origin.country,origin.countryCode].filter(Boolean).join(' · '):'';
+  var rows=[
+   [tr('Сервер выхода','Exit server'),exitTitle(d.node)],
+   [tr('Город узла','Node city'),(d.node&&d.node.location&&d.node.location.city)||(d.node&&d.node.city)||'—'],
+   [tr('В сети','Uptime'),duration(d.durationSec)],
+   [tr('Местоположение','Location'),where||tr('Не определено','Unknown')]
+  ];
+  if(origin)rows.push([tr('Точность','Accuracy'),origin.source==='device-estimate'
+   ? tr('≈ оценка региона устройства','≈ device region estimate')
+   : tr('≈ страна по IP','≈ IP country')]);
+  return '<div class="gluk-panel__head">'+
+    '<button type="button" class="gluk-back" data-gluk-back title="'+esc(tr('Назад','Back'))+'" aria-label="'+esc(tr('Назад','Back'))+'"><i class="gluk-chev gluk-chev--left" aria-hidden="true"></i></button>'+
+    '<b>'+esc(d.deviceName||tr('Устройство','Device'))+'</b>'+
+   '</div>'+
+   '<div class="gluk-detail">'+
+    '<div class="gluk-detail__top">'+
+     '<span class="gluk-dev__tile">'+D.deviceIcon(d.platform)+'</span>'+
+     '<span class="gluk-detail__id">'+
+      '<b>'+esc(d.platform||'—')+'</b>'+
+      '<span class="gluk-detail__state'+(live?' is-on':'')+'">'+esc(live?tr('Подключено','Connected'):tr('Подключение…','Connecting…'))+'</span>'+
+     '</span>'+
+    '</div>'+
+    rows.map(function(pair){
+     return '<div class="gluk-detail__row"><span>'+esc(pair[0])+'</span><b>'+esc(pair[1])+'</b></div>';
+    }).join('')+
+    (d.isCurrent?'<p class="gluk-detail__note">'+esc(tr('Это устройство, с которого ты сейчас смотришь.','This is the device you are looking at now.'))+'</p>':'')+
+   '</div>';
  }
 
  function bind(top){
@@ -142,10 +239,24 @@
    panel.hidden=!next;
    top.classList.toggle('is-open',!!next);
    chip.setAttribute('aria-expanded',next?'true':'false');
+   if(!next)delete panel.dataset.glukDetail;
   }
   chip.addEventListener('click',function(e){e.stopPropagation();open(panel.hidden);});
+  // Клики внутри панели ловятся делегированием: содержимое пересобирается
+  // каждый поллинг, и вешать слушатели на каждую строку было бы утечкой.
+  panel.addEventListener('click',function(e){
+   var more=e.target.closest&&e.target.closest('[data-gluk-more]');
+   if(more){e.stopPropagation();panel.dataset.glukDetail=more.getAttribute('data-gluk-more');D.drawAccountMap(D.lastAccountMap);return;}
+   var back=e.target.closest&&e.target.closest('[data-gluk-back]');
+   if(back){e.stopPropagation();delete panel.dataset.glukDetail;D.drawAccountMap(D.lastAccountMap);return;}
+   e.stopPropagation();
+  });
   document.addEventListener('click',function(e){if(!top.contains(e.target))open(false);});
-  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!panel.hidden){open(false);chip.focus();}});
+  document.addEventListener('keydown',function(e){
+   if(e.key!=='Escape'||panel.hidden)return;
+   if(panel.dataset.glukDetail){delete panel.dataset.glukDetail;D.drawAccountMap(D.lastAccountMap);return;}
+   open(false);chip.focus();
+  });
  }
 
  /* --------------------------------------------------------- мелочи */
@@ -159,6 +270,8 @@
  function isNum(v){return typeof v==='number'&&isFinite(v);}
  function place(p){return !!p&&isNum(Number(p.lat))&&isNum(Number(p.lon))&&Math.abs(p.lat)<=90&&Math.abs(p.lon)<=180;}
  function project(p){return {x:(Number(p.lon)+180)/360*119,y:(90-Number(p.lat))/180*60};}
+ // Десятая доля единицы карты — тот же шаг группировки, что и в Flutter.
+ function spot(p){return Math.round(p.x*10)+':'+Math.round(p.y*10);}
  function fix(v){return (Math.round(v*100)/100).toString();}
  function isEn(){return document.documentElement.getAttribute('data-lang')==='en';}
  function tr(ru,en){return isEn()?en:ru;}

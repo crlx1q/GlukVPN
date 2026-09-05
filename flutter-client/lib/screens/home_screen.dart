@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -412,11 +414,49 @@ class _MapBackdropState extends State<_MapBackdrop>
   /// True once the map is all the way in. Only then does anything move.
   bool _spawnDone = false;
 
+  /// ЭТАП 2: карта не показывается, пока рамка не окончательная.
+  ///
+  /// Прежнее поведение выглядело как «карта быстро летит справа в центр», и
+  /// причина была не в самой анимации, а в том, что первый кадр строился по
+  /// черновой рамке: сервер ещё не выбран, точка «я» — догадка по локали,
+  /// а через долю секунды приходили настоящие данные и камера ехала к ним
+  /// уже на виду. Теперь первая постановка камеры происходит мгновенно и
+  /// невидимо, и только потом карта проявляется — сразу с кадром «я → сервер»
+  /// посередине.
+  bool _framed = false;
+  Timer? _settle;
+
+  /// Сколько ждём настоящую рамку. Дольше ждать нельзя: если сети нет,
+  /// карта всё равно обязана появиться.
+  static const Duration framingGrace = Duration(milliseconds: 650);
+
+  /// Есть что кадрировать: или живые нитки аккаунта, или выбранный сервер.
+  bool get _hasRoute => widget.accountArcs.isNotEmpty || widget.serverPoint != null;
+
   @override
   void initState() {
     super.initState();
     _fade.addStatusListener(_onFadeStatus);
+    if (_hasRoute) {
+      _markFramed();
+    } else {
+      _settle = Timer(framingGrace, _markFramed);
+    }
+  }
+
+  void _markFramed() {
+    _settle?.cancel();
+    _settle = null;
+    if (_framed) return;
+    _framed = true;
+    if (mounted) setState(() {});
     _fade.forward();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MapBackdrop old) {
+    super.didUpdateWidget(old);
+    if (!_framed && _hasRoute) _markFramed();
   }
 
   void _onFadeStatus(AnimationStatus status) {
@@ -426,6 +466,7 @@ class _MapBackdropState extends State<_MapBackdrop>
 
   @override
   void dispose() {
+    _settle?.cancel();
     _fade.removeStatusListener(_onFadeStatus);
     _fade.dispose();
     super.dispose();
@@ -455,7 +496,10 @@ class _MapBackdropState extends State<_MapBackdrop>
       topPadding: -6,
     );
     final view = widget.accountArcs.isEmpty ? legacyView : FlatMapView.fitConnections(viewport: MediaQuery.sizeOf(context), points: <MapPoint>[selfPoint, if(widget.live && serverPoint != null)serverPoint, for(final arc in widget.accountArcs)...<MapPoint>[arc.from,arc.to]], maxZoom: legacyView.zoom);
-    final Duration glide = widget.motion.transition(reframeDuration);
+    // Пока карта невидима, камера ставится мгновенно: никто не должен
+    // видеть, как мир подъезжает к своему кадру. После появления любое
+    // изменение рамки — смена сервера, новое устройство — снова плавное.
+    final Duration glide = _framed ? widget.motion.transition(reframeDuration) : Duration.zero;
 
     return FadeTransition(
       opacity: _spawn,

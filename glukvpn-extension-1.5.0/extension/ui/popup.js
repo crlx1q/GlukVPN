@@ -2409,16 +2409,30 @@ function renderAccountMap() {
   if(!activeMapData)activeMapRevision++
 	const group = $('account-map')
 	const count = $('map-count')
+	const pins = $('account-pins')
 	if (!group || !count) return
 	group.replaceChildren()
+	if (pins) pins.replaceChildren()
 	const devices = state?.signedIn === false ? [] : (activeMapData?.devices ?? []).filter(d=>d.status==='ACTIVE')
-	let placed = 0
+	// Группировка по точкам карты. Одна нитка на пару «точка → сервер»:
+	// два устройства рядом на одном сервере дают одну нитку и цифру на
+	// маркере, а на разных серверах — две нитки. Так карта не превращается
+	// в паутину при пяти устройствах в одном городе.
+	const spots = {}, pairs = {}, order = []
 	for (const device of devices) {
 		const origin = device?.origin
 		const location = device?.node?.location
 		if (![origin?.lat, origin?.lon, location?.lat, location?.lon].every(Number.isFinite)) continue
 		const a = project(origin.lat, origin.lon)
 		const b = project(location.lat, location.lon)
+		const from = mapSpot(a), key = from + '>' + mapSpot(b)
+		spots[from] = (spots[from] || 0) + 1
+		if (!pairs[key]) { pairs[key] = { a, b, from, device }; order.push(key) }
+		else if (device.isCurrent && !pairs[key].device.isCurrent) pairs[key].device = device
+	}
+	const seenNode = {}, seenPin = {}
+	for (const key of order) {
+		const { a, b, from, device } = pairs[key]
 		// Дуга поднимается пропорционально расстоянию, а не на фиксированные
 		// 5 единиц: иначе близкие точки склеиваются в прямую линию.
 		const lift = Math.max(3.5, Math.abs(b.x - a.x) * 0.16)
@@ -2429,45 +2443,75 @@ function renderAccountMap() {
 		title.textContent = `${device.deviceName ?? device.platform ?? t('settings.devices')} → ${formatNodeLocation(device.node, currentLang()) || device.node?.name || t('loc.unknown')}`
 		path.appendChild(title)
 		group.appendChild(path)
-		for (const [point, cls] of [[a, 'account-origin'], [b, 'account-node']]) {
-      const key=cls+':'+point.x+':'+point.y;
-      if(Array.from(group.querySelectorAll('circle')).some(el=>el.dataset.point===key))continue;
-			// Точка в один пиксель — недостижимая цель для мыши, поэтому
-			// карта больше не интерактивна: ни tabindex, ни подсказок по
-			// наведению. Ореол нужен только для того, чтобы точка читалась
-			// поверх точек континентов.
+		// Зелёная точка — выбранный сервер. Ореол нужен только для того,
+		// чтобы точка читалась поверх точек континентов; кликать по ней
+		// по-прежнему нельзя — всё живёт в панели устройств.
+		const nodeKey = mapSpot(b)
+		if (!seenNode[nodeKey]) {
+			seenNode[nodeKey] = true
 			const halo = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
-			halo.setAttribute('class', cls + '-halo')
-			halo.setAttribute('cx', point.x)
-			halo.setAttribute('cy', point.y)
+			halo.setAttribute('class', 'account-node-halo')
+			halo.setAttribute('cx', b.x)
+			halo.setAttribute('cy', b.y)
 			halo.setAttribute('r', '2.5')
 			group.appendChild(halo)
 			const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
-      dot.dataset.point=key;
-			dot.setAttribute('class', cls)
-			dot.setAttribute('cx', point.x)
-			dot.setAttribute('cy', point.y)
-			dot.setAttribute('r', '.95')
+			dot.setAttribute('class', 'account-node')
+			dot.setAttribute('cx', b.x)
+			dot.setAttribute('cy', b.y)
+			dot.setAttribute('r', '1')
 			group.appendChild(dot)
 		}
-		placed += 1
+		// Фиолетовый маркер устройства с глифом платформы.
+		if (pins && !seenPin[from]) {
+			seenPin[from] = true
+			pins.appendChild(accountPin(a, device, spots[from] || 1))
+		}
 	}
 	const guest = state?.signedIn === false;
 	count.hidden = guest;
 	count.classList.toggle('hidden', guest);
-	// Чип «Устройства · N» с числом в бейдже и шевроном — как в приложении.
-	const countLabel = document.createElement('span')
-	countLabel.textContent = currentLang()==='ru'?'Устройства':'Devices'
-	const countNum = document.createElement('b')
-	countNum.className = 'map-count-num'
-	countNum.textContent = String(activeMapData?.activeTunnels ?? '—')
-	const countChev = document.createElement('i')
-	countChev.className = 'map-count-chev'
-	countChev.setAttribute('aria-hidden', 'true')
-	count.replaceChildren(materialDeviceIcon('devices'), countLabel, countNum, countChev);
+	// Минимализм: только значок, а цифра — бейджем НА нём, а не рядом.
+	// Ни слова «Устройства», ни шеврона — они накрывали статус слева.
+	const total = Number(activeMapData?.activeTunnels)
+	count.replaceChildren(materialDeviceIcon('devices'));
+	if (Number.isFinite(total) && total > 0) {
+		const countNum = document.createElement('b')
+		countNum.className = 'map-count-num'
+		countNum.textContent = String(total)
+		count.appendChild(countNum)
+	}
 	count.onclick = openAccountDevices;
 	count.title = currentLang()==='ru'?'Подключения аккаунта':'Account connections';
+	count.setAttribute('aria-label', (currentLang()==='ru'?'Устройства онлайн: ':'Devices online: ') + (Number.isFinite(total) ? total : 0));
 	updateAccountDevices();
+}
+
+// Шаг группировки — десятая доля единицы карты, тот же, что во Flutter
+// и на сайте: иначе одни и те же устройства сгруппируются по-разному.
+function mapSpot(p) { return Math.round(p.x * 10) + ':' + Math.round(p.y * 10) }
+
+// Маркер устройства — HTML поверх карты, чтобы внутри работал тот же глиф
+// Material Icons, что и в списке. SVG растянут правилом
+// preserveAspectRatio="xMidYMid slice", поэтому позицию считаем вручную по
+// тому же правилу: карта покрывает сцену и обрезается по краям.
+function accountPin(point, device, total) {
+	const pin = document.createElement('span')
+	pin.className = 'account-pin' + (device.isCurrent ? ' is-self' : '')
+	const stage = document.querySelector('.map-stage')
+	const box = stage ? stage.getBoundingClientRect() : null
+	const w = box?.width || 0, h = box?.height || 0
+	const scale = Math.max(w / 119, h / 60)
+	pin.style.left = ((point.x - 59.5) * scale + w / 2) + 'px'
+	pin.style.top = ((point.y - 30) * scale + h / 2) + 'px'
+	pin.appendChild(materialDeviceIcon(device.platform))
+	if (total > 1) {
+		const badge = document.createElement('b')
+		badge.className = 'account-pin-count'
+		badge.textContent = String(total)
+		pin.appendChild(badge)
+	}
+	return pin
 }
 
 async function refreshServiceAndMap() {
@@ -2517,6 +2561,8 @@ function materialDeviceIcon(platform) {
 // Панель «Устройства» — выпадашка, привязанная к чипу над картой, а не
 // модальное окно: полупрозрачный слой с размытием, который не накрывает
 // карточку сервера и закрывается кликом мимо или Esc.
+// Какое устройство раскрыто в подробностях. null — обычный список.
+let accountDetailId=null;
 function openAccountDevices() {
  const panel=ensureAccountDevicesPanel();
  const next=panel.hidden;
@@ -2529,9 +2575,10 @@ function ensureAccountDevicesPanel() {
  panel=document.createElement('div');
  panel.id='account-devices-pop';panel.className='account-devices-pop';panel.hidden=true;
  panel.setAttribute('role','dialog');panel.setAttribute('aria-labelledby','account-devices-title');
- panel.innerHTML='<header><span id="account-devices-title"></span><button type="button" data-close aria-label="Close">×</button></header><p data-summary></p><div data-rows></div>';
+ panel.innerHTML='<header><button type="button" data-back hidden aria-label="Back"><i class="account-device-chev is-back" aria-hidden="true"></i></button><span id="account-devices-title"></span><button type="button" data-close aria-label="Close">×</button></header><p data-summary></p><div data-rows></div>';
  (document.querySelector('.hero')||document.body).appendChild(panel);
  panel.querySelector('[data-close]').onclick=()=>setAccountDevicesOpen(false);
+ panel.querySelector('[data-back]').onclick=()=>{accountDetailId=null;updateAccountDevices();};
  document.addEventListener('click',event=>{
   if(panel.hidden||panel.contains(event.target)||$('map-count')?.contains(event.target))return;
   setAccountDevicesOpen(false);
@@ -2542,6 +2589,7 @@ function ensureAccountDevicesPanel() {
 function setAccountDevicesOpen(open) {
  const panel=$('account-devices-pop');if(!panel)return;
  panel.hidden=!open;
+ if(!open)accountDetailId=null;
  const chip=$('map-count');
  if(chip){chip.classList.toggle('is-open',!!open);chip.setAttribute('aria-expanded',open?'true':'false');}
 }
@@ -2550,10 +2598,23 @@ function updateAccountDevices() {
  const ru=currentLang()==='ru',rows=panel.querySelector('[data-rows]');
  if(state?.signedIn===false||channelSwitching){setAccountDevicesOpen(false);rows.replaceChildren();return;}
  rows.replaceChildren();
+ const list=activeMapData?.devices??[];
+ const opened=accountDetailId?list.find(d=>String(d.id)===accountDetailId):null;
+ if(accountDetailId&&!opened)accountDetailId=null;
+ const back=panel.querySelector('[data-back]'),summary=panel.querySelector('[data-summary]');
+ if(back)back.hidden=!opened;
+ if(opened){
+  // Второй экран той же панели: подробности об одном устройстве.
+  panel.querySelector('#account-devices-title').textContent=opened.deviceName||(ru?'Устройство':'Device');
+  summary.hidden=true;
+  rows.appendChild(accountDeviceDetail(opened,ru));
+  return;
+ }
+ summary.hidden=false;
  panel.querySelector('#account-devices-title').textContent=ru?'Устройства онлайн':'Devices online';
- panel.querySelector('[data-summary]').textContent=activeMapData ? (ru?`${activeMapData.activeTunnels} подключено · лимит устройств ${activeMapData.maxDevices}`:`${activeMapData.activeTunnels} connected · device limit ${activeMapData.maxDevices}`):(ru?'Подключения сейчас недоступны':'Connections unavailable');
- for(const d of activeMapData?.devices??[])rows.appendChild(accountDeviceRow(d,ru));
- if(activeMapData&&!activeMapData.devices?.length){
+ summary.textContent=activeMapData ? (ru?`${activeMapData.activeTunnels} подключено · лимит устройств ${activeMapData.maxDevices}`:`${activeMapData.activeTunnels} connected · device limit ${activeMapData.maxDevices}`):(ru?'Подключения сейчас недоступны':'Connections unavailable');
+ for(const d of list)rows.appendChild(accountDeviceRow(d,ru));
+ if(activeMapData&&!list.length){
   const empty=document.createElement('p');empty.className='account-empty';
   empty.textContent=ru?'Нет активных подключений':'No active connections';
   rows.appendChild(empty);
@@ -2575,7 +2636,46 @@ function accountDeviceRow(d, ru) {
  const end=document.createElement('div');end.className='account-device-end';
  const live=document.createElement('i');live.className='account-device-live'+(d.status==='ACTIVE'?' is-on':'');
  live.title=d.status==='ACTIVE'?(ru?'Подключено':'Connected'):(ru?'Подключение…':'Connecting…');
+ // Стрелка «>» — кнопка: открывает подробности об устройстве.
+ const more=document.createElement('button');more.type='button';more.className='account-device-more';
+ more.title=ru?'Подробнее об устройстве':'Device details';more.setAttribute('aria-label',more.title);
+ more.onclick=()=>{accountDetailId=String(d.id);updateAccountDevices();};
  const chev=document.createElement('i');chev.className='account-device-chev';chev.setAttribute('aria-hidden','true');
- end.append(live,chev);card.appendChild(end);
+ more.appendChild(chev);
+ end.append(live,more);card.appendChild(end);
  return card;
+}
+// Подробности об устройстве — те же поля, что во Flutter и на сайте.
+function accountDeviceDetail(d, ru) {
+ const box=document.createElement('div');box.className='account-detail';
+ const top=document.createElement('div');top.className='account-detail-top';
+ const avatar=document.createElement('div');avatar.className='account-device-avatar';
+ avatar.appendChild(materialDeviceIcon(d.platform));top.appendChild(avatar);
+ const id=document.createElement('div');id.className='account-detail-id';
+ const platform=document.createElement('b');platform.textContent=d.platform||'—';
+ const live=d.status==='ACTIVE';
+ const stateLine=document.createElement('span');
+ stateLine.className='account-detail-state'+(live?' is-on':'');
+ stateLine.textContent=live?(ru?'Подключено':'Connected'):(ru?'Подключение…':'Connecting…');
+ id.append(platform,stateLine);top.appendChild(id);box.appendChild(top);
+ const origin=d.origin||null;
+ const rows=[
+  [ru?'Сервер выхода':'Exit server',formatNodeLocation(d.node,currentLang())||d.node?.name||'—'],
+  [ru?'Город узла':'Node city',d.node?.location?.city||d.node?.city||'—'],
+  [ru?'В сети':'Uptime',durationLabel(Math.max(0,Number(d.durationSec)||0)*1000)],
+  [ru?'Местоположение':'Location',[origin?.country,origin?.countryCode].filter(Boolean).join(' · ')||(ru?'Не определено':'Unknown')]
+ ];
+ if(origin)rows.push([ru?'Точность':'Accuracy',origin.source==='device-estimate'?(ru?'≈ оценка региона устройства':'≈ device region estimate'):(ru?'≈ страна по IP':'≈ IP country')]);
+ for(const [label,value] of rows){
+  const line=document.createElement('div');line.className='account-detail-row';
+  const key=document.createElement('span');key.textContent=label;
+  const val=document.createElement('b');val.textContent=value;
+  line.append(key,val);box.appendChild(line);
+ }
+ if(d.isCurrent){
+  const note=document.createElement('p');note.className='account-detail-note';
+  note.textContent=ru?'Это устройство, с которого ты сейчас смотришь.':'This is the device you are looking at now.';
+  box.appendChild(note);
+ }
+ return box;
 }

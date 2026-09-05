@@ -369,12 +369,16 @@ class VpnController extends ChangeNotifier {
     _safeNotify();
 
     try {
-      // Local teardown first, so user traffic stops immediately even if the
-      // control plane is slow or unreachable.
-      await _vpn.stop();
-      // Then release the session: the control plane instructs the node to remove
-      // the peer and frees the assigned IP.
+      // Сессия закрывается ДО обрыва туннеля. Раньше сначала шёл
+      // _vpn.stop(): маршруты перестраивались, HTTP-запрос не доходил,
+      // ошибка молча глоталась, и строка сессии навсегда оставалась
+      // ACTIVE: устройство висело онлайн у всех на карте и в админке.
+      // У расширения такой беды нет ровно потому, что оно не рвёт маршруты.
       await _closeServerSession(reason: 'user request');
+      await _vpn.stop();
+      // Если первая попытка не прошла (сеть уже разваливалась) —
+      // добиваем уже по обычному каналу, без туннеля.
+      await _closeServerSession(reason: 'user request retry');
     } finally {
       _resetConnectionState();
       _state = VpnUiState.disconnected;
@@ -392,15 +396,52 @@ class VpnController extends ChangeNotifier {
     _probeHomeIp(settle: const Duration(milliseconds: 1200)).ignore();
   }
 
+  /// Паузы между попытками закрыть сессию.
+  static const List<Duration> _closeBackoff = <Duration>[
+    Duration.zero,
+    Duration(milliseconds: 400),
+    Duration(milliseconds: 1200),
+  ];
+
+  /// Сессия, закрытие которой сервер ещё не подтвердил. Пока она здесь,
+  /// устройство числится онлайн, поэтому попытку надо досылать.
+  String? _pendingClose;
+
+  /// Досылает неподтверждённое отключение.
+  Future<void> flushPendingClose() async {
+    if (_pendingClose == null) return;
+    await _closeServerSession(reason: 'pending close');
+  }
+
   Future<void> _closeServerSession({required String reason}) async {
-    final String? sessionId = _session?.id;
+    final String? sessionId = _session?.id ?? _pendingClose;
     if (sessionId == null) return;
+    _pendingClose = sessionId;
     debugPrint('vpn: closing session $sessionId ($reason)');
+    for (final Duration wait in _closeBackoff) {
+      if (wait > Duration.zero) await Future<void>.delayed(wait);
+      try {
+        await _api.disconnect(sessionId: sessionId);
+        _pendingClose = null;
+        return;
+      } on ApiException catch (error) {
+        // 404 — сервер уже закрыл эту сессию, повторять нечего.
+        if (error.statusCode == 404) {
+          _pendingClose = null;
+          return;
+        }
+        debugPrint('vpn: disconnect call failed: ${error.message}');
+      } catch (error) {
+        debugPrint('vpn: disconnect call failed: $error');
+      }
+    }
+    // Последняя попытка — без sessionId: сервер сам найдёт живую сессию
+    // этого устройства. Помогает, когда локальный id устарел.
     try {
-      await _api.disconnect(sessionId: sessionId);
-    } on ApiException catch (error) {
-      // Already closed server-side, or the network is down; nothing else to do.
-      debugPrint('vpn: disconnect call failed: ${error.message}');
+      await _api.disconnect();
+      _pendingClose = null;
+    } catch (error) {
+      debugPrint('vpn: session $sessionId left open: $error');
     }
   }
 

@@ -10,7 +10,7 @@ import { clientIp, getAuthNode, requireNode } from "../middleware/auth"
 import { prisma } from "../prisma"
 import { claimPendingCommands, completeCommand } from "../services/nodeCommands"
 import { buildNodePolicy } from "../services/policy"
-import { ensureIpPool, releaseLease } from "../services/sessions"
+import { closeSession, ensureIpPool, releaseLease } from "../services/sessions"
 import { applyVlessReport } from "../services/vlessStats"
 
 const ipv4 = z.string().trim().refine((value) => {
@@ -432,6 +432,26 @@ export async function nodeAgentRoutes(app: FastifyInstance): Promise<void> {
 			const missingPeers = liveSessions
 				.filter((session) => !reportedKeys.has(session.peerPublicKey))
 				.map((session) => ({ sessionId: session.id, publicKey: session.peerPublicKey }))
+
+			// Страховка от «висящих» сессий. Раньше missingPeers только
+			// отдавался агенту, а строка оставалась ACTIVE навсегда: если
+			// клиент не смог дозвониться до /api/vpn/disconnect, устройство
+			// продолжало светиться на карте и в админке. Узел — источник
+			// правды: раз пира нет, то нет и туннеля.
+			//
+			// Закрываем только ACTIVE (PENDING ещё ждёт ADD_PEER), только
+			// WireGuard (у VLESS и браузерных сессий пира нет по природе) и
+			// только после грейс-периода, чтобы не убить туннель, который
+			// прямо сейчас поднимается.
+			const peerGraceMs = Math.max(60, config.NODE_HEARTBEAT_INTERVAL_SEC * 6) * 1000
+			const peerGraceCutoff = Date.now() - peerGraceMs
+			for (const session of liveSessions) {
+				if (session.status !== "ACTIVE") continue
+				if (session.transport !== "wireguard") continue
+				if (reportedKeys.has(session.peerPublicKey)) continue
+				if (session.connectedAt.getTime() > peerGraceCutoff) continue
+				await closeSession({ sessionId: session.id, reason: "peer_missing" })
+			}
 
 			await prisma.vpnNode.update({
 				where: { id: node.id },
