@@ -157,7 +157,7 @@
   state.className='gluk-state'+(active>0?' is-on':'');
   state.querySelector('span').textContent=active>0
    ? tr('Активные подключения','Active connections')
-   : (pending>0?tr('Подключение…','Connecting…'):tr('Активных подключений нет','No active connections')));
+   : (pending>0?tr('Подключение…','Connecting…'):tr('Активных подключений нет','No active connections'));
 
   // Пока открыты подробности, обновление поллинга не выбрасывает из них —
   // перерисовывается тот же экран с новыми данными.
