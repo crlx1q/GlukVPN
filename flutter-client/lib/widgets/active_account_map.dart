@@ -2,6 +2,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import '../models/account_insights.dart';
+import '../models/models.dart';
 import '../services/api_client.dart';
 import '../state/account_insights_controller.dart';
 import '../theme/tokens.dart';
@@ -36,7 +37,7 @@ String _spotKey(double x, double y) => '${(x * 10).round()}:${(y * 10).round()}'
 
 bool _placed(GeoPoint? p) => p != null && p.valid;
 
-bool _placedNode(GeoPoint? p) =>
+bool _placedNode(NodeLocation? p) =>
     p != null && p.lat.isFinite && p.lon.isFinite && p.lat.abs() <= 90 && p.lon.abs() <= 180;
 
 /// Нитки соединений для карты.
