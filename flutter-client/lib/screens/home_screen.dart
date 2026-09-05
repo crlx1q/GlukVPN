@@ -172,7 +172,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             fleet: fleet,
             accountArcs: accountMapArcs(_accountMap.snapshot),
             connected: vpn.isConnected || (_accountMap.snapshot?.activeTunnels ?? 0) > 0,
-            live: vpn.isConnected || (_accountMap.snapshot?.activeTunnels ?? 0) > 0 || vpn.state == VpnUiState.connecting,
+            live: vpn.isConnected || vpn.state == VpnUiState.connecting,
           ),
         ),
         const Positioned.fill(child: IgnorePointer(child: _MapFade())),
@@ -338,7 +338,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ],
           ),
         ))),
-        Positioned(top:MediaQuery.paddingOf(context).top+64,right:12,child:IconButton.filledTonal(tooltip:s.isRussian?(_inspectMap?'Назад':'Подключения на карте'):(_inspectMap?'Back':'Connections on map'),onPressed:()=>setState(()=>_inspectMap=!_inspectMap),icon:Icon(_inspectMap?Icons.close_rounded:Icons.hub_outlined))),
+        Positioned(top:MediaQuery.paddingOf(context).top+64,right:12,child:_inspectMap ? IconButton.filledTonal(tooltip:s.isRussian?'Назад':'Back',onPressed:()=>setState(()=>_inspectMap=false),icon:const Icon(Icons.close)) : AccountDevicesButton(controller:_accountMap,russian:s.isRussian,onShowMap:()=>setState(()=>_inspectMap=true))),
       ],
     );
   }
@@ -446,12 +446,13 @@ class _MapBackdropState extends State<_MapBackdrop>
             (selfPoint.x + serverPoint.x) / 2,
             (selfPoint.y + serverPoint.y) / 2,
           );
-    final FlatMapView view = FlatMapView.topAnchored(
+    final FlatMapView legacyView = FlatMapView.topAnchored(
       viewport: MediaQuery.sizeOf(context),
       centreOn: centre,
       coverage: 0.88,
       topPadding: -6,
     );
+    final view = widget.accountArcs.isEmpty ? legacyView : FlatMapView.fitConnections(viewport: MediaQuery.sizeOf(context), points: <MapPoint>[selfPoint, if(widget.live && serverPoint != null)serverPoint, for(final arc in widget.accountArcs)...<MapPoint>[arc.from,arc.to]], maxZoom: legacyView.zoom);
     final Duration glide = widget.motion.transition(reframeDuration);
 
     return FadeTransition(

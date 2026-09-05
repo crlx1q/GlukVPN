@@ -591,6 +591,10 @@ class ApiClient {
   Future<DevicesResult> devices() async =>
       DevicesResult.fromJson(await _request('GET', '/api/devices'));
 
+  Future<void> reportMapCountry(String countryCode) async {
+    await _request('POST', '/api/user/map-origin', body: <String, dynamic>{'countryCode': countryCode});
+  }
+
   Future<ActiveMapSnapshot> activeMap() async => ActiveMapSnapshot.fromJson(
         await _request('GET', '/api/user/active-map'),
       );

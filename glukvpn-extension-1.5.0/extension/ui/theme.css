@@ -1400,3 +1400,12 @@ body.signed-out .rail { opacity: 0.5; }
 .modal-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
 
 .prof-chip.plan-badge{border-radius:9px;padding:5px 10px;background:#382447;color:#e1c8fa;border:1px solid #674684;font-size:12px;font-weight:600;box-shadow:none}.account-origin,.account-node{pointer-events:all;cursor:help}.account-origin:focus,.account-node:focus{stroke:#fff;stroke-width:.4}
+
+/* Shared device presentation with the Flutter account sheet. */
+.material-device{display:inline-block;flex:0 0 24px;width:24px;height:24px;background:url('./material-devices.png') 0 0/120px 24px no-repeat;vertical-align:middle}
+.material-device--computer{background-position:-24px 0}.material-device--phone{background-position:-48px 0}.material-device--web{background-position:-72px 0}.material-device--server{background-position:-96px 0}
+button.map-count{display:flex;align-items:center;gap:7px;top:12px;right:12px;bottom:auto;left:auto;padding:8px 12px;border:1px solid #7955c450;border-radius:14px;background:#1c1529ee;color:#d5bcff;font-size:12px;font-weight:600;font-family:inherit;pointer-events:auto;cursor:pointer;z-index:6;transform:none}
+button.map-count[hidden]{display:none!important}
+.account-devices-sheet{box-sizing:border-box;margin:auto auto 8px;inset:auto 0 0;max-height:80vh;width:calc(100% - 16px);max-width:560px;padding:20px;overflow:auto;background:#191321;border:1px solid #7955c450;border-radius:24px;color:#eee8f7;font-family:inherit}
+.account-devices-sheet::backdrop{background:#07040bbb}.account-devices-sheet header{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:20px;font-weight:700}.account-devices-sheet header button{border:0;background:transparent;color:inherit;font-size:26px;cursor:pointer}.account-devices-sheet [data-summary]{font-size:13px;color:#ac9dbc;margin:12px 0}
+.account-device{display:flex;gap:12px;padding:14px;margin:0 0 10px;background:#9662ef0d;border:1px solid #9262de33;border-radius:18px}.account-device-avatar{width:44px;height:44px;flex:0 0 44px;display:grid;place-items:center;background:#9965e924;border-radius:12px}.account-device-body{min-width:0}.account-device p{margin:0 0 5px;overflow-wrap:anywhere}.account-device-name{font-size:15px;font-weight:700}.account-device-current,.account-device-geo{font-size:11px;color:#b19fc5}.account-device-state{font-size:12px;color:#65e3b4}.account-device-route{font-size:13px}

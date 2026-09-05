@@ -355,7 +355,7 @@ class _MapCard extends StatelessWidget {
                     height: c.maxHeight,
                     // Fills the card instead of leaving empty bands above and
                     // below a thin strip of dots.
-                    zoomBoost: flatMap ? 1.05 : 0.95,
+                    zoomBoost: flatMap ? 1.05 : 1.62,
                     forceFlat: flatMap,
                   );
                 },
@@ -435,20 +435,7 @@ class _MapCard extends StatelessWidget {
 
             Positioned(
               top: 14, right: 14,
-              child: Tooltip(
-                message: s.isRussian ? 'Подключения аккаунта' : 'Account connections',
-                child: TextButton.icon(
-                  icon: const Icon(Icons.hub_outlined, size: 16),
-                  label: Text(accountMap.snapshot == null ? '…' : '${accountMap.snapshot!.activeTunnels}/${accountMap.snapshot!.maxDevices}'),
-                  onPressed: () => showModalBottomSheet<void>(
-                    context: context, isScrollControlled: true,
-                    builder: (_) => SafeArea(child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: ActiveAccountMap(api: vpn.api, controller: accountMap, russian: s.isRussian, reduceMotion: reduceMotion, showMap: false),
-                    )),
-                  ),
-                ),
-              ),
+              child: AccountDevicesButton(controller: accountMap, russian: s.isRussian),
             ),
 
             // Globe <-> flat map, bottom right.

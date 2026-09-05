@@ -1400,7 +1400,7 @@ function paintDevices() {
 
 		const icon = document.createElement('span')
 		icon.className = 'd-ic'
-		icon.appendChild(iconSvg(/phone|android|ios/i.test(String(device?.platform ?? '')) ? 'phone' : 'laptop'))
+		icon.appendChild(materialDeviceIcon(device?.platform))
 		row.appendChild(icon)
 
 		const text = document.createElement('span')
@@ -2327,7 +2327,7 @@ function renderLimitDevices(devices) {
 		row.className = 'modal-device'
 		const icon = document.createElement('span')
 		icon.className = 'd-ic'
-		icon.appendChild(iconSvg(/phone|android|ios/i.test(String(device?.platform ?? '')) ? 'phone' : 'laptop'))
+		icon.appendChild(materialDeviceIcon(device?.platform))
 		row.appendChild(icon)
 		const text = document.createElement('span')
 		text.className = 'd-text'
@@ -2442,9 +2442,13 @@ function renderAccountMap() {
 		}
 		placed += 1
 	}
-	count.hidden = devices.length === 0
-	count.classList.toggle('hidden', devices.length === 0)
-	count.textContent = t('map.active', { count: activeMapData?.activeTunnels ?? devices.length, placed })
+	const guest = state?.signedIn === false;
+	count.hidden = guest;
+	count.classList.toggle('hidden', guest);
+	count.replaceChildren(materialDeviceIcon('devices'), document.createTextNode(`${currentLang()==='ru'?'Устройства':'Devices'} · ${activeMapData?.activeTunnels ?? '—'}`));
+	count.onclick = openAccountDevices;
+	count.title = currentLang()==='ru'?'Подключения аккаунта':'Account connections';
+	updateAccountDevices();
 }
 
 async function refreshServiceAndMap() {
@@ -2461,7 +2465,9 @@ async function refreshServiceAndMap() {
 		if (state?.signedIn === false) {
 			activeMapData = null
 		} else {
-			const mapResponse = await call('activeMap')
+			let countryCode;
+			try { countryCode = TZ_COUNTRY[Intl.DateTimeFormat().resolvedOptions().timeZone]; } catch (_) {}
+			const mapResponse = await call('activeMap', { countryCode })
       if(revision!==activeMapRevision||accountId!==state?.user?.id||state?.signedIn===false||channelSwitching)return;
       activeMapData=mapResponse?.ok ? (mapResponse?.data ?? mapResponse) : null;
 		}
@@ -2481,4 +2487,35 @@ function restrictionLabel(restriction) {
 	// Policy-provided custom text is untrusted content: textContent at the call
 	// site guarantees it is displayed literally and never interpreted as HTML.
 	return String(restriction?.label ?? restriction?.value ?? t('err.forbidden')).slice(0, 120)
+}
+
+// Ready-made Material Icons (same glyphs as Flutter Icons.*), locally bundled PNG.
+function materialDeviceIcon(platform) {
+ const p=String(platform||'').toLowerCase(),el=document.createElement('span');
+ const kind=p==='devices'?'devices':/android|ios|phone/.test(p)?'phone':/chrome|browser|ext/.test(p)?'web':p==='server'?'server':'computer';
+ el.className='material-device material-device--'+kind;el.setAttribute('aria-hidden','true');return el;
+}
+function openAccountDevices() {
+ let panel=$('account-devices-sheet');
+ if(!panel){panel=document.createElement('dialog');panel.id='account-devices-sheet';panel.className='account-devices-sheet';panel.setAttribute('aria-labelledby','account-devices-title');panel.innerHTML='<header><span id="account-devices-title"></span><button type="button" data-close aria-label="Close">×</button></header><p data-summary></p><div data-rows></div>';document.body.appendChild(panel);panel.querySelector('[data-close]').onclick=()=>panel.close();panel.addEventListener('click',e=>{if(e.target===panel){const b=panel.getBoundingClientRect();if(e.clientX<b.left||e.clientX>b.right||e.clientY<b.top||e.clientY>b.bottom)panel.close();}});}
+ updateAccountDevices();if(!panel.open)panel.showModal();
+}
+function updateAccountDevices() {
+ const panel=$('account-devices-sheet');if(!panel)return;
+ if(state?.signedIn===false||channelSwitching){panel.close();panel.querySelector('[data-rows]').replaceChildren();return;}
+ const ru=currentLang()==='ru',rows=panel.querySelector('[data-rows]');rows.replaceChildren();
+ panel.querySelector('#account-devices-title').textContent=ru?'Устройства онлайн':'Devices online';
+ panel.querySelector('[data-summary]').textContent=activeMapData ? (ru?`${activeMapData.activeTunnels} подключено · лимит устройств ${activeMapData.maxDevices}`:`${activeMapData.activeTunnels} connected · device limit ${activeMapData.maxDevices}`):(ru?'Подключения сейчас недоступны':'Connections unavailable');
+ for(const d of activeMapData?.devices??[]){
+  const card=document.createElement('article');card.className='account-device';
+  const avatar=document.createElement('div');avatar.className='account-device-avatar';avatar.appendChild(materialDeviceIcon(d.platform));card.appendChild(avatar);
+  const body=document.createElement('div');body.className='account-device-body';
+  const line=(text,cls)=>{const p=document.createElement('p');p.className=cls;p.textContent=text;body.appendChild(p);};
+  line(d.deviceName||'Device','account-device-name');if(d.isCurrent)line(ru?'Это устройство':'This device','account-device-current');
+  line(`${d.platform||'—'} · ${d.status==='ACTIVE'?(ru?'Подключено':'Connected'):(ru?'Подключение…':'Connecting…')}`,'account-device-state');
+  line(`→ ${formatNodeLocation(d.node,currentLang())||d.node?.name||'—'} · ${durationLabel(Math.max(0,Number(d.durationSec)||0)*1000)}`,'account-device-route');
+  line(d.origin?`${d.origin.country||d.origin.countryCode||''} · ${d.origin.source==='device-estimate'?(ru?'≈ оценка региона устройства':'≈ device region estimate'):(ru?'≈ страна по IP':'≈ IP country')}`:(ru?'Регион ещё не определён':'Region not available yet'),'account-device-geo');
+  card.appendChild(body);rows.appendChild(card);
+ }
+ if(activeMapData&&!activeMapData.devices?.length){const p=document.createElement('p');p.textContent=ru?'Нет активных подключений':'No active connections';rows.appendChild(p);}
 }

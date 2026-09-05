@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/account_insights.dart';
 import '../services/api_client.dart';
+import '../utils/geo.dart';
 
 /// One request at a time; identity changes invalidate both data and old replies.
 class AccountInsightsController extends ChangeNotifier {
@@ -31,6 +32,13 @@ class AccountInsightsController extends ChangeNotifier {
     final generation = _generation;
     loading = snapshot == null; notifyListeners();
     try {
+      // Device-local country estimate only: never copy the account's last login
+      // location to every device. Old servers may not implement this optional route.
+      final country = approximateSelfLocation().countryCode;
+      if (country != null) {
+        try { await api.reportMapCountry(country).timeout(const Duration(seconds: 3)); } catch (_) {}
+      }
+      if (_disposed || !_visible || generation != _generation || !api.isAuthenticated) return;
       final next = await api.activeMap().timeout(const Duration(seconds: 15));
       if (_disposed || !_visible || generation != _generation || !api.isAuthenticated) return;
       snapshot = next; error = null;

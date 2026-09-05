@@ -16,7 +16,7 @@ Flutter markers use the exact same projection as the background painter. Desktop
 ## Infrastructure-budget permission
 The analytics route derives includeBudget ONLY from the authenticated server-side isAdmin role. Ordinary users receive budget:null, and no OCI budget query is performed for them. Admin responses carry budget.adminOnly:true. Flutter hides the entire section unless this marker exists; web additionally checks the current admin role. This is not a user traffic quota.
 
-Deploy the control server and updated clients as one coordinated release; do not upload only JavaScript without the new script references. No database migration, infrastructure reconfiguration or deployment is included in this change.
+Deploy the control server and updated clients as one coordinated release; do not upload only JavaScript without the new script references. The original pass required no database migration. The follow-up below adds an optional device column and requires migration before release. No infrastructure reconfiguration or deployment was performed.
 
 ## Verification
 Executed in the sandbox: syntax check and Chromium tests of the exact new account-map-ui.js with the reference world dataset: 7 simultaneous routes, grouped devices, tap details, 320/390/900 px widths, pending/missing-coordinate/empty states, untrusted labels; no browser exceptions.
@@ -30,3 +30,23 @@ Before release:
 4. Test one ordinary account and one administrator: budget:null vs admin-only object.
 5. Connect at least two devices to different nodes in the SAME API channel; verify updates from each platform, disconnection, logout/relogin, unknown geography and network failures.
 6. Reload the unpacked Chrome extension; confirm map, subscription chip and channel-switch clearing. Verify registration/login are unaffected.
+
+## Follow-up: restore the original connection route (2026-09-05, second pass)
+
+The reference ZIP was extracted and compared. Desktop originally used zoomBoost=1.62; the reduced 0.95 globe is restored to 1.62. Local current-device routes no longer depend on the presence of an account-map response: an empty/unknown-geo response cannot suppress a locally confirmed route. A valid current-device account arc suppresses only its own duplicate. Mobile camera fitting includes every account route, rather than cropping remote devices outside the selected route's framing.
+
+The account list is now deliberately map-free regardless of the old showMap flag. Windows and Android share AccountDevicesButton and the same scrollable cards; Chrome uses the same layout, fields and Material devices icon. Web/Chrome device icons are unchanged ready-made Material glyphs rasterized into a local PNG sprite, not hand-drawn SVG paths. They correspond to Flutter Icons.devices/computer/smartphone/web/dns. Attribution: Google Material Design Icons, Apache-2.0, https://github.com/google/material-design-icons; exported through react-icons/md. Do not replace these with emoji or custom SVG approximations.
+
+### REQUIRED server update for cross-device positions
+
+New optional devices.map_country_code column, migration 20260905210000_session_map_origin (despite its name, the final migration adds a DEVICE column). Apply normal Prisma migrations and regenerate the client BEFORE running the new server. No migration has been executed by the assistant.
+
+POST /api/user/map-origin accepts ONLY {countryCode}, derives account and device identifiers from the authenticated device-scoped token, rejects extra keys and unsupported codes, and updates only that active device. Existing rows stay null. The country estimate is recorded even before a connection is opened, so an extension popup can close without losing the future session's fallback location. Changing display geography never changes VPN routing, entitlements, handshake state or access control.
+
+Windows/Android send their device-local country estimate (existing locale/timezone resolver, WITHOUT the shared account origin). Chrome sends its own timezone's country. These are WEAK estimates, not measured physical locations or GPS. IP-derived location remains preferred when GeoIP is enabled and succeeds; otherwise active-map uses the device's labelled `device-estimate`. The frontend labels the approximation. No user's country is copied to another user's or another device's record. Unknown countries stay unknown. Devices can be in the wrong country if their clock/locale is set incorrectly; real GeoIP is still preferable.
+
+Release order: database migration + Prisma generate → control server → site assets and rebuilt Windows/Android clients → reload extension. Then open each client once to report its region. Updating only the UI cannot populate absent server-side positions. Keep production and beta separate.
+
+Verification: npm run typecheck was attempted again; the connection returned `spawn npm ENOENT` before compilation. Full Flutter build/analyzer and live multi-device verification remain required. Added account-map-origin.test.ts and account_map_camera_test.dart for the regression cases. No push/deployment was performed.
+
+Executed follow-up checks: isolated production map-service functions with mocked database/provider dependencies (country isolation for two devices, GeoIP disabled, IP preference when enabled, unknown geography, pending-vs-active counts, authenticated write filters); Chromium tests of the updated web map (seven routes, grouping, interaction, 320/390/900px, untrusted labels). These are component checks, not a live server or native Flutter test. Copy docs/licenses/Material-Icons-Apache-2.0.txt into third-party notices when packaging the site/extension.

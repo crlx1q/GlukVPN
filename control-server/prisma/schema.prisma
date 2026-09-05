@@ -202,6 +202,8 @@ model Device {
   status     DeviceStatus @default(ACTIVE)
   /// Monotone epoch: old tokens cannot revive when the same key is re-enrolled.
   tokenVersion Int @default(0) @map("token_version")
+  /// Optional device-reported country estimate, not GPS and never an account-wide origin.
+  mapCountryCode String? @map("map_country_code")
   createdAt  DateTime     @default(now()) @map("created_at")
   lastSeen   DateTime?    @map("last_seen")
   revokedAt  DateTime?    @map("revoked_at")
@@ -488,6 +490,7 @@ model Session {
   transport       String        @default("wireguard")
   /// Public IP the connect request came from (abuse handling; not shown to users).
   clientIp        String?       @map("client_ip")
+
 
   user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   device      Device              @relation(fields: [deviceId], references: [id], onDelete: Cascade)

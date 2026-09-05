@@ -1010,8 +1010,12 @@ const HANDLERS = {
 	async serviceStatus() {
 		return checkMaintenance()
 	},
-	async activeMap() {
+	async activeMap(message) {
 		try {
+			const country = message?.countryCode;
+			if (typeof country === 'string' && /^[A-Z]{2}$/.test(country)) {
+				try { await Api.reportMapCountry(country); } catch (_) { /* compatible with old servers */ }
+			}
 			return { ok: true, ...(await Api.activeMap()) }
 		} catch (error) {
 			const serialized = safeError(error, 'active_map_failed')

@@ -21,8 +21,9 @@ import '../utils/showcase.dart';
 /// map" transition possible - it is one widget changing a single number, not two
 /// different screens crossfading.
 class AccountConnectionArc extends ConnectionArc {
-  const AccountConnectionArc({required super.from, required super.to, required this.label, required this.platform, required this.serverLabel});
+  const AccountConnectionArc({required super.from, required super.to, required this.label, required this.platform, required this.serverLabel, this.isCurrent = false});
   final String label, platform, serverLabel;
+  final bool isCurrent;
 }
 
 class DottedWorld extends StatelessWidget {
@@ -265,7 +266,7 @@ class _DottedWorldPainter extends CustomPainter {
     }
     return groups.values.map((g) {
       final p=g.platform.toLowerCase();
-      final icon=g.node ? Icons.dns_rounded : p.contains('android') || p.contains('ios') ? Icons.smartphone_rounded : p.contains('chrome') || p.contains('extension') ? Icons.web_rounded : Icons.computer_rounded;
+      final icon=g.node ? Icons.dns : p.contains('android') || p.contains('ios') ? Icons.smartphone : p.contains('chrome') || p.contains('extension') ? Icons.web : Icons.computer;
       final message=g.labels.join('\n\n');
       return Positioned(left:g.offset.dx-18,top:g.offset.dy-18,width:36,height:36,child: Tooltip(message:message,triggerMode:TooltipTriggerMode.tap,waitDuration:const Duration(milliseconds:180),child: Semantics(label:message,button:true,child: MouseRegion(cursor:SystemMouseCursors.click,child: Center(child: Container(width:24,height:24,decoration:BoxDecoration(color:GlukColors.cell,borderRadius:BorderRadius.circular(12),border:Border.all(color:g.node?GlukColors.violetLight:GlukColors.connected)),child: g.labels.length>1 ? Center(child:Text('${g.labels.length}',style:const TextStyle(fontSize:11,color:GlukColors.text0))) : Icon(icon,size:14,color:g.node?GlukColors.violetLight:GlukColors.connected)))))));
     }).toList();
@@ -425,7 +426,7 @@ class _DottedWorldPainter extends CustomPainter {
 		final serverFade = facing(server) * serverOpacity;
 		final accent = connected ? GlukColors.connected : GlukColors.violetLight;
 
-		if (accountArcs == null && self != null && server != null && arcProgress > 0) {
+		if (!(accountArcs ?? const <ConnectionArc>[]).any((a) => a is AccountConnectionArc && a.isCurrent) && self != null && server != null && arcProgress > 0) {
 			final routeFade = math.min(selfFade, serverFade);
 			if (routeFade > 0.02) {
 				_paintArc(

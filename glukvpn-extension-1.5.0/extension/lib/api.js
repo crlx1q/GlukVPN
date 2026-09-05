@@ -290,6 +290,7 @@ export const Api = {
 
 	devices: () => request('GET', '/api/devices'),
 	activeMap: () => request('GET', '/api/user/active-map'),
+	reportMapCountry: (countryCode) => request('POST', '/api/user/map-origin', { body: { countryCode } }),
 	revokeDevice: (id) => request('DELETE', `/api/devices/${encodeURIComponent(String(id))}`),
 
 	connect: (nodeId) => request('POST', '/api/vpn/connect', { body: nodeId ? { nodeId } : {} }),

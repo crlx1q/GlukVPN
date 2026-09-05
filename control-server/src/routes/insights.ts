@@ -3,7 +3,7 @@ import { z } from "zod"
 import { writeAudit } from "../lib/audit"
 import { badRequest } from "../lib/errors"
 import { clientIp, getAuthUser, requireAdmin, requireUser } from "../middleware/auth"
-import { accountActiveMap, accountAnalytics } from "../services/accountInsights"
+import { accountActiveMap, accountAnalytics, deviceEstimate, recordMapCountry } from "../services/accountInsights"
 import { requestPolicySync } from "../services/policy"
 import { serviceSettings, serviceStatus, updateNodeMaintenance, updateServiceSettings } from "../services/serviceControl"
 
@@ -14,6 +14,13 @@ const AnalyticsQuery = z.object({ period: z.enum(["day", "week", "month"]).defau
 export async function insightsRoutes(app: FastifyInstance): Promise<void> {
 	app.get("/api/service/status", { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (_request, reply) => {
 		return reply.header("Cache-Control", "no-store").send(await serviceStatus())
+	})
+	app.post("/api/user/map-origin", { preHandler: requireUser, config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (request, reply) => {
+		const { user, device } = getAuthUser(request)
+		const body = z.object({ countryCode: z.string().regex(/^[A-Za-z]{2}$/).transform(s => s.toUpperCase()) }).strict().safeParse(request.body)
+		if (!device || !body.success || !deviceEstimate(body.data.countryCode)) throw badRequest("A device-scoped token and supported country estimate are required")
+		await recordMapCountry(user.id, device.id, body.data.countryCode)
+		return reply.header("Cache-Control", "private, no-store").send({ ok: true })
 	})
 	app.get("/api/user/active-map", { preHandler: requireUser, config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (request, reply) => {
 		const { user, device } = getAuthUser(request)

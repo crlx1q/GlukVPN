@@ -49,6 +49,18 @@ class FlatMapView {
 		);
 	}
 
+	/// Fit every account endpoint into the visible background, not only the selected route.
+	static FlatMapView fitConnections({required Size viewport, required List<MapPoint> points, required double maxZoom}) {
+		if (points.isEmpty || viewport.width <= 48 || viewport.height <= 160) return const FlatMapView(zoom: 1, focus: Offset(.5,.5));
+		var minX=points.first.x,maxX=minX,minY=points.first.y,maxY=minY;
+		for(final p in points){if(p.x<minX)minX=p.x;if(p.x>maxX)maxX=p.x;if(p.y<minY)minY=p.y;if(p.y>maxY)maxY=p.y;}
+		final target=Rect.fromLTRB(24,90,viewport.width-24,viewport.height*.65);
+		final sx=target.width/(maxX-minX+10), sy=target.height/(maxY-minY+16);
+		final cap=maxZoom*viewport.width/mapWidth;
+		final scale=(sx<sy?sx:sy).clamp(.01,cap).toDouble();
+		return FlatMapView(zoom:scale*mapWidth/viewport.width,focus:Offset(((minX+maxX)/2-(target.center.dx-viewport.width/2)/scale)/mapWidth,((minY+maxY)/2-(target.center.dy-viewport.height/2)/scale)/mapHeight));
+	}
+
 	/// Where the map's top edge sits, in pixels from the top of the viewport.
 	/// Exists so a test can check the anchoring without pumping a widget.
 	double topEdge({required Size viewport}) {

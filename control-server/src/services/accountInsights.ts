@@ -8,7 +8,7 @@ import { countryPoint, usageBucket, usageWindow, type UsagePeriod } from "./insi
 import { loadPublicNodes } from "./nodes"
 import { serviceSettings, serviceStatus } from "./serviceControl"
 
-type Origin = { lat: number; lon: number; countryCode: string | null; country: string | null; source: "ip-country"; approximate: true }
+type Origin = { lat: number; lon: number; countryCode: string | null; country: string | null; source: "ip-country" | "device-estimate"; approximate: true }
 // Cache by session, not account or caller IP. A phone and PC must never inherit
 // each other's position. No IPs or credentials appear in the response or cache key.
 const origins = new Map<string, { expires: number; value: Promise<Origin | null> }>()
@@ -27,6 +27,18 @@ async function sessionOrigin(id: string, ip: string | null): Promise<Origin | nu
 	if (!result) entry.expires = Date.now() + 60000
 	return result
 }
+export function deviceEstimate(code: string | null | undefined): Origin | null {
+	const point = countryPoint(code)
+	return point ? { lat: point[0], lon: point[1], countryCode: String(code).toUpperCase(), country: null, source: "device-estimate", approximate: true } : null
+}
+
+export async function recordMapCountry(userId: string, deviceId: string, countryCode: string) {
+	return prisma.device.updateMany({
+		where: { userId, id: deviceId, status: "ACTIVE", OR: [{ mapCountryCode: null }, { mapCountryCode: { not: countryCode } }] },
+		data: { mapCountryCode: countryCode },
+	})
+}
+
 export async function accountActiveMap(user: User, currentDeviceId?: string) {
 	const [sessions, service] = await Promise.all([
 		prisma.session.findMany({
@@ -43,7 +55,7 @@ export async function accountActiveMap(user: User, currentDeviceId?: string) {
 		lastSeen: s.device.lastSeen?.toISOString() ?? null, isCurrent: currentDeviceId === s.deviceId,
 		connected: s.status === 'ACTIVE', sessionId: s.id, status: s.status, connectedAt: s.connectedAt.toISOString(),
 		durationSec: Math.max(0, Math.floor((now.getTime() - s.connectedAt.getTime()) / 1000)),
-		origin: await sessionOrigin(s.id, s.clientIp), node: nodes[i],
+		origin: (await sessionOrigin(s.id, s.clientIp)) ?? deviceEstimate(s.device.mapCountryCode), node: nodes[i],
 	})))
 	return { serverTime: now.toISOString(), pollAfterMs: 5000, activeTunnels: selected.filter(s => s.status === 'ACTIVE').length, pendingTunnels: selected.filter(s => s.status === 'PENDING').length, maxDevices: effectiveDeviceLimit(user), truncated: unique.length > selected.length, service, devices }
 }
