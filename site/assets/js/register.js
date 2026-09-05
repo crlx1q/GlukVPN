@@ -214,7 +214,7 @@
 
       var cap = document.createElement("span");
       cap.className = "captcha__cap";
-      cap.textContent = t("Проверка, что вы человек", "Quick check that you are human");
+      cap.textContent = t("Проверка безопасности", "Security check");
       head.appendChild(cap);
 
       var refresh = document.createElement("button");
@@ -251,7 +251,7 @@
       widgets[key] = window.turnstile.render(host, {
         sitekey: TS.siteKey,
         theme: "dark",
-        size: "normal",
+        size: "flexible",
         appearance: "always",
         callback: function () { captchaNote(key, ""); },
         "expired-callback": function () {

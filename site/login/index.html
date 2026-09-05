@@ -36,16 +36,16 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&amp;display=swap">
   <link rel="stylesheet" href="/assets/css/fonts.css?v=1.3.0">
   <link rel="stylesheet" href="/assets/css/tokens.css?v=1.3.0">
-  <link rel="stylesheet" href="/assets/css/base.css?v=1.3.0">
+  <link rel="stylesheet" href="/assets/css/base.css?v=20260905.1">
   <link rel="stylesheet" href="/assets/css/components.css?v=1.3.0">
   <link rel="stylesheet" href="/assets/css/sections.css?v=1.3.0">
   <link rel="stylesheet" href="/assets/css/app-ui.css?v=1.3.0">
   <link rel="stylesheet" href="/assets/css/utilities.css?v=1.3.0">
   <link rel="stylesheet" href="/assets/css/fx.css?v=1.3.0">
-  <link rel="stylesheet" href="/assets/css/auth.css?v=0.12.0">
+  <link rel="stylesheet" href="/assets/css/auth.css?v=20260905.1">
   <script src="/assets/js/config.js?v=1.3.0" defer></script>
   <script src="/assets/js/telemetry.js?v=1.4.0" defer></script>
-  <script src="/assets/js/cosmos.js?v=1.4.0" defer></script>
+
   <script src="/assets/js/i18n.js?v=1.3.0" defer></script>
   <script src="/assets/js/world-dots.js?v=1.3.0" defer></script>
   <script src="/assets/js/globe.js?v=1.3.0" defer></script>
@@ -56,8 +56,9 @@
   <script src="/assets/js/auth.js?v=0.7.5" defer></script>
   <script src="/assets/js/fonts.js?v=1.3.0" defer></script>
 
+  <link rel="stylesheet" href="/assets/css/auth-page.css?v=20260905.1">
 </head>
-<body>
+<body class="auth-page">
   <a class="skip-link" href="#main">К основному содержимому</a>
   <div class="scene" aria-hidden="true">
   <svg class="scene__waves" viewBox="0 0 1440 900" preserveAspectRatio="none" focusable="false">
@@ -156,7 +157,7 @@
               </label>
               <button class="btn btn--primary btn--lg btn--block" type="submit">Войти</button>
               <p class="auth-msg" data-login-msg role="status" aria-live="polite"></p>
-              <p class="auth-hint"><a class="auth-link" href="/login/?mode=recover" data-auth-goto="recover">Забыли пароль?</a> — пришлём код на почту или в Telegram. Нет аккаунта? <a class="auth-link" href="/login/?mode=register" data-auth-goto="register">Регистрация</a>.</p>
+              <p class="auth-hint"><a class="auth-link" href="/login/?mode=recover" data-auth-goto="recover">Забыли пароль?</a></p>
             </form>
 
             <!-- 0.8.0: вход через Telegram и Google. Ряд скрыт, пока sso.js не
@@ -367,6 +368,9 @@
         <div class="acct-panel" data-acct-panel hidden></div>
 
         <div class="auth-card__foot">
+          <a class="auth-link" href="/support/">Поддержка</a>
+          <a class="auth-link" href="/privacy/">Конфиденциальность</a>
+          <a class="auth-link" href="/en/login/" hreflang="en">English</a>
           <a class="auth-link" href="/download/"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать приложение</a>
           <a class="auth-link" href="/app/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Личный кабинет</a>
         </div>
@@ -382,7 +386,7 @@
           <div class="auth-hero__copy">
             <span class="auth-hero__badge"><span class="auth-hero__pulse" aria-hidden="true"></span>Сеть GlukVPN на связи</span>
             <h2 class="auth-hero__title">Своя сеть, свои правила</h2>
-            <p class="auth-hero__sub">WireGuard, свои узлы и системный туннель Windows — без прокси в браузере.</p>
+            <p class="auth-hero__sub">Защищённое подключение дома и в дороге. Телефон, компьютер и браузер — в одном аккаунте.</p>
           </div>
           <!-- МЕГА-СПРИНТ, БЛОК B: вместо четырёх CSS-градиентов — живая
                сцена на canvas (assets/js/cosmos.js): звёздное поле,
@@ -423,12 +427,13 @@
   <!-- register.js ведёт три шага регистрации и восстановление, login.js — вход
        и переключение вкладок. Оба работают на одной карточке и не делят
        между собой ни одного элемента, кроме самих панелей. -->
-  <script src="/assets/js/register.js?v=0.9.0" defer></script>
-  <script src="/assets/js/login.js?v=0.9.0" defer></script>
+  <script src="/assets/js/register.js?v=20260905.1" defer></script>
+  <script src="/assets/js/login.js?v=20260905.1" defer></script>
   <!-- 0.8.0: sso.js — вход через Telegram (device-link) и Google (GIS).
        Идёт после login.js: переключение вкладок и редирект после входа берёт
        оттуда, токены складывает через GlukAuth.adoptTokens. -->
-  <script src="/assets/js/sso.js?v=0.8.0" defer></script>
+  <script src="/assets/js/sso.js?v=20260905.1" defer></script>
+  <script src="/assets/js/auth-visual.js?v=20260905.1" defer></script>
 
   </main>
 

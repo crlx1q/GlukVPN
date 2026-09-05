@@ -313,7 +313,7 @@
       googleHosts.forEach(function (host) {
         host.hidden = false;
         host.innerHTML = "";
-        var width = Math.min(320, Math.max(200, Math.floor((host.parentNode && host.parentNode.clientWidth) || 320)));
+        var width = Math.min(400, Math.max(120, Math.floor(host.clientWidth || (host.closest('[data-google-mode="login"]') ? 190 : 320))));
         try {
           window.google.accounts.id.renderButton(host, {
             type: "standard",
@@ -321,7 +321,7 @@
             size: "large",
             shape: "pill",
             width: width,
-            text: "continue_with",
+            text: "signin",
             logo_alignment: "left",
             locale: LANG
           });

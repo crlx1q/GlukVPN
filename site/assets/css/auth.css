@@ -345,7 +345,7 @@
 /* без скачков при переключении вход/регистрация: обе панели в одной ячейке сетки */
 .auth-panes{display:grid;position:relative}
 .auth-pane{grid-area:1/1;transition:opacity .34s var(--ease-soft),transform .34s var(--ease-soft)}
-.auth-pane[hidden]{display:block;opacity:0;visibility:hidden;pointer-events:none;transform:translateY(10px) scale(.995)}
+.auth-pane[hidden]{display:none}
 .auth-pane.is-in{opacity:1;visibility:visible;pointer-events:auto;transform:none}
 
 /* правая колонка */

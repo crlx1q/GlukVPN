@@ -36,13 +36,13 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&amp;display=swap">
   <link rel="stylesheet" href="/assets/css/fonts.css?v=0.8.0">
   <link rel="stylesheet" href="/assets/css/tokens.css?v=0.8.0">
-  <link rel="stylesheet" href="/assets/css/base.css?v=0.8.0">
+  <link rel="stylesheet" href="/assets/css/base.css?v=20260905.1">
   <link rel="stylesheet" href="/assets/css/components.css?v=0.8.0">
   <link rel="stylesheet" href="/assets/css/sections.css?v=0.8.0">
   <link rel="stylesheet" href="/assets/css/app-ui.css?v=0.8.0">
   <link rel="stylesheet" href="/assets/css/utilities.css?v=0.8.0">
   <link rel="stylesheet" href="/assets/css/fx.css?v=0.8.0">
-  <link rel="stylesheet" href="/assets/css/auth.css?v=0.8.0">
+  <link rel="stylesheet" href="/assets/css/auth.css?v=20260905.1">
   <script src="/assets/js/config.js?v=0.8.0" defer></script>
   <script src="/assets/js/i18n.js?v=0.8.0" defer></script>
   <script src="/assets/js/world-dots.js?v=0.8.0" defer></script>
@@ -54,8 +54,9 @@
   <script src="/assets/js/auth.js?v=0.8.0" defer></script>
   <script src="/assets/js/fonts.js?v=0.8.0" defer></script>
 
+  <link rel="stylesheet" href="/assets/css/auth-page.css?v=20260905.1">
 </head>
-<body>
+<body class="auth-page">
   <a class="skip-link" href="#main">Skip to content</a>
   <div class="scene" aria-hidden="true">
   <svg class="scene__waves" viewBox="0 0 1440 900" preserveAspectRatio="none" focusable="false">
@@ -350,6 +351,9 @@
         <div class="acct-panel" data-acct-panel hidden></div>
 
         <div class="auth-card__foot">
+          <a class="auth-link" href="/en/support/">Support</a>
+          <a class="auth-link" href="/en/privacy/">Privacy</a>
+          <a class="auth-link" href="/login/" hreflang="ru">Русский</a>
           <a class="auth-link" href="/en/download/"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Download the app</a>
           <a class="auth-link" href="/en/app/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Dashboard</a>
         </div>
@@ -362,14 +366,9 @@
         <div class="auth-aside__card auth-hero">
           <div class="auth-hero__copy">
             <h2 class="auth-hero__title">Your own network, your own rules</h2>
-            <p class="auth-hero__sub">WireGuard, our own nodes and a system-wide Windows tunnel — no browser proxy.</p>
+            <p class="auth-hero__sub">A secure connection at home and on the go. Your phone, computer and browser — one account.</p>
           </div>
-          <div class="auth-hero__stage" aria-hidden="true">
-            <span class="auth-hero__glow"></span>
-            <span class="auth-hero__globe"></span>
-            <span class="auth-hero__orbit auth-hero__orbit--a"></span>
-            <span class="auth-hero__orbit auth-hero__orbit--b"></span>
-          </div>
+          <div class="auth-cosmos" aria-hidden="true"><canvas class="auth-cosmos__canvas" data-cosmos width="640" height="640"></canvas></div>
           <ul class="auth-hero__list">
             <li class="auth-hero__row">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="13" height="9.5" rx="1.8" stroke="currentColor" stroke-width="1.6"/><rect x="16" y="9" width="5.5" height="10.5" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M6 17.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -396,9 +395,10 @@
 
   <!-- register.js drives the three sign-up steps and password recovery,
        login.js — sign-in and tab switching, sso.js — Telegram and Google. -->
-  <script src="/assets/js/register.js?v=0.8.0" defer></script>
-  <script src="/assets/js/login.js?v=0.8.0" defer></script>
-  <script src="/assets/js/sso.js?v=0.8.0" defer></script>
+  <script src="/assets/js/register.js?v=20260905.1" defer></script>
+  <script src="/assets/js/login.js?v=20260905.1" defer></script>
+  <script src="/assets/js/sso.js?v=20260905.1" defer></script>
+  <script src="/assets/js/auth-visual.js?v=20260905.1" defer></script>
 
   </main>
 
