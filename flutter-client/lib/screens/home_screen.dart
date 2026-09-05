@@ -483,19 +483,37 @@ class _MapBackdropState extends State<_MapBackdrop>
     // rather than guessed - a hard-coded zoom is a strip on some phones and a
     // close-up on others. Framing runs between "you" and the chosen exit, so
     // the route you are about to take is what the picture is about.
-    final MapPoint centre = serverPoint == null
-        ? selfPoint
-        : MapPoint(
-            (selfPoint.x + serverPoint.x) / 2,
-            (selfPoint.y + serverPoint.y) / 2,
-          );
-    final FlatMapView legacyView = FlatMapView.topAnchored(
+    // ЭТАП 3: карта больше не подгоняет зум под точки.
+    //
+    // `fitConnections` пересчитывал И зум, И центр по рамке всех точек, а
+    // список устройств приходит опросом раз в 5 секунд. Любое изменение
+    // — новое устройство, ушедшее устройство, уточнённая геолокация — давало
+    // новую рамку, и камера ехала к ней. Именно это выглядело как «фигуры
+    // резко телепаются вправо-влево». Оттуда же и скачущий размер
+    // маркеров: их масштаб был привязан к зуму.
+    //
+    // Возвращаем поведение старого клиента: зум постоянный, карта прижата
+    // к верху и там и остаётся, а кадр строится ТОЛЬКО по горизонтали —
+    // ровно как просили: «по горизонтальной линии, а не буквально
+    // посередине телефона». `topAnchored` берёт только `centreOn.fx`,
+    // вертикаль он считает сам от высоты экрана.
+    double minX = selfPoint.x;
+    double maxX = selfPoint.x;
+    void span(double x) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+    }
+    if (serverPoint != null) span(serverPoint.x);
+    for (final ConnectionArc arc in widget.accountArcs) {
+      span(arc.from.x);
+      span(arc.to.x);
+    }
+    final FlatMapView view = FlatMapView.topAnchored(
       viewport: MediaQuery.sizeOf(context),
-      centreOn: centre,
+      centreOn: MapPoint((minX + maxX) / 2, selfPoint.y),
       coverage: 0.88,
       topPadding: -6,
     );
-    final view = widget.accountArcs.isEmpty ? legacyView : FlatMapView.fitConnections(viewport: MediaQuery.sizeOf(context), points: <MapPoint>[selfPoint, if(widget.live && serverPoint != null)serverPoint, for(final arc in widget.accountArcs)...<MapPoint>[arc.from,arc.to]], maxZoom: legacyView.zoom);
     // Пока карта невидима, камера ставится мгновенно: никто не должен
     // видеть, как мир подъезжает к своему кадру. После появления любое
     // изменение рамки — смена сервера, новое устройство — снова плавное.
@@ -582,6 +600,8 @@ class _MapBackdropState extends State<_MapBackdrop>
                           // the exit.
                           driftDegrees: centredSway(drift) * 12,
                           selfPoint: selfPoint,
+                          // Глиф внутри фиолетового маркера «я», когда туннеля ещё нет.
+                          selfPlatform: 'phone',
                           serverPoint: serverPoint,
                           nodePoints: fleet,
                           accountArcs: widget.accountArcs,

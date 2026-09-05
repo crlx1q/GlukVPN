@@ -483,55 +483,22 @@ function resolveGeo() {
 
 // ---------------------------------------------------------------- routing ---
 
-function setPoint(dotId, ringId, point) {
-	for (const id of [dotId, ringId]) {
-		const node = $(id)
-		if (!node) continue
-		node.setAttribute('cx', point.x.toFixed(2))
-		node.setAttribute('cy', point.y.toFixed(2))
-	}
-}
-
-/** Draws "you" and "the server" and the arc between them. */
-function drawRoute(home, server, phase = 'idle') {
-	const you = home ? project(home[0], home[1]) : { x: 82.44, y: 12.24 }
-	setPoint('you-dot', 'you-ring', you)
-	const path = $('conn-path')
-	const show = (id, on) => {
-		const node = $(id)
-		if (node) node.style.opacity = on ? '' : '0'
-	}
-	show('you-dot', true)
-	show('you-ring', true)
-	if (!server) {
-		show('server-dot', false)
-		show('server-ring', false)
-		if (path) {
-			path.style.opacity = '0'
-			path.setAttribute('d', 'M' + you.x.toFixed(2) + ',' + you.y.toFixed(2) + ' L' + you.x.toFixed(2) + ',' + you.y.toFixed(2))
-		}
-		return
-	}
-	const target = project(server[0], server[1])
-	setPoint('server-dot', 'server-ring', target)
-	show('server-dot', true)
-	show('server-ring', true)
-	// Lift the control point so the arc bows away from the globe instead of
-	// cutting a straight line across it.
-	const midX = (you.x + target.x) / 2
-	const midY = (you.y + target.y) / 2
-	const span = Math.hypot(target.x - you.x, target.y - you.y)
-	const lift = Math.min(14, Math.max(3, span * 0.32))
-	if (path) {
-		path.setAttribute(
-			'd',
-			'M' + you.x.toFixed(2) + ',' + you.y.toFixed(2) + ' Q' + midX.toFixed(2) + ',' + (midY - lift).toFixed(2) + ' ' + target.x.toFixed(2) + ',' + target.y.toFixed(2),
-		)
-		// Solid while the tunnel is up, faint while it is only a proposal, and
-		// dead while there is no link to carry it.
-		path.style.opacity = phase === 'connected' ? '1' : phase === 'offline' ? '0.14' : '0.45'
-	}
-}
+// ЭТАП 3: легаси-«симуляция подключения» удалена.
+//
+// Здесь жили setPoint() и drawRoute(): они рисовали пару точек
+// «я → сервер» и дугу между ними ВСЕГДА — даже без туннеля, просто
+// приглушённой до opacity 0.14, а при неизвестной геолокации ставили
+// жёстко прошитую точку { x: 82.44, y: 12.24 } где-то в океане. Именно
+// это и был тот лишний неактивный коннект, который никак не убирался.
+//
+// Теперь карта одна на все площадки и целиком рисуется
+// renderAccountMap() по данным аккаунта: фиолетовый маркер устройства,
+// зелёный узел и нитка только у живых туннелей. Координаты для неё
+// складываются сюда, а accountMapSig держит отпечаток уже нарисованной
+// сцены, чтобы не пересобирать DOM на каждом опросе.
+let selfLatLon = null
+let nodeLatLon = null
+let accountMapSig = ''
 
 // ------------------------------------------------------------------ views ---
 
@@ -715,8 +682,10 @@ function renderVpn() {
 
 	// Both ends are drawn whenever they are known, like the phone app: you can
 	// always see where you are and where the tunnel lands, connected or not.
-	const target = node ? latLonFor({ city: node.city, countryCode: node.countryCode ?? node.country }) : null
-	drawRoute(latLonFor(geo), target, online ? phase : 'offline')
+	// Саму сцену собирает renderAccountMap(), здесь только координаты.
+	nodeLatLon = node ? latLonFor({ city: node.city, countryCode: node.countryCode ?? node.country }) : null
+	selfLatLon = latLonFor(geo)
+	renderAccountMap()
 
 	// Numbers.
 	//
@@ -2411,8 +2380,6 @@ function renderAccountMap() {
 	const count = $('map-count')
 	const pins = $('account-pins')
 	if (!group || !count) return
-	group.replaceChildren()
-	if (pins) pins.replaceChildren()
 	const devices = state?.signedIn === false ? [] : (activeMapData?.devices ?? []).filter(d=>d.status==='ACTIVE')
 	// Группировка по точкам карты. Одна нитка на пару «точка → сервер»:
 	// два устройства рядом на одном сервере дают одну нитку и цифру на
@@ -2430,8 +2397,38 @@ function renderAccountMap() {
 		if (!pairs[key]) { pairs[key] = { a, b, from, device }; order.push(key) }
 		else if (device.isCurrent && !pairs[key].device.isCurrent) pairs[key].device = device
 	}
+	// ЭТАП 3, главное требование: «вошёл — вижу себя на карте».
+	//
+	// Раньше рисовались только живые нитки, поэтому без туннеля сцена
+	// была пустой. Теперь текущее устройство и выбранный сервер стоят
+	// на карте всегда, а нитка есть только у настоящего туннеля. Своё
+	// устройство добавляется только когда ни одна нитка не помечена
+	// isCurrent — иначе рядом встал бы второй такой же маркер.
+	const ownArc = order.some(key => pairs[key].device?.isCurrent)
+	const selfPoint = !ownArc && Array.isArray(selfLatLon) ? project(selfLatLon[0], selfLatLon[1]) : null
+	const nodePoint = Array.isArray(nodeLatLon) ? project(nodeLatLon[0], nodeLatLon[1]) : null
+	const guest = state?.signedIn === false
+	const total = Number(activeMapData?.activeTunnels)
+	// ЭТАП 3: сцена пересобирается ТОЛЬКО при изменении данных.
+	//
+	// Раньше replaceChildren() срабатывал на каждый опрос — раз в 5
+	// секунд — и пересоздавал <path> и маркеры. Вместе с узлами
+	// заново стартовали CSS-анимации account-draw и account-pin-in,
+	// поэтому нитка чужого устройства бесконечно пропадала и снова
+	// «красиво прилетала». Теперь сравниваем отпечаток сцены и при
+	// совпадении не трогаем DOM вообще — анимация играет один раз.
+	const sig = JSON.stringify([guest, Number.isFinite(total) ? total : null,
+		order.map(key => [key, spots[pairs[key].from] || 1, pairs[key].device?.platform ?? '', Boolean(pairs[key].device?.isCurrent)]),
+		selfPoint ? mapSpot(selfPoint) : null, nodePoint ? mapSpot(nodePoint) : null])
+	const dirty = sig !== accountMapSig
+	accountMapSig = sig
+	if (dirty) {
+		group.replaceChildren()
+		if (pins) pins.replaceChildren()
+	}
 	const seenNode = {}, seenPin = {}
 	for (const key of order) {
+		if (!dirty) break
 		const { a, b, from, device } = pairs[key]
 		// Дуга поднимается пропорционально расстоянию, а не на фиксированные
 		// 5 единиц: иначе близкие точки склеиваются в прямую линию.
@@ -2468,18 +2465,44 @@ function renderAccountMap() {
 			pins.appendChild(accountPin(a, device, spots[from] || 1))
 		}
 	}
-	const guest = state?.signedIn === false;
+	if (dirty) {
+		// Выбранный сервер — зелёная точка даже без туннеля.
+		if (nodePoint && !seenNode[mapSpot(nodePoint)]) {
+			seenNode[mapSpot(nodePoint)] = true
+			const halo = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+			halo.setAttribute('class', 'account-node-halo')
+			halo.setAttribute('cx', nodePoint.x)
+			halo.setAttribute('cy', nodePoint.y)
+			halo.setAttribute('r', '2.5')
+			group.appendChild(halo)
+			const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+			dot.setAttribute('class', 'account-node')
+			dot.setAttribute('cx', nodePoint.x)
+			dot.setAttribute('cy', nodePoint.y)
+			dot.setAttribute('r', '1')
+			group.appendChild(dot)
+		}
+		// И я сам — фиолетовый маркер с глифом браузера.
+		if (pins && selfPoint && !seenPin[mapSpot(selfPoint)]) {
+			pins.appendChild(accountPin(selfPoint, {
+				isCurrent: true,
+				platform: 'web',
+				deviceName: currentLang() === 'ru' ? 'Это устройство' : 'This device',
+			}, 1))
+		}
+	}
 	count.hidden = guest;
 	count.classList.toggle('hidden', guest);
 	// Минимализм: только значок, а цифра — бейджем НА нём, а не рядом.
 	// Ни слова «Устройства», ни шеврона — они накрывали статус слева.
-	const total = Number(activeMapData?.activeTunnels)
-	count.replaceChildren(materialDeviceIcon('devices'));
-	if (Number.isFinite(total) && total > 0) {
-		const countNum = document.createElement('b')
-		countNum.className = 'map-count-num'
-		countNum.textContent = String(total)
-		count.appendChild(countNum)
+	if (dirty) {
+		count.replaceChildren(materialDeviceIcon('devices'));
+		if (Number.isFinite(total) && total > 0) {
+			const countNum = document.createElement('b')
+			countNum.className = 'map-count-num'
+			countNum.textContent = String(total)
+			count.appendChild(countNum)
+		}
 	}
 	count.onclick = openAccountDevices;
 	count.title = currentLang()==='ru'?'Подключения аккаунта':'Account connections';

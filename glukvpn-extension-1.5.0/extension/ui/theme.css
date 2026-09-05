@@ -313,25 +313,9 @@ body.signed-out .rail { opacity: 0.5; }
 	stroke-width: 0.25;
 	animation: netPulse 3.4s ease-out infinite;
 }
-.conn-path {
-	fill: none;
-	stroke: url(#pathGrad);
-	stroke-width: 0.55;
-	stroke-linecap: round;
-	stroke-dasharray: 2.6 2.2;
-	opacity: 0;
-	transition: opacity var(--t-med) linear;
-}
-.pt-ring { fill: none; stroke: rgba(196, 181, 253, 0.5); stroke-width: 0.22; }
-.pt-dot.you { fill: var(--violet-light); }
-.pt-dot.srv { fill: var(--blue); }
-.hero.on .pt-dot.srv { fill: var(--green); }
-.hero.on .pt-ring { stroke: rgba(94, 231, 163, 0.55); }
-
-/* the dashes only crawl while a tunnel is actually up or being dialled */
-.hero.on .conn-path { animation: dashFlow 1.5s linear infinite; }
-.hero.busy .conn-path { animation: dashFlow 0.9s linear infinite; }
-.hero.offline .conn-path,
+/* Правила легаси-«симуляции» (.conn-path, .pt-dot, .pt-ring) удалены
+   вместе с самими элементами: нитку и точки рисует #account-map по
+   данным аккаунта, а не статика в разметке. */
 .hero.offline .net-node-ring,
 .hero.offline .map-img { animation: none !important; }
 .hero.offline .map-img { opacity: 0.14; filter: grayscale(1) brightness(0.9); }
@@ -1426,10 +1410,17 @@ body.signed-out .rail { opacity: 0.5; }
 /* Глифы устройств. Спрайт подключён маской, а не фоном, поэтому глиф
    берёт currentColor и всегда в цвете темы, а не белое пятно. */
 .material-device{display:inline-block;flex:0 0 24px;width:24px;height:24px;vertical-align:middle;background-color:currentColor;-webkit-mask:url('./material-devices.png') 0 0/120px 24px no-repeat;mask:url('./material-devices.png') 0 0/120px 24px no-repeat}
-.material-device--computer{-webkit-mask-position:-24px 0;mask-position:-24px 0}
-.material-device--phone{-webkit-mask-position:-48px 0;mask-position:-48px 0}
-.material-device--web{-webkit-mask-position:-72px 0;mask-position:-72px 0}
-.material-device--server{-webkit-mask-position:-96px 0;mask-position:-96px 0}
+/* Смещения — в процентах, а не в пикселях исходника. Спрайт из пяти глифов
+   растягивается под каждый размер (плитка 36, чип 19, маркер 14), и при
+   пиксельных offsets глиф уезжал за край маски: вместо Chrome была пустота
+   или обрезок соседней иконки. Процент считается от «ширина элемента −
+   ширина маски», то есть от четырёх глифов, поэтому 25/50/75/100 % дают
+   ровно 1/2/3/4 глифа при ЛЮБОМ масштабе. */
+.material-device--devices{-webkit-mask-position:0 0;mask-position:0 0}
+.material-device--computer{-webkit-mask-position:25% 0;mask-position:25% 0}
+.material-device--phone{-webkit-mask-position:50% 0;mask-position:50% 0}
+.material-device--web{-webkit-mask-position:75% 0;mask-position:75% 0}
+.material-device--server{-webkit-mask-position:100% 0;mask-position:100% 0}
 
 /* Чип «Устройства · N» в углу карты. */
 /* Мелкая кнопка устройств: только значок 36x36, цифра — бейджем НА нём.

@@ -38,9 +38,21 @@
   // не интерактивны, а список устройств всегда рядом.
   var stale=card.querySelector('[data-map-detail]');if(stale)stale.remove();
   var routes=group(live);
+  var anchors=ends(snapshot,routes);
+  // ЭТАП 3: сцена пересобирается ТОЛЬКО при изменении данных.
+  //
+  // Опрос идёт раз в 5 секунд, а старый код каждый раз удалял и
+  // заново создавал <svg> и маркеры, поэтому CSS-анимации
+  // gluk-draw и pin-in стартовали снова: нитка бесконечно пропадала и
+  // «прилетала». Сравниваем отпечаток и не трогаем DOM без нужды.
+  var sig=JSON.stringify([routes.map(function(r){return [spot(r.a),spot(r.b),r.count,r.device.platform||'',!!r.device.isCurrent];}),
+   anchors.self?spot(anchors.self):null,anchors.selfPlatform||'',anchors.node?spot(anchors.node):null]);
   paintWorld(canvas);
-  paintThreads(stage,routes);
-  paintPins(stage,routes);
+  if(sig!==D.lastAccountMapSig||!stage.querySelector('.gluk-threads')){
+   D.lastAccountMapSig=sig;
+   paintThreads(stage,routes,anchors);
+   paintPins(stage,routes,anchors);
+  }
   paintPanel(card,snapshot,live);
  };
 
@@ -82,10 +94,29 @@
   });
  }
 
+ // ЭТАП 3, главное требование: «вошёл — вижу себя на карте».
+ //
+ // Раньше рисовались только живые нитки, и без подключения сцена была
+ // пустой. Текущее устройство сервер отдаёт в снимке всегда — origin
+ // считается по IP сессии или по стране устройства, независимо от
+ // туннеля, — поэтому берём его оттуда. Если моя нитка уже живая,
+ // маркер придёт вместе с ней и здесь не дублируется.
+ function ends(snapshot,routes){
+  var all=snapshot&&Array.isArray(snapshot.devices)?snapshot.devices:[],mine=null;
+  all.forEach(function(d){if(d&&d.isCurrent&&!mine)mine=d;});
+  var own=routes.some(function(r){return r.device&&r.device.isCurrent;});
+  var exit=mine&&mine.node?mine.node.location:null;
+  return {
+   self:!own&&mine&&place(mine.origin)?project(mine.origin):null,
+   selfPlatform:mine?mine.platform:'',
+   node:place(exit)?project(exit):null
+  };
+ }
+
  // Нитки соединений и зелёные точки серверов. Карта живёт в системе
  // координат 119x60 — ровно как aspect-ratio сцены, поэтому масштаб
  // равномерный и штрих не косой.
- function paintThreads(stage,routes){
+ function paintThreads(stage,routes,anchors){
   var old=stage.querySelector('.gluk-threads');if(old)old.remove();
   var svg=node('svg',{'class':'gluk-threads',viewBox:'0 0 119 60',preserveAspectRatio:'none','aria-hidden':'true'});
   var defs=node('defs'),grad=node('linearGradient',{id:'gluk-thread-grad',x1:'0',y1:'0',x2:'1',y2:'0'});
@@ -105,6 +136,16 @@
    }
    drawn++;
   });
+  // Выбранный сервер — зелёная точка даже без туннеля.
+  if(anchors&&anchors.node){
+   var nk='node:'+fix(anchors.node.x)+':'+fix(anchors.node.y);
+   if(!seen[nk]){
+    seen[nk]=1;
+    svg.appendChild(node('circle',{'class':'gluk-halo gluk-halo--node',cx:fix(anchors.node.x),cy:fix(anchors.node.y),r:'2.5'}));
+    svg.appendChild(node('circle',{'class':'gluk-dot gluk-dot--node',cx:fix(anchors.node.x),cy:fix(anchors.node.y),r:'1'}));
+    drawn++;
+   }
+  }
   svg.classList.toggle('is-empty',drawn===0);
   stage.appendChild(svg);
  }
@@ -112,7 +153,7 @@
  // Маркеры устройств — обычные HTML-элементы поверх карты, а не SVG:
  // так внутри них работает ровно тот же глиф Material Icons, что и в списке
  // устройств и в расширении — одна маска, один цвет, без белых квадратов.
- function paintPins(stage,routes){
+ function paintPins(stage,routes,anchors){
   var old=stage.querySelector('.gluk-pins');if(old)old.remove();
   var box=document.createElement('div');
   box.className='gluk-pins';box.setAttribute('aria-hidden','true');
@@ -124,6 +165,11 @@
     (r.count>1?'<b class="gluk-pin__count">'+esc(r.count)+'</b>':'')+
    '</span>');
   });
+  // И я сам — фиолетовый маркер с глифом своей платформы.
+  if(anchors&&anchors.self&&!seen[fix(anchors.self.x)+':'+fix(anchors.self.y)]){
+   html.push('<span class="gluk-pin is-self" style="left:'+fix(anchors.self.x/119*100)+'%;top:'+fix(anchors.self.y/60*100)+'%">'+
+    D.deviceIcon(anchors.selfPlatform)+'</span>');
+  }
   box.innerHTML=html.join('');
   box.classList.toggle('is-empty',html.length===0);
   stage.appendChild(box);

@@ -250,6 +250,8 @@ class _WorldStageState extends State<WorldStage>
                 zoom: widget.zoomBoost * (1.0 + (_morph.value * 0.06)),
                 dotOpacity: 0.55 + (_link.value * 0.15),
                 selfPoint: self,
+                // Глиф внутри фиолетового маркера «я», когда туннеля ещё нет.
+                selfPlatform: 'computer',
                 selfOpacity: self == null ? 0 : 1,
                 serverPoint: server,
                 serverOpacity: server == null ? 0 : _link.value.clamp(0.35, 1),

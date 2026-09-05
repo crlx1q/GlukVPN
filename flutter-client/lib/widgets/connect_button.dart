@@ -95,15 +95,63 @@ class _GlukConnectButtonState extends State<GlukConnectButton> {
   double get _tint {
     switch (widget.phase) {
       case ConnectPhase.connected:
-        return 0.50;
+        return 0.86;
       case ConnectPhase.disconnecting:
-        return 0.34;
+        return 0.50;
       case ConnectPhase.connecting:
-        return 0.22;
+        return 0.34;
       case ConnectPhase.idle:
         return 0;
     }
   }
+
+  /// ЭТАП 3: три честных цветовых состояния, как в расширении.
+  ///
+  /// В Chrome это сделано тремя классами на `.hero` (theme.css):
+  ///
+  /// ```css
+  /// /* отключено */  .blob-glow { opacity: 0 }
+  ///                 .blob-outer { opacity: .16; filter: grayscale(1) }
+  /// /* подключается */ .hero.busy .blob-glow { opacity: .85 }
+  ///                 .hero.busy .blob-outer { opacity: .7; filter: none }
+  /// /* подключено */  .hero.on .blob-glow { opacity: 1 }
+  ///                 .hero.on .blob-outer { background: linear-gradient(150deg, #86f2c6, var(--green-deep)) }
+  /// ```
+  ///
+  /// Раньше во Flutter все три состояния выглядели одинаково
+  /// фиолетовыми и отличались только яркостью, поэтому на ПК и
+  /// телефоне было непонятно, что именно сейчас происходит.
+
+  /// Прозрачность `.blob-glow`.
+  double get _glow {
+    switch (widget.phase) {
+      case ConnectPhase.connected:
+        return 1;
+      case ConnectPhase.connecting:
+        return 0.85;
+      case ConnectPhase.disconnecting:
+        return 0.70;
+      case ConnectPhase.idle:
+        return 0;
+    }
+  }
+
+  /// Множитель прозрачности `.blob-outer` / `.blob-inner-ring`.
+  double get _blobFade {
+    switch (widget.phase) {
+      case ConnectPhase.connected:
+        return 1;
+      case ConnectPhase.connecting:
+        return 0.74;
+      case ConnectPhase.disconnecting:
+        return 0.80;
+      case ConnectPhase.idle:
+        return 0.17;
+    }
+  }
+
+  /// Сила `filter: grayscale(1)`: в покое шар серый, а не фиолетовый.
+  double get _grey => widget.phase == ConnectPhase.idle ? 1 : 0;
 
   /// Brightness of the field behind the sphere.
   ///
@@ -156,7 +204,7 @@ class _GlukConnectButtonState extends State<GlukConnectButton> {
             size: stage,
             colour: Color.lerp(_glowViolet, _accent, _tint)!,
             blur: 4 * _k,
-            dim: dim,
+            dim: dim * _glow,
             reduceMotion: widget.reduceMotion,
           ),
 
@@ -174,14 +222,14 @@ class _GlukConnectButtonState extends State<GlukConnectButton> {
                     t: t,
                     frames: morph1,
                     gradient: _tinted(GlukGradients.blobOuter),
-                    opacity: 0.95 * dim,
+                    opacity: 0.95 * dim * _blobFade,
                   ),
                   _MorphBlob(
                     size: GlukSizes.blob * _k,
                     t: t,
                     frames: morph2,
                     gradient: _tinted(GlukGradients.blobInner),
-                    opacity: 0.40 * dim,
+                    opacity: 0.40 * dim * _blobFade,
                     blur: 2 * _k,
                   ),
                 ],
@@ -239,14 +287,19 @@ class _GlukConnectButtonState extends State<GlukConnectButton> {
   /// `rgba(124,92,246,0.35)` from `.blob-glow`.
   static const Color _glowViolet = Color(0xFF7C5CF6);
 
+  /// `filter: grayscale(1)` из CSS: светлота остаётся, тон убирается.
+  static Color _desaturated(Color c) =>
+      HSLColor.fromColor(c).withSaturation(0).toColor();
+
   LinearGradient _tinted(LinearGradient base) {
-    if (_tint == 0) return base;
+    if (_tint == 0 && _grey == 0) return base;
     return LinearGradient(
       begin: base.begin,
       end: base.end,
-      colors: base.colors
-          .map((Color c) => Color.lerp(c, _accent, _tint)!)
-          .toList(growable: false),
+      colors: base.colors.map((Color c) {
+        final Color rest = Color.lerp(c, _desaturated(c), _grey)!;
+        return Color.lerp(rest, _accent, _tint)!;
+      }).toList(growable: false),
     );
   }
 }

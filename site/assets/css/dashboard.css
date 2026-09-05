@@ -133,7 +133,14 @@
 /* Спрайт подключён маской, а не фоном: глиф берёт currentColor и потому
    всегда в цвете темы, а не белое пятно на светлой плитке. */
 .material-device{display:inline-block;flex:0 0 24px;width:24px;height:24px;vertical-align:middle;background-color:currentColor;-webkit-mask:url('/assets/img/material-devices.png') 0 0/120px 24px no-repeat;mask:url('/assets/img/material-devices.png') 0 0/120px 24px no-repeat}
-.material-device--computer{-webkit-mask-position:-24px 0;mask-position:-24px 0}
-.material-device--phone{-webkit-mask-position:-48px 0;mask-position:-48px 0}
-.material-device--web{-webkit-mask-position:-72px 0;mask-position:-72px 0}
-.material-device--server{-webkit-mask-position:-96px 0;mask-position:-96px 0}
+/* Смещения — в процентах, а не в пикселях исходника. Спрайт из пяти глифов
+   масштабируется под каждый размер (плитка 36, чип 20, маркер 16), и при
+   пиксельных offsets глиф уезжал за край маски: вместо Chrome была пустота
+   или обрезок соседней иконки. Процент считается от «ширина элемента −
+   ширина маски», то есть от четырёх глифов, поэтому 25/50/75/100 % дают
+   ровно 1/2/3/4 глифа при ЛЮБОМ масштабе. */
+.material-device--devices{-webkit-mask-position:0 0;mask-position:0 0}
+.material-device--computer{-webkit-mask-position:25% 0;mask-position:25% 0}
+.material-device--phone{-webkit-mask-position:50% 0;mask-position:50% 0}
+.material-device--web{-webkit-mask-position:75% 0;mask-position:75% 0}
+.material-device--server{-webkit-mask-position:100% 0;mask-position:100% 0}

@@ -142,3 +142,65 @@ The net effect is that a hung session can survive at most one grace period even 
 Static only. `npm` is still absent from the connected sandbox (`spawn npm ENOENT`), and there is no Flutter SDK, so no suite was executed. Checked by inspection/grep: no references remain to `connectionMarkers`, `onShowMap`, `_inspectMap`, `account-devices-sheet`, `account-map-point`, `data-map-detail` or `account-device-geo`; the strings asserted by `extension/tests/sprint2-contracts.test.mjs` (`String(normalizedError(error)?.code`, `openDeviceLimitModal`, `renderAccountMap`, `restrictionLabel`) are all still present; `accountMapArcs` semantics and the `D.deviceIcon` / `D.drawAccountMap` declaration order required by `site/tests/site.test.cjs` are preserved; `dashboard.css?v=20260905.4` was deliberately NOT bumped because the site suite pins that string.
 
 Still required before release: `npm run typecheck` and `npm test` at the root, `npm test --prefix site`, `node --test glukvpn-extension-1.5.0/extension/tests/`, `flutter analyze` + `flutter test`, then a visual pass on 320/390/900px web, the Chrome popup, Windows and Android.
+
+## Follow-up: stable markers, self-without-tunnel, one power button (2026-09-06, fourth pass)
+
+Pure UI pass. No API, schema, routing or entitlement change; `GET /api/user/active-map` and `POST /api/user/map-origin` are untouched.
+
+### Repaint guard: the extension re-animated every 5 seconds
+
+Symptom: in the Chrome popup another device vanished and re-appeared with a freshly drawn thread on every poll, endlessly. Cause: `renderAccountMap()` opened with an unconditional `group.replaceChildren()` / `pins.replaceChildren()`, so the 5-second `active-map` poll destroyed and rebuilt identical nodes and restarted the `account-draw` / `account-pin-in` keyframes each time.
+
+Both polled surfaces now compare a render signature before touching the DOM:
+
+- Extension: `accountMapSig` holds `JSON.stringify` of the drawn arcs, the self/node points and the device count. `const dirty = sig !== accountMapSig` gates the clearing, the arc loop and the chip rebuild. `count.hidden`, `title`, `aria-label` and `updateAccountDevices()` stay unconditional so uptimes keep ticking.
+- Site: `D.lastAccountMapSig` gates `paintThreads()` + `paintPins()`; `paintWorld()` and `paintPanel()` stay unconditional. `|| !stage.querySelector('.gluk-threads')` re-arms the guard when `sprint2.js` clears the overlay.
+
+Flutter needs no guard: it repaints from state instead of rebuilding nodes.
+
+### Missing Chrome glyph
+
+`materialDeviceIcon()` already mapped `chrome|browser|ext` -> `web`, so the empty / "journal" glyph was purely CSS. The sprite modifiers used **pixel** `mask-position` offsets, but the chip, pin and row tile each set a different `mask-size`, so a fixed pixel offset landed between sprite cells. All five modifiers are now percentages of the element box - `--devices 0 0`, `--computer 25% 0`, `--phone 50% 0`, `--web 75% 0`, `--server 100% 0` - which is correct at any `mask-size` (`site/assets/css/dashboard.css`, `extension/ui/theme.css`).
+
+### Legacy simulation removed from the extension
+
+The old hard-coded two-dot demo route still ran under the account map: `setPoint()`, `drawRoute()`, `#conn-path`, `#you-dot`, `#you-ring`, `#server-dot`, `#server-ring` and their CSS (`.conn-path`, `.pt-ring`, `.pt-dot.you`, `.pt-dot.srv` and the `.hero.on` / `.hero.busy` variants). It painted a permanent inactive thread unrelated to real sessions. Deleted from `popup.js`, `popup.html` and `theme.css`; the former caller now only records geography (`selfLatLon`, `nodeLatLon`) and calls `renderAccountMap()`. `.hero.offline .net-node-ring` / `.map-img` keep their `animation: none !important`; `@keyframes dashFlow` is now unreferenced.
+
+### Self marker without a tunnel
+
+Required behaviour: opening any surface shows **where I am** even with zero connections; before this pass the map showed only the selected server. All three map surfaces now seed both ends unconditionally and skip the self marker only when a live arc already belongs to the current device:
+
+- Flutter `dotted_world.dart`: `selfPlatform` is plumbed from `world_stage.dart` (`'computer'`) and `home_screen.dart` (`'phone'`); the account branch seeds `deviceSpots` from `selfPoint` when `!ownArc` and always seeds `serverSpots` from `serverPoint`.
+- Extension: `selfLatLon` / `nodeLatLon` produce the violet self pin ("Это устройство") plus the green server halo and dot.
+- Site: `ends(snapshot, routes)` reads the first `isCurrent` device and returns `{self: origin, selfPlatform, node: node.location}`. Both fields exist regardless of tunnel state because `accountInsights.ts` derives `origin` from `sessionOrigin` (IP) or `deviceEstimate` (`devices.map_country_code`).
+
+### Stable marker geometry (supersedes the third-pass radius)
+
+Flutter markers were sized from `flatScale`, so they grew and shrank with every zoom tween - the "sometimes big, sometimes small" report. `paintDeviceMarker` is now zoom-independent: `const double radius = 13` (26px, the size used in the old ZIP), pulse ring `1.75`, pulse stroke `1.4`, ring stroke `1.6`, `const double badgeRadius = 8`. `flatScale` stays as an unused optional parameter so existing call sites still compile. This replaces `radius max(7.5, 3.1 * flatScale)` from the third pass.
+
+### Mobile camera (supersedes the third-pass spawn fix)
+
+"Centred" meant **horizontally** centred, not centred in the phone. `_MapBackdropState` no longer uses `FlatMapView.fitConnections`, which recomputed zoom *and* vertical framing and produced both the chess-piece sliding and the fly-in from the right. It now spans `selfPoint.x`, `serverPoint.x` and every `arc.from.x` / `arc.to.x`, then always builds `FlatMapView.topAnchored(centreOn: MapPoint((minX + maxX) / 2, selfPoint.y), coverage: 0.88, topPadding: -6)` - the framing the old ZIP used. Zoom is constant, so markers no longer drift sideways between polls, and an inactive map stays anchored at the top. `fitConnections` remains in `map_view.dart` because `account_map_camera_test.dart` still exercises it.
+
+### Yellow underline in the devices panel
+
+`showGeneralDialog` provides no `Material` ancestor, so the panel's `Text` widgets fell back to the default `TextStyle`, which carries an amber underline. `_AccountDevicesPanel` is now wrapped in `Material(type: MaterialType.transparency)` inside the transition builder.
+
+### One power button on all four surfaces
+
+The extension's three-state power button is the reference and is ported into the shared `GlukConnectButton` (`flutter-client/lib/widgets/connect_button.dart`), which Windows and Android both use through `desktop_connect_button.dart`:
+
+| phase | tint | glow | blob fade | greyscale |
+| --- | --- | --- | --- | --- |
+| idle | 0 | 0 | .17 | 1 |
+| connecting | .34 | .85 | .74 | 0 |
+| connected | .86 | 1 | 1 | 0 |
+| disconnecting | .50 | .70 | .74 | 0 |
+
+Greyscale uses `HSLColor.fromColor(c).withSaturation(0)` rather than channel arithmetic, because `Color.red/green/blue/value` are deprecated and would trip `deprecated_member_use` in `flutter analyze`.
+
+### Verification (fourth pass)
+
+Static only, same sandbox limits: `npm` is absent (`spawn npm ENOENT`) and there is no Flutter SDK, so no suite was executed. Checked by grep: no live references to `drawRoute`, `setPoint`, `conn-path`, `you-dot`, `you-ring`, `server-dot` or `server-ring` remain in the extension (comments only); `accountMapSig`, `nodeLatLon`, `selfLatLon`, `D.lastAccountMapSig` and `selfPlatform` appear exactly at the intended sites; `fitConnections` is gone from `home_screen.dart` and still present in `map_view.dart` for its test. `dashboard.css?v=20260905.4` was again deliberately NOT bumped because `site/tests/site.test.cjs` pins that string.
+
+Still required before release: `npm run typecheck` and `npm test` at the root, `npm test --prefix site`, `node --test glukvpn-extension-1.5.0/extension/tests/sprint2-contracts.test.mjs`, `flutter analyze` + `flutter test`, native Windows and Android builds, then a visual pass at 320/390/900px, the Chrome popup, Windows and Android with zero, one and three live devices.

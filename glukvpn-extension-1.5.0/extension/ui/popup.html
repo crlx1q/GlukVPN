@@ -70,11 +70,10 @@
 						<circle class="net-node" cx="40" cy="38" r="0.7" />
 						<circle class="net-node-ring" cx="55" cy="14" r="2" />
 						<g id="account-map"></g>
-						<path class="conn-path" id="conn-path" d="" />
-						<circle id="server-ring" class="pt-ring" cx="-9" cy="-9" r="2.4" />
-						<circle id="server-dot" class="pt-dot srv" cx="-9" cy="-9" r="1.15" />
-						<circle id="you-ring" class="pt-ring" cx="-9" cy="-9" r="2.4" />
-						<circle id="you-dot" class="pt-dot you" cx="-9" cy="-9" r="1.15" />
+						<!-- Здесь лежала легаси-«симуляция»: дуга #conn-path и четыре
+					     точки #you-dot / #you-ring / #server-dot / #server-ring. Они
+					     висели на карте всегда, даже без туннеля. Теперь всю
+					     сцену рисует #account-map по данным аккаунта. -->
 					</svg>
 					<!-- Маркеры устройств лежат поверх SVG обычным HTML: так в
 					     них работает тот же глиф Material Icons, что и в списке

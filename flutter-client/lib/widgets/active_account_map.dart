@@ -143,12 +143,22 @@ class _AccountDevicesButtonState extends State<AccountDevicesButton> {
               child: ScaleTransition(
                 alignment: Alignment.topRight,
                 scale: Tween<double>(begin: .96, end: 1).animate(curve),
-                child: _AccountDevicesPanel(
-                  controller: widget.controller,
-                  russian: widget.russian,
-                  width: (screen.width - 24).clamp(0.0, _panelWidth),
-                  maxHeight: (screen.height - anchor.dy - 44).clamp(180.0, 400.0),
-                  onClose: () => Navigator.pop(dialogContext),
+                // ЭТАП 3: обязательный `Material` над панелью.
+                //
+                // Именно из-за его отсутствия текст в панели шёл с жёлтым
+                // двойным подчёркиванием: содержимое `showGeneralDialog`
+                // живёт в Overlay без Material, а MaterialApp в таком случае
+                // подставляет отладочный стиль текста именно с таким
+                // подчёркиванием. `MaterialType.transparency` ничего не рисует.
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: _AccountDevicesPanel(
+                    controller: widget.controller,
+                    russian: widget.russian,
+                    width: (screen.width - 24).clamp(0.0, _panelWidth),
+                    maxHeight: (screen.height - anchor.dy - 44).clamp(180.0, 400.0),
+                    onClose: () => Navigator.pop(dialogContext),
+                  ),
                 ),
               ),
             ),

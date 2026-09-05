@@ -43,6 +43,7 @@ class DottedWorld extends StatelessWidget {
 		this.focus = const Offset(0.5, 0.5),
 		this.dotOpacity = 0.5,
 		this.selfPoint,
+		this.selfPlatform = '',
 		this.selfOpacity = 1,
 		this.serverPoint,
 		this.serverOpacity = 1,
@@ -96,6 +97,10 @@ class DottedWorld extends StatelessWidget {
 
 	/// The user's approximate position, if known.
 	final MapPoint? selfPoint;
+
+	/// Платформа текущего устройства: определяет, какой глиф стоит
+	/// внутри фиолетового маркера «я», когда туннеля ещё нет.
+	final String selfPlatform;
 
 	/// Fades the user's marker in without moving it.
 	final double selfOpacity;
@@ -167,6 +172,7 @@ class DottedWorld extends StatelessWidget {
 					focus: focus,
 					dotOpacity: dotOpacity,
 					selfPoint: selfPoint,
+					selfPlatform: selfPlatform,
 					selfOpacity: selfOpacity.clamp(0.0, 1.0),
 					serverPoint: serverPoint,
 					serverOpacity: serverOpacity.clamp(0.0, 1.0),
@@ -204,6 +210,7 @@ class _DottedWorldPainter extends CustomPainter {
 		required this.focus,
 		required this.dotOpacity,
 		required this.selfPoint,
+		required this.selfPlatform,
 		required this.selfOpacity,
 		required this.serverPoint,
 		required this.serverOpacity,
@@ -230,6 +237,7 @@ class _DottedWorldPainter extends CustomPainter {
 	final Offset focus;
 	final double dotOpacity;
 	final MapPoint? selfPoint;
+	final String selfPlatform;
 	final double selfOpacity;
 	final MapPoint? serverPoint;
 	final double serverOpacity;
@@ -384,6 +392,37 @@ class _DottedWorldPainter extends CustomPainter {
 				if (b > 0.02) {
 					final key = Offset(to.offset.dx.roundToDouble(), to.offset.dy.roundToDouble());
 					serverSpots[key] = math.max(serverSpots[key] ?? 0, b);
+				}
+			}
+			// ЭТАП 3, главное требование: «вошёл — вижу себя на карте».
+			//
+			// Раньше эта ветка рисовала ТОЛЬКО живые нитки, поэтому без
+			// подключения карта была пустой — ни меня, ни сервера. Теперь
+			// текущее устройство и выбранный сервер стоят на карте всегда, а
+			// нитка появляется только когда туннель действительно поднят.
+			//
+			// Своё устройство добавляется только если ни одна нитка не помечена
+			// `isCurrent`: когда мой туннель уже живой, мой маркер приходит
+			// вместе с ниткой, и второй кружок рядом был бы дублем.
+			final bool ownArc = accountArcs!.any((a) => a is AccountConnectionArc && a.isCurrent);
+			if (!ownArc && selfPoint != null) {
+				final me = _project(selfPoint!, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
+				if (me != null) {
+					final fade = ui.lerpDouble(1, me.visibility.clamp(0.0, 1.0), globeness)! * selfOpacity;
+					if (fade > 0.02) {
+						final key = Offset(me.offset.dx.roundToDouble(), me.offset.dy.roundToDouble());
+						deviceSpots[key] = (platform: selfPlatform, count: 1, fade: fade);
+					}
+				}
+			}
+			if (serverPoint != null) {
+				final node = _project(serverPoint!, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
+				if (node != null) {
+					final fade = ui.lerpDouble(1, node.visibility.clamp(0.0, 1.0), globeness)! * serverOpacity;
+					if (fade > 0.02) {
+						final key = Offset(node.offset.dx.roundToDouble(), node.offset.dy.roundToDouble());
+						serverSpots[key] = math.max(serverSpots[key] ?? 0, fade);
+					}
 				}
 			}
 			// Серверы снизу, устройства сверху: если ты сам сидишь в том же
@@ -1077,13 +1116,19 @@ void paintDeviceMarker(
 	required String platform,
 	required int count,
 	required double opacity,
-	required double flatScale,
+	double flatScale = 1,
 	double pulse = 0,
 }) {
 	if (opacity <= 0.02) return;
-	// Радиус привязан к масштабу карты, но не меньше 7.5 px: маркер должен
-	// оставаться читаемым и на широком обзоре всего мира.
-	final radius = math.max(7.5, 3.1 * flatScale);
+	// ЭТАП 3: размер маркера больше НЕ зависит от зума.
+	//
+	// `max(7.5, 3.1 * flatScale)` на телефоне давал радиус около 36 px —
+	// кружок в 70 px, втрое больше старого пресета, и менялся вместе с
+	// рамкой: отсюда «то большой, то маленький». Теперь это постоянные
+	// 13 px радиуса — ровно как маркер в расширении и на сайте (26 px в
+	// диаметре) и в размер старого клиента. `flatScale` оставлен в
+	// сигнатуре только для совместимости вызовов.
+	const double radius = 13;
 
 	// Мягкое свечение под маркером, чтобы он отделялся от точек мира.
 	canvas.drawCircle(
@@ -1097,10 +1142,10 @@ void paintDeviceMarker(
 	if (pulse > 0) {
 		canvas.drawCircle(
 			centre,
-			radius * ui.lerpDouble(1.0, 2.1, pulse)!,
+			radius * ui.lerpDouble(1.0, 1.75, pulse)!,
 			Paint()
 				..style = PaintingStyle.stroke
-				..strokeWidth = math.max(1.0, 0.22 * flatScale)
+				..strokeWidth = 1.4
 				..color = GlukColors.violetLight.withOpacity((1 - pulse) * 0.5 * opacity),
 		);
 	}
@@ -1112,7 +1157,7 @@ void paintDeviceMarker(
 		radius,
 		Paint()
 			..style = PaintingStyle.stroke
-			..strokeWidth = math.max(1.2, 0.34 * flatScale)
+			..strokeWidth = 1.6
 			..color = GlukColors.violetLight.withOpacity(0.95 * opacity),
 	);
 
@@ -1121,9 +1166,9 @@ void paintDeviceMarker(
 
 	if (count > 1) {
 		final badge = Offset(centre.dx + radius * 0.86, centre.dy + radius * 0.86);
-		final badgeRadius = math.max(5.0, radius * 0.64);
+		const double badgeRadius = 8;
 		// Обводка цветом фона отрезает бейдж от кольца маркера.
-		canvas.drawCircle(badge, badgeRadius + math.max(1.0, 0.22 * flatScale),
+		canvas.drawCircle(badge, badgeRadius + 2,
 			Paint()..color = GlukColors.bg.withOpacity(0.96 * opacity));
 		canvas.drawCircle(badge, badgeRadius, Paint()..color = GlukColors.violet2.withOpacity(0.98 * opacity));
 		_paintCentredText(canvas, badge, '$count', badgeRadius * 1.3, Colors.white.withOpacity(opacity));
