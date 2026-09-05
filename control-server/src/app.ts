@@ -13,6 +13,7 @@ import { billingRoutes } from "./routes/billing"
 import { deployRoutes } from "./routes/deploy"
 import { deviceRoutes } from "./routes/devices"
 import { healthRoutes } from "./routes/health"
+import { insightsRoutes } from "./routes/insights"
 import { linkAuthRoutes } from "./routes/link"
 import { nodeAgentRoutes } from "./routes/node"
 import { nodeCatalogRoutes } from "./routes/nodes"
@@ -132,6 +133,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 	app.get("/admin", async (_request, reply) => reply.redirect("/admin/", 302))
 
 	await app.register(healthRoutes)
+	await app.register(insightsRoutes)
 	await app.register(authRoutes)
 	// Sign-in by link (device-authorization grant). Shared by the desktop client
 	// and the browser extension, so neither has to own a password field.

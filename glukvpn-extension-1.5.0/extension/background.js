@@ -37,6 +37,7 @@ self.addEventListener('error', (event) => {
 })
 
 const POLL_ALARM = 'gluk-poll'
+const MAINTENANCE_ALARM = 'gluk-maintenance'
 const PHASE = {
 	signedOut: 'signedOut',
 	idle: 'idle',
@@ -115,10 +116,48 @@ async function setBadge(phase) {
 	} catch {}
 }
 
-async function fail(message, code = 'error') {
-	await patchRuntime({ phase: PHASE.error, error: { message, code } })
+function safeError(error, fallbackCode = 'error') {
+	const source = error instanceof ApiError ? error : null
+	const details = source?.details && typeof source.details === 'object' ? source.details : null
+	const safeDevices = Array.isArray(details?.devices)
+		? details.devices.slice(0, 20).map((device) => ({
+			id: device?.id ?? device?.deviceId ?? null,
+			deviceName: device?.deviceName ?? device?.name ?? null,
+			platform: device?.platform ?? null,
+			lastSeen: device?.lastSeen ?? null,
+			isCurrent: device?.isCurrent === true,
+			status: device?.status ?? null,
+			connected: device?.connected === true,
+			connectedNode: device?.connectedNode ? {
+				id: device.connectedNode.id ?? null,
+				name: device.connectedNode.name ?? null,
+				country: device.connectedNode.country ?? null,
+				countryCode: device.connectedNode.countryCode ?? null,
+				city: device.connectedNode.city ?? null,
+			} : null,
+		}))
+		: undefined
+	const safeDetails = details ? {
+		maxDevices: Number(details.maxDevices) || undefined,
+		activeDevices: Number(details.activeDevices) || undefined,
+		retryAfterSec: Number(details.retryAfterSec) || undefined,
+		nodeId: details.nodeId == null ? undefined : String(details.nodeId),
+		devices: safeDevices,
+	} : null
+	return {
+		message: source?.message || String(error?.message ?? error ?? 'Unexpected error'),
+		code: source?.code || String(error?.code ?? fallbackCode),
+		status: source?.statusCode || 0,
+		retryAfterSec: source?.retryAfterSec ?? safeDetails?.retryAfterSec ?? null,
+		details: safeDetails,
+	}
+}
+
+async function fail(message, code = 'error', meta = {}) {
+	const error = { message, code, status: meta.status ?? 0, retryAfterSec: meta.retryAfterSec ?? null, details: meta.details ?? null }
+	await patchRuntime({ phase: PHASE.error, error })
 	await setBadge(PHASE.error)
-	return { ok: false, error: message, code }
+	return { ok: false, error: message, code, ...error }
 }
 
 /**
@@ -212,7 +251,7 @@ async function runAutoConnect() {
 	await clearAutoConnect()
 	const settings = await Store.settings()
 	try {
-		await withTimeout(connect({ nodeId: settings.preferredNodeId }), HANDLER_TIMEOUT_MS, 'autoconnect')
+		await withTimeout(connect({ nodeId: settings.preferredNodeId, userInitiated: false }), HANDLER_TIMEOUT_MS, 'autoconnect')
 	} catch (error) {
 		await fail(error?.message ?? 'Could not connect on startup.', 'autoconnect_failed')
 	}
@@ -418,16 +457,21 @@ async function login({ identifier, password }) {
 		await patchRuntime({ phase: PHASE.idle, error: null })
 		await setBadge(PHASE.idle)
 		const settings = await Store.settings()
-		// Registering right away means the browser appears in the devices list the
-		// moment you sign in, not only after the first connect.
+		// Keep the account session when registration hits its device cap. The
+		// account-scoped token can still list/revoke devices, then registration
+		// resumes without another password or a needless key rotation.
 		try {
 			await ensureDeviceScope()
-		} catch {}
-		if (settings.autoConnect) void connect({})
+		} catch (error) {
+			const serialized = safeError(error, 'device_registration_failed')
+			await patchRuntime({ phase: PHASE.idle, error: serialized })
+			return { ok: true, user: result.user ?? null, registrationPending: true, error: serialized }
+		}
+		if (settings.autoConnect) void connect({ userInitiated: false })
 		return { ok: true, user: result.user ?? null }
 	} catch (error) {
-		const message = error instanceof ApiError ? error.message : 'Sign-in failed.'
-		return { ok: false, error: message, code: error?.code ?? 'login_failed', retryAfterSec: error?.retryAfterSec ?? null }
+		const serialized = safeError(error, 'login_failed')
+		return { ok: false, error: serialized.message, ...serialized }
 	}
 }
 
@@ -440,7 +484,16 @@ async function logout() {
 	return { ok: true }
 }
 
-async function connect({ nodeId }) {
+async function connect({ nodeId, userInitiated = true } = {}) {
+	// Persist only the user's requested destination. Maintenance recovery can
+	// safely resume this exact node after an MV3 restart; a manual disconnect
+	// clears it and an automatic startup attempt never creates a new intent.
+	const settingsAtRequest = await Store.settings()
+	const previousIntent = (await Store.runtime())?.connectIntent
+	const connectIntent = userInitiated
+		? { requested: true, nodeId: nodeId ?? settingsAtRequest.preferredNodeId ?? null, channel: settingsAtRequest.channel, requestedAt: Date.now() }
+		: previousIntent
+	if (connectIntent) await patchRuntime({ connectIntent })
 	// No link, no attempt. Entering the connecting phase here is what made the
 	// popup animate a handshake on a machine with no network at all.
 	try {
@@ -532,22 +585,29 @@ async function connect({ nodeId }) {
 		return { ok: true }
 	} catch (error) {
 		if (error instanceof ApiError) {
-			if (error.isConflict) {
-				return fail(
-					`${error.message} This account allows a limited number of simultaneous tunnels - disconnect another device first.`,
-					'limit',
-				)
+			const serialized = safeError(error, 'connect_failed')
+			if (error.code === 'maintenance' || error.statusCode === 503 && /maintenance/i.test(error.message)) {
+				await enterMaintenance(serialized)
+				return { ok: false, error: serialized.message, ...serialized }
 			}
-			if (error.isForbidden) return fail(error.message, 'forbidden')
-			if (error.isNetwork) return fail(error.message, 'offline')
-			return fail(error.message, error.code)
+			// Only the explicit registration code opens the device-slot manager.
+			// Other 409s (busy tunnel, stale session, key conflict) retain their own
+			// actionable code and message.
+			if (error.code === 'device_limit_reached') {
+				await patchRuntime({ phase: PHASE.error, error: serialized, connectIntent })
+				await setBadge(PHASE.error)
+				return { ok: false, error: serialized.message, ...serialized }
+			}
+			if (error.isForbidden) return fail(error.message, error.code || 'forbidden', serialized)
+			if (error.isNetwork) return fail(error.message, 'offline', serialized)
+			return fail(error.message, error.code, serialized)
 		}
 		return fail('Could not start the tunnel.', 'unknown')
 	}
 }
 
-async function disconnect({ silent } = {}) {
-	if (!silent) await patchRuntime({ phase: PHASE.disconnecting })
+async function disconnect({ silent, preserveIntent = false } = {}) {
+	if (!silent) await patchRuntime({ phase: PHASE.disconnecting, connectIntent: null, maintenance: null })
 	// Clear the proxy first: the disconnect call must not travel through the
 	// tunnel it is about to tear down.
 	try {
@@ -565,6 +625,7 @@ async function disconnect({ silent } = {}) {
 		}
 	} catch {}
 	const signedIn = Boolean((await Store.session())?.tokens)
+	const after = await Store.runtime()
 	await patchRuntime({
 		phase: signedIn ? PHASE.idle : PHASE.signedOut,
 		session: null,
@@ -572,9 +633,67 @@ async function disconnect({ silent } = {}) {
 		connectedAt: null,
 		stats: null,
 		error: null,
+		connectIntent: preserveIntent ? after?.connectIntent ?? null : null,
+		maintenance: preserveIntent ? after?.maintenance ?? null : null,
 	})
 	await setBadge(signedIn ? PHASE.idle : PHASE.signedOut)
 	return { ok: true }
+}
+
+async function enterMaintenance(error, service) {
+	const runtime = await Store.runtime()
+	const settings = await Store.settings()
+	const intent = runtime?.connectIntent ?? (runtime?.phase === PHASE.connected ? {
+		requested: true,
+		nodeId: runtime?.node?.id ?? settings.preferredNodeId ?? null,
+		channel: settings.channel,
+		requestedAt: Date.now(),
+	} : null)
+	try { await ProxyEngine.clear() } catch {}
+	try { await chrome.alarms.clear(POLL_ALARM) } catch {}
+	const retryAfterSec = Number(service?.retryAfterSec ?? error?.retryAfterSec ?? error?.details?.retryAfterSec) || 30
+	await patchRuntime({
+		phase: PHASE.idle,
+		session: null,
+		gateway: null,
+		stats: null,
+		connectedAt: null,
+		connectIntent: intent,
+		maintenance: { active: true, retryAfterSec, nodeId: error?.details?.nodeId ?? runtime?.node?.id ?? null },
+		service: { ...(runtime?.service ?? {}), ...(service ?? {}), maintenance: true, retryAfterSec },
+		error: { message: error?.message || 'GlukVPN is undergoing maintenance.', code: 'maintenance', status: 503, retryAfterSec, details: error?.details ?? null },
+	})
+	await setBadge(PHASE.idle)
+	try { await chrome.alarms.create(MAINTENANCE_ALARM, { delayInMinutes: Math.max(0.5, retryAfterSec / 60) }) } catch {}
+}
+
+async function checkMaintenance() {
+	const runtime = await Store.runtime()
+	try {
+		const service = await Api.serviceStatus()
+		await patchRuntime({ service })
+		if (service?.maintenance) {
+			if (runtime?.phase === PHASE.connected || runtime?.connectIntent?.requested) {
+				await enterMaintenance({ code: 'maintenance', message: 'GlukVPN is undergoing maintenance.', retryAfterSec: service.retryAfterSec }, service)
+			}
+			return { ok: true, service }
+		}
+		try { await chrome.alarms.clear(MAINTENANCE_ALARM) } catch {}
+		await patchRuntime({ maintenance: null, error: runtime?.error?.code === 'maintenance' ? null : runtime?.error })
+		const settings = await Store.settings()
+		const intent = runtime?.connectIntent
+		if (intent?.requested && intent.channel === settings.channel && runtime?.phase !== PHASE.connected && runtime?.phase !== PHASE.connecting && (await Store.session())?.tokens) {
+			void connect({ nodeId: intent.nodeId, userInitiated: false })
+		}
+		return { ok: true, service }
+	} catch (error) {
+		if (runtime?.maintenance?.active) {
+			const retry = Number(runtime.maintenance.retryAfterSec) || 30
+			try { await chrome.alarms.create(MAINTENANCE_ALARM, { delayInMinutes: Math.max(0.5, retry / 60) }) } catch {}
+		}
+		const serialized = safeError(error, 'service_status_failed')
+		return { ok: false, error: serialized.message, ...serialized }
+	}
 }
 
 async function poll() {
@@ -582,6 +701,16 @@ async function poll() {
 	if (runtime?.phase !== PHASE.connected) return
 	try {
 		const status = await Api.status()
+		if (status?.service) await patchRuntime({ service: status.service })
+		if (status?.service?.maintenance || status?.nodeMaintenance || status?.lastClosedReason === 'maintenance') {
+			await enterMaintenance({
+				code: 'maintenance',
+				message: status?.nodeMaintenance ? 'The selected VPN server is under maintenance.' : 'GlukVPN is undergoing maintenance.',
+				retryAfterSec: status?.service?.retryAfterSec,
+				details: { nodeId: runtime?.node?.id, retryAfterSec: status?.service?.retryAfterSec },
+			}, status.service)
+			return
+		}
 		if (status.connected === false) {
 			// The control plane closed the session (revoked device, admin action,
 			// subscription lapse). Stop pretending we are up.
@@ -640,6 +769,10 @@ async function poll() {
 			})
 		}
 	} catch (error) {
+		if (error instanceof ApiError && error.code === 'maintenance') {
+			await enterMaintenance(safeError(error, 'maintenance'))
+			return
+		}
 		if (error instanceof ApiError && (error.isUnauthorized || error.isForbidden)) {
 			await disconnect({ silent: true })
 			await patchRuntime({ error: { message: error.message, code: 'revoked' } })
@@ -805,11 +938,13 @@ async function runLinkPoll() {
 		// waiting for a first connect.
 		try {
 			await ensureDeviceScope()
-		} catch {}
+		} catch (error) {
+			await patchRuntime({ phase: PHASE.idle, error: safeError(error, 'device_registration_failed') })
+		}
 		try {
 			chrome.runtime.sendMessage({ type: 'signedIn' }).catch(() => {})
 		} catch {}
-		if ((await Store.settings()).autoConnect) void connect({})
+		if ((await Store.settings()).autoConnect) void connect({ userInitiated: false })
 		return 'approved'
 	}
 	if (status === 'pending' || status === 'slow_down') {
@@ -872,6 +1007,24 @@ const HANDLERS = {
 		return { ok: true }
 	},
 	refreshNodes,
+	async serviceStatus() {
+		return checkMaintenance()
+	},
+	async activeMap() {
+		try {
+			return { ok: true, ...(await Api.activeMap()) }
+		} catch (error) {
+			const serialized = safeError(error, 'active_map_failed')
+			return { ok: false, error: serialized.message, ...serialized }
+		}
+	},
+	async retryPendingConnect() {
+		const runtime = await Store.runtime()
+		const settings = await Store.settings()
+		const intent = runtime?.connectIntent
+		if (!intent?.requested || intent.channel !== settings.channel) return { ok: false, error: 'There is no connection to resume.', code: 'no_pending_connect' }
+		return connect({ nodeId: intent.nodeId, userInitiated: false })
+	},
 	async saveSettings(payload) {
 		const settings = await Store.saveSettings(payload ?? {})
 		const runtime = await Store.runtime()
@@ -921,7 +1074,8 @@ const HANDLERS = {
 			// tunnel instead of retrying with credentials the server no longer honours.
 			if (own?.id && own.id === deviceId) {
 				await ProxyEngine.clear()
-				await patchRuntime({ phase: PHASE.signedOut, session: null, gateway: null, stats: null })
+				await Store.clearSession()
+				await patchRuntime({ phase: PHASE.signedOut, session: null, gateway: null, stats: null, connectIntent: null, maintenance: null })
 				await setBadge(PHASE.signedOut)
 			}
 			return { ok: true, ...result }
@@ -988,13 +1142,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	// can always tell "this failed" apart from "still waiting".
 	withTimeout(Promise.resolve(handler(message.payload ?? {})), HANDLER_TIMEOUT_MS, message.type)
 		.then((data) => sendResponse({ ok: true, data }))
-		.catch((error) =>
-			sendResponse({
-				ok: false,
-				error: error?.message ?? 'Unexpected error',
-				code: error?.code ?? null,
-			}),
-		)
+		.catch((error) => {
+			const serialized = safeError(error, 'unexpected_error')
+			sendResponse({ ok: false, error: serialized.message, ...serialized })
+		})
 	return true
 })
 
@@ -1038,6 +1189,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 	if (alarm.name === POLL_ALARM) void poll()
 	if (alarm.name === AUTOCONNECT_ALARM) void runAutoConnect()
 	if (alarm.name === LINK_ALARM) void runLinkPoll()
+	if (alarm.name === MAINTENANCE_ALARM) void checkMaintenance()
 })
 
 async function bootstrap() {
@@ -1075,7 +1227,7 @@ async function bootstrap() {
 	if (wasConnected || settings.autoConnect) {
 		// A failed autostart must still end on a phase the popup can render.
 		try {
-			await withTimeout(connect({ nodeId: settings.preferredNodeId }), 40000, 'autoconnect')
+			await withTimeout(connect({ nodeId: settings.preferredNodeId, userInitiated: false }), 40000, 'autoconnect')
 		} catch (error) {
 			await fail(error?.message ?? 'Could not connect on startup.', 'autoconnect_failed')
 		}

@@ -8,6 +8,7 @@ import { purgeOldLoginAttempts } from "./loginThrottle"
 import { requeueStaleCommands } from "./nodeCommands"
 import { sweepExpiredRegistrations } from "./registration"
 import { closeSession } from "./sessions"
+import { serviceStatus } from "./serviceControl"
 import { purgeOldClientErrors } from "./telemetry"
 import { purgeExpiredCodes } from "./verification"
 import { purgeOldDomainStats } from "./vlessStats"
@@ -80,9 +81,11 @@ export async function runMonitorTick(): Promise<MonitorTickResult> {
 		},
 	})
 
+	const service = await serviceStatus()
 	for (const session of liveSessions) {
 		let reason: string | null = null
-		if (session.user.status !== "ACTIVE") reason = "user_disabled"
+		if (service.maintenance || session.node.maintenance) reason = "maintenance"
+		else if (session.user.status !== "ACTIVE") reason = "user_disabled"
 		else if (session.device.status !== "ACTIVE") reason = "device_revoked"
 		else if (session.user.subscriptions.length === 0) reason = "subscription_expired"
 		else if (session.node.status === "DISABLED") reason = "node_disabled"
@@ -184,6 +187,17 @@ export function startMonitor(app: FastifyInstance): MonitorHandle {
 
 				// Domain statistics have a retention window; a checkout nobody
 				// finished within a day is closed so it does not sit as "pending".
+				// Keep hourly totals for thirteen months; never retain them forever.
+				await prisma.trafficUsageBucket.deleteMany({ where: { bucketStart: { lt: new Date(Date.now() - 400 * 86400000) } } })
+				// Tombstones never take slots; remove old ones only after every leased
+				// peer has been acknowledged removed, keeping recent domain history.
+				const revokedBefore = new Date(Date.now() - Math.max(30, config.DOMAIN_STATS_RETENTION_DAYS) * 86400000)
+				await prisma.device.deleteMany({ where: {
+					status: "REVOKED", revokedAt: { lt: revokedBefore }, sessions: { none: { OR: [
+						{ status: { in: ["PENDING", "ACTIVE"] } }, { ipLease: { isNot: null } },
+						{ commands: { some: { type: "REMOVE_PEER", status: { not: "DONE" } } } },
+					] } },
+				} })
 				const domains = await purgeOldDomainStats()
 				if (domains > 0) app.log.debug({ domains }, "domain_stats_purged")
 

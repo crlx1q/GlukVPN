@@ -70,6 +70,7 @@ class _SlotRow {
         platform: slot.platform.isEmpty ? null : slot.platform,
         lastSeen: slot.lastSeen,
         connected: slot.connected,
+        nodeName: slot.connectedNode?.label.isNotEmpty == true ? slot.connectedNode!.label : slot.connectedNode?.name,
       );
 
   /// From `GET /api/devices`: the same row plus the node it egresses through.
@@ -152,8 +153,10 @@ class _DeviceLimitSheetState extends State<_DeviceLimitSheet> {
       final Set<String> seen = <String>{};
       for (final _SlotRow row in _rows) {
         final DeviceInfo? live = byId[row.id];
-        merged.add(live == null ? row : _SlotRow.fromDevice(live, _ru));
-        seen.add(row.id);
+        if (live != null) {
+          merged.add(_SlotRow.fromDevice(live, _ru));
+          seen.add(row.id);
+        }
       }
       for (final DeviceInfo device in result.devices) {
         if (!device.isActive || seen.contains(device.id)) continue;
@@ -211,7 +214,8 @@ class _DeviceLimitSheetState extends State<_DeviceLimitSheet> {
     if (row.isCurrent) parts.add(s.deviceLimitThisPc);
     if (row.connected) {
       parts.add(s.deviceLimitConnectedNow);
-    } else {
+    }
+    {
       final DateTime? seen = row.lastSeen;
       if (seen != null) {
         parts.add(
@@ -295,6 +299,9 @@ class _DeviceLimitSheetState extends State<_DeviceLimitSheet> {
                   ),
                   const SizedBox(height: 14),
                   _list(s),
+                  if (!_loading && !_stale && _rows.length < widget.details.maxDevices)
+                    TextButton(onPressed: _busyId == null ? () => Navigator.of(context).pop(true) : null,
+                      child: Text(_ru ? 'Слот уже свободен — продолжить' : 'A slot is available — continue')),
                   if (_stale) ...<Widget>[
                     const SizedBox(height: 10),
                     Text(

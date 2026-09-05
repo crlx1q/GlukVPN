@@ -82,7 +82,7 @@ class GlukTheme {
 					side: BorderSide(color: GlukColors.stroke),
 				),
 			),
-			dialogTheme: DialogTheme(
+			dialogTheme: DialogThemeData(
 				backgroundColor: const Color(0xFF120D1E),
 				surfaceTintColor: Colors.transparent,
 				shape: RoundedRectangleBorder(

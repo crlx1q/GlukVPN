@@ -36,6 +36,7 @@ CONFIG_DIR="/etc/glukvpn"
 CONFIG="$CONFIG_DIR/singbox.json"
 BIN="/usr/local/bin/sing-box"
 UNIT="/etc/systemd/system/glukvpn-singbox.service"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 note() { printf '\n== %s\n' "$1"; }
 fail() { printf '\nERROR: %s\n' "$1" >&2; exit 1; }
@@ -194,6 +195,17 @@ systemctl enable --now glukvpn-singbox.service
 sleep 2
 systemctl is-active --quiet glukvpn-singbox.service \
   || fail "the service did not stay up - journalctl -u glukvpn-singbox -n 50"
+
+# Install the idempotent OUTPUT + VPN-scoped FORWARD safeguards. This never
+# flushes firewall chains or touches INPUT/SSH. The oneshot reapplies missing
+# rules after reboot; operators can inspect its --dry-run output first.
+if [ -f "$SCRIPT_DIR/glukvpn-egress-guard.sh" ] && [ -f "$SCRIPT_DIR/glukvpn-egress-guard.service" ]; then
+  note "Installing GlukVPN egress safeguards"
+  install -m 0755 "$SCRIPT_DIR/glukvpn-egress-guard.sh" /usr/local/sbin/glukvpn-egress-guard
+  install -m 0644 "$SCRIPT_DIR/glukvpn-egress-guard.service" /etc/systemd/system/glukvpn-egress-guard.service
+  systemctl daemon-reload
+  systemctl enable --now glukvpn-egress-guard.service
+fi
 
 # ---------------------------------------------------------------------------
 # Ingress

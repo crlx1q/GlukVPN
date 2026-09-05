@@ -3,7 +3,8 @@ import { z } from "zod"
 import { badRequest, forbidden, notFound } from "../lib/errors"
 import { clientIp, getAuthUser, requireDeviceScope, requireUser } from "../middleware/auth"
 import { prisma } from "../prisma"
-import { toPublicNode } from "../services/nodes"
+import { serviceStatus } from "../services/serviceControl"
+import { loadPublicNodes } from "../services/nodes"
 import {
 	closeSession,
 	connectSession,
@@ -20,19 +21,19 @@ const ConnectBody = z
 const DisconnectBody = z
 	.object({
 		sessionId: z.string().uuid("Invalid session id").optional(),
-		bytesRx: z.coerce.number().min(0).optional(),
-		bytesTx: z.coerce.number().min(0).optional(),
-		downloadBytes: z.coerce.number().min(0).optional(),
-		uploadBytes: z.coerce.number().min(0).optional(),
+		bytesRx: z.coerce.number().finite().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+		bytesTx: z.coerce.number().finite().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+		downloadBytes: z.coerce.number().finite().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+		uploadBytes: z.coerce.number().finite().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
 	})
 	.optional()
 
 const StatsBody = z.object({
 	sessionId: z.string().uuid("Invalid session id").optional(),
-	bytesRx: z.coerce.number().min(0).optional(),
-	bytesTx: z.coerce.number().min(0).optional(),
-	downloadBytes: z.coerce.number().min(0).optional(),
-	uploadBytes: z.coerce.number().min(0).optional(),
+	bytesRx: z.coerce.number().finite().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+	bytesTx: z.coerce.number().finite().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+	downloadBytes: z.coerce.number().finite().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+	uploadBytes: z.coerce.number().finite().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
 	transport: z.string().trim().max(40).optional(),
 })
 
@@ -65,7 +66,7 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 					assignedVpnIp: result.session.assignedVpnIp,
 					connectedAt: result.session.connectedAt.toISOString(),
 				},
-				node: toPublicNode(result.node),
+				node: (await loadPublicNodes([result.node]))[0],
 				// WireGuard parameters for the client tunnel. No private key here:
 				// the device keeps its own private key and never uploads it.
 				tunnel: result.tunnel,
@@ -155,7 +156,7 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 			}
 
 			// A device/user may only report stats for their own sessions
-			if (session.userId !== user.id) throw notFound("Session not found")
+			if (session.userId !== user.id || (device && session.deviceId !== device.id)) throw notFound("Session not found")
 
 			const upload = parsed.data.uploadBytes ?? parsed.data.bytesRx
 			const download = parsed.data.downloadBytes ?? parsed.data.bytesTx
@@ -203,8 +204,16 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 
 		const current = sessions[0] ?? null
 		const subscriptionActive = await hasActiveSubscription(user.id)
+		const service = await serviceStatus()
+		const latest = current ?? await prisma.session.findFirst({
+			where: { userId: user.id, ...(device ? { deviceId: device.id } : {}) },
+			include: { node: true }, orderBy: { connectedAt: "desc" },
+		})
 
-		return reply.send({
+		return reply.header("Cache-Control", "private, no-store").send({
+			service,
+			lastClosedReason: latest?.status === "CLOSED" ? latest.closeReason : null,
+			nodeMaintenance: Boolean(latest?.node.maintenance),
 			// "connected" means the control plane has an open session; the tunnel
 			// itself is up when status === ACTIVE (peer confirmed by the agent).
 			connected: current !== null,

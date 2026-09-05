@@ -138,6 +138,8 @@ export type PolicyRule = {
 export type NodePolicy = {
 	version: string
 	generatedAt: string
+	/** Optional for compatibility with older control planes. */
+	maintenance?: boolean
 	users: PolicyUser[]
 	legacyUser: PolicyUser | null
 	rules: PolicyRule[]

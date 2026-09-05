@@ -101,6 +101,32 @@
 				<!-- overview -->
 				<section class="tabview" data-view="overview">
 					<div class="cards" id="cards"></div>
+					<div class="glass block service-controls" id="service-controls" aria-busy="true">
+						<div class="block-head">
+							<div>
+								<h3>Service controls</h3>
+								<p class="muted small service-scope" id="service-scope">Loading current channel settings…</p>
+							</div>
+							<span class="muted small" id="service-updated"></span>
+						</div>
+						<div class="service-grid">
+							<label class="service-control" for="registration-enabled">
+								<span class="service-copy">
+									<strong>Registration enabled</strong>
+									<span>Allow new accounts to register on this channel.</span>
+								</span>
+								<input class="switch" type="checkbox" id="registration-enabled" disabled />
+							</label>
+							<label class="service-control is-risk" for="emergency-maintenance">
+								<span class="service-copy">
+									<strong>Emergency maintenance</strong>
+									<span>Block new sessions. Enabling also closes active sessions.</span>
+								</span>
+								<input class="switch" type="checkbox" id="emergency-maintenance" disabled />
+							</label>
+						</div>
+						<p class="service-error" id="service-error" role="alert" hidden></p>
+					</div>
 					<div class="glass block" id="egress-block">
 						<div class="block-head">
 							<h3>Oracle Cloud: Egress &amp; Costs (PAYG)</h3>
@@ -178,6 +204,8 @@
 									<th>Node</th>
 									<th>Country</th>
 									<th>Status</th>
+									<th>Policy</th>
+									<th>Restrictions</th>
 									<th>Endpoint</th>
 									<th>Load</th>
 									<th>CPU</th>
@@ -363,7 +391,20 @@
 			</div>
 		</main>
 
-		<div id="toast" hidden></div>
+		<dialog id="maintenance-dialog" class="confirm-dialog" aria-labelledby="maintenance-title" aria-describedby="maintenance-description">
+			<form method="dialog">
+				<div class="dialog-icon" aria-hidden="true">!</div>
+				<h2 id="maintenance-title">Enable emergency maintenance?</h2>
+				<p id="maintenance-description">Active VPN sessions on this channel will close, and new sessions will be blocked until maintenance is disabled.</p>
+				<p class="dialog-scope" id="maintenance-scope"></p>
+				<div class="dialog-actions">
+					<button type="submit" value="cancel" class="ghost">Cancel</button>
+					<button type="submit" value="confirm" class="danger">Enable maintenance</button>
+				</div>
+			</form>
+		</dialog>
+
+		<div id="toast" role="status" aria-live="polite" hidden></div>
 		<script src="./admin.js" defer></script>
 	</body>
 </html>

@@ -18,6 +18,7 @@ import '../widgets/glass.dart';
 import '../widgets/language_pill.dart';
 import 'account_screen.dart';
 import 'devices_screen.dart';
+import 'diagnostics_screen.dart';
 
 /// Account, channel and diagnostics.
 ///
@@ -176,7 +177,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 8),
             _ChannelCard(channel: channel, vpn: vpn, motion: motion),
             const SizedBox(height: 12),
-            _DiagnosticsPanel(channel: channel, auth: auth),
+            _DiagnosticsPanel(channel: channel, auth: auth, vpn: vpn),
           ],
           const SizedBox(height: 20),
           _LogoutButton(auth: auth, vpn: vpn),
@@ -660,10 +661,11 @@ class _RenameDialogState extends State<_RenameDialog> {
 /// Internal builds only: the identifiers you need when something misbehaves,
 /// kept in one place instead of scattered through the user-facing screens.
 class _DiagnosticsPanel extends StatelessWidget {
-  const _DiagnosticsPanel({required this.channel, required this.auth});
+  const _DiagnosticsPanel({required this.channel, required this.auth, required this.vpn});
 
   final ChannelController channel;
   final AuthController auth;
+  final VpnController vpn;
 
   @override
   Widget build(BuildContext context) {
@@ -703,6 +705,17 @@ class _DiagnosticsPanel extends StatelessWidget {
           value: AppConfig.tunnelInterfaceName,
         ),
         _Row(label: s.appId, value: AppConfig.appId, mono: true),
+        const SizedBox(height: 10),
+        FilledButton.icon(
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => DiagnosticsScreen(
+              russian: s.isRussian,
+              runner: DiagnosticsRunner(api: vpn.api, node: vpn.selectedNode, tunnelStage: vpn.vpnService.currentStage),
+            ),
+          )),
+          icon: const Icon(Icons.health_and_safety_outlined),
+          label: Text(s.diagnostics),
+        ),
       ],
     );
   }

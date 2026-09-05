@@ -169,6 +169,7 @@ model User {
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
 
+  trafficUsage      TrafficUsageBucket[]
   devices           Device[]
   sessions          Session[]
   subscriptions     Subscription[]
@@ -199,6 +200,8 @@ model Device {
   vlessUuid  String?      @unique @map("vless_uuid") @db.Uuid
   platform   String?
   status     DeviceStatus @default(ACTIVE)
+  /// Monotone epoch: old tokens cannot revive when the same key is re-enrolled.
+  tokenVersion Int @default(0) @map("token_version")
   createdAt  DateTime     @default(now()) @map("created_at")
   lastSeen   DateTime?    @map("last_seen")
   revokedAt  DateTime?    @map("revoked_at")
@@ -218,6 +221,7 @@ model RefreshToken {
   id           String    @id @default(uuid()) @db.Uuid
   userId       String    @map("user_id") @db.Uuid
   deviceId     String?   @map("device_id") @db.Uuid
+  deviceTokenVersion Int? @map("device_token_version")
   // HMAC-SHA256(pepper, raw token) — raw token exists only on the device
   tokenHash    String    @unique @map("token_hash")
   expiresAt    DateTime  @map("expires_at")
@@ -270,6 +274,7 @@ model VpnNode {
   dns                String     @default("1.1.1.1,1.0.0.1")
   mtu                Int        @default(1420)
   status             NodeStatus @default(PENDING)
+  maintenance        Boolean    @default(false)
   /// Minimum subscription tier that may connect here (0 = everyone).
   tier               Int        @default(0)
   capacity           Int        @default(50)
@@ -430,6 +435,36 @@ model IpLease {
 }
 
 // --------------------------- sessions --------------------------------------
+
+/// Per-control-plane service gates, independent of PROD/BETA and env fallback.
+model ServiceSettings {
+  id                  String   @id @default("global")
+  registrationEnabled Boolean? @map("registration_enabled")
+  maintenance         Boolean  @default(false)
+  version             Int      @default(0)
+  analyticsSince      DateTime @default(now()) @map("analytics_since")
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("service_settings")
+}
+
+/// Observed hourly deltas; the SQL trigger keeps attribution atomic with counters.
+/// A device snapshot survives sign-out so neither history nor leased IPs are lost.
+model TrafficUsageBucket {
+  userId        String   @map("user_id") @db.Uuid
+  deviceId      String   @map("device_id") @db.Uuid
+  bucketStart   DateTime @map("bucket_start")
+  deviceName    String   @map("device_name")
+  platform      String?
+  uploadBytes   BigInt   @default(0) @map("upload_bytes")
+  downloadBytes BigInt   @default(0) @map("download_bytes")
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, deviceId, bucketStart])
+  @@index([userId, bucketStart])
+  @@index([bucketStart])
+  @@map("traffic_usage_buckets")
+}
 
 model Session {
   id              String        @id @default(uuid()) @db.Uuid

@@ -5,7 +5,8 @@
 	"description": "TLS CONNECT gateway that carries GlukVPN browser-extension traffic on a VPN node",
 	"main": "src/server.js",
 	"scripts": {
-		"start": "node src/server.js"
+		"start": "node src/server.js",
+		"test": "node --check src/server.js && node test-live-revocation.js"
 	},
 	"engines": {
 		"node": ">=20"

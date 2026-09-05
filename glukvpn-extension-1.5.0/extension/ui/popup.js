@@ -140,6 +140,11 @@ let deviceFilter = 'all'
 let loginMode = 'site'
 let connectWatchdog = null
 let localPhase = null
+let activeMapData = null
+let activeMapBusy = false
+let limitModalFingerprint = ''
+let dismissedLimitFingerprint = ''
+let limitModalError = null
 
 // ------------------------------------------------------------- messaging ---
 
@@ -196,7 +201,14 @@ async function call(type, payload = {}) {
 	// a refused connect would be read as a successful one.
 	if (response?.ok === true && response.data && typeof response.data === 'object' && response.data.ok === false) {
 		const inner = response.data
-		return { ok: false, error: inner.error, code: inner.code ?? inner.error?.code ?? 'error' }
+		return {
+			ok: false,
+			error: inner.error,
+			code: inner.code ?? inner.error?.code ?? 'error',
+			status: inner.status ?? inner.statusCode ?? 0,
+			retryAfterSec: inner.retryAfterSec ?? null,
+			details: inner.details ?? inner.error?.details ?? null,
+		}
 	}
 	return response ?? { ok: false, error: t('err.unknown'), code: 'unknown' }
 }
@@ -370,10 +382,15 @@ function project(lat, lon) {
 	return { x: ((Number(lon) + 180) / 360) * 119, y: ((90 - Number(lat)) / 180) * 60 }
 }
 
-function isDeviceLimit(error) {
+function normalizedError(error) {
 	const raw = error?.error ?? error
-	const probe = typeof raw === 'string' ? { message: raw } : { message: raw?.message, code: raw?.code ?? error?.code }
-	return errorKeyFor(probe) === 'err.tooManyDevices'
+	return typeof raw === 'string'
+		? { message: raw, code: error?.code, status: error?.status, details: error?.details }
+		: { ...raw, code: raw?.code ?? error?.code, status: raw?.status ?? error?.status, details: raw?.details ?? error?.details }
+}
+
+function isDeviceLimit(error) {
+	return String(normalizedError(error)?.code ?? '').toLowerCase() === 'device_limit_reached'
 }
 
 /** Renders an error into a slot. Everything lands in a red frame. */
@@ -384,17 +401,18 @@ function showError(id, error) {
 		return
 	}
 	if (isDeviceLimit(error)) {
-		banner(id, humanError({ error }), {
-			title: t('err.limitTitle'),
-			actionLabel: t('settings.devices'),
-			onAction: () => {
-				setView('settings')
-				ensureDevices(true)
-			},
+		openDeviceLimitModal(normalizedError(error))
+		banner(id, t('err.tooManyDevices'), { title: t('limit.title') })
+		return
+	}
+	const normalized = normalizedError(error)
+	if (normalized.code === 'maintenance') {
+		banner(id, t('maintenance.body', { seconds: normalized.retryAfterSec ?? normalized.details?.retryAfterSec ?? 30 }), {
+			title: t('maintenance.title'), kind: 'warn',
 		})
 		return
 	}
-	banner(id, humanError({ error }), { title: t('err.connectTitle') })
+	banner(id, humanError({ error: normalized }), { title: t('err.connectTitle') })
 }
 
 // -------------------------------------------------------------- when/geo ---
@@ -812,10 +830,11 @@ function renderServers() {
 	const activeId = activeNodeId() || String(activeNode()?.id ?? '')
 	nodes.forEach((node, index) => {
 		const id = String(node?.id ?? node?.nodeId ?? index)
-		const offline = node?.online === false || node?.status === 'offline'
+		const maintenance = node?.maintenance === true || String(node?.status ?? '').toUpperCase() === 'MAINTENANCE'
+		const offline = maintenance || node?.online === false || String(node?.status ?? '').toLowerCase() === 'offline'
 		const row = document.createElement('button')
 		row.type = 'button'
-		row.className = 'srv-row' + (id === activeId ? ' active' : '') + (offline ? ' offline' : '')
+		row.className = 'srv-row' + (id === activeId ? ' active' : '') + (offline ? ' offline' : '') + (maintenance ? ' maintenance' : '')
 		row.style.animationDelay = `${Math.min(index, 8) * 26}ms`
 
 		const flag = document.createElement('span')
@@ -836,7 +855,7 @@ function renderServers() {
 		const meta = document.createElement('span')
 		meta.className = 's-meta'
 		if (offline) {
-			meta.textContent = t('node.offline')
+			meta.textContent = maintenance ? t('node.maintenance') : t('node.offline')
 		} else {
 			const load = Math.max(0, Math.min(100, Math.round(Number(node?.load ?? 0))))
 			const bar = document.createElement('span')
@@ -850,6 +869,18 @@ function renderServers() {
 			meta.appendChild(label)
 		}
 		text.appendChild(meta)
+		const restrictions = Array.isArray(node?.restrictions) ? node.restrictions : []
+		if (restrictions.length) {
+			const holder = document.createElement('span')
+			holder.className = 's-restrictions'
+			for (const restriction of restrictions.slice(0, 4)) {
+				const chip = document.createElement('span')
+				chip.className = 'restriction'
+				chip.textContent = restrictionLabel(restriction)
+				holder.appendChild(chip)
+			}
+			text.appendChild(holder)
+		}
 		row.appendChild(text)
 
 		const sig = document.createElement('span')
@@ -1180,6 +1211,9 @@ async function switchChannel(target) {
 		return
 	}
 	channelSwitching = true
+	activeMapData = null
+	renderAccountMap()
+	closeDeviceLimitModal(false)
 	setChannelError('')
 	const pill = $(`chan-${target}`)
 	pill?.classList.add('busy')
@@ -1715,7 +1749,8 @@ async function togglePower() {
 		if (!response?.ok) {
 			localPhase = 'error'
 			renderVpn()
-			banner('vpn-banner', humanError(response), {
+			if (isDeviceLimit(response) || normalizedError(response).code === 'maintenance') showError('vpn-banner', response)
+			else banner('vpn-banner', humanError(response), {
 				title: t('err.connectTitle'),
 				actionLabel: t('common.retry'),
 				onAction: () => togglePower(),
@@ -1888,6 +1923,9 @@ async function revokeDevice(deviceId) {
 
 async function signOut() {
 	await call('logout')
+	activeMapData = null
+	renderAccountMap()
+	closeDeviceLimitModal(false)
 	devicesLoaded = false
 	localPhase = null
 	await refreshState()
@@ -2140,6 +2178,18 @@ function wire() {
 	$('btn-signout')?.addEventListener('click', signOut)
 	$('btn-login')?.addEventListener('click', submitLogin)
 	$('btn-site-login')?.addEventListener('click', siteLogin)
+	$('limit-close')?.addEventListener('click', () => closeDeviceLimitModal(true))
+	$('limit-server')?.addEventListener('click', () => { closeDeviceLimitModal(true); setView('servers') })
+	$('limit-retry')?.addEventListener('click', async () => {
+		const result = await call('retryPendingConnect')
+		if (result?.ok) { closeDeviceLimitModal(false); await refreshState({ quiet: true }) }
+		else if (isDeviceLimit(result)) openDeviceLimitModal(result)
+		else $('limit-error').textContent = humanError(result)
+	})
+	document.addEventListener('keydown', (event) => {
+		const modal = $('limit-modal')
+		if (event.key === 'Escape' && modal && !modal.hidden) closeDeviceLimitModal(true)
+	})
 	// ROUND 9 (block 4.1)
 	$('btn-register')?.addEventListener('click', () => openSite('/login/?mode=register'))
 	$('btn-forgot')?.addEventListener('click', () => openSite('/login/?mode=recover'))
@@ -2227,7 +2277,11 @@ async function boot() {
 	// Fire and forget: an update notice must never delay the popup.
 	checkExtensionUpdate()
 	tickTimer = setInterval(tickDuration, 1000)
-	pollTimer = setInterval(() => refreshState({ quiet: true }), 5000)
+	refreshServiceAndMap()
+	pollTimer = setInterval(() => {
+		refreshState({ quiet: true })
+		refreshServiceAndMap()
+	}, 5000)
 	window.addEventListener('unload', () => {
 		clearInterval(tickTimer)
 		clearInterval(pollTimer)
@@ -2239,3 +2293,175 @@ async function boot() {
 boot().catch((error) => {
 	banner('vpn-banner', String(error?.message ?? error), { actionLabel: t('common.retry'), onAction: () => location.reload() })
 })
+
+
+// ---------------- Sprint 2: device slots, account map and service state -----
+function limitFingerprint(error) {
+	const ids = (error?.details?.devices ?? []).map((d) => d?.id).filter(Boolean).sort().join(',')
+	return `${error?.code}:${error?.details?.maxDevices ?? ''}:${ids}`
+}
+
+function closeDeviceLimitModal(dismiss = true) {
+	const modal = $('limit-modal')
+	if (!modal) return
+	if (dismiss) dismissedLimitFingerprint = limitModalFingerprint
+	modal.hidden = true
+	modal.classList.add('hidden')
+	$('app')?.removeAttribute('inert')
+}
+
+function renderLimitDevices(devices) {
+	const list = $('limit-devices')
+	if (!list) return
+	list.replaceChildren()
+	for (const device of (devices ?? [])) {
+		const id = String(device?.id ?? device?.deviceId ?? '')
+		if (!id) continue
+		const row = document.createElement('div')
+		row.className = 'modal-device'
+		const icon = document.createElement('span')
+		icon.className = 'd-ic'
+		icon.appendChild(iconSvg(/phone|android|ios/i.test(String(device?.platform ?? '')) ? 'phone' : 'laptop'))
+		row.appendChild(icon)
+		const text = document.createElement('span')
+		text.className = 'd-text'
+		const name = document.createElement('span')
+		name.className = 'd-name'
+		name.textContent = device?.deviceName ?? device?.name ?? device?.platform ?? id
+		const sub = document.createElement('span')
+		sub.className = 'd-sub'
+		const node = device?.connectedNode
+		const where = node ? [node.city, node.country || node.name].filter(Boolean).join(', ') : ''
+		sub.textContent = [device?.platform, device?.connected ? t('dev.online') : t('dev.lastSeen', { when: whenLabel(device?.lastSeen) }), where, device?.status].filter(Boolean).join(' · ')
+		text.append(name, sub)
+		row.appendChild(text)
+		const release = document.createElement('button')
+		release.type = 'button'
+		release.className = 'btn btn-danger'
+		release.textContent = t('limit.release')
+		release.addEventListener('click', async () => {
+			release.disabled = true
+			$('limit-error').textContent = ''
+			const response = await call('revokeDevice', { deviceId: id })
+			if (!response?.ok) {
+				release.disabled = false
+				$('limit-error').textContent = humanError(response)
+				return
+			}
+			if (device?.isCurrent || String(state?.device?.id ?? '') === id) {
+				closeDeviceLimitModal(false)
+				activeMapData = null
+				renderAccountMap()
+				await refreshState()
+				return
+			}
+			const resumed = await call('retryPendingConnect')
+			if (resumed?.ok) {
+				closeDeviceLimitModal(false)
+				dismissedLimitFingerprint = ''
+				await refreshState({ quiet: true })
+			} else if (isDeviceLimit(resumed)) {
+				limitModalError = normalizedError(resumed)
+				renderLimitDevices(limitModalError.details?.devices ?? [])
+				$('limit-error').textContent = t('limit.stillFull')
+			} else {
+				$('limit-error').textContent = humanError(resumed)
+				release.disabled = false
+			}
+		})
+		row.appendChild(release)
+		list.appendChild(row)
+	}
+	if (!list.childElementCount) {
+		const empty = document.createElement('div')
+		empty.className = 'empty'
+		empty.textContent = t('settings.devicesEmpty')
+		list.appendChild(empty)
+	}
+}
+
+async function openDeviceLimitModal(error) {
+	if (!isDeviceLimit(error)) return
+	limitModalError = normalizedError(error)
+	limitModalFingerprint = limitFingerprint(limitModalError)
+	if (dismissedLimitFingerprint === limitModalFingerprint) return
+	let devices = limitModalError.details?.devices
+	if (!Array.isArray(devices) || !devices.length) {
+		const response = await call('devices')
+		devices = response?.data?.devices ?? response?.devices ?? []
+	}
+	renderLimitDevices(devices)
+	const modal = $('limit-modal')
+	if (!modal) return
+	modal.hidden = false
+	modal.classList.remove('hidden')
+	$('app')?.setAttribute('inert', '')
+	requestAnimationFrame(() => modal.querySelector('.modal-card')?.focus())
+}
+
+function renderAccountMap() {
+	const group = $('account-map')
+	const count = $('map-count')
+	if (!group || !count) return
+	group.replaceChildren()
+	const devices = state?.signedIn === false ? [] : (activeMapData?.devices ?? []).slice(0, 5)
+	let placed = 0
+	for (const device of devices) {
+		const origin = device?.origin
+		const location = device?.node?.location
+		if (![origin?.lat, origin?.lon, location?.lat, location?.lon].every(Number.isFinite)) continue
+		const a = project(origin.lat, origin.lon)
+		const b = project(location.lat, location.lon)
+		const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+		path.setAttribute('class', 'account-route')
+		path.setAttribute('d', `M ${a.x} ${a.y} Q ${(a.x + b.x) / 2} ${Math.min(a.y, b.y) - 5} ${b.x} ${b.y}`)
+		const title = document.createElementNS('http://www.w3.org/2000/svg', 'title')
+		title.textContent = `${device.deviceName ?? device.platform ?? t('settings.devices')} → ${formatNodeLocation(device.node, currentLang()) || device.node?.name || t('loc.unknown')}`
+		path.appendChild(title)
+		group.appendChild(path)
+		for (const [point, cls] of [[a, 'account-origin'], [b, 'account-node']]) {
+			const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+			dot.setAttribute('class', cls)
+			dot.setAttribute('cx', point.x)
+			dot.setAttribute('cy', point.y)
+			dot.setAttribute('r', '0.9')
+			group.appendChild(dot)
+		}
+		placed += 1
+	}
+	count.hidden = devices.length === 0
+	count.classList.toggle('hidden', devices.length === 0)
+	count.textContent = t('map.active', { count: activeMapData?.activeTunnels ?? devices.length, placed })
+}
+
+async function refreshServiceAndMap() {
+	if (activeMapBusy) return
+	activeMapBusy = true
+	try {
+		const serviceResponse = await call('serviceStatus')
+		const service = serviceResponse?.data?.service ?? serviceResponse?.service
+		if (service && state?.runtime) {
+			state.runtime = { ...state.runtime, service }
+			if (service.maintenance) showError('vpn-banner', { code: 'maintenance', retryAfterSec: service.retryAfterSec })
+		}
+		if (state?.signedIn === false) {
+			activeMapData = null
+		} else {
+			const mapResponse = await call('activeMap')
+			if (mapResponse?.ok) activeMapData = mapResponse?.data ?? mapResponse
+		}
+		renderAccountMap()
+	} finally {
+		activeMapBusy = false
+	}
+}
+
+
+function restrictionLabel(restriction) {
+	const code = String(restriction?.code ?? '').toLowerCase()
+	const known = ['bittorrent', 'smtp25', 'p2p_ports']
+	if (known.includes(code)) return t(`restriction.${code}`)
+	// Policy-provided custom text is untrusted content: textContent at the call
+	// site guarantees it is displayed literally and never interpreted as HTML.
+	return String(restriction?.label ?? restriction?.value ?? t('err.forbidden')).slice(0, 120)
+}

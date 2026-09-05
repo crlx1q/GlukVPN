@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import '../../config.dart';
 import '../../models/models.dart';
 import '../../platform/tunnel_backend.dart';
+import '../../services/vpn_service.dart';
+import '../../screens/diagnostics_screen.dart';
 import '../../state/auth_controller.dart';
 import '../../theme/tokens.dart';
 import '../../utils/format.dart';
@@ -486,10 +488,24 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
         // Nobody loses a way out of a stuck network by this: Down() already
         // clears the kill switch on its own (ROUND 10), so the manual release
         // is a fallback for a case the service now handles itself.
-        if (widget.auth.user?.isAdmin ?? false)
-          _Section(
+        _Section(
             title: ru ? 'Диагностика' : 'Diagnostics',
             children: <Widget>[
+              _ActionTile(
+                label: ru ? 'Проверить подключение' : 'Run connection checks',
+                subtitle: ru ? '9 безопасных проверок сети, API, туннеля, DNS и маршрута' : '9 safe checks for network, API, tunnel, DNS and routing',
+                buttonLabel: ru ? 'Запустить' : 'Run',
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => DiagnosticsScreen(
+                    russian: ru,
+                    runner: DiagnosticsRunner(
+                      api: widget.vpn.api,
+                      node: widget.vpn.selectedNode,
+                      tunnelStage: () async => await widget.vpn.probeTunnelConnected() ? TunnelStage.connected : TunnelStage.disconnected,
+                    ),
+                  ),
+                )),
+              ),
               _InfoTile(
                 label: ru ? 'Служба туннеля' : 'Tunnel service',
                 value: widget.vpn.serviceReady

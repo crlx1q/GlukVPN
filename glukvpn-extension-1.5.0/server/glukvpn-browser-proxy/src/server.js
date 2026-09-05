@@ -33,6 +33,8 @@ const CONTROL_API = (process.env.CONTROL_API || 'https://api.gluk.tech').replace
 //         maxConcurrentSessions is 1 and the phone should keep the tunnel.
 const REQUIRE_SESSION = String(process.env.REQUIRE_SESSION ?? 'true') !== 'false'
 const AUTH_TTL_MS = Number(process.env.AUTH_CACHE_TTL_MS || 60_000)
+const REVALIDATE_INTERVAL_MS = Math.min(300_000, Math.max(5_000, Number(process.env.REVALIDATE_INTERVAL_MS || 15_000)))
+const TOKEN_RETENTION_MS = Math.max(REVALIDATE_INTERVAL_MS * 2, Number(process.env.TOKEN_RETENTION_MS || 300_000))
 const ALLOWED_PORTS = String(process.env.ALLOWED_PORTS || '80,443,8080,8443')
 	.split(',')
 	.map((value) => Number(value.trim()))
@@ -42,6 +44,7 @@ const IDLE_TIMEOUT_MS = Number(process.env.IDLE_TIMEOUT_MS || 120_000)
 const TLS_CERT = process.env.TLS_CERT || ''
 const TLS_KEY = process.env.TLS_KEY || ''
 const ALLOW_INSECURE_HTTP = String(process.env.ALLOW_INSECURE_HTTP || 'false') === 'true'
+const ALLOW_TEST_LOOPBACK_TARGET = ALLOW_INSECURE_HTTP && process.env.NODE_ENV === 'test' && ['127.0.0.1', '::1', 'localhost'].includes(BIND_HOST) && String(process.env.ALLOW_TEST_LOOPBACK_TARGET || 'false') === 'true'
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info'
 
 const startedAt = Date.now()
@@ -59,7 +62,7 @@ const totals = { bytesRx: 0, bytesTx: 0, connections: 0, active: 0 }
 function counters(deviceId) {
 	let entry = stats.get(deviceId)
 	if (!entry) {
-		entry = { bytesRx: 0, bytesTx: 0, connections: 0, active: 0, since: Date.now(), token: null, reportedRx: 0, reportedTx: 0 }
+		entry = { bytesRx: 0, bytesTx: 0, connections: 0, active: 0, since: Date.now(), token: null, tokenTouchedAt: 0, reportedRx: 0, reportedTx: 0 }
 		stats.set(deviceId, entry)
 	}
 	return entry
@@ -69,7 +72,7 @@ function userCounters(userId) {
 	if (!userId) return null
 	let entry = userStats.get(userId)
 	if (!entry) {
-		entry = { bytesRx: 0, bytesTx: 0, connections: 0, active: 0, since: Date.now(), token: null, reportedRx: 0, reportedTx: 0 }
+		entry = { bytesRx: 0, bytesTx: 0, connections: 0, active: 0, since: Date.now(), token: null, tokenTouchedAt: 0, reportedRx: 0, reportedTx: 0 }
 		userStats.set(userId, entry)
 	}
 	return entry
@@ -90,6 +93,7 @@ function extractUserId(token) {
 /* -------------------------------------------------------------------- auth */
 
 const authCache = new Map() // sha256(token) -> { ok, until, reason, deviceId }
+const maintenanceByApi = new Map() // channel URL -> confirmed service-wide cutoff expiry
 
 function parseBasic(req) {
 	const header = req.headers['proxy-authorization'] || req.headers.authorization
@@ -105,35 +109,49 @@ function parseBasic(req) {
 	return { username: decoded.slice(0, index), token: decoded.slice(index + 1) }
 }
 
-async function verifyWith(apiBase, credentials) {
+async function verifyWith(apiBase, credentials, requireSession = REQUIRE_SESSION) {
+	const answer = (value) => ({ ...value, apiBase })
 	try {
 		const response = await fetch(`${apiBase}/api/vpn/status`, {
 			headers: { authorization: `Bearer ${credentials.token}` },
 			signal: AbortSignal.timeout(8_000),
 		})
+		let body = null
+		try { body = await response.json() } catch {}
 		if (response.ok) {
-			const body = await response.json()
-			if (body.subscriptionActive === false) {
-				return { ok: false, reason: 'subscription-inactive', until: Date.now() + AUTH_TTL_MS }
-			} else if (REQUIRE_SESSION && body.connected !== true) {
-				return { ok: false, reason: 'no-active-session', until: Date.now() + 10_000 }
-			} else {
-				const userId = extractUserId(credentials.token)
-				return {
-					ok: true,
-					userId,
-					deviceId: credentials.username || body.session?.deviceId || 'browser',
-					until: Date.now() + AUTH_TTL_MS,
-				}
+			if (!body || typeof body !== 'object') return null
+			if (body.service?.maintenance === true || body.nodeMaintenance === true) {
+				const retryMs = Math.min(300_000, Math.max(5_000, (Number(body.service?.retryAfterSec) || 30) * 1000))
+				return answer({ ok: false, reason: 'maintenance', maintenanceScope: body.service?.maintenance === true ? 'service' : 'node', explicit: true, until: Date.now() + retryMs })
 			}
+			if (body.subscriptionActive === false) return answer({ ok: false, reason: 'subscription-inactive', explicit: true, until: Date.now() + AUTH_TTL_MS })
+			if (requireSession && body.connected !== true) return answer({ ok: false, reason: 'no-active-session', explicit: true, until: Date.now() + 10_000 })
+			return answer({ ok: true, userId: extractUserId(credentials.token), deviceId: credentials.username || body.session?.deviceId || 'browser', until: Date.now() + AUTH_TTL_MS })
 		}
-		if (response.status === 401 || response.status === 403) {
-			return { ok: false, reason: 'token-rejected', until: Date.now() + AUTH_TTL_MS }
-		}
+		if (response.status === 401 || response.status === 403) return answer({ ok: false, reason: 'token-rejected', explicit: true, until: Date.now() })
+		if (response.status === 503 && body?.error?.code === 'maintenance') return answer({ ok: false, reason: 'maintenance', maintenanceScope: body.error.details?.nodeId ? 'node' : 'service', explicit: true, until: Date.now() + 5_000 })
 	} catch (error) {
 		log('debug', `control plane (${apiBase}) check failed:`, error.message)
 	}
-	return null
+	return null // A transient failure must not close an established tunnel.
+}
+
+function fallbackApi() {
+	return (process.env.CONTROL_FALLBACK_API || (CONTROL_API.includes('8082') ? 'http://127.0.0.1:8081' : 'http://127.0.0.1:8082')).replace(/\/+$/, '')
+}
+
+async function verifyFresh(credentials, requireSession = REQUIRE_SESSION, preferredApi = null) {
+	// Once authenticated, a tunnel is bound to its owning control plane. A
+	// revocation there must never be overridden by the other channel's database.
+	let result = await verifyWith(preferredApi || CONTROL_API, credentials, requireSession)
+	if (!preferredApi && (result === null || result.reason === 'token-rejected')) {
+		const alternate = await verifyWith(fallbackApi(), credentials, requireSession)
+		if (alternate && alternate.reason !== 'token-rejected') result = alternate
+		else if (result === null) result = alternate
+	}
+	if (result?.reason === 'maintenance' && result.maintenanceScope === 'service') maintenanceByApi.set(result.apiBase, result.until)
+	else if (result?.ok) maintenanceByApi.delete(result.apiBase)
+	return result
 }
 
 async function verify(credentials) {
@@ -141,6 +159,8 @@ async function verify(credentials) {
 	const key = crypto.createHash('sha256').update(credentials.token).digest('hex')
 	const cached = authCache.get(key)
 	if (cached && cached.until > Date.now()) {
+		const cutoff = maintenanceByApi.get(cached.apiBase) || 0
+		if (cutoff > Date.now()) return { ok: false, reason: 'maintenance', maintenanceScope: 'service', apiBase: cached.apiBase, until: cutoff }
 		if (credentials.username && cached.deviceId !== credentials.username) {
 			cached.deviceId = credentials.username
 		}
@@ -150,21 +170,28 @@ async function verify(credentials) {
 		return cached
 	}
 
-	let result = await verifyWith(CONTROL_API, credentials)
-	if (!result || !result.ok) {
-		const fallbackApi = CONTROL_API.includes('8082') ? 'http://127.0.0.1:8081' : 'http://127.0.0.1:8082'
-		const altResult = await verifyWith(fallbackApi, credentials)
-		if (altResult?.ok) result = altResult
-	}
+	let result = await verifyFresh(credentials, REQUIRE_SESSION, cached?.apiBase || null)
 	if (!result) result = { ok: false, reason: 'control-plane-unreachable', until: Date.now() + 5_000 }
+	if (result.reason === 'token-rejected') {
+		authCache.delete(key)
+		return result
+	}
 	authCache.set(key, result)
 	return result
 }
 
-setInterval(() => {
+const authCleanupTimer = setInterval(() => {
 	const now = Date.now()
 	for (const [key, value] of authCache) if (value.until <= now) authCache.delete(key)
-}, 60_000).unref()
+	for (const [api, until] of maintenanceByApi) if (until <= now) maintenanceByApi.delete(api)
+	for (const stat of stats.values()) {
+		if (stat.active === 0 && stat.token && now - stat.tokenTouchedAt >= TOKEN_RETENTION_MS) stat.token = null
+	}
+	for (const stat of userStats.values()) {
+		if (stat.active === 0 && stat.token && now - stat.tokenTouchedAt >= TOKEN_RETENTION_MS) stat.token = null
+	}
+}, 60_000)
+authCleanupTimer.unref()
 
 async function reportToControlPlane(apiBase, token, deviceId, bytesRx, bytesTx) {
 	if (!token || (!bytesRx && !bytesTx)) return
@@ -210,7 +237,8 @@ async function flushStatsToControlPlane() {
 	}
 }
 
-setInterval(flushStatsToControlPlane, 10_000).unref()
+const statsFlushTimer = setInterval(flushStatsToControlPlane, 10_000)
+statsFlushTimer.unref()
 
 /* ------------------------------------------------------------ target rules */
 
@@ -219,6 +247,8 @@ const PRIVATE_V4 =
 
 function isBlockedAddress(address) {
 	if (!address) return true
+	// Test-only escape hatch requires the separately explicit cleartext mode.
+	if (ALLOW_TEST_LOOPBACK_TARGET && /^127\./.test(address)) return false
 	if (address.includes(':')) {
 		const lower = address.toLowerCase()
 		return lower === '::1' || lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe80')
@@ -282,14 +312,18 @@ async function handleControl(req, res, path) {
 	const auth = await verify(credentials)
 	if (!auth.ok) {
 		log('info', `Control stats denied (${auth.reason}) from ${req.socket.remoteAddress}`)
-		sendJson(res, 401, { error: { code: auth.reason ?? 'unauthorized' } })
+		sendJson(res, auth.reason === 'maintenance' ? 503 : 401, { error: { code: auth.reason ?? 'unauthorized' } })
 		return
 	}
 	const mine = counters(auth.deviceId)
 	const uStat = userCounters(auth.userId)
 	if (credentials?.token) {
 		mine.token = credentials.token
-		if (uStat) uStat.token = credentials.token
+		mine.tokenTouchedAt = Date.now()
+		if (uStat) {
+			uStat.token = credentials.token
+			uStat.tokenTouchedAt = Date.now()
+		}
 	}
 	const bytesRx = Math.max(mine.bytesRx, uStat?.bytesRx ?? 0)
 	const bytesTx = Math.max(mine.bytesTx, uStat?.bytesTx ?? 0)
@@ -334,8 +368,9 @@ async function handleRequest(req, res) {
 	const credentials = parseBasic(req)
 	const auth = await verify(credentials)
 	if (!auth.ok) {
-		res.writeHead(407, {
-			'proxy-authenticate': 'Basic realm="GlukVPN-Browser"',
+		const status = auth.reason === 'maintenance' ? 503 : 407
+		res.writeHead(status, {
+			...(status === 407 ? { 'proxy-authenticate': 'Basic realm="GlukVPN-Browser"' } : {}),
 			'content-type': 'application/json',
 		})
 		res.end(JSON.stringify({ error: { code: auth.reason ?? 'unauthorized' } }))
@@ -367,7 +402,11 @@ async function handleRequest(req, res) {
 	const uStat = userCounters(auth.userId)
 	if (credentials?.token) {
 		stat.token = credentials.token
-		if (uStat) uStat.token = credentials.token
+		stat.tokenTouchedAt = Date.now()
+		if (uStat) {
+			uStat.token = credentials.token
+			uStat.tokenTouchedAt = Date.now()
+		}
 	}
 	const headers = { ...req.headers }
 	delete headers['proxy-authorization']
@@ -401,11 +440,16 @@ async function handleRequest(req, res) {
 
 /* ----------------------------------------------------------- CONNECT proxy */
 
+const liveTunnels = new Map() // tunnel id -> exact device/token and close callback
+let nextTunnelId = 0
+let revalidationRunning = false
+
 function denyConnect(socket, code, reason) {
 	const statusText =
 		code === 407 ? 'Proxy Authentication Required' :
 		code === 403 ? 'Forbidden' :
 		code === 429 ? 'Too Many Requests' :
+		code === 503 ? 'Service Unavailable' :
 		code === 502 ? 'Bad Gateway' : (reason || 'Error')
 	const extra =
 		code === 407 ? 'Proxy-Authenticate: Basic realm="GlukVPN-Browser"\r\n' : ''
@@ -424,7 +468,7 @@ async function handleConnect(req, clientSocket, head) {
 	const auth = await verify(credentials)
 	if (!auth.ok) {
 		log('info', `CONNECT denied (${auth.reason}) from ${clientSocket.remoteAddress} for ${req.url}`)
-		denyConnect(clientSocket, auth.reason === 'token-rejected' || !credentials ? 407 : 403, auth.reason ?? 'Forbidden')
+		denyConnect(clientSocket, auth.reason === 'maintenance' ? 503 : auth.reason === 'token-rejected' || !credentials ? 407 : 403, auth.reason ?? 'Forbidden')
 		return
 	}
 	log('info', `CONNECT allowed for device ${auth.deviceId} (user ${auth.userId}) from ${clientSocket.remoteAddress} to ${req.url}`)
@@ -440,7 +484,11 @@ async function handleConnect(req, clientSocket, head) {
 	const uStat = userCounters(auth.userId)
 	if (credentials?.token) {
 		stat.token = credentials.token
-		if (uStat) uStat.token = credentials.token
+		stat.tokenTouchedAt = Date.now()
+		if (uStat) {
+			uStat.token = credentials.token
+			uStat.tokenTouchedAt = Date.now()
+		}
 	}
 	if (stat.active >= MAX_PER_DEVICE) {
 		denyConnect(clientSocket, 429, 'Too Many Connections')
@@ -455,7 +503,14 @@ async function handleConnect(req, clientSocket, head) {
 		return
 	}
 
+	let tunnelId = null
+	let established = false
 	const upstream = net.connect({ host: address, port }, () => {
+		if (closed || clientSocket.destroyed) { upstream.destroy(); return }
+		if ((maintenanceByApi.get(auth.apiBase) || 0) > Date.now()) {
+			denyConnect(clientSocket, 503, 'maintenance'); close('maintenance'); return
+		}
+		established = true
 		stat.connections += 1
 		stat.active += 1
 		if (uStat) {
@@ -464,6 +519,15 @@ async function handleConnect(req, clientSocket, head) {
 		}
 		totals.connections += 1
 		totals.active += 1
+		tunnelId = ++nextTunnelId
+		liveTunnels.set(tunnelId, {
+			id: tunnelId,
+			apiBase: auth.apiBase,
+			deviceId: auth.deviceId,
+			tokenHash: crypto.createHash('sha256').update(credentials.token).digest('hex'),
+			credentials: { username: auth.deviceId, token: credentials.token },
+			close: (reason) => close(reason),
+		})
 		clientSocket.write(
 			`HTTP/1.1 200 Connection Established\r\nProxy-Agent: GlukVPN-Gateway/${VERSION}\r\n\r\n`,
 		)
@@ -489,14 +553,20 @@ async function handleConnect(req, clientSocket, head) {
 	})
 
 	let closed = false
-	const close = () => {
+	const close = (reason = 'closed') => {
 		if (closed) return
 		closed = true
-		if (stat.active > 0) stat.active -= 1
-		if (uStat && uStat.active > 0) uStat.active -= 1
-		if (totals.active > 0) totals.active -= 1
+		if (tunnelId !== null) liveTunnels.delete(tunnelId)
+		if (established) {
+			if (stat.active > 0) stat.active -= 1
+			if (uStat && uStat.active > 0) uStat.active -= 1
+			if (totals.active > 0) totals.active -= 1
+		}
+		stat.tokenTouchedAt = Date.now()
+		if (uStat) uStat.tokenTouchedAt = Date.now()
 		upstream.destroy()
 		clientSocket.destroy()
+		if (reason !== 'closed') log('info', `CONNECT closed for device ${auth.deviceId} (${reason})`)
 	}
 
 	upstream.setTimeout(IDLE_TIMEOUT_MS, close)
@@ -505,9 +575,44 @@ async function handleConnect(req, clientSocket, head) {
 		if (!closed && !clientSocket.destroyed) denyConnect(clientSocket, 502, 'Bad Gateway')
 		close()
 	})
-	upstream.on('close', close)
-	clientSocket.on('close', close)
+	upstream.on('close', () => close())
+	clientSocket.on('close', () => close())
 }
+
+async function revalidateLiveTunnels() {
+	if (revalidationRunning || liveTunnels.size === 0) return
+	revalidationRunning = true
+	try {
+		const groups = new Map()
+		for (const tunnel of liveTunnels.values()) {
+			const key = `${tunnel.apiBase}:${tunnel.deviceId}:${tunnel.tokenHash}`
+			if (!groups.has(key)) groups.set(key, { apiBase: tunnel.apiBase, credentials: tunnel.credentials, tokenHash: tunnel.tokenHash, tunnels: [] })
+			groups.get(key).tunnels.push(tunnel)
+		}
+		for (const group of groups.values()) {
+			if (!group.tunnels.some((tunnel) => liveTunnels.has(tunnel.id))) continue
+			const result = await verifyFresh(group.credentials, REQUIRE_SESSION, group.apiBase)
+			if (result === null) continue // transient outage: preserve established tunnels
+			if (!result.ok) authCache.delete(group.tokenHash)
+			if (result.reason === 'maintenance' && result.maintenanceScope === 'service') {
+				for (const tunnel of [...liveTunnels.values()]) {
+					if (tunnel.apiBase === result.apiBase) tunnel.close('maintenance')
+				}
+				continue
+			}
+			if (!result.ok) {
+				for (const tunnel of group.tunnels) tunnel.close(result.reason || 'revoked')
+			}
+		}
+	} finally {
+		revalidationRunning = false
+	}
+}
+
+const revalidationTimer = setInterval(() => {
+	revalidateLiveTunnels().catch((error) => log('debug', 'live tunnel revalidation failed:', error.message))
+}, REVALIDATE_INTERVAL_MS)
+revalidationTimer.unref()
 
 /* ------------------------------------------------------------------ boot */
 
@@ -553,6 +658,10 @@ server.listen(PORT, BIND_HOST, () => {
 for (const signal of ['SIGINT', 'SIGTERM']) {
 	process.on(signal, () => {
 		log('info', 'shutting down')
+		clearInterval(authCleanupTimer)
+		clearInterval(statsFlushTimer)
+		clearInterval(revalidationTimer)
+		for (const tunnel of [...liveTunnels.values()]) tunnel.close('shutdown')
 		server.close(() => process.exit(0))
 		setTimeout(() => process.exit(0), 3_000).unref()
 	})

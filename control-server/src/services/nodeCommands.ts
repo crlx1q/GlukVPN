@@ -26,37 +26,27 @@ export async function enqueueCommand(params: {
 }
 
 /** Marks the oldest pending commands as delivered and returns them. */
-export async function claimPendingCommands(
-	nodeId: string,
-	limit = 10,
-): Promise<NodeCommand[]> {
-	const take = Math.min(Math.max(limit, 1), 50)
-	const pending = await prisma.nodeCommand.findMany({
-		where: { nodeId, status: "PENDING" },
-		orderBy: { createdAt: "asc" },
-		take,
-		select: { id: true },
-	})
-	if (pending.length === 0) return []
-
-	const ids = pending.map((command) => command.id)
-	const now = new Date()
-	await prisma.$transaction(
-		ids.map((id) =>
-			prisma.nodeCommand.update({
-				where: { id },
-				data: {
-					status: "DELIVERED",
-					deliveredAt: now,
-					attempts: { increment: 1 },
-				},
-			}),
-		),
-	)
-
-	return prisma.nodeCommand.findMany({
-		where: { id: { in: ids } },
-		orderBy: { createdAt: "asc" },
+export async function claimPendingCommands(nodeId: string, limit = 10): Promise<NodeCommand[]> {
+	const take = Math.min(Math.max(Math.trunc(limit), 1), 50)
+	return prisma.$transaction(async (tx) => {
+		await tx.nodeCommand.updateMany({
+			where: { nodeId, type: "ADD_PEER", status: "PENDING", OR: [
+				{ sessionId: null }, { session: { is: { status: { notIn: ["PENDING", "ACTIVE"] } } } },
+			] },
+			data: { status: "FAILED", completedAt: new Date(), result: { reason: "session_closed_before_delivery" } },
+		})
+		// Lock claims atomically: a stale candidate list must not resurrect a cancelled ADD.
+		const pending = await tx.$queryRaw<Array<{ id: string }>>`
+			SELECT id FROM node_commands WHERE node_id = ${nodeId}::uuid AND status = 'PENDING'
+			ORDER BY created_at ASC, id ASC LIMIT ${take} FOR UPDATE SKIP LOCKED
+		`
+		if (!pending.length) return []
+		const ids = pending.map((command) => command.id)
+		await tx.nodeCommand.updateMany({
+			where: { id: { in: ids }, status: "PENDING" },
+			data: { status: "DELIVERED", deliveredAt: new Date(), attempts: { increment: 1 } },
+		})
+		return tx.nodeCommand.findMany({ where: { id: { in: ids }, status: "DELIVERED" }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] })
 	})
 }
 

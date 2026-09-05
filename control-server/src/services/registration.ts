@@ -29,6 +29,7 @@ import { hashPassword } from "../lib/crypto"
 import { badRequest, conflict } from "../lib/errors"
 import { prisma } from "../prisma"
 import { grantDefaultSubscription } from "./billing"
+import { requireRegistrationEnabled, withRegistrationGate } from "./serviceControl"
 import { consumeCode, issueCode, normalizeEmail } from "./verification"
 
 /** The whole funnel. Long enough to go find the email, short enough to be junk. */
@@ -132,6 +133,7 @@ export async function startRegistration(params: {
 	password: string
 	ip?: string | null
 }): Promise<StartedRegistration> {
+	await requireRegistrationEnabled()
 	const email = normalizeEmail(params.email)
 	if (params.password.length < 8) {
 		throw badRequest("The password must be at least 8 characters")
@@ -190,6 +192,7 @@ export async function resendRegistrationCode(params: {
 	email: string
 	ip?: string | null
 }): Promise<{ codeExpiresAt: Date; delivered: boolean }> {
+	await requireRegistrationEnabled()
 	const email = normalizeEmail(params.email)
 	const pending = await loadPending(email)
 	if (pending.emailVerifiedAt) {
@@ -215,6 +218,7 @@ export async function confirmRegistrationEmail(params: {
 	email: string
 	code: string
 }): Promise<EmailConfirmed> {
+	await requireRegistrationEnabled()
 	const email = normalizeEmail(params.email)
 	const pending = await loadPending(email)
 
@@ -248,6 +252,7 @@ export async function startGoogleRegistration(params: {
 	googleSub: string
 	ip?: string | null
 }): Promise<EmailConfirmed> {
+	await requireRegistrationEnabled()
 	const email = normalizeEmail(params.email)
 	const existing = await prisma.user.findFirst({ where: { email }, select: { id: true } })
 	if (existing) throw conflict("An account with this email already exists")
@@ -294,13 +299,14 @@ export async function createUserFromGoogle(params: {
 	googleSub: string
 	name?: string | null
 }): Promise<import("@prisma/client").User> {
+	await requireRegistrationEnabled()
 	const email = normalizeEmail(params.email)
 	const existing = await prisma.user.findFirst({ where: { email } })
 	if (existing) throw conflict("An account with this email already exists")
 
 	const username = await uniqueUsername(email)
 	const passwordHash = await hashPassword(`google:${params.googleSub}:${newToken()}${newToken()}`)
-	const created = await prisma.user.create({
+	const created = await withRegistrationGate((tx) => tx.user.create({
 		data: {
 			username,
 			email,
@@ -319,7 +325,7 @@ export async function createUserFromGoogle(params: {
 				],
 			},
 		},
-	})
+	}))
 	// A finished pending row for the same address (Google -> abandoned Telegram
 	// step) must not keep the email reserved.
 	await prisma.pendingRegistration.deleteMany({ where: { email } }).catch(() => undefined)
@@ -339,6 +345,7 @@ export async function registrationStatus(email: string): Promise<{
 		select: { username: true },
 	})
 	if (user) return { state: "done", username: user.username }
+	await requireRegistrationEnabled()
 
 	const pending = await loadPending(normalized)
 	if (!pending.emailVerifiedAt) return { state: "email" }
@@ -494,7 +501,7 @@ export async function attachTelegram(params: {
 		})
 	}
 
-	const created = await prisma.user.create({
+	const created = await withRegistrationGate((tx) => tx.user.create({
 		data: {
 			username,
 			email: pending.email,
@@ -509,7 +516,7 @@ export async function attachTelegram(params: {
 			identityLinks: { create: identityLinks },
 		},
 		select: { id: true, username: true },
-	})
+	}))
 	// Every new account starts on the Free plan, so "connect" works right away
 	// instead of answering "No active subscription" until an admin intervenes.
 	await grantDefaultSubscription(created.id).catch(() => undefined)

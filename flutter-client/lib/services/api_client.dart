@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 
 import '../config.dart';
 import '../models/models.dart';
+import '../models/account_insights.dart';
 
 Map<String, dynamic> _map(Object? value) {
   if (value is Map<String, dynamic>) return value;
@@ -82,6 +84,16 @@ class ApiClient {
   String _baseUrl;
 
   TokenBundle? _tokens;
+  /// Changes only when account/device/channel scope changes, never logged.
+  final ValueNotifier<int> authRevision = ValueNotifier<int>(0);
+  String _scopeOf(TokenBundle? bundle) {
+    if (bundle == null) return '';
+    try {
+      final parts = bundle.accessToken.split('.');
+      final payload = _map(jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(parts[1])))));
+      return '${payload['sub'] ?? ''}|${bundle.deviceId ?? ''}';
+    } catch (_) { return 'pending|${bundle.deviceId ?? ''}'; }
+  }
   Future<void>? _refreshing;
   SessionRefreshOutcome _lastRefresh = SessionRefreshOutcome.ok;
 
@@ -99,7 +111,9 @@ class ApiClient {
   bool get isAuthenticated => _tokens != null;
 
   void setTokens(TokenBundle? tokens, {bool notify = true}) {
+    final scopeChanged = _scopeOf(_tokens) != _scopeOf(tokens);
     _tokens = tokens;
+    if (scopeChanged) authRevision.value++;
     if (notify) onTokensChanged?.call(tokens);
   }
 
@@ -115,9 +129,10 @@ class ApiClient {
     if (next == _baseUrl) return;
     setTokens(null, notify: false);
     _baseUrl = next;
+    authRevision.value++;
   }
 
-  void close() => _http.close();
+  void close() { _http.close(); authRevision.dispose(); }
 
   // --- transport -----------------------------------------------------------
 
@@ -253,6 +268,10 @@ class ApiClient {
   }
 
   // --- health & auth -------------------------------------------------------
+
+  Future<ServiceStatus> serviceStatus() async => ServiceStatus.fromJson(
+        await _request('GET', '/api/service/status', authenticated: false),
+      );
 
   Future<bool> health() async {
     final Map<String, dynamic> json =
@@ -571,6 +590,15 @@ class ApiClient {
 
   Future<DevicesResult> devices() async =>
       DevicesResult.fromJson(await _request('GET', '/api/devices'));
+
+  Future<ActiveMapSnapshot> activeMap() async => ActiveMapSnapshot.fromJson(
+        await _request('GET', '/api/user/active-map'),
+      );
+
+  Future<AnalyticsSnapshot> analytics(AnalyticsPeriod period) async =>
+      AnalyticsSnapshot.fromJson(
+        await _request('GET', '/api/user/analytics?period=${period.wire}'),
+      );
 
   /// Signs a device out and **removes** it from the account.
   ///

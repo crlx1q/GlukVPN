@@ -56,7 +56,9 @@ class DesktopVpnController extends ChangeNotifier {
         _ping = ping ?? PingService(),
         _service = service,
         _verifier = verifier ??
-            TunnelVerifier(handshakeStaleAfter: AppConfig.handshakeStaleAfter);
+            TunnelVerifier(handshakeStaleAfter: AppConfig.handshakeStaleAfter) {
+    _api.authRevision.addListener(_clearMaintenanceIntent);
+  }
 
   final ApiClient _api;
   final AuthController _auth;
@@ -131,6 +133,87 @@ class DesktopVpnController extends ChangeNotifier {
   List<String> _activeEndpointIps = const <String>[];
   ServerTunnelStatus? _lastServerStatus;
   int _serverStatusFailures = 0;
+  bool _serverStatusBusy = false;
+  bool _maintenance = false, _maintenanceResume = false;
+  bool _maintenanceChecking = false, _maintenanceStopping = false;
+  bool _cancelPendingConnect = false;
+  int _connectRevision = 0;
+  Timer? _maintenanceTimer;
+
+  /// Query the native Windows backend rather than inferring this from the UI.
+  Future<bool> probeTunnelConnected() async => (await _tunnel.status()).state == TunnelState.connected;
+  String get _maintenanceMessage => _ru
+      ? 'Сервис на техническом обслуживании. Скоро вернемся'
+      : 'The service is under maintenance. We will be back soon.';
+  void _clearMaintenanceIntent() {
+    _connectRevision++;
+    _maintenance = false; _maintenanceResume = false;
+    _maintenanceTimer?.cancel(); _maintenanceTimer = null;
+  }
+  void _scheduleMaintenanceCheck([int seconds = 30]) {
+    if (_disposed || !_maintenance || _maintenanceTimer != null) return;
+    _maintenanceTimer = Timer(Duration(seconds: seconds.clamp(5, 120).toInt()), () {
+      _maintenanceTimer = null; unawaited(_checkMaintenance());
+    });
+  }
+  Future<void> _enterMaintenance({required bool resume, int seconds = 30}) async {
+    _maintenance = true;
+    _maintenanceResume = (_maintenanceResume || resume) && !_cancelPendingConnect;
+    _cancelReconnect(); _cancelConnectDeadline();
+    _userMessage = _maintenanceMessage;
+    _setPhase(ConnectionPhase.serverUnavailable, detail: 'maintenance');
+    if (_maintenanceStopping) return;
+    _maintenanceStopping = true;
+    try {
+      final down = await _tunnel.down();
+      _snapshot = down.snapshot ?? (down.ok ? TunnelSnapshot.down : TunnelSnapshot.unknown);
+      if (!down.ok) _userMessage = '$_maintenanceMessage. ${_ru ? 'Не удалось подтвердить остановку локального VPN. Проверьте службу туннеля.' : 'Local VPN shutdown could not be confirmed. Check the tunnel service.'}';
+      await _releaseServerSession();
+      _usage.endSession(); unawaited(_usage.flush());
+      _session = null; _lastServerStatus = null; _connectedSince = null;
+      _publicIp = null; _currentPingMs = null; _dataObserved = false;
+    } catch (_) {
+      _userMessage = '$_maintenanceMessage. ${_ru ? 'Проверьте локальную службу VPN.' : 'Check the local VPN service.'}';
+    } finally {
+      _maintenanceStopping = false; _notify(); _scheduleMaintenanceCheck(seconds);
+    }
+  }
+  Future<void> _checkMaintenance() async {
+    if (_disposed || !_maintenance) return;
+    if (!_api.isAuthenticated) { _clearMaintenanceIntent(); return; }
+    if (_busy || _maintenanceChecking || _maintenanceStopping || _serverStatusBusy) { _scheduleMaintenanceCheck(); return; }
+    _maintenanceChecking = true;
+    final revision = _connectRevision;
+    try {
+      final service = await _api.serviceStatus();
+      if (_disposed || revision != _connectRevision) return;
+      final status = await _api.status();
+      if (_disposed || revision != _connectRevision) return;
+      if (service.maintenance || status.maintenance || status.nodeMaintenance) {
+        await _enterMaintenance(resume: _maintenanceResume, seconds: service.retryAfterSec);
+        return;
+      }
+      await refreshNodes();
+      if (_disposed || revision != _connectRevision) return;
+      final selectedId = _selectedNode?.id;
+      final selected = _nodes.where((n) => n.id == selectedId).toList();
+      if (!autoSelectionEnabled && selected.isNotEmpty && selected.first.maintenance) return;
+      final resume = _maintenanceResume;
+      _clearMaintenanceIntent(); _userMessage = null;
+      _setPhase(ConnectionPhase.disconnected, detail: 'maintenance_finished');
+      if (resume && _auth.stage == AuthStage.authenticated) {
+        final resumeRevision = _connectRevision;
+        scheduleMicrotask(() { if (!_disposed && resumeRevision == _connectRevision && !_cancelPendingConnect && _auth.stage == AuthStage.authenticated) unawaited(connect(node: autoSelectionEnabled ? null : _selectedNode, automatic: true)); });
+      }
+    } on ApiException catch (e) {
+      if (revision == _connectRevision && (e.isUnauthorized || e.isDeviceRevoked)) _clearMaintenanceIntent();
+    } catch (_) {
+      // A transport failure is not permission to reconnect or discard authentication.
+    } finally {
+      _maintenanceChecking = false;
+      if (!_disposed && _maintenance) _scheduleMaintenanceCheck();
+    }
+  }
 
   // ---- getters ----
   ConnectionPhase get phase => _phase;
@@ -504,7 +587,8 @@ class DesktopVpnController extends ChangeNotifier {
   // -------------------------------------------------------------------
 
   Future<void> connect({VpnNodeInfo? node, bool automatic = false}) async {
-    if (_busy) return;
+    if (_busy || _maintenanceStopping) return;
+    _clearMaintenanceIntent(); _cancelPendingConnect = false;
     _busy = true;
     // A connect the user asked for starts the ladder over. An automatic retry
     // must not, or the backoff would reset to one second on every attempt and
@@ -605,6 +689,10 @@ class DesktopVpnController extends ChangeNotifier {
 
       final VpnNodeInfo? target = node ?? await _resolveTargetNode();
       if (target == null) {
+        try {
+          final service = await _api.serviceStatus();
+          if (service.maintenance) { await _enterMaintenance(resume: true, seconds: service.retryAfterSec); return; }
+        } on ApiException catch (_) { /* The connect/node error remains the actionable result. */ }
         _fail(
           ConnectionPhase.serverUnavailable,
           'no_available_nodes',
@@ -622,6 +710,7 @@ class DesktopVpnController extends ChangeNotifier {
       try {
         result = await _api.connect(nodeId: target.id);
       } on ApiException catch (e) {
+        if (e.code == 'maintenance') { await _enterMaintenance(resume: true, seconds: e.retryAfterSec ?? 30); return; }
         dlog.error(
           'connect',
           'POST /api/vpn/connect failed',
@@ -709,6 +798,7 @@ class DesktopVpnController extends ChangeNotifier {
       _setPhase(ConnectionPhase.connecting, detail: 'bringing_up');
       _armConnectDeadline();
 
+      if (_cancelPendingConnect || _auth.stage != AuthStage.authenticated) return;
       final TunnelResult up = await _tunnel.up(
         wgConf: conf,
         sessionId: result.session.id,
@@ -742,15 +832,21 @@ class DesktopVpnController extends ChangeNotifier {
         (DesktopSettings s) => s.copyWith(lastNodeId: target.id),
       );
 
-      await _reevaluate(fetchServerStatus: true);
+      if (!_cancelPendingConnect) await _reevaluate(fetchServerStatus: true);
     } finally {
+      if (_cancelPendingConnect || _auth.stage != AuthStage.authenticated) {
+        try { await _tunnel.down(); await _releaseServerSession(); } catch (_) { }
+        _snapshot = TunnelSnapshot.unknown;
+        _setPhase(ConnectionPhase.disconnected, detail: 'cancelled');
+      }
       _busy = false;
       _notify();
     }
   }
 
   Future<void> disconnect({bool userInitiated = true}) async {
-    if (_busy) return;
+    if (userInitiated) { _cancelPendingConnect = true; _clearMaintenanceIntent(); _cancelReconnect(); }
+    if (_busy || _maintenanceStopping) return;
     _busy = true;
 
     try {
@@ -838,7 +934,7 @@ class DesktopVpnController extends ChangeNotifier {
   // -------------------------------------------------------------------
 
   Future<void> _pollTunnel() async {
-    if (_disposed || _busy) return;
+    if (_disposed || _busy || _maintenance || _maintenanceStopping) return;
 
     try {
       _snapshot = await _tunnel.status();
@@ -860,10 +956,18 @@ class DesktopVpnController extends ChangeNotifier {
     await _reevaluate(fetchServerStatus: false);
   }
 
-  Future<void> refreshServerStatus() async {
-    if (_disposed) return;
+  Future<void> refreshServerStatus({bool allowDuringConnect = false}) async {
+    if (_disposed || _serverStatusBusy || (_busy && !allowDuringConnect)) return;
+    _serverStatusBusy = true;
+    final revision = _connectRevision;
+    final scope = _api.authRevision.value;
     try {
       final VpnStatusInfo status = await _api.status();
+      if (_disposed || revision != _connectRevision || scope != _api.authRevision.value) return;
+      if (status.maintenance || status.nodeMaintenance || (!status.connected && status.lastClosedReason == 'maintenance' && _activeSessionId != null)) {
+        await _enterMaintenance(resume: _phase.isConnected || _phase == ConnectionPhase.connecting, seconds: status.retryAfterSec);
+        return;
+      }
       _session = status.session;
       _lastServerStatus = ServerTunnelStatus(
         peerReady: status.peerReady,
@@ -871,6 +975,7 @@ class DesktopVpnController extends ChangeNotifier {
       );
       _serverStatusFailures = 0;
     } on ApiException catch (e) {
+      if (_disposed || revision != _connectRevision || scope != _api.authRevision.value) return;
       // Auth problems are real; transport problems are not the tunnel's fault.
       if (e.isUnauthorized || e.isForbidden) {
         final ConnectionPhase mapped =
@@ -891,15 +996,16 @@ class DesktopVpnController extends ChangeNotifier {
     } catch (_) {
       _serverStatusFailures++;
       if (_serverStatusFailures >= 3) _lastServerStatus = null;
-    }
-    await _reevaluate(fetchServerStatus: false);
+    } finally { _serverStatusBusy = false; }
+    if (!_maintenance) await _reevaluate(fetchServerStatus: false);
   }
 
   Future<void> _reevaluate({required bool fetchServerStatus}) async {
     if (fetchServerStatus) {
-      await refreshServerStatus();
+      await refreshServerStatus(allowDuringConnect: true);
       return;
     }
+    if (_maintenance || _maintenanceStopping) return;
 
     final TunnelVerdict verdict = _verifier.evaluate(
       snapshot: _snapshot,
@@ -981,7 +1087,7 @@ class DesktopVpnController extends ChangeNotifier {
   }
 
   void _scheduleReconnect() {
-    if (_disposed || _reconnectTimer != null) return;
+    if (_disposed || _maintenance || _reconnectTimer != null) return;
     _reconnectAttempt++;
     final Duration wait = _reconnectDelay(_reconnectAttempt);
     dlog.warn(
@@ -1002,7 +1108,7 @@ class DesktopVpnController extends ChangeNotifier {
   }
 
   Future<void> _autoReconnect() async {
-    if (_disposed) return;
+    if (_disposed || _maintenance || _maintenanceStopping) return;
     // The user may have pressed Disconnect, or a hard failure may have taken
     // over, while we were waiting out the backoff. Reconnecting then would be
     // the app overriding an explicit decision.
@@ -1519,6 +1625,7 @@ class DesktopVpnController extends ChangeNotifier {
 
   /// Graceful shutdown from the tray Exit action.
   Future<void> shutdown({required bool disconnectTunnel}) async {
+    _clearMaintenanceIntent();
     dlog.write('vpn', 'shutdown (disconnect=$disconnectTunnel)');
     _statusTimer?.cancel();
     _serverTimer?.cancel();
@@ -1554,6 +1661,8 @@ class DesktopVpnController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _clearMaintenanceIntent();
+    _api.authRevision.removeListener(_clearMaintenanceIntent);
     _statusTimer?.cancel();
     _serverTimer?.cancel();
     _pingTimer?.cancel();

@@ -55,10 +55,11 @@
 
   function human(e, fallback) {
     if (!e) return fallback;
+    if (e.code === "registration_disabled") return T("Регистрация временно закрыта сервисом.");
     if (e.status === 0) return T("Не удалось связаться с сервером. Проверьте соединение.");
     if (e.status === 429) return T("Слишком много попыток. Повторите через минуту.");
     if (e.status >= 500) return T("Сервис временно недоступен. Попробуйте позже.");
-    return e.message || fallback;
+    return fallback;
   }
 
   /* «navigator.platform-ish»: ОС и браузер, чтобы устройство в списке
@@ -282,7 +283,8 @@
       })
       .catch(function (e) {
         var text;
-        if (e && e.status === 403) text = T("Регистрация через Google сейчас закрыта. Войдите по паролю или напишите нам.");
+        if (e && e.code === "registration_disabled") text = T("Регистрация через Google временно закрыта сервисом.");
+        else if (e && e.status === 403) text = T("Регистрация через Google сейчас закрыта. Войдите по паролю или напишите нам.");
         else if (e && e.status === 400) text = T("Google не подтвердил вход. Попробуйте ещё раз.");
         else text = human(e, T("Не удалось войти через Google."));
         say(mode === "register" ? document.getElementById("reg-msg") : loginMsg, text, "err");

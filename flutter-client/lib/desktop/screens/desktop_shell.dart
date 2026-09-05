@@ -251,6 +251,7 @@ class DesktopShellState extends State<DesktopShell> {
             bottom: DesktopTokens.pagePadding,
           ),
           child: DesktopStatsScreen(
+            api: widget.vpn.api,
             usage: widget.vpn.usage,
             strings: widget.strings,
             loading: !widget.vpn.usageLoaded,

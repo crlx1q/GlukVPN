@@ -175,10 +175,9 @@ class _ServerRowState extends State<ServerRow> {
     // The title already spells out city and country, so the second line is
     // just load and status now instead of repeating the city.
     final parts = <String>[];
-    final load = node.loadPercent;
-    if (load != null) {
-      parts.add('${widget.loadLabel ?? 'Load'} ${formatPercent(load.toDouble())}');
-    }
+    parts.add('${widget.loadLabel ?? 'Load'} ${formatPercent(node.loadPercent.toDouble())}');
+    if (node.maintenance) parts.add(widget.russian ? 'Технические работы' : 'Maintenance');
+    parts.addAll(node.restrictions.map((r) => r.localizedLabel(widget.russian)).where((label) => label.isNotEmpty));
     return parts.where((String p) => p.isNotEmpty).join('  ·  ');
   }
 

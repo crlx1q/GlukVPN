@@ -37,6 +37,7 @@ class DottedWorld extends StatelessWidget {
 		this.serverPoint,
 		this.serverOpacity = 1,
 		this.nodePoints = const <MapPoint>[],
+		this.accountArcs,
 		this.arcProgress = 0,
 		this.arcPhase = 0,
 		this.orbitalPhase = 0,
@@ -99,6 +100,8 @@ class DottedWorld extends StatelessWidget {
 	/// hair-thin links between them. These come from `GET /api/nodes`, so the
 	/// constellation is the real fleet rather than decoration.
 	final List<MapPoint> nodePoints;
+	/// Null preserves onboarding's single route; an empty list means no account tunnels.
+	final List<ConnectionArc>? accountArcs;
 
 	/// 0..1 - how much of the connection arc to draw.
 	final double arcProgress;
@@ -160,7 +163,8 @@ class DottedWorld extends StatelessWidget {
 					serverPoint: serverPoint,
 					serverOpacity: serverOpacity.clamp(0.0, 1.0),
 					nodePoints: nodePoints,
-					arcProgress: arcProgress.clamp(0.0, 1.0),
+					accountArcs: accountArcs,
+					arcProgress: accountArcs == null ? arcProgress.clamp(0.0, 1.0) : 1.0,
 					arcPhase: arcPhase,
 					orbitalPhase: orbitalPhase,
 					orbitalAnchor: orbitalAnchor,
@@ -192,6 +196,7 @@ class _DottedWorldPainter extends CustomPainter {
 		required this.serverPoint,
 		required this.serverOpacity,
 		required this.nodePoints,
+		required this.accountArcs,
 		required this.arcProgress,
 		required this.arcPhase,
 		required this.orbitalPhase,
@@ -217,6 +222,8 @@ class _DottedWorldPainter extends CustomPainter {
 	final MapPoint? serverPoint;
 	final double serverOpacity;
 	final List<MapPoint> nodePoints;
+	/// Null preserves onboarding's single route; an empty list means no account tunnels.
+	final List<ConnectionArc>? accountArcs;
 	final double arcProgress;
 	final double arcPhase;
 	final double orbitalPhase;
@@ -329,6 +336,22 @@ class _DottedWorldPainter extends CustomPainter {
 				fleet.add(projected.offset);
 			}
 			_paintFleet(canvas, size, fleet, flatScale);
+		}
+
+		// Account routes share the exact projection, culling and glow of the original
+		// map. No locale-derived self point is used for a live account snapshot.
+		if (accountArcs != null) {
+			for (final arc in accountArcs!.take(5)) {
+				final from = _project(arc.from, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
+				final to = _project(arc.to, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
+				if (from == null || to == null) continue;
+				final a = ui.lerpDouble(1, from.visibility.clamp(0.0, 1.0), globeness)!;
+				final b = ui.lerpDouble(1, to.visibility.clamp(0.0, 1.0), globeness)!;
+				if (math.min(a, b) > 0.02) _paintArc(canvas, from: from.offset, to: to.offset, arc: arc, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, opacity: math.min(a, b), accent: GlukColors.connected);
+				if (a > 0.02) _paintMarker(canvas, from.offset, GlukColors.violetLight, a, flatScale, pulsing: true);
+				if (b > 0.02) _paintMarker(canvas, to.offset, GlukColors.connected, b, flatScale, pulsing: true);
+			}
+			return;
 		}
 
 		// Markers and the thread between them are drawn on the globe as well as on
@@ -955,6 +978,7 @@ class _DottedWorldPainter extends CustomPainter {
 
 	@override
 	bool shouldRepaint(_DottedWorldPainter old) =>
+			old.accountArcs != accountArcs ||
 			old.globeness != globeness ||
 			old.rotationDegrees != rotationDegrees ||
 			old.centreLongitude != centreLongitude ||

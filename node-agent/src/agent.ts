@@ -288,8 +288,9 @@ async function tick(api: ControlApi): Promise<void> {
 	// Policy drift: the control plane names the version it wants, the file on
 	// disk says which one it holds. A difference costs one GET and one reload.
 	if (state.singbox && heartbeat.policyVersion) {
+		const firstPolicyCheck = state.desiredPolicyVersion === null
 		state.desiredPolicyVersion = heartbeat.policyVersion
-		if (heartbeat.policyVersion !== state.singbox.appliedVersion) {
+		if (firstPolicyCheck || heartbeat.policyVersion !== state.singbox.appliedVersion) {
 			try {
 				await state.singbox.syncPolicy(api, "heartbeat")
 			} catch (error) {

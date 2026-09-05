@@ -342,18 +342,20 @@
     var h = here();
     var nb = bestNode();
     map = new window.GlukNetworkMap(canvas, {
-      home: { lat: h.lat, lon: h.lon, name: h.name },
-      nodes: liveNodes(),
+      home: null,
+      nodes: [],
       interactive: false,
       compact: false,
       dotSize: 1.15,
-      fixedRoute: nb ? nb.id : null,
+      fixedRoute: null,
       view: { x: 0, y: 1.5, w: 119, h: 57 }
     });
+    canvas._glukMap = map;
     window.addEventListener("resize", function () { requestAnimationFrame(placePins); });
   }
 
   function pinsFor(devices) {
+    if (document.querySelector(".dash-in[data-s2-root]")) return [];
     var h = here();
     var out = [];
     var usedNodes = {};
@@ -721,7 +723,7 @@
     if (e.status === 404) return fallback;
     if (e.status === 429) return T("Слишком много запросов. Попробуйте через минуту.");
     if (e.status >= 500) return T("Сервис временно недоступен. Попробуйте позже.");
-    return e.message || fallback;
+    return fallback;
   }
 
   function msg(text, cls) {
@@ -734,7 +736,8 @@
   function kick(id, btn) {
     var A = window.GlukAuth;
     if (!A || !A.call || !id) return;
-    if (!window.confirm(T("Отключить это устройство? Его VPN-сессия завершится сразу."))) return;
+    var manage = $("[data-s2-manage]");
+    if (manage) { manage.click(); return; }
     btn.disabled = true;
     msg(T("Отключаем…"), "");
     A.call("/api/devices/" + encodeURIComponent(id), { method: "DELETE" })

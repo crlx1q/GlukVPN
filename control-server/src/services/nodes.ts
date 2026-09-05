@@ -1,8 +1,10 @@
 import type { VpnNode } from "@prisma/client"
 import { config } from "../config"
 import { prisma } from "../prisma"
+import { nodeLocation, type MapLocation } from "./insightMath"
+import { publicRestrictions, type PublicRestriction } from "./nodeRestrictions"
 
-export type NodeAvailability = "PENDING" | "ONLINE" | "OFFLINE" | "DISABLED"
+export type NodeAvailability = "PENDING" | "ONLINE" | "OFFLINE" | "DISABLED" | "MAINTENANCE"
 
 export function isHeartbeatFresh(lastHeartbeat: Date | null): boolean {
 	if (!lastHeartbeat) return false
@@ -16,6 +18,7 @@ export function isHeartbeatFresh(lastHeartbeat: Date | null): boolean {
  */
 export function effectiveNodeStatus(node: VpnNode): NodeAvailability {
 	if (node.status === "DISABLED") return "DISABLED"
+	if (node.maintenance) return "MAINTENANCE"
 	if (!node.wireguardPublicKey) return "PENDING"
 	return isHeartbeatFresh(node.lastHeartbeat) ? "ONLINE" : "OFFLINE"
 }
@@ -80,6 +83,12 @@ export type PublicNodeView = {
 	/** Host to measure latency against before the tunnel is up. */
 	pingTarget: string
 	host: string
+	publicIp: string
+	gatewayPort: number | null
+	gatewayHost: string | null
+	maintenance: boolean
+	location: MapLocation | null
+	restrictions: PublicRestriction[]
 	port: number
 	status: NodeAvailability
 	online: boolean
@@ -123,6 +132,12 @@ export function toPublicNode(node: VpnNode): PublicNodeView {
 		subtitle: nodeSubtitle(node),
 		pingTarget: nodePingTarget(node),
 		host: nodeHost(node),
+		publicIp: node.publicIp,
+		gatewayPort: node.gatewayPort ?? null,
+		gatewayHost: node.gatewayHost ?? null,
+		maintenance: Boolean(node.maintenance),
+		location: nodeLocation(node),
+		restrictions: publicRestrictions([]),
 		port: node.wireguardPort,
 		status,
 		online: status === "ONLINE",
@@ -147,4 +162,17 @@ export async function listSelectableNodes(): Promise<VpnNode[]> {
 		where: { status: { not: "DISABLED" } },
 		orderBy: [{ country: "asc" }, { city: "asc" }, { name: "asc" }],
 	})
+}
+
+/** One query for node-local and global restrictions, never an account's rules. */
+export async function loadPublicNodes(nodes: VpnNode[]): Promise<PublicNodeView[]> {
+	if (!nodes.length) return []
+	const rows = await prisma.nodeBlockRule.findMany({
+		where: { enabled: true, OR: [{ nodeId: null }, { nodeId: { in: nodes.map((n) => n.id) } }] },
+		orderBy: { createdAt: "asc" },
+	})
+	return nodes.map((node) => ({
+		...toPublicNode(node),
+		restrictions: publicRestrictions(rows.filter((r) => !r.nodeId || r.nodeId === node.id)),
+	}))
 }

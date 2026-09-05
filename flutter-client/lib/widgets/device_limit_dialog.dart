@@ -86,6 +86,8 @@ class _SlotRow extends StatelessWidget {
   String get _subtitle {
     final List<String> parts = <String>[];
     if (slot.platform.isNotEmpty) parts.add(slot.platform);
+    final String node = slot.connectedNode?.label ?? '';
+    if (node.isNotEmpty) parts.add(node);
     if (slot.connected) {
       parts.add(ru ? 'подключено сейчас' : 'connected now');
     } else if (slot.lastSeen != null) {

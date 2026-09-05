@@ -208,6 +208,10 @@ export function renderConfig(base: JsonObject, policy: NodePolicy, options: Rend
 		const matcher = ruleMatcher(rule)
 		if (matcher) rules.push(reject(matcher))
 	}
+	// An empty VLESS user list must be fail-closed. Current sing-box releases
+	// reject unauthenticated VLESS at the inbound, and this inbound-scoped rule
+	// is a second guard against a future/legacy no-auth interpretation.
+	if (users.length === 0) rules.push(reject({ inbound: [inboundTag] }))
 	for (const user of users) {
 		rules.push({ auth_user: [user.name], outbound: outboundTagFor(user.name) })
 	}

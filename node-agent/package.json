@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/agent.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run --passWithNoTests && bash deploy/test-egress-guard.sh && node ../glukvpn-extension-1.5.0/server/glukvpn-browser-proxy/test-live-revocation.js",
     "enroll": "node dist/scripts/enroll.js",
     "enroll:dev": "tsx src/scripts/enroll.ts"
   },

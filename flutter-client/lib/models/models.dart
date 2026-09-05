@@ -316,6 +316,26 @@ class SubscriptionInfo {
       status == 'ACTIVE' && (expiresAt?.isAfter(DateTime.now()) ?? false);
 }
 
+class NodeLocation {
+  const NodeLocation({required this.lat, required this.lon, required this.source, required this.approximate});
+  factory NodeLocation.fromJson(Map<String, dynamic> json) => NodeLocation(lat: _asDouble(json['lat']) ?? double.nan, lon: _asDouble(json['lon']) ?? double.nan, source: _asString(json['source']), approximate: _asBool(json['approximate'], fallback: true));
+  final double lat, lon;
+  final String source;
+  final bool approximate;
+}
+
+class NodeRestriction {
+  const NodeRestriction({required this.kind, required this.value, required this.network, required this.source, required this.code, required this.label});
+  factory NodeRestriction.fromJson(Map<String, dynamic> json) => NodeRestriction(kind: _asString(json['kind']), value: _asString(json['value']), network: _asString(json['network']), source: _asString(json['source']), code: _asString(json['code']), label: _asString(json['label']));
+  final String kind, value, network, source, code, label;
+  String localizedLabel(bool russian) {
+    if (code == 'bittorrent') return russian ? 'BitTorrent ограничен' : 'BitTorrent restricted';
+    if (code == 'smtp25') return russian ? 'SMTP порт 25 закрыт' : 'SMTP port 25 blocked';
+    if (code == 'p2p_ports') return russian ? 'P2P-порты ограничены' : 'P2P ports restricted';
+    return label.replaceAll(RegExp(r'[\x00-\x1F]'), '').trim();
+  }
+}
+
 /// Client-facing node projection returned by `GET /api/nodes`.
 class VpnNodeInfo {
   const VpnNodeInfo({
@@ -341,6 +361,12 @@ class VpnNodeInfo {
     this.uptimeSeconds,
     this.agentVersion,
     this.lastHeartbeat,
+    this.maintenance = false,
+    this.publicIp = '',
+    this.gatewayPort,
+    this.gatewayHost,
+    this.location,
+    this.restrictions = const <NodeRestriction>[],
   });
 
   factory VpnNodeInfo.fromJson(Map<String, dynamic> json) => VpnNodeInfo(
@@ -354,6 +380,9 @@ class VpnNodeInfo {
         subtitle: _asString(json['subtitle']),
         pingTarget: _asString(json['pingTarget']),
         host: _asString(json['host']),
+        publicIp: _asString(json['publicIp']),
+        gatewayPort: json['gatewayPort'] == null ? null : _asInt(json['gatewayPort']),
+        gatewayHost: _asStringOrNull(json['gatewayHost']),
         port: _asInt(json['port'], 51820),
         status: _asString(json['status'], 'OFFLINE'),
         online: _asBool(json['online']),
@@ -366,6 +395,11 @@ class VpnNodeInfo {
         uptimeSeconds: json['uptimeSeconds'] == null ? null : _asInt(json['uptimeSeconds']),
         agentVersion: _asStringOrNull(json['agentVersion']),
         lastHeartbeat: _asDate(json['lastHeartbeat']),
+        maintenance: _asBool(json['maintenance']) || _asString(json['status']) == 'MAINTENANCE',
+        location: json['location'] == null ? null : NodeLocation.fromJson(_asMap(json['location'])),
+        restrictions: json['restrictions'] is List
+            ? (json['restrictions'] as List).map((e) => NodeRestriction.fromJson(_asMap(e))).toList()
+            : const <NodeRestriction>[],
       );
 
   final String id;
@@ -388,6 +422,9 @@ class VpnNodeInfo {
   final String pingTarget;
 
   final String host;
+  final String publicIp;
+  final int? gatewayPort;
+  final String? gatewayHost;
   final int port;
 
   /// PENDING | ONLINE | OFFLINE | DISABLED, as computed by the control plane.
@@ -402,6 +439,9 @@ class VpnNodeInfo {
   final int? uptimeSeconds;
   final String? agentVersion;
   final DateTime? lastHeartbeat;
+  final bool maintenance;
+  final NodeLocation? location;
+  final List<NodeRestriction> restrictions;
 
   String get endpoint => '$host:$port';
 
@@ -482,6 +522,7 @@ class DeviceInfo {
 
   factory DeviceInfo.fromJson(Map<String, dynamic> json) {
     final Map<String, dynamic> node = _asMap(json['connectedNode']);
+    final nodeLabel = <String>[_asString(node['city']), _asString(node['country'])].where((s) => s.isNotEmpty).join(', ');
     return DeviceInfo(
       id: _asString(json['id']),
       deviceName: _asString(json['deviceName']),
@@ -491,7 +532,7 @@ class DeviceInfo {
       lastSeen: _asDate(json['lastSeen']),
       isCurrent: _asBool(json['isCurrent']),
       connected: _asBool(json['connected']),
-      connectedNodeName: _asStringOrNull(node['name']),
+      connectedNodeName: nodeLabel.isNotEmpty ? nodeLabel : _asStringOrNull(node['name']),
     );
   }
 
@@ -673,6 +714,11 @@ class VpnStatusInfo {
     required this.subscriptionActive,
     this.session,
     this.serverTime,
+    this.registrationEnabled = true,
+    this.maintenance = false,
+    this.retryAfterSec = 30,
+    this.lastClosedReason,
+    this.nodeMaintenance = false,
   });
 
   factory VpnStatusInfo.fromJson(Map<String, dynamic> json) {
@@ -683,6 +729,11 @@ class VpnStatusInfo {
       subscriptionActive: _asBool(json['subscriptionActive'], fallback: true),
       session: session == null ? null : VpnSessionInfo.fromJson(_asMap(session)),
       serverTime: _asDate(json['serverTime']),
+      registrationEnabled: _asMap(json['service'])['registrationEnabled'] != false,
+      maintenance: _asBool(_asMap(json['service'])['maintenance']),
+      retryAfterSec: _asInt(_asMap(json['service'])['retryAfterSec'], 30),
+      lastClosedReason: _asStringOrNull(json['lastClosedReason']),
+      nodeMaintenance: _asBool(json['nodeMaintenance']),
     );
   }
 
@@ -693,6 +744,11 @@ class VpnStatusInfo {
   final bool subscriptionActive;
   final VpnSessionInfo? session;
   final DateTime? serverTime;
+  final bool registrationEnabled;
+  final bool maintenance;
+  final int retryAfterSec;
+  final String? lastClosedReason;
+  final bool nodeMaintenance;
 }
 
 /// What the server hands back when a client starts a link sign-in.

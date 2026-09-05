@@ -25,6 +25,9 @@ import { parseCidr } from "../lib/ip"
 import { prisma } from "../prisma"
 import { enqueueCommand, hasOpenCommand } from "./nodeCommands"
 import { isHeartbeatFresh } from "./nodes"
+import { BUILTIN_RULES } from "./nodeRestrictions"
+import { serviceStatus } from "./serviceControl"
+export { BUILTIN_RULES } from "./nodeRestrictions"
 
 /** sing-box sniffer protocols a PROTOCOL rule may name. */
 export const SNIFFED_PROTOCOLS = [
@@ -39,39 +42,6 @@ export const SNIFFED_PROTOCOLS = [
 	"http",
 	"tls",
 ] as const
-
-/** Rules the agent always emits, shown in the panel as read-only. */
-export const BUILTIN_RULES: ReadonlyArray<{
-	kind: BlockRuleKind
-	value: string
-	network: string | null
-	note: string
-}> = [
-	{
-		kind: "PROTOCOL",
-		value: "bittorrent",
-		network: null,
-		note: "BitTorrent / P2P — abuse letters from German rights holders",
-	},
-	{
-		kind: "PORT",
-		value: "25",
-		network: "tcp",
-		note: "Outbound SMTP — keeps the node's IP out of spam blocklists",
-	},
-	{
-		kind: "PORT_RANGE",
-		value: "6881:6999",
-		network: null,
-		note: "Common BitTorrent client/DHT ports (encrypted swarms evade the sniffer)",
-	},
-	{
-		kind: "PORT",
-		value: "6969",
-		network: null,
-		note: "Classic BitTorrent tracker port",
-	},
-]
 
 const DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i
 const PORT_RE = /^\d{1,5}$/
@@ -156,6 +126,7 @@ export function normalizeRule(input: {
 export type PolicyUser = { name: string; uuid: string; flow: string }
 
 export type NodePolicy = {
+	maintenance: boolean
 	version: string
 	generatedAt: string
 	users: PolicyUser[]
@@ -179,6 +150,7 @@ export function deviceIdFromUserName(name: string): string | null {
 
 function policyVersion(document: Omit<NodePolicy, "version" | "generatedAt">): string {
 	const canonical = JSON.stringify({
+		maintenance: document.maintenance,
 		users: [...document.users].sort((a, b) => a.name.localeCompare(b.name)),
 		legacyUser: document.legacyUser,
 		rules: [...document.rules].sort((a, b) =>
@@ -200,6 +172,7 @@ function policyVersion(document: Omit<NodePolicy, "version" | "generatedAt">): s
 export async function buildNodePolicy(node: VpnNode): Promise<NodePolicy> {
 	const flow = (node.gatewayFlow ?? config.VLESS_FLOW).trim() || "xtls-rprx-vision"
 	const now = new Date()
+	const maintenance = (await serviceStatus()).maintenance || Boolean(node.maintenance) || node.status === "DISABLED"
 
 	const [devices, rows] = await Promise.all([
 		prisma.device.findMany({
@@ -242,8 +215,9 @@ export async function buildNodePolicy(node: VpnNode): Promise<NodePolicy> {
 	}))
 
 	const body = {
-		users,
-		legacyUser,
+		maintenance,
+		users: maintenance ? [] : users,
+		legacyUser: maintenance ? null : legacyUser,
 		rules,
 		builtinRules,
 		domainStats: config.DOMAIN_STATS_ENABLED,

@@ -105,6 +105,7 @@ const en = {
 	'node.fastest': 'Fastest server',
 	'node.load': 'load {n}%',
 	'node.offline': 'offline',
+	'node.maintenance': 'maintenance',
 	'node.none': 'No server selected',
 	'node.change': 'Change',
 
@@ -301,6 +302,17 @@ const en = {
 
 	'common.none': 'none',
 	'common.retry': 'Retry',
+	'limit.title': 'Device limit reached',
+	'limit.body': 'Release one device slot to register this browser and continue.',
+	'limit.release': 'Release',
+	'limit.chooseServer': 'Choose server',
+	'limit.stillFull': 'The account is still at its device limit.',
+	'maintenance.title': 'Scheduled maintenance',
+	'maintenance.body': 'The tunnel is paused safely. GlukVPN will retry in about {seconds} seconds.',
+	'map.active': '{count} active · {placed} shown',
+	'restriction.bittorrent': 'BitTorrent blocked',
+	'restriction.smtp25': 'SMTP port 25 blocked',
+	'restriction.p2p_ports': 'P2P ports blocked',
 	'common.cancel': 'Cancel',
 }
 
@@ -336,6 +348,7 @@ const ru = {
 	'node.fastest': 'Самый быстрый сервер',
 	'node.load': 'загрузка {n}%',
 	'node.offline': 'недоступен',
+	'node.maintenance': 'обслуживание',
 	'node.none': 'Сервер не выбран',
 	'node.change': 'Сменить',
 
@@ -514,6 +527,17 @@ const ru = {
 
 	'common.none': 'нет',
 	'common.retry': 'Повторить',
+	'limit.title': 'Достигнут лимит устройств',
+	'limit.body': 'Освободите одно место, чтобы зарегистрировать браузер и продолжить.',
+	'limit.release': 'Освободить',
+	'limit.chooseServer': 'Выбрать сервер',
+	'limit.stillFull': 'Лимит устройств всё ещё достигнут.',
+	'maintenance.title': 'Технические работы',
+	'maintenance.body': 'Туннель безопасно приостановлен. Повторная попытка примерно через {seconds} сек.',
+	'map.active': 'Активных: {count} · показано: {placed}',
+	'restriction.bittorrent': 'BitTorrent заблокирован',
+	'restriction.smtp25': 'SMTP-порт 25 заблокирован',
+	'restriction.p2p_ports': 'P2P-порты заблокированы',
 	'common.cancel': 'Отмена',
 }
 
@@ -565,7 +589,7 @@ export function errorKeyFor(error) {
 	if (status === 401) return 'err.unauthorized'
 	if (status === 403) return 'err.forbidden'
 	if (status === 404) return 'err.notFound'
-	if (status === 409) return 'err.tooManyDevices'
+	if (status === 409) return 'err.conflict'
 	if (status === 429) return 'err.rateLimited'
 	if (status === 503) return 'err.maintenance'
 	if (status >= 500) return 'err.server'

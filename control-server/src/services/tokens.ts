@@ -1,4 +1,4 @@
-import type { Device, User } from "@prisma/client"
+import type { Device, RefreshToken, User } from "@prisma/client"
 import type { FastifyInstance } from "fastify"
 import { config } from "../config"
 import { generateSecret, hashSecret } from "../lib/crypto"
@@ -27,7 +27,7 @@ export async function issueTokens(
 	const accessToken = app.jwt.sign(
 		{
 			sub: user.id,
-			...(device ? { did: device.id } : {}),
+			...(device ? { did: device.id, dv: device.tokenVersion ?? 0 } : {}),
 			adm: user.isAdmin,
 			typ: "access",
 		},
@@ -42,6 +42,7 @@ export async function issueTokens(
 		data: {
 			userId: user.id,
 			deviceId: device?.id ?? null,
+			deviceTokenVersion: device?.tokenVersion ?? null,
 			// Only the HMAC hash is stored.
 			tokenHash: hashSecret(rawRefreshToken),
 			expiresAt: refreshTokenExpiresAt,
@@ -76,7 +77,16 @@ export async function rotateRefreshToken(
 	})
 	if (!existing) throw unauthorized("Invalid refresh token")
 
+	// Reject already-invalid device credentials before theft escalation: a signed-out
+	// device must not be able to revoke every other device by replaying its old token.
+	if (existing.expiresAt.getTime() <= Date.now()) throw unauthorized("Refresh token expired")
+	if (existing.user.status !== "ACTIVE") throw forbidden("User is disabled")
+	if (existing.device && (existing.deviceTokenVersion ?? 0) !== (existing.device.tokenVersion ?? 0)) throw unauthorized("Device credentials revoked")
+	if (existing.device && existing.device.status !== "ACTIVE") throw forbidden("Device is revoked")
+
 	if (existing.revokedAt) {
+		// The grace window is only for rotation, never for explicit revocation.
+		if (!existing.replacedById) throw unauthorized("Refresh token revoked")
 		const isWithinGrace = (Date.now() - existing.revokedAt.getTime()) < ROTATION_GRACE_MS
 		if (!isWithinGrace) {
 			await prisma.refreshToken.updateMany({
@@ -85,11 +95,18 @@ export async function rotateRefreshToken(
 			})
 			throw unauthorized("Refresh token already used")
 		}
-	}
-	if (existing.expiresAt.getTime() <= Date.now()) throw unauthorized("Refresh token expired")
-	if (existing.user.status !== "ACTIVE") throw forbidden("User is disabled")
-	if (existing.device && existing.device.status !== "ACTIVE") {
-		throw forbidden("Device is revoked")
+		// A recently rotated token is usable only while a successor is still valid.
+		// Explicit logout/revoke kills the leaf and cannot be bypassed via grace.
+		let replacementId: string | null = existing.replacedById
+		let activeSuccessor = false
+		for (let depth = 0; depth < 16 && replacementId; depth++) {
+			const next: RefreshToken | null = await prisma.refreshToken.findUnique({ where: { id: replacementId } })
+			if (!next || next.userId !== existing.userId || next.deviceId !== existing.deviceId || next.expiresAt.getTime() <= Date.now()) break
+			if (!next.revokedAt) { activeSuccessor = true; break }
+			if (!next.replacedById || Date.now() - next.revokedAt.getTime() >= ROTATION_GRACE_MS) break
+			replacementId = next.replacedById
+		}
+		if (!activeSuccessor) throw unauthorized("Refresh token revoked")
 	}
 
 	const issued = await issueTokens(app, existing.user, existing.device)

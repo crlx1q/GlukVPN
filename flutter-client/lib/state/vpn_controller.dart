@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../config.dart';
 import '../desktop/logic/node_selector.dart';
 import '../models/models.dart';
+import '../models/account_insights.dart';
 import '../services/api_client.dart';
 import '../services/ping_service.dart';
 import '../services/tunnel_notification.dart';
@@ -46,6 +47,9 @@ class VpnController extends ChangeNotifier {
   Timer? _pingTimer;
   Timer? _tickTimer;
   Timer? _watchdog;
+  Timer? _maintenanceRetry;
+  bool _connectionIntent = false;
+  bool _serviceMaintenance = false;
 
   List<VpnNodeInfo> _nodes = const <VpnNodeInfo>[];
   VpnNodeInfo? _selectedNode;
@@ -76,6 +80,8 @@ class VpnController extends ChangeNotifier {
   DateTime? _connectedSince;
   Duration _connectedFor = Duration.zero;
 
+  ApiClient get api => _api;
+  VpnService get vpnService => _vpn;
   List<VpnNodeInfo> get nodes => _nodes;
   VpnNodeInfo? get selectedNode => _selectedNode;
   VpnUiState get state => _state;
@@ -112,6 +118,7 @@ class VpnController extends ChangeNotifier {
   bool get loadingNodes => _loadingNodes;
   bool get busy => _busy;
   bool get peerReady => _peerReady;
+  bool get serviceMaintenance => _serviceMaintenance;
   Duration get connectedFor => _connectedFor;
 
   /// Which language the notification in the shade is written in.
@@ -188,6 +195,8 @@ class VpnController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _stopTimers();
+    _maintenanceRetry?.cancel();
+    _maintenanceRetry = null;
     _stageSubscription?.cancel();
     _stageSubscription = null;
     _shadeSubscription?.cancel();
@@ -250,7 +259,7 @@ class VpnController extends ChangeNotifier {
 
   // --- connect / disconnect ------------------------------------------------
 
-  Future<void> connect() async {
+  Future<void> connect({bool automatic = false}) async {
     if (_busy || _state == VpnUiState.connecting || _state == VpnUiState.connected) {
       return;
     }
@@ -267,6 +276,13 @@ class VpnController extends ChangeNotifier {
       return;
     }
 
+    if (!automatic) _connectionIntent = true;
+    if (_serviceMaintenance) {
+      _notice = _russian ? 'Сервис временно на техническом обслуживании.' : 'The service is temporarily under maintenance.';
+      _scheduleMaintenanceRetry(30);
+      _safeNotify();
+      return;
+    }
     _busy = true;
     _error = null;
     _notice = null;
@@ -323,7 +339,13 @@ class VpnController extends ChangeNotifier {
       _startTimers();
       _armConnectWatchdog();
     } on ApiException catch (error) {
-      _error = error.message;
+      if (error.code == 'maintenance') {
+        _serviceMaintenance = true;
+        _notice = _russian ? 'Идут технические работы. Подключение возобновится автоматически.' : 'Maintenance is in progress. The connection will resume automatically.';
+        _scheduleMaintenanceRetry(error.retryAfterSec ?? (error.details?['retryAfterSec'] as num?)?.toInt() ?? 30);
+      } else {
+        _error = error.message;
+      }
       await _rollbackConnect();
     } catch (error) {
       _error = 'Could not start the tunnel: $error';
@@ -334,8 +356,13 @@ class VpnController extends ChangeNotifier {
     }
   }
 
-  Future<void> disconnect() async {
+  Future<void> disconnect({bool userInitiated = true}) async {
     if (_state == VpnUiState.disconnecting) return;
+    if (userInitiated) {
+      _connectionIntent = false;
+      _maintenanceRetry?.cancel();
+      _maintenanceRetry = null;
+    }
 
     _state = VpnUiState.disconnecting;
     _busy = true;
@@ -452,6 +479,19 @@ class VpnController extends ChangeNotifier {
       final VpnStatusInfo status = await _api.status();
       final TunnelStage stage = await _vpn.currentStage();
       _peerReady = status.peerReady;
+      _serviceMaintenance = status.maintenance || status.nodeMaintenance;
+      if (_serviceMaintenance && stage.isConnected) {
+        _notice = _russian ? 'Сервис остановил туннель на время технических работ.' : 'The service stopped the tunnel for maintenance.';
+        await _vpn.stop();
+        _resetConnectionState();
+        _state = VpnUiState.disconnected;
+        _scheduleMaintenanceRetry(status.retryAfterSec);
+        _safeNotify();
+        return;
+      }
+      if (!_serviceMaintenance && _connectionIntent && _state == VpnUiState.disconnected && !initial) {
+        unawaited(connect(automatic: true));
+      }
       if (status.session != null) _session = status.session;
 
       if (status.connected && stage.isConnected) {
@@ -495,6 +535,34 @@ class VpnController extends ChangeNotifier {
       debugPrint('vpn: status refresh failed: ${error.message}');
     }
     _safeNotify();
+  }
+
+  void handleServiceStatus(ServiceStatus status) {
+    final wasMaintenance = _serviceMaintenance;
+    _serviceMaintenance = status.maintenance;
+    if (status.maintenance) {
+      if (_state == VpnUiState.connected) unawaited(disconnect(userInitiated: false));
+      _scheduleMaintenanceRetry(status.retryAfterSec);
+    } else if (wasMaintenance && _connectionIntent && _state == VpnUiState.disconnected) {
+      _maintenanceRetry?.cancel();
+      unawaited(connect(automatic: true));
+    }
+    _safeNotify();
+  }
+
+  void _scheduleMaintenanceRetry(int seconds) {
+    _maintenanceRetry?.cancel();
+    if (!_connectionIntent || _disposed) return;
+    _maintenanceRetry = Timer(Duration(seconds: seconds.clamp(5, 300).toInt()), () async {
+      if (!_connectionIntent || _disposed) return;
+      try {
+        final status = await _api.serviceStatus();
+        handleServiceStatus(status);
+        if (status.maintenance) _scheduleMaintenanceRetry(status.retryAfterSec);
+      } catch (_) {
+        _scheduleMaintenanceRetry(30);
+      }
+    });
   }
 
   // --- timers --------------------------------------------------------------

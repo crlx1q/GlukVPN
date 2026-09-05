@@ -755,6 +755,231 @@ td.actions {
 	background: rgba(255, 107, 107, 0.12);
 }
 
+/* ---------- service controls and node policy ---------- */
+
+.service-controls {
+	border-color: rgba(139, 92, 246, 0.34);
+}
+
+.service-scope {
+	margin: 4px 0 0;
+}
+
+.service-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 11px;
+}
+
+.service-control {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 18px;
+	min-height: 74px;
+	padding: 13px 14px;
+	border: 1px solid var(--stroke);
+	border-radius: 14px;
+	background: var(--cell);
+	cursor: pointer;
+	text-transform: none;
+	letter-spacing: normal;
+}
+
+.service-control.is-risk {
+	border-color: rgba(255, 107, 107, 0.28);
+}
+
+.service-copy {
+	display: grid;
+	gap: 3px;
+}
+
+.service-copy strong {
+	font-size: 13px;
+	color: var(--text-0);
+}
+
+.service-copy > span {
+	font-size: 12px;
+	font-weight: 400;
+	color: var(--text-1);
+}
+
+.switch {
+	appearance: none;
+	position: relative;
+	width: 46px;
+	height: 26px;
+	flex: 0 0 46px;
+	margin: 0;
+	border: 1px solid var(--stroke);
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.08);
+	cursor: pointer;
+	transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.switch::after {
+	content: "";
+	position: absolute;
+	top: 3px;
+	left: 3px;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: var(--text-1);
+	transition: transform 0.16s ease, background 0.16s ease;
+}
+
+.switch:checked {
+	background: rgba(139, 92, 246, 0.34);
+	border-color: rgba(139, 92, 246, 0.72);
+}
+
+.service-control.is-risk .switch:checked {
+	background: rgba(255, 107, 107, 0.28);
+	border-color: rgba(255, 107, 107, 0.7);
+}
+
+.switch:checked::after {
+	transform: translateX(20px);
+	background: #fff;
+}
+
+.switch:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+	outline: 2px solid var(--violet-light);
+	outline-offset: 2px;
+}
+
+.switch:disabled {
+	opacity: 0.48;
+	cursor: wait;
+}
+
+.service-error {
+	margin: 10px 2px 0;
+	font-size: 12px;
+	color: var(--danger);
+}
+
+.policy-state {
+	display: grid;
+	gap: 2px;
+	min-width: 190px;
+}
+
+.policy-state strong {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-0);
+}
+
+.policy-state span {
+	font-size: 10.5px;
+	color: var(--ok);
+}
+
+.policy-state.is-queued span {
+	color: var(--amber);
+}
+
+.restriction-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 5px;
+	max-width: 360px;
+	white-space: normal;
+}
+
+.restriction-badge {
+	display: inline-flex;
+	align-items: center;
+	min-height: 24px;
+	padding: 2px 8px;
+	border: 1px solid rgba(240, 181, 103, 0.36);
+	border-radius: 999px;
+	background: rgba(240, 181, 103, 0.1);
+	color: var(--amber);
+	font-size: 10.5px;
+	font-weight: 600;
+}
+
+.restriction-badge.is-builtin {
+	border-color: rgba(139, 92, 246, 0.34);
+	background: rgba(139, 92, 246, 0.1);
+	color: var(--violet-light);
+}
+
+.pill.maintenance {
+	color: var(--amber);
+	border-color: rgba(240, 181, 103, 0.45);
+	background: rgba(240, 181, 103, 0.12);
+}
+
+.confirm-dialog {
+	width: min(500px, calc(100vw - 32px));
+	padding: 0;
+	border: 1px solid rgba(255, 107, 107, 0.45);
+	border-radius: 18px;
+	background: #120e1d;
+	color: var(--text-0);
+	box-shadow: 0 24px 80px rgba(0, 0, 0, 0.72);
+}
+
+.confirm-dialog::backdrop {
+	background: rgba(2, 1, 5, 0.78);
+	backdrop-filter: blur(5px);
+}
+
+.confirm-dialog form {
+	margin: 0;
+	padding: 24px;
+	gap: 10px;
+}
+
+.confirm-dialog h2 {
+	margin: 0;
+	font-size: 20px;
+	line-height: 1.3;
+}
+
+.confirm-dialog p {
+	margin: 0;
+	color: var(--text-1);
+	font-size: 13px;
+}
+
+.dialog-icon {
+	display: grid;
+	place-items: center;
+	width: 38px;
+	height: 38px;
+	margin-bottom: 4px;
+	border-radius: 12px;
+	background: rgba(255, 107, 107, 0.14);
+	border: 1px solid rgba(255, 107, 107, 0.4);
+	color: var(--danger);
+	font-size: 20px;
+	font-weight: 800;
+}
+
+.dialog-scope {
+	padding: 9px 11px;
+	border-radius: 10px;
+	background: rgba(255, 255, 255, 0.04);
+	border: 1px solid var(--stroke);
+}
+
+.dialog-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 8px;
+}
+
 /* ---------- oracle cloud egress budget ---------- */
 
 .egress {
@@ -1031,6 +1256,23 @@ td.actions {
 
 	.topbar {
 		padding: 10px 14px;
+	}
+
+	.service-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.service-control {
+		min-height: 84px;
+	}
+
+	.dialog-actions {
+		flex-direction: column-reverse;
+	}
+
+	.dialog-actions button {
+		width: 100%;
+		min-height: 44px;
 	}
 
 	.check-detail {

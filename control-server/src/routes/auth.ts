@@ -14,6 +14,7 @@ import {
 import { clientIp, getAuthUser, requireUser } from "../middleware/auth"
 import { prisma } from "../prisma"
 import { config } from "../config"
+import { requireRegistrationEnabled } from "../services/serviceControl"
 import { latestSubscription, subscriptionPayload, userPayload } from "../services/accountView"
 import { refreshUserOrigin } from "../services/geo"
 import { googleConfigured, verifyGoogleIdToken } from "../services/googleAuth"
@@ -271,9 +272,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 			}
 
 			// 3. New person.
-			if (!config.SELF_REGISTRATION_ENABLED) {
-				throw forbidden("Sign-up is closed on this server")
-			}
+			await requireRegistrationEnabled()
 			if (config.GOOGLE_REQUIRE_TELEGRAM) {
 				if (!telegramConfigured()) throw serviceUnavailable("Sign-up is temporarily unavailable")
 				const started = await startGoogleRegistration({

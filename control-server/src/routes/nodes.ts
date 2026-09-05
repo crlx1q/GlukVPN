@@ -3,7 +3,7 @@ import { z } from "zod"
 import { badRequest, notFound } from "../lib/errors"
 import { requireUser } from "../middleware/auth"
 import { prisma } from "../prisma"
-import { listSelectableNodes, toPublicNode } from "../services/nodes"
+import { listSelectableNodes, loadPublicNodes } from "../services/nodes"
 
 const IdParams = z.object({ id: z.string().uuid("Invalid node id") })
 
@@ -11,7 +11,7 @@ const IdParams = z.object({ id: z.string().uuid("Invalid node id") })
 export async function nodeCatalogRoutes(app: FastifyInstance): Promise<void> {
 	app.get("/api/nodes", { preHandler: requireUser }, async (_request, reply) => {
 		const nodes = await listSelectableNodes()
-		return reply.send({ nodes: nodes.map(toPublicNode) })
+		return reply.send({ nodes: await loadPublicNodes(nodes) })
 	})
 
 	app.get("/api/nodes/:id", { preHandler: requireUser }, async (request, reply) => {
@@ -20,6 +20,6 @@ export async function nodeCatalogRoutes(app: FastifyInstance): Promise<void> {
 
 		const node = await prisma.vpnNode.findUnique({ where: { id: parsed.data.id } })
 		if (!node || node.status === "DISABLED") throw notFound("Node not found")
-		return reply.send({ node: toPublicNode(node) })
+		return reply.send({ node: (await loadPublicNodes([node]))[0] })
 	})
 }

@@ -7,8 +7,10 @@ import '../../models/device_limit.dart';
 import '../../models/models.dart';
 import '../../services/ping_service.dart';
 import '../../state/auth_controller.dart';
+import '../../state/account_insights_controller.dart';
 import '../../theme/tokens.dart';
 import '../../utils/format.dart';
+import '../../widgets/active_account_map.dart';
 import '../../utils/geo.dart';
 import '../i18n/desktop_strings.dart';
 import '../logic/connection_phase.dart';
@@ -62,8 +64,11 @@ class DesktopHomeScreen extends StatefulWidget {
   State<DesktopHomeScreen> createState() => _DesktopHomeScreenState();
 }
 
-class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
+class _DesktopHomeScreenState extends State<DesktopHomeScreen> with WidgetsBindingObserver {
   Timer? _tick;
+  late AccountInsightsController _accountMap;
+  void _onAccountMapChanged() { if (mounted) setState(() {}); }
+  @override void didChangeAppLifecycleState(AppLifecycleState state) => _accountMap.setVisible(state == AppLifecycleState.resumed);
 
   /// The device-limit picker is a modal, so it must be pushed exactly once per
   /// verdict: the controller notifies on every status poll, and without this
@@ -77,6 +82,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   @override
   void initState() {
     super.initState();
+    _accountMap = AccountInsightsController(widget.vpn.api)..addListener(_onAccountMapChanged)..setVisible(true);
+    WidgetsBinding.instance.addObserver(this);
     // The duration readout has to advance once a second; the controller only
     // notifies on real state changes, which is correct but not enough here.
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -97,6 +104,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   @override
   void dispose() {
     _tick?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _accountMap.removeListener(_onAccountMapChanged);
+    _accountMap.dispose();
     widget.vpn.removeListener(_onVpnChanged);
     super.dispose();
   }
@@ -178,6 +188,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         final bool wide = constraints.maxWidth >= 700;
 
         final Widget mapCard = _MapCard(
+          accountMap: _accountMap,
           vpn: vpn,
           strings: s,
           reduceMotion: widget.reduceMotion,
@@ -254,7 +265,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 // ---------------------------------------------------------------------------
 
 class _MapCard extends StatelessWidget {
+  final AccountInsightsController accountMap;
   const _MapCard({
+    required this.accountMap,
     required this.vpn,
     required this.strings,
     required this.reduceMotion,
@@ -338,10 +351,11 @@ class _MapCard extends StatelessWidget {
                     selfLocation: self,
                     serverPoint: serverPoint,
                     allNodes: nodePoints,
+                    accountArcs: accountMapArcs(accountMap.snapshot),
                     height: c.maxHeight,
                     // Fills the card instead of leaving empty bands above and
                     // below a thin strip of dots.
-                    zoomBoost: 1.62,
+                    zoomBoost: flatMap ? 1.05 : 0.95,
                     forceFlat: flatMap,
                   );
                 },
@@ -419,6 +433,24 @@ class _MapCard extends StatelessWidget {
               ),
             ),
 
+            Positioned(
+              top: 14, right: 14,
+              child: Tooltip(
+                message: s.isRussian ? 'Подключения аккаунта' : 'Account connections',
+                child: TextButton.icon(
+                  icon: const Icon(Icons.hub_outlined, size: 16),
+                  label: Text(accountMap.snapshot == null ? '…' : '${accountMap.snapshot!.activeTunnels}/${accountMap.snapshot!.maxDevices}'),
+                  onPressed: () => showModalBottomSheet<void>(
+                    context: context, isScrollControlled: true,
+                    builder: (_) => SafeArea(child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: ActiveAccountMap(api: vpn.api, controller: accountMap, russian: s.isRussian, reduceMotion: reduceMotion),
+                    )),
+                  ),
+                ),
+              ),
+            ),
+
             // Globe <-> flat map, bottom right.
             //
             // ROUND 28. Connecting folds the world into a ball, which is a
@@ -471,8 +503,8 @@ class _MapModeButtonState extends State<_MapModeButton> {
     // the icon matches it. A globe icon on a globe would be a status readout,
     // not a control.
     final String label = widget.russian
-        ? (widget.flat ? 'Показать глобус' : 'Показать плоскую карту')
-        : (widget.flat ? 'Show the globe' : 'Show the flat map');
+        ? (widget.flat ? 'Свернуть в планету' : 'Развернуть карту')
+        : (widget.flat ? 'Collapse to planet' : 'Expand world map');
 
     return Tooltip(
       message: label,

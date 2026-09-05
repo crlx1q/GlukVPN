@@ -70,7 +70,7 @@
      Восстановление пароля сюда НЕ входит осознанно — пароль меняют тому
      аккаунту, в который потом будут входить, то есть на своём канале.  */
   function baseFor(path) {
-    return /^\/api\/auth\/(register|config)\b/.test(path) ? PROD_BASE : BASE;
+    return (/^\/api\/auth\/(register|config)\b/.test(path) || path === "/api/service/status") ? PROD_BASE : BASE;
   }
 
   var TIMEOUT = API.timeoutMs || 12000;
@@ -101,6 +101,7 @@
           var e = new Error(err.message || t("Запрос не выполнен.", "Request failed."));
           e.status = res.status;
           e.code = err.code || "http_" + res.status;
+          e.details = err.details || null;
           e.retryAfter = parseInt(res.headers.get("retry-after") || "", 10) || null;
           throw e;
         });
@@ -120,6 +121,10 @@
 
   function human(e) {
     if (!e) return t("Не получилось. Попробуйте ещё раз.", "Something went wrong. Try again.");
+    if (e.code === "registration_disabled") {
+      closeRegistration(t("Регистрация временно закрыта сервисом.", "Registration is temporarily disabled by the service."));
+      return t("Регистрация временно закрыта сервисом.", "Registration is temporarily disabled by the service.");
+    }
     /* Капча живёт недолго: пока человек заполняет форму, токен успевает
        протухнуть, и сервер отказывает на anti-bot проверке. Раньше это
        выглядело как «непонятная ошибка» — теперь причина названа, а код
@@ -141,7 +146,7 @@
     if (e.status >= 500) {
       return t("Сервис временно недоступен. Попробуйте позже.", "Service is temporarily unavailable.");
     }
-    return e.message || t("Не получилось.", "Something went wrong.");
+    return t("Не получилось. Проверьте данные и повторите.", "Something went wrong. Check your details and retry.");
   }
 
   /* ----------------------------------------------------------------- captcha */
@@ -656,6 +661,13 @@
     notice.hidden = false;
     step("closed");
   }
+
+  /* Общий статус сервиса закрывает все варианты регистрации до отправки формы. */
+  request("/api/service/status").then(function (status) {
+    if (status && status.registrationEnabled === false) {
+      closeRegistration(t("Регистрация временно закрыта сервисом.", "Registration is temporarily disabled by the service."));
+    }
+  }, function () { /* Ошибка статуса не подменяет предметную ошибку регистрации. */ });
 
   /* Сервер — истина в последней инстанции: если регистрация закрыта
      или бот не настроен, честнее сказать это сразу, а не на шаге 3. */

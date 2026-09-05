@@ -53,6 +53,9 @@ export async function requireUser(request: FastifyRequest): Promise<void> {
 		device = await prisma.device.findUnique({ where: { id: payload.did } })
 		if (!device || device.userId !== user.id) throw unauthorized("Unknown device")
 		if (device.status !== "ACTIVE") throw forbidden("Device is revoked")
+		if (!Number.isInteger(payload.dv ?? 0) || (payload.dv ?? 0) !== (device.tokenVersion ?? 0)) {
+			throw unauthorized("Device credentials revoked")
+		}
 	}
 
 	request.authUser = { user, device }

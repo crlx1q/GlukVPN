@@ -18,6 +18,9 @@ const state = {
 	userQuery: "",
 	searchTimer: null,
 	canDeploy: false,
+	channel: "current",
+	serviceSettings: null,
+	serviceBusy: false,
 	// Client Bug Logs filter: "" = every platform.
 	errorPlatform: "",
 }
@@ -80,6 +83,7 @@ async function request(path, options = {}, isRetry = false) {
 
 		const error = new Error(message)
 		error.status = response.status
+		error.code = payload && payload.error && payload.error.code
 		throw error
 	}
 	return payload
@@ -234,6 +238,7 @@ async function loadChannelBadge() {
 		if (!response.ok) throw new Error("version unavailable")
 		const data = await response.json()
 		const isBeta = data.channel === "beta"
+		state.channel = String(data.channel || "current").toLowerCase()
 		const badge = el("channel-badge")
 		badge.textContent = `${String(data.channel || "?").toUpperCase()} ${data.version || ""}`.trim()
 		badge.title = data.release ? `release ${data.release}` : ""
@@ -247,6 +252,117 @@ async function loadChannelBadge() {
 }
 
 /* ---------------- rendering ---------------- */
+
+function channelScopeLabel() {
+	if (state.channel === "beta") return "BETA only"
+	if (state.channel === "prod" || state.channel === "production") return "PRODUCTION only"
+	return "this control plane only"
+}
+
+function setServiceBusy(isBusy) {
+	state.serviceBusy = isBusy
+	el("service-controls").setAttribute("aria-busy", String(isBusy))
+	el("registration-enabled").disabled = isBusy || !state.serviceSettings
+	el("emergency-maintenance").disabled = isBusy || !state.serviceSettings
+}
+
+function renderServiceSettings(settings) {
+	state.serviceSettings = settings
+	el("registration-enabled").checked = Boolean(settings.registrationEnabled)
+	el("emergency-maintenance").checked = Boolean(settings.maintenance)
+	el("service-scope").textContent = `${channelScopeLabel()}. These switches do not change the other channel.`
+	el("service-updated").textContent = settings.updatedAt ? `updated ${ago(settings.updatedAt)} · v${settings.version}` : `version ${settings.version}`
+	el("service-error").hidden = true
+	setServiceBusy(false)
+}
+
+async function loadServiceSettings() {
+	try {
+		renderServiceSettings(await request("/api/admin/service-settings"))
+		return true
+	} catch (error) {
+		state.serviceSettings = null
+		setServiceBusy(true)
+		const box = el("service-error")
+		box.textContent = error.status === 404
+			? "Service controls are not available on this control server yet."
+			: `Could not load service controls: ${error.message}`
+		box.hidden = false
+		return false
+	}
+}
+
+async function mutateServiceSettings(changes) {
+	if (!state.serviceSettings || state.serviceBusy) return
+	const previousVersion = state.serviceSettings.version
+	setServiceBusy(true)
+	try {
+		const result = await request("/api/admin/service-settings", {
+			method: "POST",
+			body: { ...changes, expectedVersion: previousVersion },
+		})
+		renderServiceSettings(result)
+		const queued = Number(result.policySyncQueued || 0)
+		const closed = Number(result.closedSessions || 0)
+		const action = Object.hasOwn(changes, "maintenance")
+			? `Maintenance ${changes.maintenance ? "enabled" : "disabled"}`
+			: `Registration ${changes.registrationEnabled ? "enabled" : "disabled"}`
+		const effects = []
+		if (changes.maintenance) effects.push(`${closed} active session${closed === 1 ? "" : "s"} closed`)
+		if (queued > 0) effects.push(`policy update queued for ${queued} node${queued === 1 ? "" : "s"}; nodes apply it on next poll`)
+		toast(`${action} on ${channelScopeLabel()}${effects.length ? `. ${effects.join("; ")}.` : "."}`)
+	} catch (error) {
+		const conflict = error.status === 409 && error.code === "settings_conflict"
+		const reloaded = await loadServiceSettings()
+		const box = el("service-error")
+		box.textContent = conflict
+			? "Settings changed in another admin session. Current values were reloaded."
+			: reloaded
+				? "The change was not confirmed. Current server values were reloaded."
+				: "The change result is unknown and the current server values could not be reloaded. Refresh before trying again."
+		box.hidden = false
+		toast(box.textContent, true)
+	} finally {
+		setServiceBusy(!state.serviceSettings)
+	}
+}
+
+function policyStatus(node) {
+	const policy = node.policy || {}
+	const desired = policy.desiredVersion ?? node.desiredVersion
+	const applied = policy.appliedVersion ?? node.appliedVersion
+	const inSync = policy.inSync ?? (desired !== undefined && desired === applied)
+	const wrap = document.createElement("div")
+	wrap.className = `policy-state ${inSync ? "is-synced" : "is-queued"}`
+	const versions = document.createElement("strong")
+	versions.textContent = desired === null || desired === undefined ? "No policy" : `desired v${desired} · applied ${applied === null || applied === undefined ? "—" : `v${applied}`}`
+	const note = document.createElement("span")
+	note.textContent = inSync ? "Applied" : "Queued — nodes apply on next poll"
+	wrap.append(versions, note)
+	return wrap
+}
+
+function restrictionBadges(restrictions) {
+	const wrap = document.createElement("div")
+	wrap.className = "restriction-list"
+	const items = Array.isArray(restrictions) ? restrictions : []
+	if (items.length === 0) {
+		const none = document.createElement("span")
+		none.className = "muted small"
+		none.textContent = "None"
+		wrap.appendChild(none)
+		return wrap
+	}
+	for (const restriction of items) {
+		const badge = document.createElement("span")
+		badge.className = `restriction-badge is-${restriction.source === "builtin" ? "builtin" : "policy"}`
+		badge.textContent = restriction.label || restriction.code || restriction.kind || "Restriction"
+		const details = [restriction.kind, restriction.value, restriction.network, restriction.source].filter(Boolean)
+		badge.title = details.join(" · ")
+		wrap.appendChild(badge)
+	}
+	return wrap
+}
 
 function renderCards(overview) {
 	const items = [
@@ -445,6 +561,8 @@ function renderNodes(nodes) {
 		cell(row, node.name)
 		cell(row, `${node.country} (${node.countryCode})`)
 		cell(row, statusPill(node.status))
+		cell(row, policyStatus(node))
+		cell(row, restrictionBadges(node.restrictions))
 		cell(row, node.endpoint)
 		cell(row, loadBar(node.loadPercent))
 		cell(row, percent(node.cpuPercent))
@@ -457,6 +575,23 @@ function renderNodes(nodes) {
 
 		const actions = document.createElement("td")
 		actions.className = "actions"
+		if (node.storedStatus !== "DISABLED") {
+			actions.appendChild(
+				actionButton(node.maintenance ? "End maintenance" : "Maintenance", node.maintenance ? "small ghost" : "small warn", async () => {
+					if (!node.maintenance && !confirm(`Put ${node.name} into maintenance? Active sessions on this node will close.`)) return null
+					const result = await request(`/api/admin/nodes/${node.id}/maintenance`, {
+						method: "POST",
+						body: { enabled: !node.maintenance },
+					})
+					const queued = Number(result.policySyncQueued || 0)
+					const closed = Number(result.closedSessions || 0)
+					toast(node.maintenance
+						? `Maintenance ended for ${node.name}. Policy update queued${queued ? ` for ${queued} node${queued === 1 ? "" : "s"}` : ""}; nodes apply it on next poll.`
+						: `${node.name} entered maintenance. ${closed} active session${closed === 1 ? "" : "s"} closed. Policy update queued${queued ? ` for ${queued} node${queued === 1 ? "" : "s"}` : ""}; nodes apply it on next poll.`)
+					return result
+				}),
+			)
+		}
 		if (node.storedStatus === "DISABLED") {
 			actions.appendChild(
 				actionButton("Enable", "small ghost", () =>
@@ -483,7 +618,7 @@ function renderNodes(nodes) {
 	if (nodes.length === 0) {
 		const row = document.createElement("tr")
 		const td = cell(row, "No nodes registered yet. Issue an enrollment token and run the agent.")
-		td.colSpan = 13
+		td.colSpan = 15
 		td.className = "muted"
 		body.appendChild(row)
 	}
@@ -1010,8 +1145,8 @@ async function loadAll() {
 		renderDevices(devices.devices)
 		renderSessions(sessions.sessions)
 		renderAudit(audit.logs)
-		// Both tolerate a 404 from an older control server.
-		await Promise.all([loadEgressBudget(), loadDeploy(), loadClientErrors()])
+		// Optional/rolling-deploy data loaders isolate their own availability errors.
+		await Promise.all([loadServiceSettings(), loadEgressBudget(), loadDeploy(), loadClientErrors()])
 	} catch (error) {
 		if (error.status === 401 || error.status === 403) signOut(error.message)
 		else toast(error.message, true)
@@ -1083,6 +1218,8 @@ function signOut(message) {
 	state.refreshToken = null
 	state.username = null
 	state.publicId = null
+	state.serviceSettings = null
+	setServiceBusy(true)
 	el("tabs").hidden = true
 	el("dashboard-view").hidden = true
 	el("session-box").hidden = true
@@ -1147,6 +1284,29 @@ el("refresh-btn").addEventListener("click", () => {
 el("auto-refresh").addEventListener("change", startAutoRefresh)
 el("live-only").addEventListener("change", () => {
 	void loadAll()
+})
+
+el("registration-enabled").addEventListener("change", (event) => {
+	void mutateServiceSettings({ registrationEnabled: event.currentTarget.checked })
+})
+
+el("emergency-maintenance").addEventListener("change", (event) => {
+	if (!event.currentTarget.checked) {
+		void mutateServiceSettings({ maintenance: false })
+		return
+	}
+	// Do not show the destructive state as active before the server confirms it.
+	event.currentTarget.checked = false
+	el("maintenance-scope").textContent = `Scope: ${channelScopeLabel()}. The other channel is not affected.`
+	el("maintenance-dialog").showModal()
+})
+
+el("maintenance-dialog").addEventListener("close", (event) => {
+	if (event.currentTarget.returnValue === "confirm") {
+		void mutateServiceSettings({ maintenance: true })
+	} else if (state.serviceSettings) {
+		renderServiceSettings(state.serviceSettings)
+	}
 })
 
 el("error-platform").addEventListener("change", (event) => {

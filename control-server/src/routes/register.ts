@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 import { config } from "../config"
+import { requireRegistrationEnabled, serviceStatus } from "../services/serviceControl"
 import { writeAudit } from "../lib/audit"
 import { hashPassword, verifyPassword } from "../lib/crypto"
 import { badRequest, forbidden, serviceUnavailable } from "../lib/errors"
@@ -92,7 +93,7 @@ export async function registrationRoutes(app: FastifyInstance): Promise<void> {
 	// site, the app and the extension never hard-code a feature flag.
 	app.get("/api/auth/config", async (_request, reply) =>
 		reply.send({
-			selfRegistration: config.SELF_REGISTRATION_ENABLED,
+			selfRegistration: (await serviceStatus()).registrationEnabled,
 			emailDelivery: mailerReady(),
 			telegram: {
 				enabled: telegramConfigured(),
@@ -123,9 +124,7 @@ export async function registrationRoutes(app: FastifyInstance): Promise<void> {
 		// is generous for a human and useless for a script.
 		{ config: { rateLimit: { max: 3, timeWindow: "1 minute" } } },
 		async (request, reply) => {
-			if (!config.SELF_REGISTRATION_ENABLED) {
-				throw forbidden("Sign-up is closed on this server")
-			}
+			await requireRegistrationEnabled()
 			const parsed = StartBody.safeParse(request.body)
 			if (!parsed.success) {
 				throw badRequest("A valid email and a password of at least 8 characters are required")

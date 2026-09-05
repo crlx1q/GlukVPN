@@ -69,12 +69,14 @@
 						<circle class="net-node" cx="96" cy="30" r="0.7" />
 						<circle class="net-node" cx="40" cy="38" r="0.7" />
 						<circle class="net-node-ring" cx="55" cy="14" r="2" />
+						<g id="account-map"></g>
 						<path class="conn-path" id="conn-path" d="" />
 						<circle id="server-ring" class="pt-ring" cx="-9" cy="-9" r="2.4" />
 						<circle id="server-dot" class="pt-dot srv" cx="-9" cy="-9" r="1.15" />
 						<circle id="you-ring" class="pt-ring" cx="-9" cy="-9" r="2.4" />
 						<circle id="you-dot" class="pt-dot you" cx="-9" cy="-9" r="1.15" />
 					</svg>
+					<div class="map-count hidden" id="map-count" hidden></div>
 				</div>
 
 				<div class="hero-content">
@@ -428,6 +430,15 @@
 			<button class="link-btn" id="btn-register" type="button" data-i18n="login.register">Создать аккаунт</button>
 			<button class="link-btn" id="btn-forgot" type="button" data-i18n="login.forgot">Забыли пароль?</button>
 		</div>
+	</div>
+</section>
+
+<section class="modal-backdrop hidden" id="limit-modal" hidden>
+	<div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="limit-title" aria-describedby="limit-copy" tabindex="-1">
+		<div class="modal-head"><div><h2 id="limit-title" data-i18n="limit.title">Device limit reached</h2><p id="limit-copy" data-i18n="limit.body">Release one device slot to continue.</p></div><button class="modal-close" id="limit-close" type="button" aria-label="Close">×</button></div>
+		<div class="modal-error" id="limit-error" role="alert" aria-live="polite"></div>
+		<div class="modal-devices" id="limit-devices"></div>
+		<div class="modal-actions"><button class="btn btn-ghost" id="limit-server" type="button" data-i18n="limit.chooseServer">Choose another server</button><button class="btn btn-primary" id="limit-retry" type="button" data-i18n="common.retry">Retry</button></div>
 	</div>
 </section>
 

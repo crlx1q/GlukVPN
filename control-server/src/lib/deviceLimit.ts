@@ -46,6 +46,7 @@ export type DeviceLimitSlot = {
 	lastSeen: string | null
 	/** True while a tunnel is currently up for this device. */
 	connected: boolean
+	connectedNode?: { id: string; name: string; country: string; countryCode: string; city: string | null } | null
 }
 
 export type DeviceLimitDetails = {

@@ -19,6 +19,17 @@ DateTime? _date(Object? value) {
 	return DateTime.tryParse(value)?.toLocal();
 }
 
+class DeviceLimitNode {
+	const DeviceLimitNode({required this.id, required this.name, required this.country, required this.countryCode, required this.city});
+	factory DeviceLimitNode.fromJson(Object? raw) {
+		if (raw is! Map) return const DeviceLimitNode(id: '', name: '', country: '', countryCode: '', city: '');
+		return DeviceLimitNode(id: _string(raw['id']), name: _string(raw['name']), country: _string(raw['country']), countryCode: _string(raw['countryCode']), city: _string(raw['city']));
+	}
+	final String id, name, country, countryCode, city;
+	bool get isEmpty => id.isEmpty && name.isEmpty && country.isEmpty && city.isEmpty;
+	String get label => <String>[city, country].where((String v) => v.isNotEmpty).join(', ');
+}
+
 /// One device occupying a slot.
 class DeviceLimitSlot {
 	const DeviceLimitSlot({
@@ -27,6 +38,7 @@ class DeviceLimitSlot {
 		required this.platform,
 		required this.connected,
 		this.lastSeen,
+		this.connectedNode,
 	});
 
 	factory DeviceLimitSlot.fromJson(Map<String, dynamic> json) => DeviceLimitSlot(
@@ -35,6 +47,7 @@ class DeviceLimitSlot {
 				platform: _string(json['platform']),
 				connected: _bool(json['connected']),
 				lastSeen: _date(json['lastSeen']),
+				connectedNode: DeviceLimitNode.fromJson(json['connectedNode']),
 			);
 
 	final String id;
@@ -44,6 +57,7 @@ class DeviceLimitSlot {
 	/// A tunnel is up on this device right now. Revoking it will drop it.
 	final bool connected;
 	final DateTime? lastSeen;
+	final DeviceLimitNode? connectedNode;
 
 	bool get isUsable => id.isNotEmpty;
 

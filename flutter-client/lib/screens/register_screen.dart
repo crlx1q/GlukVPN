@@ -107,7 +107,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void _fail(Object error) {
     if (!mounted) return;
     final String message = error is ApiException
-        ? error.message
+        ? (error.code == 'registration_disabled'
+            ? (context.strings.isRussian
+                ? 'Регистрация временно отключена из-за технических работ. Попробуйте позже.'
+                : 'Registration is temporarily disabled for maintenance. Please try again later.')
+            : error.message)
         : context.strings.somethingWentWrong;
     setState(() {
       _error = message;

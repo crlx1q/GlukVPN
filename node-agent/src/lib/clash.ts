@@ -22,7 +22,7 @@
 import type { VlessDomainReport, VlessUserReport } from "./api"
 import { userFromOutboundTag } from "./singbox"
 
-type ClashConnection = {
+export type ClashConnection = {
 	id: string
 	upload: number
 	download: number
@@ -39,7 +39,7 @@ type ClashConnection = {
 	}
 }
 
-type ClashSnapshot = {
+export type ClashSnapshot = {
 	downloadTotal?: number
 	uploadTotal?: number
 	connections?: ClashConnection[] | null
@@ -59,16 +59,37 @@ type Seen = { upload: number; download: number; user: string | null; domain: str
 
 const MAX_DOMAINS_PER_USER = 200
 
+function clashHeaders(secret: string): Record<string, string> {
+	return {
+		accept: "application/json",
+		...(secret ? { authorization: `Bearer ${secret}` } : {}),
+	}
+}
+
 export async function fetchConnections(apiBase: string, secret: string, timeoutMs = 4000): Promise<ClashSnapshot> {
 	const response = await fetch(`http://${apiBase}/connections`, {
-		headers: {
-			accept: "application/json",
-			...(secret ? { authorization: `Bearer ${secret}` } : {}),
-		},
+		headers: clashHeaders(secret),
 		signal: AbortSignal.timeout(timeoutMs),
 	})
 	if (!response.ok) throw new Error(`clash api answered ${response.status}`)
 	return (await response.json()) as ClashSnapshot
+}
+
+/** Clash-compatible API: close one connection, never the global collection. */
+export async function closeConnection(
+	apiBase: string,
+	secret: string,
+	connectionId: string,
+	timeoutMs = 4000,
+): Promise<boolean> {
+	const response = await fetch(`http://${apiBase}/connections/${encodeURIComponent(connectionId)}`, {
+		method: "DELETE",
+		headers: clashHeaders(secret),
+		signal: AbortSignal.timeout(timeoutMs),
+	})
+	if (response.status === 404) return false
+	if (!response.ok) throw new Error(`clash api close answered ${response.status}`)
+	return true
 }
 
 /** Which user a connection belongs to, from its outbound chain or rule text. */

@@ -266,6 +266,8 @@ class _ServerTile extends StatelessWidget {
       final int? ms = sample?.milliseconds;
       if (ms != null) parts.add('$ms ${s.ms}');
     }
+    if (node.maintenance) parts.add(s.isRussian ? 'Технические работы' : 'Maintenance');
+    parts.addAll(node.restrictions.map((r) => r.localizedLabel(s.isRussian)).where((label) => label.isNotEmpty));
     return parts.join('  \u00b7  ');
   }
 

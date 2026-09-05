@@ -14,6 +14,7 @@ import {
 	nodeHost,
 } from "./nodes"
 import { requestPolicySync } from "./policy"
+import { maintenanceError, requireVpnAvailable, SERVICE_GATE_LOCK } from "./serviceControl"
 
 const ACTIVE_SESSION_STATES = ["PENDING", "ACTIVE"] as const
 
@@ -129,6 +130,7 @@ async function pickNode(nodeId: string | null | undefined, tier: number): Promis
 		const node = await prisma.vpnNode.findUnique({ where: { id: nodeId } })
 		if (!node) throw notFound("Node not found")
 		if (node.status === "DISABLED") throw forbidden("Node is disabled")
+		if (node.maintenance) throw maintenanceError(node.id)
 		if (node.tier > tier) {
 			throw forbidden(`This server requires the ${tierLabel(node.tier)} plan`)
 		}
@@ -152,6 +154,7 @@ async function pickNode(nodeId: string | null | undefined, tier: number): Promis
 	})
 	const online = candidates.filter((node) => isNodeConnectable(node))
 	const chosen = online[0]
+	if (!chosen && candidates.some((node) => node.maintenance)) throw maintenanceError()
 	if (!chosen) throw serviceUnavailable("No VPN node is currently available")
 	return chosen
 }
@@ -214,6 +217,24 @@ async function createSessionWithLease(params: {
 	for (let attempt = 0; attempt < 3; attempt += 1) {
 		try {
 			return await prisma.$transaction(async (tx) => {
+				await tx.$queryRaw`SELECT pg_advisory_xact_lock_shared(${SERVICE_GATE_LOCK})::text`
+				await tx.$queryRaw`SELECT id FROM users WHERE id = ${params.user.id}::uuid FOR UPDATE`
+				await tx.$queryRaw`SELECT id FROM vpn_nodes WHERE id = ${params.node.id}::uuid FOR UPDATE`
+				const [currentUser, currentDevice, currentNode, currentPlan] = await Promise.all([
+					tx.user.findUnique({ where: { id: params.user.id } }),
+					tx.device.findUnique({ where: { id: params.device.id } }),
+					tx.vpnNode.findUnique({ where: { id: params.node.id } }),
+					tx.subscription.findFirst({ where: { userId: params.user.id, status: "ACTIVE", expiresAt: { gt: new Date() } }, orderBy: { tier: "desc" } }),
+				])
+				if (!currentUser || currentUser.status !== "ACTIVE") throw forbidden("User is disabled")
+				if (!currentDevice || currentDevice.status !== "ACTIVE" || currentDevice.tokenVersion !== params.device.tokenVersion) throw forbidden("Device is revoked")
+				if (!currentNode || !currentPlan || currentPlan.tier < currentNode.tier) throw forbidden("No eligible subscription or node")
+				await requireVpnAvailable(currentNode, tx)
+				if (!isNodeConnectable(currentNode)) throw serviceUnavailable("Node is unavailable")
+				const allowed = Math.max(effectiveSessionLimit(currentUser), currentPlan.tier >= 2 ? 5 : currentPlan.tier >= 1 ? 3 : 1)
+				if (await tx.session.count({ where: { userId: currentUser.id, status: { in: [...ACTIVE_SESSION_STATES] } } }) >= allowed) throw conflict("Maximum concurrent sessions reached. Disconnect another device first.")
+				if (await tx.session.count({ where: { deviceId: currentDevice.id, status: { in: [...ACTIVE_SESSION_STATES] } } })) throw conflict("A connection is already being established for this device. Please retry.")
+				if (await tx.session.count({ where: { nodeId: currentNode.id, status: { in: [...ACTIVE_SESSION_STATES] } } }) >= currentNode.capacity) throw conflict("Node is at capacity")
 				const lease = await tx.ipLease.findFirst({
 					where: { nodeId: params.node.id, sessionId: null },
 					orderBy: { ip: "asc" },
@@ -236,6 +257,11 @@ async function createSessionWithLease(params: {
 					data: { sessionId: session.id, allocatedAt: new Date() },
 				})
 				if (claimed.count !== 1) throw conflict("Address lease was taken concurrently")
+				// Queue inside the gate: a late ADD_PEER cannot follow maintenance's REMOVE_PEER.
+				await tx.nodeCommand.create({ data: {
+					nodeId: params.node.id, sessionId: session.id, type: "ADD_PEER",
+					payload: { sessionId: session.id, publicKey: params.device.publicKey, deviceId: params.device.id, allowedIps: [`${session.assignedVpnIp}/32`] },
+				} })
 				return session
 			})
 		} catch (error) {
@@ -265,6 +291,7 @@ export async function connectSession(params: {
 	ip?: string | null
 }): Promise<ConnectResult> {
 	const { user } = params
+	await requireVpnAvailable()
 
 	if (user.status !== "ACTIVE") throw forbidden("User is disabled")
 	if (params.device.status !== "ACTIVE") throw forbidden("Device is revoked")
@@ -306,17 +333,6 @@ export async function connectSession(params: {
 			})
 		: created
 
-	await enqueueCommand({
-		nodeId: node.id,
-		sessionId: session.id,
-		type: "ADD_PEER",
-		payload: {
-			sessionId: session.id,
-			publicKey: device.publicKey,
-			allowedIps: [`${session.assignedVpnIp}/32`],
-		},
-	})
-
 	await prisma.device.update({
 		where: { id: device.id },
 		data: { lastSeen: new Date() },
@@ -339,6 +355,9 @@ export async function connectSession(params: {
 	// The gateway is optional on purpose: a node that has not been migrated yet
 	// simply does not advertise one. The credential is the device's own.
 	const gateway = gatewayFor(node, device) ?? undefined
+	await requireVpnAvailable(await prisma.vpnNode.findUnique({ where: { id: node.id } }))
+	const current = await prisma.session.findUnique({ where: { id: session.id }, select: { status: true } })
+	if (!current || (current.status !== "PENDING" && current.status !== "ACTIVE")) throw forbidden("This session was closed. Connect again.")
 
 	return {
 		session,
@@ -387,6 +406,7 @@ export async function closeSession(params: {
 			payload: {
 				sessionId: session.id,
 				publicKey: session.peerPublicKey,
+				deviceId: session.deviceId,
 			},
 		})
 	}

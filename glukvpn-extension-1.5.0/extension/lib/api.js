@@ -17,11 +17,16 @@ const TIMEOUT_MS = 15000
 const EXPIRY_SKEW_MS = 60000
 
 export class ApiError extends Error {
-	constructor({ statusCode, code, message, retryAfterSec }) {
+	constructor({ statusCode, code, message, retryAfterSec, details }) {
 		super(message)
-		this.statusCode = statusCode
-		this.code = code
-		this.retryAfterSec = retryAfterSec ?? null
+		this.name = 'ApiError'
+		this.statusCode = Number(statusCode) || 0
+		this.code = String(code || 'error')
+		this.retryAfterSec = Number(retryAfterSec ?? details?.retryAfterSec) || null
+		// Structured, non-secret context is needed by the device manager and
+		// maintenance recovery UI. Keep the server object intact; the worker
+		// performs the final allow-listed serialization before crossing MV3.
+		this.details = details && typeof details === 'object' ? details : null
 	}
 	get isNetwork() {
 		return this.statusCode === 0
@@ -137,7 +142,8 @@ async function request(method, path, { body, authenticated = true, allowRefresh 
 		statusCode: response.status,
 		code: String(error.code ?? `http_${response.status}`),
 		message: String(error.message ?? `Request failed (${response.status}).`),
-		retryAfterSec: Number(response.headers.get('retry-after')) || null,
+		retryAfterSec: Number(response.headers.get('retry-after')) || Number(error.details?.retryAfterSec) || null,
+		details: error.details,
 	})
 }
 
@@ -191,6 +197,7 @@ export const Api = {
 
 	health: () => request('GET', '/api/health', { authenticated: false }),
 	version: () => request('GET', '/api/version', { authenticated: false }),
+	serviceStatus: () => request('GET', '/api/service/status', { authenticated: false }),
 
 	/** Username OR email, exactly like the app: both fields are sent so an
 	 *  older control server still understands the call. */
@@ -282,7 +289,8 @@ export const Api = {
 	},
 
 	devices: () => request('GET', '/api/devices'),
-	revokeDevice: (id) => request('DELETE', `/api/devices/${id}`),
+	activeMap: () => request('GET', '/api/user/active-map'),
+	revokeDevice: (id) => request('DELETE', `/api/devices/${encodeURIComponent(String(id))}`),
 
 	connect: (nodeId) => request('POST', '/api/vpn/connect', { body: nodeId ? { nodeId } : {} }),
 	disconnect: (payload) =>

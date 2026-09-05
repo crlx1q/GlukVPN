@@ -7,6 +7,7 @@ import '../models/device_limit.dart';
 import '../models/models.dart';
 import '../services/api_client.dart';
 import '../state/auth_controller.dart';
+import '../state/account_insights_controller.dart';
 import '../state/channel_controller.dart';
 import '../state/vpn_controller.dart';
 import '../theme/motion.dart';
@@ -16,6 +17,7 @@ import '../utils/geo.dart';
 import '../utils/geo_dictionary.dart';
 import '../utils/map_view.dart';
 import '../widgets/connect_button.dart';
+import '../widgets/active_account_map.dart';
 import '../widgets/device_limit_dialog.dart';
 import '../widgets/dotted_world.dart';
 import '../widgets/glass.dart';
@@ -45,7 +47,20 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  late final AccountInsightsController _accountMap;
+  @override void initState() {
+    super.initState();
+    _accountMap = AccountInsightsController(context.read<VpnController>().api)..addListener(_mapChanged)..setVisible(true);
+    WidgetsBinding.instance.addObserver(this);
+  }
+  void _mapChanged() { if (mounted) setState(() {}); }
+  @override void didChangeAppLifecycleState(AppLifecycleState state) => _accountMap.setVisible(state == AppLifecycleState.resumed);
+  @override void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _accountMap.removeListener(_mapChanged); _accountMap.dispose(); super.dispose();
+  }
+
   /// Where to draw "you".
   ///
   /// The control plane's own view of where the request came from goes first: it
@@ -153,6 +168,7 @@ class _HomeScreenState extends State<HomeScreen> {
             selfPoint: self.point,
             serverPoint: serverPoint,
             fleet: fleet,
+            accountArcs: accountMapArcs(_accountMap.snapshot),
             connected: vpn.isConnected,
             live: vpn.isConnected || vpn.state == VpnUiState.connecting,
           ),
@@ -197,6 +213,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         animate: animate,
                         onTap: widget.onOpenServers,
                       ),
+                      const SizedBox(height: 10),
+                      ActiveAccountMap(api: vpn.api, controller: _accountMap, compact: true, russian: s.isRussian, reduceMotion: motion.reduceMotion, onServiceChanged: vpn.handleServiceStatus),
                       const SizedBox(height: 14),
                       Row(
                         children: <Widget>[
@@ -347,6 +365,7 @@ class _MapBackdrop extends StatefulWidget {
     required this.selfPoint,
     required this.serverPoint,
     required this.fleet,
+    required this.accountArcs,
     required this.connected,
     required this.live,
   });
@@ -355,6 +374,7 @@ class _MapBackdrop extends StatefulWidget {
   final MapPoint selfPoint;
   final MapPoint? serverPoint;
   final List<MapPoint> fleet;
+  final List<ConnectionArc> accountArcs;
   final bool connected;
   final bool live;
 
@@ -512,6 +532,7 @@ class _MapBackdropState extends State<_MapBackdrop>
                           selfPoint: selfPoint,
                           serverPoint: serverPoint,
                           nodePoints: fleet,
+                          accountArcs: widget.accountArcs,
                           arcProgress: arc,
                           arcPhase: dash,
                           orbitalPhase: orbit,

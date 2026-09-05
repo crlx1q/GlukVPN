@@ -14,6 +14,8 @@ export type AuthNodeContext = {
 export type AccessTokenPayload = {
 	sub: string
 	did?: string
+	/** Device credential epoch; absent on legacy tokens (epoch zero). */
+	dv?: number
 	adm?: boolean
 	typ: "access"
 }

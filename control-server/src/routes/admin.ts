@@ -11,6 +11,7 @@ import { cancelOrder, grantPlan, markOrderPaid, orderView } from "../services/bi
 import { categoryLabel } from "../services/domainCategories"
 import { egressBudgetView } from "../services/egressBudget"
 import { effectiveNodeStatus, nodeEndpoint, nodeLoadPercent } from "../services/nodes"
+import { publicRestrictions } from "../services/nodeRestrictions"
 import {
 	BUILTIN_RULES,
 	SNIFFED_PROTOCOLS,
@@ -184,6 +185,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 					endpoint: nodeEndpoint(node),
 					publicIp: node.publicIp,
 					storedStatus: node.status,
+					maintenance: Boolean(node.maintenance),
+					restrictions: publicRestrictions(policy.rules),
 					status: effectiveNodeStatus(node),
 					loadPercent: nodeLoadPercent(node),
 					capacity: node.capacity,

@@ -8,7 +8,13 @@ import fs from "node:fs"
 import path from "node:path"
 import { config, persistCredentials } from "./config"
 import type { ControlApi, GatewayInfo, NodePolicy, VlessUserReport } from "./lib/api"
-import { ConnectionTracker, fetchConnections } from "./lib/clash"
+import {
+	attributeConnection,
+	closeConnection,
+	ConnectionTracker,
+	fetchConnections,
+	type ClashSnapshot,
+} from "./lib/clash"
 import { errorMessage, log } from "./lib/logger"
 import {
 	checkConfig,
@@ -25,6 +31,12 @@ function versionFileFor(configFile: string): string {
 	return path.join(path.dirname(configFile), `.${path.basename(configFile)}.policy-version`)
 }
 
+function cutoffFileFor(configFile: string): string {
+	return path.join(path.dirname(configFile), `.${path.basename(configFile)}.policy-cutoff.json`)
+}
+
+type PersistedCutoff = { version: string; maintenance: boolean; users: string[] }
+
 export class SingboxManager {
 	readonly configFile: string
 	readonly version: SingboxVersion | null
@@ -34,6 +46,8 @@ export class SingboxManager {
 	private lastSampleMs = 0
 	private clashFailures = 0
 	private syncing = false
+	private maintenance = false
+	private allowedUsers: Set<string> | null = null
 
 	private constructor(configFile: string, version: SingboxVersion | null, clashSecret: string) {
 		this.configFile = configFile
@@ -41,6 +55,7 @@ export class SingboxManager {
 		this.clashSecret = clashSecret
 		this.tracker = new ConnectionTracker({ reportDomains: config.SINGBOX_REPORT_DOMAINS })
 		this.appliedVersion = this.readAppliedVersion()
+		this.readCutoff()
 	}
 
 	static async create(): Promise<SingboxManager | null> {
@@ -104,6 +119,60 @@ export class SingboxManager {
 		}
 	}
 
+	private readCutoff(): void {
+		try {
+			const value = JSON.parse(fs.readFileSync(cutoffFileFor(this.configFile), "utf8")) as PersistedCutoff
+			if (!value || !Array.isArray(value.users)) return
+			this.maintenance = value.maintenance === true
+			this.allowedUsers = new Set(value.users.filter((user) => typeof user === "string"))
+		} catch {
+			// No persisted cutoff on first install. The first heartbeat always fetches policy.
+		}
+	}
+
+	private setCutoff(policy: NodePolicy): void {
+		this.maintenance = policy.maintenance === true
+		this.allowedUsers = new Set([
+			...policy.users.map((user) => user.name),
+			...(policy.legacyUser ? [policy.legacyUser.name] : []),
+		])
+		const persisted: PersistedCutoff = {
+			version: policy.version,
+			maintenance: this.maintenance,
+			users: [...this.allowedUsers].sort(),
+		}
+		try {
+			fs.writeFileSync(cutoffFileFor(this.configFile), `${JSON.stringify(persisted)}\n`, { mode: 0o640 })
+		} catch (error) {
+			log.warn("could not persist the connection cutoff", { reason: errorMessage(error) })
+		}
+	}
+
+	private async enforceCutoff(snapshot?: ClashSnapshot): Promise<void> {
+		if (!this.allowedUsers) return
+		const current = snapshot ?? (await fetchConnections(config.SINGBOX_CLASH_API, this.clashSecret))
+		const targets = (current.connections ?? []).filter((connection) => {
+			const user = attributeConnection(connection)
+			// Clash metadata does not expose the inbound authenticated user. We only
+			// touch connections carrying one of our private u_<user> outbound tags,
+			// so another channel sharing the sing-box instance is never mass-closed.
+			return Boolean(user && (this.maintenance || !this.allowedUsers?.has(user)))
+		})
+		if (targets.length === 0) return
+
+		const results = await Promise.allSettled(
+			targets.map((connection) => closeConnection(config.SINGBOX_CLASH_API, this.clashSecret, connection.id)),
+		)
+		const closed = results.filter((result) => result.status === "fulfilled").length
+		const failed = results.length - closed
+		log.info("sing-box connection cutoff enforced", {
+			reason: this.maintenance ? "maintenance" : "user-revoked",
+			matched: targets.length,
+			closed,
+			failed,
+		})
+	}
+
 	/** What the heartbeat should advertise; null when the config has no VLESS inbound. */
 	gateway(): GatewayInfo | null {
 		try {
@@ -133,7 +202,12 @@ export class SingboxManager {
 	}
 
 	async applyPolicy(policy: NodePolicy, reason: string): Promise<boolean> {
-		if (policy.version === this.appliedVersion && reason !== "forced") {
+		const configChanged = policy.version !== this.appliedVersion || reason === "forced"
+		if (!configChanged) {
+			this.setCutoff(policy)
+			await this.enforceCutoff().catch((error) => {
+				log.warn("sing-box connection cutoff retry failed", { reason: errorMessage(error) })
+			})
 			return false
 		}
 		const base = readConfig(this.configFile)
@@ -164,6 +238,10 @@ export class SingboxManager {
 		writeConfigAtomic(this.configFile, rendered)
 		this.appliedVersion = policy.version
 		this.writeAppliedVersion(policy.version)
+		this.setCutoff(policy)
+		await this.enforceCutoff().catch((error) => {
+			log.warn("sing-box connection cutoff failed after policy apply", { reason: errorMessage(error) })
+		})
 		log.info("sing-box policy applied", {
 			policyVersion: policy.version,
 			users: policy.users.length + (policy.legacyUser ? 1 : 0),
@@ -180,6 +258,7 @@ export class SingboxManager {
 		try {
 			const snapshot = await fetchConnections(config.SINGBOX_CLASH_API, this.clashSecret)
 			this.tracker.ingest(snapshot, now)
+			await this.enforceCutoff(snapshot)
 			if (this.clashFailures > 0) {
 				log.info("clash api reachable again")
 				this.clashFailures = 0

@@ -35,6 +35,7 @@
  */
 
 import { config } from "../config"
+import { HttpError } from "../lib/errors"
 import {
 	attachTelegram,
 	normalizePhone,
@@ -454,6 +455,9 @@ async function handleContact(message: TelegramMessage): Promise<void> {
 		telegramId: String(from.id),
 		telegramUsername: from.username ?? null,
 		phone,
+	}).catch((error: unknown) => {
+		if (error instanceof HttpError && error.code === "registration_disabled") return { ok: false, reason: "registration_disabled" } as const
+		throw error
 	})
 
 	if (outcome.ok) {
@@ -471,6 +475,7 @@ async function handleContact(message: TelegramMessage): Promise<void> {
 	}
 
 	const reasons: Record<string, string> = {
+		registration_disabled: "Регистрация временно приостановлена. Попробуйте позже.",
 		// ROUND 17: this used to talk only about registration, which is wrong for
 		// the case the user actually hits - linking Telegram to an account that
 		// already exists, from the cabinet. It also has to name the environment

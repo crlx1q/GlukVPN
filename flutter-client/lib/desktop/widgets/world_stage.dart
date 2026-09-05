@@ -19,6 +19,7 @@ class WorldStage extends StatefulWidget {
     this.selfLocation,
     this.serverPoint,
     this.allNodes = const <MapPoint>[],
+    this.accountArcs,
     this.height = 420,
     this.zoomBoost = 1,
     this.forceFlat = false,
@@ -35,6 +36,7 @@ class WorldStage extends StatefulWidget {
 
   /// Every visible node, drawn as faint dots.
   final List<MapPoint> allNodes;
+  final List<ConnectionArc>? accountArcs;
 
   final double height;
 
@@ -100,7 +102,7 @@ class _WorldStageState extends State<WorldStage>
     _morph = AnimationController(
       vsync: this,
       duration: GlukMotion.screen,
-      value: (widget.phase.isConnected && !widget.forceFlat) ? 1 : 0,
+      value: widget.forceFlat ? 0 : 1,
     );
     _link = AnimationController(
       vsync: this,
@@ -116,7 +118,8 @@ class _WorldStageState extends State<WorldStage>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.phase != widget.phase ||
         oldWidget.reduceMotion != widget.reduceMotion ||
-        oldWidget.forceFlat != widget.forceFlat) {
+        oldWidget.forceFlat != widget.forceFlat ||
+        oldWidget.accountArcs != widget.accountArcs) {
       _applyMotion();
     }
   }
@@ -124,7 +127,7 @@ class _WorldStageState extends State<WorldStage>
   /// Requirement 15: animations wind down when they are not needed, but the
   /// tunnel itself is never affected by this.
   void _applyMotion() {
-    final connected = widget.phase.isConnected;
+    final connected = widget.phase.isConnected || (widget.accountArcs?.isNotEmpty ?? false);
     final busy = widget.phase.isBusy;
 
     if (widget.reduceMotion) {
@@ -157,7 +160,7 @@ class _WorldStageState extends State<WorldStage>
     // Shape is a separate question from state: a live tunnel drawn on the flat
     // map still turns the bloom green and lights the server dot, it just does
     // not fold the world into a ball.
-    if (connected && !widget.forceFlat) {
+    if (!widget.forceFlat) {
       _morph.forward();
     } else {
       _morph.reverse();
@@ -179,7 +182,7 @@ class _WorldStageState extends State<WorldStage>
   Widget build(BuildContext context) {
     final self = widget.selfLocation?.point;
     final server = widget.serverPoint;
-    final connected = widget.phase.isConnected;
+    final connected = widget.phase.isConnected || (widget.accountArcs?.isNotEmpty ?? false);
 
     return SizedBox(
       height: widget.height,
@@ -251,6 +254,7 @@ class _WorldStageState extends State<WorldStage>
                 serverPoint: server,
                 serverOpacity: server == null ? 0 : _link.value.clamp(0.35, 1),
                 nodePoints: widget.allNodes,
+                accountArcs: widget.accountArcs,
                 arcProgress: _arcProgress(),
                 arcPhase: _arc.value,
                 orbitalPhase: _orbit.value,

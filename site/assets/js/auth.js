@@ -107,7 +107,9 @@
           var e = new Error(err.message || "Запрос не выполнен (" + res.status + ").");
           e.status = res.status;
           e.code = err.code || "http_" + res.status;
+          e.details = err.details || null;
           e.retryAfter = parseInt(res.headers.get("retry-after") || "", 10) || null;
+          document.dispatchEvent(new CustomEvent("gluk:api-error", { detail: { status: e.status, code: e.code, details: e.details } }));
           throw e;
         });
       },
