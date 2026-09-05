@@ -45,6 +45,8 @@ jobs:
       # tunnel.dll is gone - it launches the WireGuardNT kernel driver, which
       # Core Isolation refuses, and that is why the tunnel died after 1s.
       - name: Build the tunnel data plane
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $vendor = 'native\glukvpn-tunnel-service\vendor\amd64'
           New-Item -ItemType Directory -Force -Path $vendor | Out-Null
@@ -76,15 +78,26 @@ jobs:
           #    It loads the same wintun.dll fetched above.
           $singbox = Join-Path $vendor 'sing-box.exe'
           if (-not (Test-Path $singbox)) {
-            $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/SagerNet/sing-box/releases/latest' -UseBasicParsing
-            $asset = $release.assets | Where-Object { $_.name -like 'sing-box-*-windows-amd64.zip' } | Select-Object -First 1
-            if (-not $asset) { throw 'The latest sing-box release has no windows-amd64 archive.' }
-            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile singbox.zip -UseBasicParsing
+            $zipUrl = ''
+            try {
+              $headers = @{}
+              if ($env:GITHUB_TOKEN) { $headers['Authorization'] = "Bearer $env:GITHUB_TOKEN" }
+              $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/SagerNet/sing-box/releases/latest' -Headers $headers -UseBasicParsing
+              $asset = $release.assets | Where-Object { $_.name -like 'sing-box-*-windows-amd64.zip' } | Select-Object -First 1
+              if ($asset) { $zipUrl = $asset.browser_download_url }
+            } catch {
+              Write-Warning "Could not fetch latest release metadata from GitHub API: $_"
+            }
+            if (-not $zipUrl) {
+              $zipUrl = 'https://github.com/SagerNet/sing-box/releases/download/v1.11.4/sing-box-1.11.4-windows-amd64.zip'
+            }
+            Write-Host "Downloading sing-box from $zipUrl"
+            Invoke-WebRequest -Uri $zipUrl -OutFile singbox.zip -UseBasicParsing
             Expand-Archive -Path singbox.zip -DestinationPath singbox -Force
             $found = Get-ChildItem -Path singbox -Filter 'sing-box.exe' -Recurse | Select-Object -First 1
             if (-not $found) { throw 'sing-box.exe was not found inside the release archive.' }
             Copy-Item $found.FullName $singbox -Force
-            Write-Host "vendored sing-box $($release.tag_name)"
+            Write-Host "vendored sing-box successfully"
           }
 
           foreach ($artifact in @('glukvpn-wg.exe', 'wintun.dll', 'sing-box.exe')) {

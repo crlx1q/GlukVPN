@@ -1019,10 +1019,19 @@ const HANDLERS = {
 		}
 	},
 	async retryPendingConnect() {
-		const runtime = await Store.runtime()
 		const settings = await Store.settings()
+		try {
+			await ensureDeviceScope()
+		} catch (error) {
+			const serialized = safeError(error, 'device_registration_failed')
+			return { ok: false, error: serialized.message, ...serialized }
+		}
+		const runtime = await Store.runtime()
 		const intent = runtime?.connectIntent
-		if (!intent?.requested || intent.channel !== settings.channel) return { ok: false, error: 'There is no connection to resume.', code: 'no_pending_connect' }
+		if (!intent?.requested || intent.channel !== settings.channel) {
+			await patchRuntime({ phase: PHASE.idle, error: null })
+			return { ok: true, registered: true }
+		}
 		return connect({ nodeId: intent.nodeId, userInitiated: false })
 	},
 	async saveSettings(payload) {

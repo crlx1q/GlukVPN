@@ -2182,7 +2182,7 @@ function wire() {
 	$('limit-server')?.addEventListener('click', () => { closeDeviceLimitModal(true); setView('servers') })
 	$('limit-retry')?.addEventListener('click', async () => {
 		const result = await call('retryPendingConnect')
-		if (result?.ok) { closeDeviceLimitModal(false); await refreshState({ quiet: true }) }
+		if (result?.ok || result?.code === 'no_pending_connect') { closeDeviceLimitModal(false); await refreshState({ quiet: true }) }
 		else if (isDeviceLimit(result)) openDeviceLimitModal(result)
 		else $('limit-error').textContent = humanError(result)
 	})
@@ -2356,7 +2356,7 @@ function renderLimitDevices(devices) {
 				return
 			}
 			const resumed = await call('retryPendingConnect')
-			if (resumed?.ok) {
+			if (resumed?.ok || resumed?.code === 'no_pending_connect') {
 				closeDeviceLimitModal(false)
 				dismissedLimitFingerprint = ''
 				await refreshState({ quiet: true })

@@ -82,16 +82,6 @@ class GlukTheme {
 					side: BorderSide(color: GlukColors.stroke),
 				),
 			),
-			dialogTheme: DialogThemeData(
-				backgroundColor: const Color(0xFF120D1E),
-				surfaceTintColor: Colors.transparent,
-				shape: RoundedRectangleBorder(
-					borderRadius: BorderRadius.circular(22),
-					side: BorderSide(color: GlukColors.stroke),
-				),
-				titleTextStyle: text.titleMedium,
-				contentTextStyle: text.bodyMedium?.copyWith(color: GlukColors.text1),
-			),
 			progressIndicatorTheme: const ProgressIndicatorThemeData(
 				color: GlukColors.violetLight,
 				linearTrackColor: Color(0x22FFFFFF),

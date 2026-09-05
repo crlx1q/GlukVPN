@@ -269,6 +269,7 @@ const en = {
 	'update.later': 'Later',
 
 	'err.tooManyDevices': 'Device limit reached. Remove a device in Settings and try again.',
+	'err.no_pending_connect': 'Device slot released. Ready to connect.',
 	'err.tooManySessions': 'Another device already holds a tunnel on this account. Disconnect it and try again.',
 	'err.keyRegistered': 'This browser\u2019s key was rejected as already registered. A new key is being issued \u2014 try again.',
 	'err.network': 'No connection to the control plane.',
@@ -523,6 +524,7 @@ const ru = {
 	'err.accountDisabled': 'Аккаунт отключён. Напишите в поддержку.',
 	'err.emailNotVerified': 'Сначала подтвердите адрес электронной почты.',
 	'err.noSubscription': 'На аккаунте нет активной подписки.',
+	'err.no_pending_connect': 'Слот освобождён. Устройство готово к работе.',
 	'err.captcha': 'Проверка капчи не пройдена. Попробуйте снова.',
 
 	'common.none': 'нет',
@@ -571,6 +573,9 @@ export function errorKeyFor(error) {
 	}
 	if (/device.*(limit|max|too many)|too many devices|device_limit/.test(text)) {
 		return 'err.tooManyDevices'
+	}
+	if (/no_pending_connect|no connection to resume/.test(text)) {
+		return 'err.no_pending_connect'
 	}
 	// ROUND 9: recognise the codes the control plane actually sends, so the user
 	// gets a sentence in their own language instead of a relayed English one.
