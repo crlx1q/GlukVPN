@@ -49,7 +49,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late final AccountInsightsController _accountMap;
-  bool _inspectMap = false;
   @override void initState() {
     super.initState();
     _accountMap = AccountInsightsController(context.read<VpnController>().api)..addListener(_mapChanged)..setVisible(true);
@@ -166,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         Positioned.fill(
           child: _MapBackdrop(
             motion: motion,
-            overview: _inspectMap,
+            overview: false,
             selfPoint: self.point,
             serverPoint: serverPoint,
             fleet: fleet,
@@ -176,7 +175,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
         const Positioned.fill(child: IgnorePointer(child: _MapFade())),
-        IgnorePointer(ignoring:_inspectMap,child:AnimatedOpacity(opacity:_inspectMap ? 0.08 : 1.0,duration:const Duration(milliseconds:180),child:SafeArea(
+        SafeArea(
           bottom: false,
           child: Column(
             children: <Widget>[
@@ -337,8 +336,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ],
           ),
-        ))),
-        Positioned(top:MediaQuery.paddingOf(context).top+64,right:12,child:_inspectMap ? IconButton.filledTonal(tooltip:s.isRussian?'Назад':'Back',onPressed:()=>setState(()=>_inspectMap=false),icon:const Icon(Icons.close)) : AccountDevicesButton(controller:_accountMap,russian:s.isRussian,onShowMap:()=>setState(()=>_inspectMap=true))),
+        ),
+        // На телефоне карта остаётся только фоном за героем: отдельной карточки
+        // с картой посередине и режима «рассмотреть карту» больше нет —
+        // всё живёт в той же панели «Устройства», что и на Windows.
+        Positioned(top:MediaQuery.paddingOf(context).top+64,right:12,child:AccountDevicesButton(controller:_accountMap,russian:s.isRussian)),
       ],
     );
   }

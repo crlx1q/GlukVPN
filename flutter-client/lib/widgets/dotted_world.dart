@@ -180,10 +180,10 @@ class DottedWorld extends StatelessWidget {
     );
     return RepaintBoundary(child: LayoutBuilder(builder: (context, constraints) {
       final size = constraints.biggest;
-      return Stack(fit: StackFit.expand, children: <Widget>[
-        CustomPaint(painter: painter, size: size),
-        ...painter.connectionMarkers(size),
-      ]);
+      // Точки на карте намеренно не интерактивны: попасть курсором или
+      // пальцем в точку размером в пиксель невозможно, поэтому весь
+      // список подключений живёт в панели «Устройства».
+      return CustomPaint(painter: painter, size: size);
     }));
 	}
 }
@@ -245,32 +245,6 @@ class _DottedWorldPainter extends CustomPainter {
 	/// Dots are bucketed by opacity so the whole map is drawn with a handful of
 	/// `drawPoints` calls instead of 3065 `drawCircle` calls.
 	static const _buckets = 5;
-
-  // Hit targets use the painter's exact projection, including globe culling.
-  List<Widget> connectionMarkers(Size size) {
-    if (accountArcs == null || size.isEmpty || !size.width.isFinite || !size.height.isFinite) return <Widget>[];
-    final scale = size.width / mapWidth * zoom;
-    final centre = Offset(size.width * .5 + (.5-focus.dx)*mapWidth*scale, size.height*.5 + (.5-focus.dy)*mapHeight*scale);
-    final groups = <String, ({Offset offset, List<String> labels, String platform, bool node})>{};
-    for (final arc in accountArcs!.whereType<AccountConnectionArc>()) {
-      for (final node in <bool>[false, true]) {
-        final p = _project(node ? arc.to : arc.from, flatScale: scale, flatCentre: centre, globeRadius: size.width*zoom/math.pi/2, globeCentre: Offset(size.width*globeAnchor.dx,size.height*globeAnchor.dy), size: size);
-        if (p == null || p.visibility < .15) continue;
-        var key = '${node}:${p.offset.dx.toStringAsFixed(1)}:${p.offset.dy.toStringAsFixed(1)}';
-        for(final entry in groups.entries){if(entry.value.node==node&&(entry.value.offset-p.offset).distance<30){key=entry.key;break;}}
-        final label = node ? '${arc.serverLabel}\n${arc.label}' : arc.label;
-        final group = groups[key];
-        if (group == null) { groups[key]=(offset:p.offset,labels:<String>[label],platform:arc.platform,node:node); }
-        else if (!group.labels.contains(label)) { group.labels.add(label); }
-      }
-    }
-    return groups.values.map((g) {
-      final p=g.platform.toLowerCase();
-      final icon=g.node ? Icons.dns : p.contains('android') || p.contains('ios') ? Icons.smartphone : p.contains('chrome') || p.contains('extension') ? Icons.web : Icons.computer;
-      final message=g.labels.join('\n\n');
-      return Positioned(left:g.offset.dx-18,top:g.offset.dy-18,width:36,height:36,child: Tooltip(message:message,triggerMode:TooltipTriggerMode.tap,waitDuration:const Duration(milliseconds:180),child: Semantics(label:message,button:true,child: MouseRegion(cursor:SystemMouseCursors.click,child: Center(child: Container(width:24,height:24,decoration:BoxDecoration(color:GlukColors.cell,borderRadius:BorderRadius.circular(12),border:Border.all(color:g.node?GlukColors.violetLight:GlukColors.connected)),child: g.labels.length>1 ? Center(child:Text('${g.labels.length}',style:const TextStyle(fontSize:11,color:GlukColors.text0))) : Icon(icon,size:14,color:g.node?GlukColors.violetLight:GlukColors.connected)))))));
-    }).toList();
-  }
 
 	@override
 	void paint(Canvas canvas, Size size) {
@@ -381,9 +355,12 @@ class _DottedWorldPainter extends CustomPainter {
 				if (from == null || to == null) continue;
 				final a = ui.lerpDouble(1, from.visibility.clamp(0.0, 1.0), globeness)!;
 				final b = ui.lerpDouble(1, to.visibility.clamp(0.0, 1.0), globeness)!;
-				if (math.min(a, b) > 0.02) _paintArc(canvas, from: from.offset, to: to.offset, arc: arc, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, opacity: math.min(a, b), accent: GlukColors.connected);
-				if (a > 0.02) _paintMarker(canvas, from.offset, GlukColors.violetLight, a, flatScale, pulsing: true);
-				if (b > 0.02) _paintMarker(canvas, to.offset, GlukColors.connected, b, flatScale, pulsing: true);
+				// Единый язык с сайтом и расширением: зелёная точка — устройство
+				// (она же пульсирует), сиреневая — узел выхода, а нитка
+				// между ними перетекает из зелёного в сиреневый.
+				if (math.min(a, b) > 0.02) _paintArc(canvas, from: from.offset, to: to.offset, arc: arc, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, opacity: math.min(a, b), accent: GlukColors.connected, accentTo: GlukColors.violetLight);
+				if (a > 0.02) _paintMarker(canvas, from.offset, GlukColors.connected, a, flatScale, pulsing: true);
+				if (b > 0.02) _paintMarker(canvas, to.offset, GlukColors.violetLight, b, flatScale, pulsing: false);
 			}
 			return;
 		}
@@ -554,6 +531,7 @@ class _DottedWorldPainter extends CustomPainter {
 		required Size size,
 		required double opacity,
 		required Color accent,
+		Color? accentTo,
 	}) {
 		final control = _project(
 			arc.control,
@@ -589,7 +567,7 @@ class _DottedWorldPainter extends CustomPainter {
 				target,
 				[
 					accent.withOpacity(0.95 * opacity),
-					(connected ? GlukColors.connected : GlukColors.blue)
+					(accentTo ?? (connected ? GlukColors.connected : GlukColors.blue))
 							.withOpacity(0.95 * opacity),
 				],
 			);
