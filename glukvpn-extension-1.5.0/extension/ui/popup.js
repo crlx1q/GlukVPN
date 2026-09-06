@@ -2440,7 +2440,13 @@ function renderAccountMap() {
 	// поэтому нитка чужого устройства бесконечно пропадала и снова
 	// «красиво прилетала». Теперь сравниваем отпечаток сцены и при
 	// совпадении не трогаем DOM вообще — анимация играет один раз.
-	const sig = JSON.stringify([guest, Number.isFinite(total) ? total : null,
+	// ПУНКТ 4: попытка подключения и отключение теперь видны и на карте — как
+	// на ПК. Пока идёт connect, от меня к выбранному серверу вырисовывается
+	// «пробная» нитка, при disconnect она втягивается обратно. Фаза входит в
+	// отпечаток сцены, иначе её смена не перерисовала бы карту.
+	const phase = phaseOf()
+	const pending = !ownArc && !guest && selfPoint && nodePoint && (phase === 'connecting' || phase === 'disconnecting') ? phase : ''
+	const sig = JSON.stringify([guest, Number.isFinite(total) ? total : null, pending,
 		order.map(key => [key, spots[pairs[key].from] || 1, pairs[key].device?.platform ?? '', Boolean(pairs[key].device?.isCurrent)]),
 		selfPoint ? mapSpot(selfPoint) : null, nodePoint ? mapSpot(nodePoint) : null])
 	const dirty = sig !== accountMapSig
@@ -2488,6 +2494,17 @@ function renderAccountMap() {
 			pinPoints.push(a)
 			pins.appendChild(accountPin(a, device, spots[from] || 1))
 		}
+	}
+	// Пробная нитка «я → сервер» на время попытки подключения и отключения.
+	// pathLength="1" даёт нормализованную длину, поэтому одна и та же CSS
+	// анимация одинаково работает и для короткой, и для длинной дуги.
+	if (dirty && pending) {
+		const lift = Math.max(3.5, Math.abs(nodePoint.x - selfPoint.x) * 0.16)
+		const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+		path.setAttribute('class', `account-route ${pending === 'connecting' ? 'is-pending' : 'is-leaving'}`)
+		path.setAttribute('pathLength', '1')
+		path.setAttribute('d', `M ${selfPoint.x} ${selfPoint.y} Q ${(selfPoint.x + nodePoint.x) / 2} ${Math.max(1.5, Math.min(selfPoint.y, nodePoint.y) - lift)} ${nodePoint.x} ${nodePoint.y}`)
+		group.appendChild(path)
 	}
 	if (dirty) {
 		// Выбранный сервер — зелёная точка даже без туннеля.

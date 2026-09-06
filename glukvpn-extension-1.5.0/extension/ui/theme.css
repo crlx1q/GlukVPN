@@ -1537,3 +1537,17 @@ button.account-device-more:hover{background:rgba(139,92,246,.18)}
 
 /* То же гало и белое кольцо, что у маркера во Flutter и на сайте. */
 .account-pin{box-shadow:0 0 0 1.4px rgba(255,255,255,.55),0 0 0 5px rgba(139,92,246,.16),0 0 16px 5px rgba(139,92,246,.42)}
+
+/* ПУНКТ 4: фазы подключения на карте — как на ПК.
+   is-pending: нитка вырисовывается снова и снова, пока идёт попытка.
+   is-leaving: втягивается обратно при отключении. */
+.account-route.is-pending,
+.account-route.is-leaving{stroke-dasharray:1;stroke-dashoffset:1}
+.account-route.is-pending{animation:account-attempt 1.15s ease-in-out infinite}
+.account-route.is-leaving{animation:account-retract .6s ease-in forwards}
+@keyframes account-attempt{0%{stroke-dashoffset:1;opacity:.3}45%{stroke-dashoffset:0;opacity:.95}100%{stroke-dashoffset:0;opacity:.12}}
+@keyframes account-retract{from{stroke-dashoffset:0;opacity:.9}to{stroke-dashoffset:1;opacity:0}}
+@media (prefers-reduced-motion: reduce){
+	.account-route.is-pending,
+	.account-route.is-leaving{animation:none;stroke-dashoffset:0;opacity:.55}
+}

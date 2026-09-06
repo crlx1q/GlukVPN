@@ -174,6 +174,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             accountArcs: accountMapArcs(_accountMap.snapshot),
             connected: vpn.isConnected || (_accountMap.snapshot?.activeTunnels ?? 0) > 0,
             live: vpn.isConnected || vpn.state == VpnUiState.connecting,
+            connecting: vpn.state == VpnUiState.connecting,
+            disconnecting: vpn.state == VpnUiState.disconnecting,
           ),
         ),
         const Positioned.fill(child: IgnorePointer(child: _MapFade())),
@@ -376,6 +378,8 @@ class _MapBackdrop extends StatefulWidget {
     this.overview = false,
     required this.connected,
     required this.live,
+    this.connecting = false,
+    this.disconnecting = false,
   });
 
   final MotionController motion;
@@ -386,6 +390,8 @@ class _MapBackdrop extends StatefulWidget {
   final bool overview;
   final bool connected;
   final bool live;
+  final bool connecting;
+  final bool disconnecting;
 
   @override
   State<_MapBackdrop> createState() => _MapBackdropState();
@@ -583,6 +589,17 @@ class _MapBackdropState extends State<_MapBackdrop>
                       reduceMotion: motion.reduceMotion || !_spawnDone,
                       frozenValue: 0,
                       builder: (BuildContext context, double drift) {
+                        // ПУНКТ 4: фазы подключения теперь видны на карте так
+                        // же, как на ПК. Пока идёт попытка — нитка
+                        // вырисовывается снова и снова (это «идёт работа», а не
+                        // застывшая линия), при отключении она втягивается
+                        // обратно, а в спокойных состояниях работает обычный
+                        // плавный tween.
+                        final double drawn = widget.connecting
+                            ? dash.clamp(0.0, 1.0)
+                            : widget.disconnecting
+                                ? (1 - dash).clamp(0.0, 1.0)
+                                : arc;
                         return DottedWorld(
                           zoom: widget.overview ? 1 : zoom,
                           focus: widget.overview ? const Offset(.5,.5) : focus,
@@ -607,7 +624,7 @@ class _MapBackdropState extends State<_MapBackdrop>
                           serverPoint: serverPoint,
                           nodePoints: fleet,
                           accountArcs: widget.accountArcs,
-                          arcProgress: arc,
+                          arcProgress: drawn,
                           arcPhase: dash,
                           orbitalPhase: orbit,
                           pulse: live ? pulse : 0,
