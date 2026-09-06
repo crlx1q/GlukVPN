@@ -563,16 +563,24 @@
 
     var name = D.planLabel(sub);
     var tier = planTier(sub);
-    set("plan", esc(name));
-    set("plan2", esc(name));
-    $$('[data-d="plan-badge"]').forEach(function (el) { el.setAttribute("data-tier", String(tier)); });
+    var badge = D.planBadge(sub);
+    /* Нет подписки — это и есть Free, а не «—». */
+    var planText = name && name !== "\u2014" ? name : D.badgeLabel(badge);
+    set("plan", esc(planText));
+    set("plan2", esc(planText));
+    $$('[data-d="plan-badge"]').forEach(function (el) {
+      el.setAttribute("data-tier", String(tier));
+      el.setAttribute("data-badge", badge);
+      var glyph = D.planBadgeGlyph(badge);
+      var svg = el.querySelector("svg");
+      if (svg && glyph) svg.innerHTML = glyph;
+    });
 
     var ustatus = String(u.status || "").toUpperCase();
     var ULABEL = { ACTIVE: "Активен", BLOCKED: "Заблокирован", SUSPENDED: "Приостановлен", PENDING: "Ожидает подтверждения" };
     set("status", esc(ustatus ? (ULABEL[ustatus] ? T(ULABEL[ustatus]) : ustatus) : "\u2014"));
     setClass("status-badge", "dash-badge--ok", ustatus === "ACTIVE");
     setClass("status-badge", "dash-badge--warn", !!ustatus && ustatus !== "ACTIVE");
-    show('[data-d="tester-badge"]', !!u.isTester);
     show('[data-d="status-badge"]', !!ustatus && ustatus!=='ACTIVE');
 
     set("sec-email", esc(u.email || "\u2014"));

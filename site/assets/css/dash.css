@@ -37,7 +37,6 @@
 .dash-badge--plan[data-tier="2"]{color:#fff;border-color:rgba(201,169,255,.5);background:linear-gradient(135deg,rgba(168,85,247,.42),rgba(93,32,197,.36))}
 .dash-badge--ok{color:var(--green);border-color:rgba(94,231,163,.3);background:rgba(94,231,163,.09)}
 .dash-badge--warn{color:var(--amber);border-color:rgba(240,181,103,.3);background:rgba(240,181,103,.09)}
-.dash-badge--tester{color:#9fd8ff;border-color:rgba(56,189,248,.32);background:rgba(56,189,248,.1)}
 .dash-badge[hidden]{display:none}
 .dash-actions{display:flex;align-items:center;gap:8px;flex:none}
 .dash-ibtn{width:40px;height:40px;display:grid;place-items:center;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text-0);cursor:pointer;text-decoration:none;transition:border-color .18s ease,background .18s ease,transform .18s ease}

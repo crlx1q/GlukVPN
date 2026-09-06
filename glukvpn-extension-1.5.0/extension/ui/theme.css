@@ -1405,7 +1405,14 @@ body.signed-out .rail { opacity: 0.5; }
 .modal-device button { width:auto; padding:7px 9px; }
 .modal-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
 
-.prof-chip.plan-badge{border-radius:9px;padding:5px 10px;background:#382447;color:#e1c8fa;border:1px solid #674684;font-size:12px;font-weight:600;box-shadow:none}
+/* Бейджик уровня подписки рядом с ником — те же цвета и тот же глиф,
+   что на сайте, ПК и телефоне. */
+.prof-chip.plan-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 9px 4px 7px;font-size:11px;font-weight:700;letter-spacing:0;text-transform:none;box-shadow:none;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:var(--text-1)}
+.prof-chip.plan-badge svg{width:13px;height:13px;flex:0 0 13px}
+.prof-chip.plan-badge--free{color:#c3cbd8;border-color:rgba(154,164,178,.34);background:rgba(154,164,178,.13)}
+.prof-chip.plan-badge--basic{color:#8fb8ff;border-color:rgba(76,141,255,.4);background:rgba(76,141,255,.15)}
+.prof-chip.plan-badge--pro{color:#d6bcff;border-color:rgba(169,112,255,.44);background:rgba(169,112,255,.17)}
+.prof-chip.plan-badge--beta{color:#7ff0dd;border-color:rgba(22,224,192,.45);background:linear-gradient(135deg,rgba(22,224,192,.2),rgba(169,112,255,.22))}
 
 /* Глифы устройств. Спрайт подключён маской, а не фоном, поэтому глиф
    берёт currentColor и всегда в цвете темы, а не белое пятно. */

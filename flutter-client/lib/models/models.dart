@@ -302,16 +302,22 @@ class UsernameChangeResult {
 }
 
 class SubscriptionInfo {
-  const SubscriptionInfo({required this.status, this.expiresAt, this.plan = '', this.planName = ''});
+  const SubscriptionInfo({required this.status, this.expiresAt, this.plan = '', this.planName = '', this.badge = ''});
 
   factory SubscriptionInfo.fromJson(Map<String, dynamic> json) => SubscriptionInfo(
         plan: _asString(json['plan']), planName: _asString(json['planName']),
+        badge: _asString(json['badge']),
         status: _asString(json['status'], 'EXPIRED'),
         expiresAt: _asDate(json['expiresAt']),
       );
 
   final String status;
   final String plan, planName;
+
+  /// Уровень бейджика, который считает сервер: free / basic / pro / beta.
+  /// Клиент его не выбирает, поэтому подделать уровень локально нельзя.
+  /// Старые серверы поле не присылают - тогда выводим из кода тарифа.
+  final String badge;
   String get displayPlan {
     final code = (plan.isNotEmpty ? plan : planName).toLowerCase().replaceAll(RegExp(r'[\s_-]'), '');
     final beta = code.contains('beta') || code.contains('β');

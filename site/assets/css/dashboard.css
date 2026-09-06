@@ -162,3 +162,12 @@
 /* Паритет с Flutter и со старой сборкой: белое кольцо по контуру
    и мягкое фиолетовое гало вокруг маркера устройства. */
 .gluk-pin{box-shadow:0 0 0 1.5px rgba(255,255,255,.55),0 0 0 6px rgba(139,92,246,.16),0 0 18px 6px rgba(139,92,246,.42)}
+
+/* Бейджик тарифа в кабинете — те же цвета, что в шапке сайта и в клиентах.
+   Селектор с [data-badge] специфичнее общего правила выше, поэтому цвет
+   тарифа побеждает независимо от порядка загрузки стилей. */
+.dashboard-page .dash-badge--plan[data-badge="free"]{color:#c3cbd8;border-color:rgba(154,164,178,.34);background:rgba(154,164,178,.13)}
+.dashboard-page .dash-badge--plan[data-badge="basic"]{color:#8fb8ff;border-color:rgba(76,141,255,.4);background:rgba(76,141,255,.15)}
+.dashboard-page .dash-badge--plan[data-badge="pro"]{color:#d6bcff;border-color:rgba(169,112,255,.44);background:rgba(169,112,255,.17)}
+.dashboard-page .dash-badge--plan[data-badge="beta"]{color:#7ff0dd;border-color:rgba(22,224,192,.45);background:linear-gradient(135deg,rgba(22,224,192,.2),rgba(169,112,255,.22))}
+.dashboard-page .dash-badge--plan svg{opacity:1}

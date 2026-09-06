@@ -232,6 +232,38 @@
     return beta ? "β " + base : base;
   }
 
+  /* ------------------------------------------------------------ бейджики
+     Уровень подписки рядом с ником: серый Free, синий Basic, фиолетовый Pro
+     и «необычный» β Pro. Токен считает сервер (subscription.badge), клиент его
+     не выбирает; для старых серверов выводим из кода тарифа. Free — это
+     отсутствие подписки, поэтому и пустой план даёт серый Free. */
+  var BADGE_LABELS = { free: "Free", basic: "Basic", pro: "Pro", beta: "\u03b2 Pro" };
+  var BADGE_GLYPHS = {
+    free: '<circle cx="12" cy="12" r="6.6" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/>',
+    basic: '<path d="M12 3.4 5.4 6.5v4.7c0 4 2.8 7.4 6.6 8.4 3.8-1 6.6-4.4 6.6-8.4V6.5L12 3.4Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 12.1l2.2 2.2 4-4.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+    pro: '<path d="M12 3l1.9 4.9L19 9.8l-5.1 1.9L12 17l-1.9-5.3L5 9.8l5.1-1.9L12 3Z" fill="currentColor"/><path d="M18.7 14.7l.6 1.8 1.8.6-1.8.6-.6 1.8-.6-1.8-1.8-.6 1.8-.6.6-1.8Z" fill="currentColor"/>',
+    beta: '<path d="M9.3 3h5.4M10.3 3v5.6l-4.9 8.7A2 2 0 0 0 7.1 20.3h9.8a2 2 0 0 0 1.7-3l-4.9-8.7V3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="15.4" r="1.6" fill="currentColor"/>'
+  };
+
+  function badgeToken(s) {
+    var token = String((s && s.badge) || "").toLowerCase();
+    if (BADGE_LABELS[token]) return token;
+    var code = String((s && (s.plan || s.planName)) || "").toLowerCase().replace(/[\s_-]/g, "");
+    if (/beta|β/.test(code)) return "beta";
+    if (code.indexOf("pro") >= 0) return "pro";
+    if (code.indexOf("basic") >= 0) return "basic";
+    return "free";
+  }
+
+  function badgeHtml(s, extra) {
+    var token = badgeToken(s);
+    var label = BADGE_LABELS[token];
+    return '<span class="gl-badge gl-badge--' + token + (extra ? " " + extra : "") +
+      '" title="' + esc(T("Тариф")) + ": " + esc(label) + '">' +
+      '<svg viewBox="0 0 24 24" aria-hidden="true">' + BADGE_GLYPHS[token] + "</svg>" +
+      "<span>" + esc(label) + "</span></span>";
+  }
+
   function subLabel() {
     var s = state.subscription;
     if (!s || !s.status) return { text: T("Нет подписки"), ok: false };
@@ -275,12 +307,14 @@
       html =
         '<button class="acct__chip" type="button" aria-haspopup="true" aria-expanded="false" data-acct-toggle>' +
         '<span class="avatar avatar--online">' + esc(initials(u)) + "</span>" +
-        '<span class="acct__name">' + esc(u.username || T("Аккаунт")) + "</span>" + IC.caret +
+        '<span class="acct__name">' + esc(u.username || T("Аккаунт")) + "</span>" +
+        badgeHtml(state.subscription, "gl-badge--sm") + IC.caret +
         "</button>" +
         '<div class="acct__menu" data-acct-menu role="menu">' +
         '<div class="acct__head"><span class="avatar avatar--lg">' + esc(initials(u)) + "</span>" +
         '<span class="acct__id"><b>' + esc(u.username || "") + "</b><span>" +
-        esc(u.email || (u.publicId ? "№ " + u.publicId : "")) + "</span></span></div>" +
+        esc(u.email || (u.publicId ? "№ " + u.publicId : "")) + "</span></span>" +
+        badgeHtml(state.subscription) + "</div>" +
         '<div class="acct__rows">' +
         '<div class="acct__row"><span>' + esc(T("Подписка")) + '</span><b class="' + (sub.ok ? "ok" : "") + '">' + esc(sub.text) + "</b></div>" +
         '<div class="acct__row"><span>' + esc(T("Устройства")) + "</span><b>" + state.devices + " / " + (u.maxDevices || 3) + "</b></div>" +
@@ -375,7 +409,13 @@
         throw e;
       });
     },
-    isAuthed: function () { return state.status === "in"; }
+    isAuthed: function () { return state.status === "in"; },
+    /* Общий бейджик тарифа для кабинета и любой другой страницы: разметка
+       одна и та же, чтобы сайт не расходился сам с собой. */
+    planBadge: badgeToken,
+    planBadgeHtml: badgeHtml,
+    planBadgeGlyph: function (token) { return BADGE_GLYPHS[token] || BADGE_GLYPHS.free; },
+    planBadgeLabel: function (token) { return BADGE_LABELS[token] || BADGE_LABELS.free; }
   };
   window.GlukAuth = api;
 

@@ -9,6 +9,7 @@ import '../../utils/format.dart';
 // Shared with the phone: one definition of what a device looks like.
 import '../../widgets/device_icon.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/plan_badge.dart';
 import '../i18n/desktop_strings.dart';
 import '../state/desktop_vpn_controller.dart';
 import '../theme/desktop_theme.dart';
@@ -491,9 +492,11 @@ class _ProfileHeader extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    _Chip(
-                      label: auth.subscription?.displayPlan ?? '—',
-                      colour: GlukColors.violetLight,
+                    // Бейджик уровня подписки рядом с ником: один и тот же
+                    // набор на сайте, ПК, телефоне и в расширении.
+                    PlanBadge(
+                      subscription: auth.subscription,
+                      compact: true,
                     ),
                     if (user?.isAdmin ?? false) ...<Widget>[
                       const SizedBox(width: 6),

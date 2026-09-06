@@ -28,7 +28,23 @@ function planLabel(sub){
  var beta=/beta|β/.test(code),base=code.indexOf('pro')>=0?'Pro':code.indexOf('basic')>=0?'Basic':code.indexOf('free')>=0?'Free':'—';
  return beta&&base!=='—'?'β '+base:base;
 }
-var api={subscription:subscription,request:request,vpn:vpn,planLabel:planLabel};root.GlukDashboard=api;
+/* Бейджик уровня подписки. Разметку даёт auth.js — он есть на любой
+   странице вместе с шапкой, так что сайт рисует бейджик ровно одним кодом.
+   Токен считаем и сами: dashboard-ui грузится и в тестах, где DOM нет. */
+var BADGE_LABELS={free:'Free',basic:'Basic',pro:'Pro',beta:'\u03b2 Pro'};
+function planBadge(sub){
+ var token=String(sub&&sub.badge||'').toLowerCase();
+ if(BADGE_LABELS[token])return token;
+ var code=String(sub&&(sub.plan||sub.planName)||'').toLowerCase().replace(/[\s_-]/g,'');
+ if(/beta|β/.test(code))return 'beta';
+ if(code.indexOf('pro')>=0)return 'pro';
+ if(code.indexOf('basic')>=0)return 'basic';
+ return 'free';
+}
+function badgeLabel(token){return BADGE_LABELS[token]||BADGE_LABELS.free;}
+function planBadgeHtml(sub,extra){var A=root.GlukAuth;return A&&typeof A.planBadgeHtml==='function'?A.planBadgeHtml(sub,extra):'';}
+function planBadgeGlyph(token){var A=root.GlukAuth;return A&&typeof A.planBadgeGlyph==='function'?A.planBadgeGlyph(token):'';}
+var api={subscription:subscription,request:request,vpn:vpn,planLabel:planLabel,planBadge:planBadge,badgeLabel:badgeLabel,planBadgeHtml:planBadgeHtml,planBadgeGlyph:planBadgeGlyph};root.GlukDashboard=api;
 if(typeof module==='object'&&module.exports)module.exports=api;
 if(!root.document)return;
 var doc=root.document,EN=doc.documentElement.getAttribute('data-lang')==='en',tr=function(ru,en){return EN?en:ru;};

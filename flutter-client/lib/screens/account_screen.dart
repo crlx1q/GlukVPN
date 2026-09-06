@@ -12,6 +12,7 @@ import '../state/vpn_controller.dart';
 import '../theme/tokens.dart';
 import '../utils/format.dart' hide countryFlag;
 import '../widgets/glass.dart';
+import '../widgets/plan_badge.dart';
 import 'devices_screen.dart' show TonePill;
 
 /// ROUND 10 (4.2): the "Account" screen the desktop client and the website
@@ -122,7 +123,16 @@ class _AccountScreenState extends State<AccountScreen> {
             _Card(
               title: s.profile,
               children: <Widget>[
-                _Row(label: s.username, value: user?.username ?? '\u2014'),
+                _Row(
+                  label: s.username,
+                  value: user?.username ?? '\u2014',
+                  // Бейджик уровня подписки рядом с ником — такой же, как на
+                  // сайте, ПК и в расширении: Free / Basic / Pro / β Pro.
+                  trailing: PlanBadge(
+                    subscription: auth.subscription,
+                    compact: true,
+                  ),
+                ),
                 _Row(
                   label: s.email,
                   value: user?.email ?? s.notSet,

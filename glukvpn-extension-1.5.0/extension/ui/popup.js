@@ -1062,6 +1062,56 @@ function isAdminUser() {
 	return Boolean(state?.runtime?.user?.isAdmin ?? state?.user?.isAdmin ?? false)
 }
 
+/* Бейджик уровня подписки: серый Free, синий Basic, фиолетовый Pro и
+   «необычный» β Pro. Токен считает сервер (subscription.badge) — подделать
+   его клиент не может; для старых серверов выводим из кода тарифа, а
+   отсутствие подписки — это Free. */
+const PLAN_BADGE_LABELS = { free: 'Free', basic: 'Basic', pro: 'Pro', beta: '\u03b2 Pro' }
+
+/** Те же контуры, что в site/assets/js/auth.js и во Flutter-версиях. */
+const PLAN_BADGE_GLYPHS = {
+	free: [
+		['circle', { cx: '12', cy: '12', r: '6.6', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.9' }],
+		['circle', { cx: '12', cy: '12', r: '2.4', fill: 'currentColor' }],
+	],
+	basic: [
+		['path', { d: 'M12 3.4 5.4 6.5v4.7c0 4 2.8 7.4 6.6 8.4 3.8-1 6.6-4.4 6.6-8.4V6.5L12 3.4Z', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.7', 'stroke-linejoin': 'round' }],
+		['path', { d: 'M9 12.1l2.2 2.2 4-4.1', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }],
+	],
+	pro: [
+		['path', { d: 'M12 3l1.9 4.9L19 9.8l-5.1 1.9L12 17l-1.9-5.3L5 9.8l5.1-1.9L12 3Z', fill: 'currentColor' }],
+		['path', { d: 'M18.7 14.7l.6 1.8 1.8.6-1.8.6-.6 1.8-.6-1.8-1.8-.6 1.8-.6.6-1.8Z', fill: 'currentColor' }],
+	],
+	beta: [
+		['path', { d: 'M9.3 3h5.4M10.3 3v5.6l-4.9 8.7A2 2 0 0 0 7.1 20.3h9.8a2 2 0 0 0 1.7-3l-4.9-8.7V3', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.7', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }],
+		['circle', { cx: '12', cy: '15.4', r: '1.6', fill: 'currentColor' }],
+	],
+}
+
+function planBadgeToken(sub) {
+	const token = String(sub?.badge ?? '').toLowerCase()
+	if (PLAN_BADGE_LABELS[token]) return token
+	const code = String(sub?.plan ?? sub?.planName ?? '').toLowerCase().replace(/[\s_-]/g, '')
+	if (/beta|β/.test(code)) return 'beta'
+	if (code.includes('pro')) return 'pro'
+	if (code.includes('basic')) return 'basic'
+	return 'free'
+}
+
+/** Собираем SVG через DOM, а не innerHTML — CSP расширения строгий. */
+function planBadgeSvg(token) {
+	const ns = 'http://www.w3.org/2000/svg'
+	const svg = document.createElementNS(ns, 'svg')
+	svg.setAttribute('viewBox', '0 0 24 24')
+	svg.setAttribute('aria-hidden', 'true')
+	for (const [tag, attrs] of PLAN_BADGE_GLYPHS[token] ?? PLAN_BADGE_GLYPHS.free) {
+		const node = document.createElementNS(ns, tag)
+		for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, value)
+		svg.appendChild(node)
+	}
+	return svg
+}
+
 /** Older control servers never send isTester; absent means false. */
 function isTesterUser() {
 	return Boolean(state?.runtime?.user?.isTester ?? state?.user?.isTester ?? false)
@@ -1505,8 +1555,13 @@ function renderProfile() {
 		: t('profile.noSub')
 	const chip = $('prof-chip')
 	if (chip) {
-		chip.textContent = displayPlan(sub)
-		chip.className = 'prof-chip plan-badge'
+		// Бейджик рядом с ником: глиф + имя тарифа, как на сайте и ПК.
+		const badge = planBadgeToken(sub)
+		chip.className = `prof-chip plan-badge plan-badge--${badge}`
+		chip.title = `${t('profile.plan')}: ${PLAN_BADGE_LABELS[badge]}`
+		const text = document.createElement('span')
+		text.textContent = PLAN_BADGE_LABELS[badge]
+		chip.replaceChildren(planBadgeSvg(badge), text)
 	}
 	set('prof-status', label)
 	set('prof-plan', displayPlan(sub))
