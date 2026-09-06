@@ -102,6 +102,7 @@ class AnalyticsDevice {
   factory AnalyticsDevice.fromJson(Map<String, dynamic> json) => AnalyticsDevice(deviceId: '${json['deviceId'] ?? ''}', deviceName: '${json['deviceName'] ?? 'Device'}', platform: '${json['platform'] ?? ''}', downloadBytes: _int(json['downloadBytes']), uploadBytes: _int(json['uploadBytes']));
   final String deviceId, deviceName, platform;
   final int downloadBytes, uploadBytes;
+  int get totalBytes => downloadBytes + uploadBytes;
 }
 
 class DomainUsage {
@@ -111,6 +112,7 @@ class DomainUsage {
   final int downloadBytes, uploadBytes, connections;
   final DateTime? lastSeenAt;
   final String? faviconUrl;
+  int get totalBytes => downloadBytes + uploadBytes;
 }
 
 class CategoryUsage {
@@ -118,6 +120,7 @@ class CategoryUsage {
   factory CategoryUsage.fromJson(Map<String, dynamic> json) => CategoryUsage(category: '${json['category'] ?? ''}', downloadBytes: _int(json['downloadBytes']), uploadBytes: _int(json['uploadBytes']));
   final String category;
   final int downloadBytes, uploadBytes;
+  int get totalBytes => downloadBytes + uploadBytes;
 }
 
 class ServiceBudget {

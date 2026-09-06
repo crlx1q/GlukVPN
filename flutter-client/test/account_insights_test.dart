@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:glukvpn/models/account_insights.dart';
+import 'package:glukvpn/widgets/usage_stats.dart';
 
 void main() {
   test('active map preserves unknown origin and real node coordinates', () {
@@ -22,6 +23,17 @@ void main() {
     expect(value.domains.single.domain, 'example.test');
     expect(value.budget.available, isTrue);
     expect(value.downloadBytes + value.uploadBytes, 15);
+  });
+
+  test('totalBytes getters compute downloadBytes + uploadBytes', () {
+    const traffic = TrafficPoint(start: null, downloadBytes: 10, uploadBytes: 20);
+    expect(traffic.totalBytes, 30);
+    const device = AnalyticsDevice(deviceId: '1', deviceName: 'd', platform: 'p', downloadBytes: 100, uploadBytes: 50);
+    expect(device.totalBytes, 150);
+    const domain = DomainUsage(domain: 'a', category: 'b', downloadBytes: 200, uploadBytes: 300, connections: 1);
+    expect(domain.totalBytes, 500);
+    const category = CategoryUsage(category: 'c', downloadBytes: 40, uploadBytes: 60);
+    expect(category.totalBytes, 100);
   });
 }
 Map<String,dynamic> _node()=> <String,dynamic>{'id':'n','name':'node','country':'Germany','countryCode':'DE','host':'vpn.test','port':443,'status':'ONLINE','online':true,'connectable':true,'loadPercent':1,'activePeers':1,'capacity':10,'location':<String,dynamic>{'lat':50.1,'lon':8.6,'source':'node-city','approximate':true},'restrictions':<Object?>[]};
