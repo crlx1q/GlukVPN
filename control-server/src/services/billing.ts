@@ -23,6 +23,7 @@ import { config } from "../config"
 import { writeAudit } from "../lib/audit"
 import { badRequest, conflict, notFound, serviceUnavailable } from "../lib/errors"
 import { prisma } from "../prisma"
+import { FREE_PLAN_CODE } from "./entitlements"
 import { requestPolicySync } from "./policy"
 import { type PlanWithPrices, resolvePlanPrice } from "./pricing"
 
@@ -118,27 +119,43 @@ export async function grantPlan(params: {
 	plan: Plan
 	days?: number
 	source: string
+	/**
+	 * "extend" (default) keeps the days already paid for and stacks the new term
+	 * on top of them. "replace" drops whatever is active and starts a fresh term
+	 * now - what an admin means by "put this account on Basic for one month".
+	 */
+	mode?: "extend" | "replace"
 }): Promise<{ expiresAt: Date }> {
+	// Free is the absence of a subscription, never a row. Granting it is exactly
+	// how an account ended up displaying "Free - active - 790 days left".
+	if (params.plan.code.trim().toLowerCase() === FREE_PLAN_CODE) {
+		throw badRequest("Free is not a subscription")
+	}
+	const mode = params.mode ?? "extend"
 	const days = params.days ?? params.plan.days
 	const now = new Date()
-	const current = await prisma.subscription.findFirst({
+	// Rows this grant takes over. Extending supersedes only the same-or-lower
+	// tier (a Pro month bought on top of Basic keeps Pro); replacing clears the
+	// lot, so an account can never sit on two plans at once.
+	const superseded = await prisma.subscription.findMany({
 		where: {
 			userId: params.userId,
 			status: "ACTIVE",
 			expiresAt: { gt: now },
-			tier: { lte: params.plan.tier },
+			...(mode === "extend" ? { tier: { lte: params.plan.tier } } : {}),
 		},
 		orderBy: { expiresAt: "desc" },
 	})
-	const start = current && current.expiresAt > now ? current.expiresAt : now
+	const current = superseded[0] ?? null
+	const start = mode === "extend" && current && current.expiresAt > now ? current.expiresAt : now
 	const expiresAt = new Date(start.getTime() + days * 24 * 60 * 60 * 1000)
 
 	await prisma.$transaction(async (tx) => {
 		// The old row of the same tier would otherwise stay ACTIVE beside the
 		// new one and confuse "which plan am I on"; it is superseded, not lost.
-		if (current) {
-			await tx.subscription.update({
-				where: { id: current.id },
+		if (superseded.length > 0) {
+			await tx.subscription.updateMany({
+				where: { id: { in: superseded.map((row) => row.id) } },
 				data: { status: "EXPIRED" },
 			})
 		}
@@ -168,12 +185,19 @@ export async function grantPlan(params: {
 	return { expiresAt }
 }
 
-/** The free plan for a brand-new account, when one exists. */
-export async function grantDefaultSubscription(userId: string): Promise<void> {
-	const free = await prisma.plan.findFirst({ where: { code: "free", active: true } })
-	if (!free) return
-	// "Free" is not a 30-day trial: ten years, renewed silently if it ever runs out.
-	await grantPlan({ userId, plan: free, days: 3650, source: "signup" })
+/**
+ * What a brand-new account gets: nothing.
+ *
+ * This used to write a ten-year "free" subscription, which is why accounts
+ * reported "Free - active - 790 days left". Free is the absence of a
+ * subscription, and `entitlements.ts` reads a missing row (or a legacy free
+ * row) as Free, so sign-up has nothing to do here.
+ *
+ * Kept as a no-op because every registration path calls it - and because a
+ * welcome trial, if there ever is one, belongs exactly here.
+ */
+export async function grantDefaultSubscription(_userId: string): Promise<void> {
+	return
 }
 
 // ------------------------------------------------------------- providers ---

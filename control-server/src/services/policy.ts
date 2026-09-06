@@ -181,9 +181,20 @@ export async function buildNodePolicy(node: VpnNode): Promise<NodePolicy> {
 				vlessUuid: { not: null },
 				user: {
 					status: "ACTIVE",
-					subscriptions: {
-						some: { status: "ACTIVE", expiresAt: { gt: now }, tier: { gte: node.tier } },
-					},
+					// Tier-0 nodes are open to Free accounts, and Free means "no
+					// subscription row at all" - demanding a row here is what stopped
+					// Free devices from ever being provisioned.
+					...(node.tier > 0
+						? {
+								subscriptions: {
+									some: {
+										status: "ACTIVE",
+										expiresAt: { gt: now },
+										tier: { gte: node.tier },
+									},
+								},
+							}
+						: {}),
 				},
 			},
 			select: { id: true, vlessUuid: true },

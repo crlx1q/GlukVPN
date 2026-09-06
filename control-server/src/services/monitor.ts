@@ -88,7 +88,10 @@ export async function runMonitorTick(): Promise<MonitorTickResult> {
 		if (service.maintenance || session.node.maintenance) reason = "maintenance"
 		else if (session.user.status !== "ACTIVE") reason = "user_disabled"
 		else if (session.device.status !== "ACTIVE") reason = "device_revoked"
-		else if (session.user.subscriptions.length === 0) reason = "subscription_expired"
+		// A missing subscription is not a reason on its own: Free has no row, and
+		// Free accounts are allowed on tier-0 nodes. Only a paid-tier node needs one.
+		else if (session.user.subscriptions.length === 0 && session.node.tier > 0)
+			reason = "subscription_expired"
 		else if (session.node.status === "DISABLED") reason = "node_disabled"
 		else if (
 			!session.node.lastHeartbeat ||

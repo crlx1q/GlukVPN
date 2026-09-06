@@ -1438,3 +1438,176 @@ summary:focus-visible {
 	outline: 2px solid var(--violet);
 	outline-offset: 1px;
 }
+
+/* --------------------------- подписки и бейджики --------------------------
+ *
+ * Форма выдачи подписки раньше была тремя голыми <select> внутри flex-ячейки
+ * действий: она распирала строку и наезжала на соседние колонки. Теперь это
+ * раскрывающаяся строка таблицы (.sub-row) с обычным потоком — ничего не
+ * позиционируется поверх.
+ *
+ * Значки тарифов совпадают по смыслу и цвету с сайтом, ПК, телефоном и
+ * расширением: серый Free, синий Basic, фиолетовый Pro, «необычный» β Pro.
+ */
+
+.plan-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 3px 9px 3px 7px;
+	border: 1px solid var(--stroke);
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.01em;
+	white-space: nowrap;
+	line-height: 1.5;
+}
+
+.plan-badge > i {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: currentColor;
+	flex: none;
+}
+
+.plan-badge--free {
+	color: #9aa4b2;
+	border-color: rgba(154, 164, 178, 0.35);
+	background: rgba(154, 164, 178, 0.12);
+}
+
+.plan-badge--basic {
+	color: #4c8dff;
+	border-color: rgba(76, 141, 255, 0.4);
+	background: rgba(76, 141, 255, 0.14);
+}
+
+.plan-badge--pro {
+	color: #a970ff;
+	border-color: rgba(169, 112, 255, 0.42);
+	background: rgba(169, 112, 255, 0.15);
+}
+
+/* β Pro — внутренний тариф, поэтому цвет намеренно «не из палитры». */
+.plan-badge--beta {
+	color: #16e0c0;
+	border-color: rgba(22, 224, 192, 0.45);
+	background: linear-gradient(135deg, rgba(22, 224, 192, 0.18), rgba(169, 112, 255, 0.18));
+}
+
+.sub-cell {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 4px;
+}
+
+.sub-row > td {
+	background: rgba(255, 255, 255, 0.02);
+	padding: 0;
+}
+
+.sub-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	padding: 16px 18px 18px;
+	border-top: 1px solid var(--stroke);
+	border-bottom: 1px solid var(--stroke);
+}
+
+.sub-panel__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.sub-panel__title {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+}
+
+.sub-panel__facts {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+	gap: 2px 24px;
+}
+
+.sub-panel__form {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 14px 26px;
+}
+
+.sub-field {
+	display: flex;
+	flex-direction: column;
+	gap: 7px;
+}
+
+.sub-field > span {
+	font-size: 11px;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	opacity: 0.6;
+}
+
+.chip-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.chip {
+	padding: 6px 12px;
+	border: 1px solid var(--stroke);
+	border-radius: var(--r-sm, 10px);
+	background: transparent;
+	color: var(--text-0);
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+	transition:
+		border-color 0.15s ease,
+		background 0.15s ease;
+}
+
+.chip:hover {
+	border-color: var(--violet-light, #a970ff);
+}
+
+.chip[aria-pressed="true"] {
+	border-color: var(--violet, #7c4dff);
+	background: rgba(124, 77, 255, 0.16);
+	font-weight: 600;
+}
+
+.chip:focus-visible {
+	outline: 2px solid var(--violet-light, #a970ff);
+	outline-offset: 2px;
+}
+
+.sub-panel__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+}
+
+.sub-panel__note {
+	margin: 0;
+	font-size: 12px;
+	opacity: 0.6;
+	max-width: 68ch;
+}
+
+/* Ячейка действий остаётся узкой: форма живёт в отдельной строке. */
+td.actions {
+	flex-wrap: wrap;
+	align-items: center;
+}

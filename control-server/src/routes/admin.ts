@@ -11,6 +11,14 @@ import { cancelOrder, grantPlan, markOrderPaid, orderView } from "../services/bi
 import { purgeStaleDevices } from "../services/deviceAccess"
 import { categoryLabel } from "../services/domainCategories"
 import { egressBudgetView } from "../services/egressBudget"
+import {
+	entitlementPayload,
+	FREE_PLAN_CODE,
+	isGrantablePlanCode,
+	planDisplayName,
+	planShape,
+	resolveEntitlement,
+} from "../services/entitlements"
 import { effectiveNodeStatus, nodeEndpoint, nodeLoadPercent } from "../services/nodes"
 import { publicRestrictions } from "../services/nodeRestrictions"
 import {
@@ -67,6 +75,12 @@ const TierBody = z.object({ tier: z.coerce.number().int().min(0).max(9) })
 const GrantBody = z.object({
 	planCode: z.string().trim().min(2).max(32),
 	days: z.coerce.number().int().min(1).max(3650).optional(),
+	/**
+	 * "extend" adds the term on top of the days already left, "replace" starts a
+	 * fresh term now. The panel asks for one or the other explicitly instead of
+	 * silently stacking, which is what made grants unpredictable.
+	 */
+	mode: z.enum(["extend", "replace"]).default("extend"),
 })
 
 const ActivityQuery = z
@@ -707,6 +721,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 					prisma.session.count({ where: { userId: user.id, status: "ACTIVE" } }),
 				])
 				const subscription = user.subscriptions[0] ?? null
+				// What the account is really entitled to. Legacy "free" rows are not
+				// subscriptions, so the panel reads them as "no subscription" rather
+				// than "Free, active until 2028".
+				const entitlement = await resolveEntitlement(user.id)
 				return {
 					id: user.id,
 					publicId: user.publicId,
@@ -729,6 +747,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 								expiresAt: subscription.expiresAt.toISOString(),
 							}
 						: null,
+					entitlement: entitlementPayload(entitlement),
 					createdAt: user.createdAt.toISOString(),
 				}
 			}),
@@ -918,6 +937,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 		const { user: admin } = getAuthUser(request)
 		const target = await prisma.user.findUnique({ where: { id: parsed.data.id } })
 		if (!target) throw notFound("User not found")
+		// Free is not a subscription - "Free, active, 790 days left" is nonsense,
+		// and this endpoint is how it used to be produced. Taking a plan away is the
+		// DELETE below, never a grant of "free".
+		if (!isGrantablePlanCode(body.data.planCode)) {
+			throw badRequest("Free is not a subscription: deactivate the subscription instead")
+		}
 		const plan = await prisma.plan.findFirst({ where: { code: body.data.planCode.toLowerCase() } })
 		if (!plan) throw notFound("Plan not found")
 		const granted = await grantPlan({
@@ -925,6 +950,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 			plan,
 			days: body.data.days,
 			source: "manual",
+			mode: body.data.mode,
 		})
 		await writeAudit({
 			action: "admin.user.subscription.grant",
@@ -933,11 +959,62 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 			metadata: {
 				targetUserId: target.id,
 				plan: plan.code,
+				mode: body.data.mode,
 				days: body.data.days ?? plan.days,
 				expiresAt: granted.expiresAt.toISOString(),
 			},
 		})
-		return reply.send({ ok: true, plan: plan.code, expiresAt: granted.expiresAt.toISOString() })
+		return reply.send({
+			ok: true,
+			plan: plan.code,
+			planName: planDisplayName(plan.code),
+			mode: body.data.mode,
+			expiresAt: granted.expiresAt.toISOString(),
+			entitlement: entitlementPayload(await resolveEntitlement(target.id)),
+		})
+	})
+
+	/**
+	 * Turn a subscription off completely.
+	 *
+	 * The account is not moved onto a "Free plan", because no such row exists:
+	 * Free is the absence of a subscription. Every active row is superseded, the
+	 * device/session allowances fall back to the Free matrix and live tunnels are
+	 * closed so no node keeps honouring the old tier.
+	 */
+	app.delete("/api/admin/users/:id/subscription", async (request, reply) => {
+		const parsed = IdParams.safeParse(request.params)
+		if (!parsed.success) throw badRequest("Invalid user id")
+		const { user: admin } = getAuthUser(request)
+		const target = await prisma.user.findUnique({ where: { id: parsed.data.id } })
+		if (!target) throw notFound("User not found")
+		const disabled = await prisma.subscription.updateMany({
+			where: { userId: target.id, status: "ACTIVE" },
+			data: { status: "DISABLED" },
+		})
+		const free = planShape(FREE_PLAN_CODE)
+		await prisma.user.update({
+			where: { id: target.id },
+			data: { maxDevices: free.maxDevices, maxSessions: free.maxSessions },
+		})
+		const closedSessions = await closeSessionsForUser(target.id, "subscription_expired")
+		await requestPolicySync()
+		await writeAudit({
+			action: "admin.user.subscription.revoke",
+			userId: admin.id,
+			ip: clientIp(request),
+			metadata: {
+				targetUserId: target.id,
+				subscriptionsDisabled: disabled.count,
+				closedSessions,
+			},
+		})
+		return reply.send({
+			ok: true,
+			subscriptionsDisabled: disabled.count,
+			closedSessions,
+			entitlement: entitlementPayload(await resolveEntitlement(target.id)),
+		})
 	})
 
 	app.get("/api/admin/devices", async (_request, reply) => {

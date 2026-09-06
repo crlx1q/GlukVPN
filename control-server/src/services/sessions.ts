@@ -6,6 +6,7 @@ import { conflict, forbidden, notFound, serviceUnavailable } from "../lib/errors
 import { usableHostIps } from "../lib/ip"
 import { effectiveSessionLimit } from "../lib/sessionLimit"
 import { bytesToNumber, prisma } from "../prisma"
+import { resolveEntitlement } from "./entitlements"
 import { enqueueCommand, hasOpenCommand } from "./nodeCommands"
 import {
 	effectiveNodeStatus,
@@ -295,8 +296,10 @@ export async function connectSession(params: {
 
 	if (user.status !== "ACTIVE") throw forbidden("User is disabled")
 	if (params.device.status !== "ACTIVE") throw forbidden("Device is revoked")
-	const subscription = await activeSubscription(user.id)
-	if (!subscription) throw forbidden("No active subscription")
+	// Free is not a subscription: an account without one still connects, at tier 0
+	// and with the Free device/session limits. The server resolves the plan, the
+	// client never states it.
+	const entitlement = await resolveEntitlement(user.id)
 	const device = await ensureDeviceVlessUuid(params.device)
 
 	// A device may hold only one live session: reconnecting replaces the old one.
@@ -307,7 +310,7 @@ export async function connectSession(params: {
 		await closeSession({ sessionId: session.id, reason: "reconnect" })
 	}
 
-	const planSessions = subscription.tier >= 2 ? 5 : subscription.tier >= 1 ? 3 : 1
+	const planSessions = entitlement.maxSessions
 	const maxSessions = Math.max(effectiveSessionLimit(user), planSessions)
 	const liveSessions = await prisma.session.count({
 		where: { userId: user.id, status: { in: [...ACTIVE_SESSION_STATES] } },
@@ -318,7 +321,7 @@ export async function connectSession(params: {
 		)
 	}
 
-	const node = await pickNode(params.nodeId ?? null, subscription.tier)
+	const node = await pickNode(params.nodeId ?? null, entitlement.tier)
 	const nodeLive = await prisma.session.count({
 		where: { nodeId: node.id, status: { in: [...ACTIVE_SESSION_STATES] } },
 	})

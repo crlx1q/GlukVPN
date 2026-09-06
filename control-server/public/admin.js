@@ -629,55 +629,254 @@ function renderNodes(nodes) {
 /** Выдавать план надо прямо из таблицы, без консоли и SQL. β Pro не
  *  показывается в каталоге, но руками его выдавать нужно. */
 const GRANT_PLANS = [
-	{ value: "free", label: "Free" },
-	{ value: "basic", label: "Basic" },
-	{ value: "pro", label: "Pro" },
-	{ value: "beta_pro", label: "\u03b2 Pro" },
+	{ value: "basic", label: "Basic", badge: "basic" },
+	{ value: "pro", label: "Pro", badge: "pro" },
+	{ value: "beta_pro", label: "\u03b2 Pro", badge: "beta" },
 ]
 
 /** Месяц / 3 / 6 / год — в днях, как ждёт POST /users/:id/subscription. */
 const GRANT_TERMS = [
-	{ value: 30, label: "1 month" },
-	{ value: 90, label: "3 months" },
-	{ value: 180, label: "6 months" },
-	{ value: 365, label: "1 year" },
+	{ value: 30, label: "1 мес" },
+	{ value: 90, label: "3 мес" },
+	{ value: 180, label: "6 мес" },
+	{ value: 365, label: "12 мес" },
 ]
 
-function smallSelect(options, selected) {
-	const select = document.createElement("select")
-	select.className = "small"
-	for (const option of options) {
-		const node = document.createElement("option")
-		node.value = String(option.value)
-		node.textContent = option.label
-		if (String(option.value) === String(selected)) node.selected = true
-		select.appendChild(node)
-	}
-	return select
+const BADGE_LABELS = { free: "Free", basic: "Basic", pro: "Pro", beta: "\u03b2 Pro" }
+
+/**
+ * Значок тарифа: тот же смысл и цвет, что на сайте, ПК, телефоне и в
+ * расширении. Free — не подписка, а её отсутствие, поэтому серый значок и
+ * никакого срока.
+ */
+function planBadge(badge, label) {
+	const kind = BADGE_LABELS[badge] ? badge : "free"
+	const span = document.createElement("span")
+	span.className = `plan-badge plan-badge--${kind}`
+	span.appendChild(document.createElement("i"))
+	span.appendChild(document.createTextNode(label || BADGE_LABELS[kind]))
+	return span
 }
 
-function planGrantControl(user) {
-	const wrap = document.createElement("span")
-	wrap.className = "grant-control"
-	const current = user.subscription && user.subscription.plan
-	const plan = smallSelect(GRANT_PLANS, current || "pro")
-	const term = smallSelect(GRANT_TERMS, 30)
-	const grant = actionButton("Grant", "small ghost", () => {
-		const planLabel = plan.options[plan.selectedIndex].textContent
-		const termLabel = term.options[term.selectedIndex].textContent
-		if (
-			!window.confirm(
-				`Grant ${planLabel} for ${termLabel} to ${user.username} (ID ${user.publicId})?`,
-			)
-		)
-			return null
-		return request(`/api/admin/users/${user.id}/subscription`, {
-			method: "POST",
-			body: { planCode: plan.value, days: Number(term.value) },
-		})
-	})
-	wrap.append(plan, term, grant)
+function dateLabel(iso) {
+	return iso ? new Date(iso).toLocaleDateString() : "\u2014"
+}
+
+function gbLabel(bytes) {
+	if (bytes === null || bytes === undefined) return "без лимита"
+	return `${Math.round(Number(bytes) / 1024 ** 3)} ГБ / 30 дней`
+}
+
+/** Ячейка «Подписка»: что действует сейчас, без «Free активна до 2028». */
+function subscriptionCell(user) {
+	const ent = user.entitlement || {}
+	const wrap = document.createElement("div")
+	wrap.className = "sub-cell"
+	wrap.appendChild(planBadge(ent.badge, ent.planName))
+	const line = document.createElement("span")
+	line.className = "sub-line"
+	line.textContent = ent.subscribed
+		? `до ${dateLabel(ent.expiresAt)} · ${ent.daysLeft} дн.`
+		: "подписки нет"
+	wrap.appendChild(line)
 	return wrap
+}
+
+/** Ряд кнопок-переключателей вместо <select>: все варианты видны сразу. */
+function chipRow(options, selected, onPick) {
+	const row = document.createElement("div")
+	row.className = "chip-row"
+	const buttons = []
+	const pick = (value) => {
+		for (const button of buttons) {
+			button.setAttribute("aria-pressed", String(button.dataset.value === String(value)))
+		}
+		onPick(value)
+	}
+	for (const option of options) {
+		const button = document.createElement("button")
+		button.type = "button"
+		button.className = "chip"
+		button.dataset.value = String(option.value)
+		button.textContent = option.label
+		button.addEventListener("click", () => pick(option.value))
+		buttons.push(button)
+		row.appendChild(button)
+	}
+	pick(selected)
+	return row
+}
+
+function subField(label, control) {
+	const wrap = document.createElement("div")
+	wrap.className = "sub-field"
+	const caption = document.createElement("span")
+	caption.textContent = label
+	wrap.append(caption, control)
+	return wrap
+}
+
+/**
+ * Панель подписки.
+ *
+ * Раскрывается отдельной строкой под пользователем — в потоке таблицы, ничего
+ * не висит поверх — и сначала отвечает на вопрос «что сейчас». Дальше ровно
+ * два действия: выдать / заменить / продлить подписку либо отключить её
+ * полностью, после чего аккаунт становится Free, то есть без подписки вообще.
+ */
+function subscriptionPanel(user, close) {
+	const ent = user.entitlement || {}
+	const wrap = document.createElement("div")
+	wrap.className = "sub-panel"
+
+	const head = document.createElement("div")
+	head.className = "sub-panel__head"
+	const title = document.createElement("div")
+	title.className = "sub-panel__title"
+	title.appendChild(planBadge(ent.badge, ent.planName))
+	const who = document.createElement("span")
+	who.className = "sub-line"
+	who.textContent = `${user.username} · ID ${user.publicId}`
+	title.appendChild(who)
+	const hide = document.createElement("button")
+	hide.type = "button"
+	hide.className = "small ghost"
+	hide.textContent = "Свернуть"
+	hide.addEventListener("click", close)
+	head.append(title, hide)
+
+	const facts = document.createElement("div")
+	facts.className = "sub-panel__facts"
+	facts.append(
+		kv("Статус", ent.subscribed ? "подписка активна" : "подписки нет (Free)"),
+		kv("Действует до", ent.subscribed ? dateLabel(ent.expiresAt) : "\u2014"),
+		kv("Осталось", ent.subscribed ? `${ent.daysLeft} дн.` : "\u2014"),
+		kv("Трафик", gbLabel(ent.trafficLimitBytes)),
+		kv("Устройства / сессии", `${ent.maxDevices ?? "?"} / ${ent.maxSessions ?? "?"}`),
+	)
+
+	let plan =
+		ent.subscribed && GRANT_PLANS.some((item) => item.value === ent.plan) ? ent.plan : "basic"
+	let days = 30
+	let mode = ent.subscribed ? "extend" : "replace"
+
+	const form = document.createElement("div")
+	form.className = "sub-panel__form"
+	form.appendChild(
+		subField(
+			"Тариф",
+			chipRow(GRANT_PLANS, plan, (value) => {
+				plan = value
+			}),
+		),
+	)
+	form.appendChild(
+		subField(
+			"Срок",
+			chipRow(GRANT_TERMS, days, (value) => {
+				days = Number(value)
+			}),
+		),
+	)
+	if (ent.subscribed) {
+		// Продлить = добавить срок к остатку; заменить = начать новый с сегодня.
+		form.appendChild(
+			subField(
+				"Как применить",
+				chipRow(
+					[
+						{ value: "extend", label: "Продлить" },
+						{ value: "replace", label: "Заменить" },
+					],
+					mode,
+					(value) => {
+						mode = value
+					},
+				),
+			),
+		)
+	}
+
+	const actions = document.createElement("div")
+	actions.className = "sub-panel__actions"
+	actions.appendChild(
+		actionButton(ent.subscribed ? "Применить" : "Выдать подписку", "small", () => {
+			const planLabel = (GRANT_PLANS.find((item) => item.value === plan) || {}).label || plan
+			const termLabel =
+				(GRANT_TERMS.find((item) => String(item.value) === String(days)) || {}).label ||
+				`${days} дн.`
+			const verb = mode === "extend" ? "продлить на" : "выдать"
+			if (
+				!window.confirm(
+					`${user.username} (ID ${user.publicId}): ${verb} ${planLabel} ${termLabel}?`,
+				)
+			)
+				return null
+			return request(`/api/admin/users/${user.id}/subscription`, {
+				method: "POST",
+				body: { planCode: plan, days, mode },
+			}).then((result) => {
+				toast(`${result.planName || planLabel} \u2192 ${dateLabel(result.expiresAt)}`)
+				close()
+			})
+		}),
+	)
+	if (ent.subscribed) {
+		actions.appendChild(
+			actionButton("Отключить подписку", "small danger", () => {
+				if (
+					!window.confirm(
+						`Отключить подписку у ${user.username} (ID ${user.publicId})? Аккаунт станет Free (без подписки), туннели закроются.`,
+					)
+				)
+					return null
+				return request(`/api/admin/users/${user.id}/subscription`, { method: "DELETE" }).then(
+					() => {
+						toast("Подписка отключена \u2014 аккаунт без подписки (Free)")
+						close()
+					},
+				)
+			}),
+		)
+	}
+
+	const note = document.createElement("p")
+	note.className = "sub-panel__note"
+	note.textContent =
+		"Free выдать нельзя: это не тариф, а отсутствие подписки. Лимит трафика, число устройств и сессий задаёт сервер по тарифу — клиент их не выбирает."
+
+	wrap.append(head, facts, form, actions, note)
+	return wrap
+}
+
+/** Кнопка в строке пользователя: раскрывает панель подписки под этой строкой. */
+function subscriptionToggle(user, row) {
+	const button = document.createElement("button")
+	button.type = "button"
+	button.className = "small ghost"
+	button.textContent = "Подписка"
+	button.setAttribute("aria-expanded", "false")
+	let panel = null
+	const close = () => {
+		if (panel) panel.remove()
+		panel = null
+		button.setAttribute("aria-expanded", "false")
+	}
+	button.addEventListener("click", () => {
+		if (panel) {
+			close()
+			return
+		}
+		panel = document.createElement("tr")
+		panel.className = "sub-row"
+		const holder = document.createElement("td")
+		holder.colSpan = 8
+		holder.appendChild(subscriptionPanel(user, close))
+		panel.appendChild(holder)
+		row.after(panel)
+		button.setAttribute("aria-expanded", "true")
+	})
+	return button
 }
 
 function renderUsers(users) {
@@ -691,12 +890,7 @@ function renderUsers(users) {
 		cell(row, user.isAdmin ? "yes" : "no")
 		cell(row, `${user.devices} / ${user.maxDevices}`)
 		cell(row, `${user.liveSessions} / ${user.maxSessions}`)
-		cell(
-			row,
-			user.subscription
-				? `${user.subscription.status} \u2192 ${new Date(user.subscription.expiresAt).toLocaleDateString()}`
-				: "none",
-		)
+		cell(row, subscriptionCell(user))
 
 		const actions = document.createElement("td")
 		actions.className = "actions"
@@ -719,7 +913,7 @@ function renderUsers(users) {
 				),
 			)
 		}
-		actions.appendChild(planGrantControl(user))
+		actions.appendChild(subscriptionToggle(user, row))
 		row.appendChild(actions)
 		body.appendChild(row)
 	}
