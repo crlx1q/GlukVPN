@@ -3,6 +3,7 @@ import { z } from "zod"
 import { badRequest, forbidden, notFound } from "../lib/errors"
 import { clientIp, getAuthUser, requireDeviceScope, requireUser } from "../middleware/auth"
 import { prisma } from "../prisma"
+import { quotaPayload, quotaStatus } from "../services/quota"
 import { serviceStatus } from "../services/serviceControl"
 import { loadPublicNodes } from "../services/nodes"
 import {
@@ -222,6 +223,10 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 
 		const current = sessions[0] ?? null
 		const subscriptionActive = await hasActiveSubscription(user.id)
+		// The monthly allowance rides along with status, so every platform draws
+		// "234 MB of 5 GB" from the same server-side numbers - the nodes count the
+		// bytes, the client only renders them.
+		const quota = await quotaStatus(user.id)
 		const service = await serviceStatus()
 		const latest = current ?? await prisma.session.findFirst({
 			where: { userId: user.id, ...(device ? { deviceId: device.id } : {}) },
@@ -239,6 +244,7 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 			session: current ? toSessionView(current) : null,
 			sessions: sessions.map(toSessionView),
 			subscriptionActive,
+			quota: quotaPayload(quota),
 			serverTime: new Date().toISOString(),
 		})
 	})

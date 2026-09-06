@@ -6,6 +6,7 @@ import { egressBudgetView } from "./egressBudget"
 import { lookupOrigin } from "./geo"
 import { countryPoint, usageBucket, usageWindow, type UsagePeriod } from "./insightMath"
 import { loadPublicNodes } from "./nodes"
+import { quotaPayload, quotaStatus } from "./quota"
 import { serviceSettings, serviceStatus } from "./serviceControl"
 
 type Origin = { lat: number; lon: number; countryCode: string | null; country: string | null; source: "ip-country" | "device-estimate"; approximate: true }
@@ -127,8 +128,14 @@ export async function accountAnalytics(userId: string, period: UsagePeriod, now 
 		categories.set(value.category, category)
 		return value
 	}).sort((a, b) => totalBytes(b) - totalBytes(a)).slice(0, 20)
+	// The plan's monthly allowance, alongside the usage it is spent on, so the
+	// statistics page draws the same "234 MB of 5 GB" bar as the apps. Both come
+	// from the node-fed buckets the series above is built from - the client is
+	// never asked how much it has spent.
+	const quota = await quotaStatus(userId, now)
 	return {
 		period, start: window.start.toISOString(), end: now.toISOString(), bucketSize: window.bucketSize,
+		quota: quotaPayload(quota),
 		coverage: { since: settings.analyticsSince, partial: !settings.analyticsSince || since > window.start, source: "session-counter-deltas", timezone: "UTC" },
 		totals, series: [...series.values()].sort((a, b) => a.start.localeCompare(b.start)),
 		devices: [...devices.values()].sort((a, b) => totalBytes(b) - totalBytes(a)),

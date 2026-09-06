@@ -7,6 +7,7 @@ import { usableHostIps } from "../lib/ip"
 import { effectiveSessionLimit } from "../lib/sessionLimit"
 import { bytesToNumber, prisma } from "../prisma"
 import { resolveEntitlement } from "./entitlements"
+import { quotaStatusFor } from "./quota"
 import { enqueueCommand, hasOpenCommand } from "./nodeCommands"
 import {
 	effectiveNodeStatus,
@@ -300,6 +301,20 @@ export async function connectSession(params: {
 	// and with the Free device/session limits. The server resolves the plan, the
 	// client never states it.
 	const entitlement = await resolveEntitlement(user.id)
+
+	// The monthly allowance is counted by the nodes, added up by the server and
+	// enforced here: once it is spent there is no new tunnel until the window
+	// resets. The client is told which window, so it can say "resumes on ..."
+	// instead of retrying blindly - and it cannot talk its way past this by
+	// reporting different numbers, because it reports none.
+	const quota = await quotaStatusFor(user.id, entitlement)
+	if (quota.exceeded && quota.limitBytes !== null) {
+		const gb = Math.round((quota.limitBytes / (1024 * 1024 * 1024)) * 10) / 10
+		throw forbidden(
+			`Monthly traffic limit reached (${gb} GB). The allowance resets ${quota.period.end.toISOString()}.`,
+		)
+	}
+
 	const device = await ensureDeviceVlessUuid(params.device)
 
 	// A device may hold only one live session: reconnecting replaces the old one.

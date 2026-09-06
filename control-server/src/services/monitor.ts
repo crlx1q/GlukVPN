@@ -7,6 +7,7 @@ import { purgeStaleDevices } from "./deviceAccess"
 import { purgeLinkRequests } from "./linkAuth"
 import { purgeOldLoginAttempts } from "./loginThrottle"
 import { requeueStaleCommands } from "./nodeCommands"
+import { TRAFFIC_LIMIT_REASON, usersOverQuota } from "./quota"
 import { sweepExpiredRegistrations } from "./registration"
 import { closeSession } from "./sessions"
 import { serviceStatus } from "./serviceControl"
@@ -83,6 +84,11 @@ export async function runMonitorTick(): Promise<MonitorTickResult> {
 	})
 
 	const service = await serviceStatus()
+	// Traffic is counted by the nodes, so the allowance has to be enforced here
+	// as well as at connect time: a single long session would otherwise run past
+	// the limit forever. Resolved once per tick for the accounts that actually
+	// hold a tunnel, from the same numbers the clients are shown.
+	const overQuota = new Set((await usersOverQuota()).map((row) => row.userId))
 	for (const session of liveSessions) {
 		let reason: string | null = null
 		if (service.maintenance || session.node.maintenance) reason = "maintenance"
@@ -92,6 +98,9 @@ export async function runMonitorTick(): Promise<MonitorTickResult> {
 		// Free accounts are allowed on tier-0 nodes. Only a paid-tier node needs one.
 		else if (session.user.subscriptions.length === 0 && session.node.tier > 0)
 			reason = "subscription_expired"
+		// Spent the monthly allowance: the tunnel closes and stays closed until
+		// the 30-day window rolls over, whatever the client would like to think.
+		else if (overQuota.has(session.userId)) reason = TRAFFIC_LIMIT_REASON
 		else if (session.node.status === "DISABLED") reason = "node_disabled"
 		else if (
 			!session.node.lastHeartbeat ||
