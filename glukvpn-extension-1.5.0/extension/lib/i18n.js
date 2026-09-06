@@ -303,6 +303,7 @@ const en = {
 	'err.accountDisabled': 'This account is disabled. Contact support.',
 	'err.emailNotVerified': 'Confirm your email address first.',
 	'err.noSubscription': 'This account has no active subscription.',
+	'err.trafficLimit': 'The monthly traffic allowance is spent. Connecting works again after the allowance resets.',
 	'err.captcha': 'The captcha check failed. Try again.',
 
 	'common.none': 'none',
@@ -532,6 +533,7 @@ const ru = {
 	'err.accountDisabled': 'Аккаунт отключён. Напишите в поддержку.',
 	'err.emailNotVerified': 'Сначала подтвердите адрес электронной почты.',
 	'err.noSubscription': 'На аккаунте нет активной подписки.',
+	'err.trafficLimit': 'Месячный лимит трафика исчерпан. Подключение заработает снова после сброса лимита.',
 	'err.no_pending_connect': 'Слот освобождён. Устройство готово к работе.',
 	'err.captcha': 'Проверка капчи не пройдена. Попробуйте снова.',
 
@@ -578,6 +580,11 @@ export function errorKeyFor(error) {
 	if (/already registered|public key is already/.test(text)) return 'err.keyRegistered'
 	if (/simultaneous|concurrent|another device first|tunnels/.test(text)) {
 		return 'err.tooManySessions'
+	}
+	// Лимит трафика идёт раньше проверки устройств: в обоих случаях встречается
+	// слово «limit», а совет «удалите устройство» здесь был бы вредным советом.
+	if (/traffic_limit|traffic limit|monthly traffic|allowance/.test(text)) {
+		return 'err.trafficLimit'
 	}
 	if (/device.*(limit|max|too many)|too many devices|device_limit/.test(text)) {
 		return 'err.tooManyDevices'

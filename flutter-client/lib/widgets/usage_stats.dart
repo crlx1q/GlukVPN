@@ -7,6 +7,7 @@ import '../theme/tokens.dart';
 import '../utils/format.dart';
 import 'active_account_map.dart' show accountDeviceIcon;
 import 'glass.dart';
+import 'quota_bar.dart';
 
 /// Статистика использования — ОДИН блок на все площадки.
 ///
@@ -77,6 +78,12 @@ class UsageStatsView extends StatelessWidget {
 					_Failed(russian: _ru, onReload: onReload)
 				else ...<Widget>[
 					if (d.partial) _Coverage(russian: _ru, since: d.coverageSince),
+					// Лимит тарифа стоит первым: из всей статистики именно он
+					// отключает туннель. Цифры серверные — считает узел, не клиент.
+					if (d.quota != null) ...<Widget>[
+						QuotaBar(quota: d.quota!, russian: _ru),
+						const SizedBox(height: 12),
+					],
 					_Totals(snapshot: d, russian: _ru, period: period),
 					const SizedBox(height: 12),
 					_TrafficChart(points: d.series, period: period, russian: _ru),

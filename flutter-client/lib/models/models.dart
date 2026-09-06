@@ -301,6 +301,67 @@ class UsernameChangeResult {
   final bool changed;
 }
 
+/// Месячный лимит тарифа и то, сколько от него осталось.
+///
+/// Считает узел, складывает сервер, клиент только рисует. Приложение
+/// не сообщает свой расход и не может его занизить — поэтому все поля здесь
+/// только читаются из ответа API.
+class QuotaInfo {
+  const QuotaInfo({
+    this.usedBytes = 0,
+    this.limitBytes,
+    this.remainingBytes,
+    this.exceeded = false,
+    this.periodStart,
+    this.periodEnd,
+  });
+
+  factory QuotaInfo.fromJson(Map<String, dynamic> json) => QuotaInfo(
+        usedBytes: _asInt(json['usedBytes']),
+        // null — тариф без лимита; ноль был бы прочитан как «ничего нельзя».
+        limitBytes: json['unlimited'] == true || json['limitBytes'] == null
+            ? null
+            : _asInt(json['limitBytes']),
+        remainingBytes:
+            json['remainingBytes'] == null ? null : _asInt(json['remainingBytes']),
+        exceeded: _asBool(json['exceeded']),
+        periodStart: _asDate(json['periodStart']),
+        periodEnd: _asDate(json['periodEnd'] ?? json['resetAt']),
+      );
+
+  final int usedBytes;
+
+  /// `null` — лимита нет.
+  final int? limitBytes;
+  final int? remainingBytes;
+
+  /// Лимит исчерпан: сервер не даст подключиться до сброса.
+  final bool exceeded;
+  final DateTime? periodStart;
+
+  /// Когда окно закроется и лимит обнулится.
+  final DateTime? periodEnd;
+
+  bool get hasLimit => (limitBytes ?? 0) > 0;
+
+  /// 0..1 для шкалы. Без лимита — 0, чтобы виджет не делил на ноль.
+  double get fraction {
+    final int? limit = limitBytes;
+    if (limit == null || limit <= 0) return 0;
+    final double value = usedBytes / limit;
+    return value < 0 ? 0 : (value > 1 ? 1 : value);
+  }
+
+  int get leftBytes {
+    final int? left = remainingBytes;
+    if (left != null) return left < 0 ? 0 : left;
+    final int? limit = limitBytes;
+    if (limit == null) return 0;
+    final int rest = limit - usedBytes;
+    return rest < 0 ? 0 : rest;
+  }
+}
+
 class SubscriptionInfo {
   const SubscriptionInfo({required this.status, this.expiresAt, this.plan = '', this.planName = '', this.badge = ''});
 
@@ -726,6 +787,7 @@ class VpnStatusInfo {
     required this.connected,
     required this.peerReady,
     required this.subscriptionActive,
+    this.quota,
     this.session,
     this.serverTime,
     this.registrationEnabled = true,
@@ -741,6 +803,9 @@ class VpnStatusInfo {
       connected: _asBool(json['connected']),
       peerReady: _asBool(json['peerReady']),
       subscriptionActive: _asBool(json['subscriptionActive'], fallback: true),
+      // Лимит приходит вместе со статусом, поэтому шкала всегда такая же
+      // свежая, как и состояние туннеля, и без второго запроса.
+      quota: json['quota'] == null ? null : QuotaInfo.fromJson(_asMap(json['quota'])),
       session: session == null ? null : VpnSessionInfo.fromJson(_asMap(session)),
       serverTime: _asDate(json['serverTime']),
       registrationEnabled: _asMap(json['service'])['registrationEnabled'] != false,
@@ -756,6 +821,9 @@ class VpnStatusInfo {
   /// True once the node has actually installed the WireGuard peer.
   final bool peerReady;
   final bool subscriptionActive;
+
+  /// Месячный лимит тарифа по данным сервера; `null` — ещё не пришёл.
+  final QuotaInfo? quota;
   final VpnSessionInfo? session;
   final DateTime? serverTime;
   final bool registrationEnabled;

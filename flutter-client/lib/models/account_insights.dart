@@ -134,7 +134,7 @@ class ServiceBudget {
 }
 
 class AnalyticsSnapshot {
-  const AnalyticsSnapshot({required this.period, required this.partial, required this.coverageSince, required this.downloadBytes, required this.uploadBytes, required this.series, required this.devices, required this.domainsEnabled, required this.domainWindowDays, required this.domains, required this.categories, required this.budget});
+  const AnalyticsSnapshot({required this.period, required this.partial, required this.coverageSince, required this.downloadBytes, required this.uploadBytes, required this.series, required this.devices, required this.domainsEnabled, required this.domainWindowDays, required this.domains, required this.categories, required this.budget, this.quota});
   factory AnalyticsSnapshot.fromJson(Map<String, dynamic> json) {
     final coverage = _map(json['coverage']); final totals = _map(json['totals']); final domains = _map(json['domains']);
     List<T> list<T>(Object? raw, T Function(Map<String,dynamic>) parse) => raw is List ? raw.map((e) => parse(_map(e))).toList(growable:false) : <T>[];
@@ -144,6 +144,9 @@ class AnalyticsSnapshot {
       series: list(json['series'], TrafficPoint.fromJson), devices: list(json['devices'], AnalyticsDevice.fromJson),
       domainsEnabled: domains['enabled'] == true, domainWindowDays: _int(domains['windowDays']), domains: list(domains['items'], DomainUsage.fromJson),
       categories: list(json['categories'], CategoryUsage.fromJson), budget: ServiceBudget.fromJson(_map(json['budget'])),
+      // Личный лимит тарифа — не путать с `budget` выше: тот сервисный
+      // и виден только админам.
+      quota: json['quota'] == null ? null : QuotaInfo.fromJson(_map(json['quota'])),
     );
   }
   final String period;
@@ -157,4 +160,7 @@ class AnalyticsSnapshot {
   final List<DomainUsage> domains;
   final List<CategoryUsage> categories;
   final ServiceBudget budget;
+
+  /// Месячный лимит тарифа по данным сервера; `null` — старый ответ API.
+  final QuotaInfo? quota;
 }

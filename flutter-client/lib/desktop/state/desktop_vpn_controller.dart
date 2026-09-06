@@ -1007,6 +1007,9 @@ class DesktopVpnController extends ChangeNotifier {
             reason == 'device_revoked' ||
             reason == 'user_disabled';
         final bool lapsed = reason == 'subscription_expired';
+        // Лимит трафика закрывает сеанс так же, как истёкшая подписка:
+        // реконнект бессмыслен, пока окно тарифа не сбросится.
+        final bool overQuota = reason == 'traffic_limit';
         final String message = revoked
             ? (_ru
                 ? 'Сеанс завершён администратором. Подключение не восстанавливается автоматически.'
@@ -1015,12 +1018,16 @@ class DesktopVpnController extends ChangeNotifier {
                 ? (_ru
                     ? 'Подписка больше не активна, сеанс закрыт.'
                     : 'The subscription is no longer active, so the session was closed.')
-                : (_ru
-                    ? 'Сервер закрыл эту сессию. Нажмите «Подключиться», чтобы начать заново.'
-                    : 'The server closed this session. Press Connect to start a new one.');
+                : overQuota
+                    ? (_ru
+                        ? 'Месячный лимит трафика исчерпан — сеанс закрыт. Подключение заработает снова после сброса лимита.'
+                        : 'The monthly traffic allowance is spent, so the session was closed. Connecting works again after the allowance resets.')
+                    : (_ru
+                        ? 'Сервер закрыл эту сессию. Нажмите «Подключиться», чтобы начать заново.'
+                        : 'The server closed this session. Press Connect to start a new one.');
         if (revoked) {
           _fail(ConnectionPhase.accessRevoked, reason, message);
-        } else if (lapsed) {
+        } else if (lapsed || overQuota) {
           _fail(ConnectionPhase.limitReached, reason, message);
         } else {
           _userMessage = message;

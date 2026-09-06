@@ -11,3 +11,23 @@
 
 .s2-routes{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}.s2-routes path{fill:none;stroke:#72bc8f;stroke-width:1.8;stroke-linecap:round;stroke-dasharray:7 6;filter:drop-shadow(0 0 4px rgba(114,188,143,.45));animation:s2-route 1.2s linear infinite}.s2-restrict{display:grid;place-items:center;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:#d5803b;color:#191919;font-style:normal;font-size:10px;font-weight:900}.dash-pin--maintenance{border-color:rgba(213,128,59,.65);color:#ffd4ad}@keyframes s2-route{to{stroke-dashoffset:-26}}
 @media(prefers-reduced-motion:reduce){.s2-routes path{animation:none}}
+
+/* ==========================================================================
+   Шкала месячного лимита тарифа — «234 МБ из 5 ГБ».
+
+   Сознательно не похожа на .s2-budget: тот блок — сервисный бюджет OCI
+   и виден только админам, а это — личный лимит и первое, что человек должен
+   увидеть в статистике. Цвет меняется только когда лимит исчерпан, ибо именно
+   тогда подключение уже не работает и предупреждение должно быть заметным.
+   ========================================================================== */
+.s2-quota{display:grid;gap:9px;padding:15px 16px;margin-bottom:16px;border:1px solid rgba(114,188,143,.34);border-radius:14px;background:linear-gradient(180deg,rgba(114,188,143,.10),rgba(114,188,143,.03))}
+.s2-quota header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.s2-quota h3{margin:0;font-size:13px;font-weight:700;color:var(--text-1);text-transform:uppercase;letter-spacing:.06em}
+.s2-quota header b{font-size:18px;font-variant-numeric:tabular-nums;color:var(--text-0)}
+.s2-quotabar{height:9px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden}
+.s2-quotabar i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#72bc8f,#5e9fe8);transition:width .45s ease}
+.s2-quota p{margin:0;font-size:12.5px;color:var(--text-1)}
+.s2-quota.is-over{border-color:rgba(229,100,88,.45);background:linear-gradient(180deg,rgba(229,100,88,.14),rgba(229,100,88,.04))}
+.s2-quota.is-over .s2-quotabar i{background:linear-gradient(90deg,#e5a458,#e56458)}
+.s2-quota.is-over p{color:#ffc9c9}
+@media(prefers-reduced-motion:reduce){.s2-quotabar i{transition:none}}

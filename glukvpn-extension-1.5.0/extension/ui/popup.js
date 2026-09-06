@@ -2946,7 +2946,35 @@ function renderStats() {
 	const domains = data.domains || {}
 	const items = Array.isArray(domains.items) ? domains.items : []
 	const budget = data.budget
+	const quota = data.quota || null
 	const frag = document.createDocumentFragment()
+
+	// Лимит тарифа за месяц. Все цифры серверные: байты считает узел,
+	// API складывает их в окне тарифа, расширение только рисует шкалу —
+	// подделать расход на клиенте невозможно, он его не сообщает.
+	if (quota && quota.unlimited !== true && Number(quota.limitBytes) > 0) {
+		frag.appendChild(statsNode('h3', 'stats-h', ru ? 'Лимит тарифа' : 'Plan allowance'))
+		const card = statsNode('div', `stats-budget stats-quota${quota.exceeded ? ' is-over' : ''}`)
+		card.appendChild(statsNode('b', '', `${statsBytes(quota.usedBytes)} ${ru ? 'из' : 'of'} ${statsBytes(quota.limitBytes)}`))
+		card.appendChild(statsNode('span', '', `${(Number(quota.usedPercent) || 0).toFixed(1)}%`))
+		const track = statsNode('span', 'stats-share is-quota')
+		const fill = statsNode('i', '')
+		fill.style.width = `${Math.max(2, Math.min(100, Number(quota.usedPercent) || 0))}%`
+		track.appendChild(fill)
+		card.appendChild(track)
+		const reset = new Date(quota.resetAt)
+		const resetLabel = Number.isNaN(reset.getTime())
+			? '—'
+			: reset.toLocaleDateString(ru ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'long' })
+		card.appendChild(statsNode('small', '', quota.exceeded
+			? (ru
+				? `Лимит израсходован. Подключения возобновятся ${resetLabel}.`
+				: `Allowance spent. Connections resume on ${resetLabel}.`)
+			: (ru
+				? `Осталось ${statsBytes(quota.remainingBytes)} · сброс ${resetLabel}`
+				: `${statsBytes(quota.remainingBytes)} left · resets ${resetLabel}`)))
+		frag.appendChild(card)
+	}
 
 	if (data.coverage?.partial) {
 		frag.appendChild(statsNode('div', 'stats-note is-warn', ru
