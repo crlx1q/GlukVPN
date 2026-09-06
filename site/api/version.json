@@ -1,11 +1,11 @@
 {
-  "version": "1.3.0",
-  "build": 4,
-  "releaseDate": "2026-09-04",
-  "changelog": "GlukVPN 1.3.0: Поддержка плоской карты и глобуса в Desktop, интерактивное окно освобождения слота при превышении лимита устройств (5/5), улучшенная стабильность туннеля.",
+  "version": "1.5.0",
+  "build": 5,
+  "releaseDate": "2026-09-06",
+  "changelog": "GlukVPN 1.5.0: Анимация нитей подключения, статистика трафика в расширении, исправление декодирования ping на Windows и стабильная работа карты.",
   "downloads": {
-    "windows": "/downloads/GlukVPN-Setup-1.3.0.exe",
-    "android": "/downloads/glukvpn-release-1.3.0.apk"
+    "windows": "/downloads/GlukVPN-Setup-1.5.0.exe",
+    "android": "/downloads/glukvpn-release-1.5.0.apk"
   },
   "minSupportedVersion": "1.0.0",
   "_notes": [
