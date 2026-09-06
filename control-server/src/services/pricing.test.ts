@@ -3,6 +3,7 @@ import type { FastifyRequest } from "fastify"
 
 import {
 	DEFAULT_CURRENCY,
+	HOME_CURRENCY,
 	normalizeCurrency,
 	resolveCountry,
 	resolveMarket,
@@ -95,7 +96,19 @@ describe("resolveMarket", () => {
 	it("reports where the country came from", () => {
 		expect(resolveMarket(request({ "accept-language": "ru-RU" })).source).toBe("language")
 		expect(resolveMarket(request({})).source).toBe("default")
-		expect(resolveMarket(request({})).currency).toBe(DEFAULT_CURRENCY)
+	})
+
+	// The API is not behind Cloudflare, so an unplaceable visitor is routine.
+	// Dollars were the old fallback, which is how a Kazakh browser sending
+	// plain "ru" ended up being quoted $1.99 for Basic.
+	it("quotes the home market when the country is unknown", () => {
+		expect(resolveMarket(request({})).currency).toBe(HOME_CURRENCY)
+		expect(resolveMarket(request({ "accept-language": "ru,en-US;q=0.9" })).currency).toBe(
+			HOME_CURRENCY,
+		)
+		expect(resolveMarket(request({ "cf-ipcountry": "XX" })).currency).toBe(HOME_CURRENCY)
+		// A country we know but have not priced still pays in dollars.
+		expect(resolveMarket(request({ "cf-ipcountry": "DE" })).currency).toBe(DEFAULT_CURRENCY)
 	})
 })
 

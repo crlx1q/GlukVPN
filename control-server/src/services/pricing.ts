@@ -19,7 +19,23 @@ import type { Plan, PlanPrice } from "@prisma/client"
 export const SUPPORTED_CURRENCIES = ["KZT", "RUB", "USD"] as const
 export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number]
 
+/** What a visitor in a country we have not priced separately pays. */
 export const DEFAULT_CURRENCY: SupportedCurrency = "USD"
+
+/**
+ * What a visitor we could not place at all pays.
+ *
+ * This is deliberately not DEFAULT_CURRENCY. CF-IPCountry only exists on
+ * requests that actually pass through Cloudflare, and the apps and the site
+ * talk to the API on its own host - so "country unknown" is the normal case
+ * here, not an exotic one. Kazakh visitors were being quoted $1.99 for Basic
+ * because a browser that sends plain "ru" (no region) left the country empty
+ * and the default was dollars. price.md is written in tenge, so the home
+ * market is the honest fallback: a Kazakh user seeing 790 ₸ is right, and a
+ * German user seeing tenge is at least a price we actually charge.
+ */
+export const HOME_CURRENCY: SupportedCurrency = "KZT"
+
 export const DEFAULT_LOCALE = "en"
 
 // Only the markets we price separately need an entry; everything else is USD
@@ -95,7 +111,9 @@ export function resolveMarket(request: FastifyRequest): Market {
 
 	return {
 		country,
-		currency: COUNTRY_CURRENCY[country] ?? DEFAULT_CURRENCY,
+		// Known country -> its currency, or dollars for a market we have not
+		// priced. Unknown country -> the home market, never dollars by accident.
+		currency: COUNTRY_CURRENCY[country] ?? (country ? DEFAULT_CURRENCY : HOME_CURRENCY),
 		locale: RUSSIAN_SPEAKING.has(country) ? "ru" : DEFAULT_LOCALE,
 		source,
 	}
