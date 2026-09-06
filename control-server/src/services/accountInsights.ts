@@ -32,6 +32,26 @@ export function deviceEstimate(code: string | null | undefined): Origin | null {
 	return point ? { lat: point[0], lon: point[1], countryCode: String(code).toUpperCase(), country: null, source: "device-estimate", approximate: true } : null
 }
 
+// Иконка сайта — только для настоящих доменов.
+//
+// Раньше адрес иконки склеивался безусловно, поэтому для сеансов без SNI,
+// где «домен» — это IP, получалось
+// https://icons.duckduckgo.com/ip3/77.111.249.147.ico. Такого файла не
+// существует и не может существовать — сервис отвечает 404, а клиенты
+// честно сообщали об этом в телеметрию (`NetworkImageLoadException:
+// HTTP 404`). У IP иконки нет — отдаём null, и интерфейс ставит свою
+// заглушку вместо заведомо битой картинки.
+const IPV4_LITERAL = /^\d{1,3}(?:\.\d{1,3}){3}$/
+export function domainFaviconUrl(domain: string): string | null {
+	const host = String(domain ?? "").trim().toLowerCase().replace(/\.$/, "")
+	if (!host || host.length > 253) return null
+	// IPv6 и порты — тоже не домены.
+	if (host.includes(":") || IPV4_LITERAL.test(host)) return null
+	// Должна быть хотя бы одна точка и буквенный TLD.
+	if (!/^[a-z0-9.-]+$/.test(host) || !/\.[a-z]{2,}$/.test(host)) return null
+	return ["https:", "", "icons.duckduckgo.com", "ip3", encodeURIComponent(host) + ".ico"].join("/")
+}
+
 export async function recordMapCountry(userId: string, deviceId: string, countryCode: string) {
 	return prisma.device.updateMany({
 		where: { userId, id: deviceId, status: "ACTIVE", OR: [{ mapCountryCode: null }, { mapCountryCode: { not: countryCode } }] },
@@ -101,7 +121,7 @@ export async function accountAnalytics(userId: string, period: UsagePeriod, now 
 	}
 	const categories = new Map<string, { category: string } & Counters>()
 	const domainItems = domains.map((row) => {
-		const value = { domain: row.domain, category: row.category ?? "other", downloadBytes: bytesToNumber(row._sum.bytesTx), uploadBytes: bytesToNumber(row._sum.bytesRx), connections: row._sum.connections ?? 0, lastSeenAt: row._max.lastSeenAt?.toISOString() ?? null, faviconUrl: ["https:", "", "icons.duckduckgo.com", "ip3", encodeURIComponent(row.domain) + ".ico"].join("/") }
+		const value = { domain: row.domain, category: row.category ?? "other", downloadBytes: bytesToNumber(row._sum.bytesTx), uploadBytes: bytesToNumber(row._sum.bytesRx), connections: row._sum.connections ?? 0, lastSeenAt: row._max.lastSeenAt?.toISOString() ?? null, faviconUrl: domainFaviconUrl(row.domain) }
 		const category = categories.get(value.category) ?? { category: value.category, ...emptyCounters() }
 		category.downloadBytes += value.downloadBytes; category.uploadBytes += value.uploadBytes
 		categories.set(value.category, category)

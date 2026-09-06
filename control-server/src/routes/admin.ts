@@ -24,7 +24,7 @@ import {
 	closeSessionsForNode,
 	closeSessionsForUser,
 } from "../services/sessions"
-import { listClientErrors } from "../services/telemetry"
+import { clearClientErrors, listClientErrors } from "../services/telemetry"
 import { revokeRefreshTokens } from "../services/tokens"
 
 const IdParams = z.object({ id: z.string().uuid("Invalid id") })
@@ -1136,5 +1136,37 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 		const limit = parsed.success ? parsed.data.limit : 100
 		const platform = parsed.success ? parsed.data.platform : undefined
 		return reply.send(await listClientErrors({ platform, limit }))
+	})
+
+	/**
+	 * Очистить журнал клиентских ошибок. `?platform=` — только одна
+	 * платформа, без параметра — все.
+	 *
+	 * Сбор ошибок при этом не отключается и килл-свитча не касается:
+	 * удаляем только то, что уже лежало в таблице на момент запроса,
+	 * поэтому новые отчёты продолжают приходить в тот же список.
+	 * Само действие пишется в аудит: удаление диагностики не должно
+	 * быть анонимным.
+	 */
+	app.delete("/api/admin/client-errors", async (request, reply) => {
+		const { user } = getAuthUser(request)
+		const parsed = z
+			.object({ platform: z.enum(["windows", "android", "extension", "web"]).optional() })
+			.safeParse(request.query ?? {})
+		const platform = parsed.success ? parsed.data.platform : undefined
+		const before = new Date()
+		const removed = await clearClientErrors({ platform, before })
+		await writeAudit({
+			action: "admin.client_errors.clear",
+			userId: user.id,
+			ip: clientIp(request),
+			metadata: { platform: platform ?? "all", before: before.toISOString(), removed },
+		})
+		return reply.send({
+			ok: true,
+			removed,
+			platform: platform ?? "all",
+			before: before.toISOString(),
+		})
 	})
 }

@@ -4,7 +4,7 @@ publish_to: "none"
 
 # Bumped for the redesign. The PROD/BETA control-plane versions are reported
 # separately by GET /api/version and shown in Settings.
-version: 1.3.0+4
+version: 1.5.0+5
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

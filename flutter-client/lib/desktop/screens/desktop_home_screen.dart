@@ -82,7 +82,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> with WidgetsBindi
   @override
   void initState() {
     super.initState();
-    _accountMap = AccountInsightsController(widget.vpn.api)..addListener(_onAccountMapChanged)..setVisible(true);
+    _accountMap = AccountInsightsController(widget.vpn.api);
+    _accountMap.addListener(_onAccountMapChanged);
+    _accountMap.setVisible(true);
     WidgetsBinding.instance.addObserver(this);
     // The duration readout has to advance once a second; the controller only
     // notifies on real state changes, which is correct but not enough here.

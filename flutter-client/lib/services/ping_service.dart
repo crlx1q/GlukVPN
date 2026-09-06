@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:dart_ping/dart_ping.dart';
 import 'package:http/http.dart' as http;
@@ -89,19 +91,60 @@ class PingService {
     return PingSample(source: PingSource.tunnelGateway, milliseconds: icmp);
   }
 
+  /// ICMP замер одного хоста.
+  ///
+  /// Здесь жили две самые шумные ошибки Windows в журнале
+  /// (`FormatException: Unexpected extension byte` и `Missing extension
+  /// byte`, 69 отчётов). Причина не в сети и не в API: русская
+  /// консоль Windows печатает вывод `ping` в OEM-кодировке (866),
+  /// а dart_ping по умолчанию разбирает его строгим UTF-8 — первый
+  /// же байт «Обмен» ломает декодер.
+  ///
+  /// Исправляем точно это место: консоли задаём codepage 437
+  /// (`chcp 437 && ping ...` внутри пакета) и декодируем её вывод с
+  /// `allowMalformed`, чтобы один битый байт не ронял замер. Разбор
+  /// JWT и ответов API остаётся строгим — там молчаливая терпимость
+  /// к мусору была бы опасна.
+  ///
+  /// Второе: подписка теперь живёт до конца потока. Прежний
+  /// `return` из `await for` по первому ответу отменял подписку, и всё,
+  /// что процесс писал после этого (в том числе ошибки декодера),
+  /// оставалось без обработчика и уходило в глобальный хук — то есть в
+  /// телеметрию.
   Future<int?> _icmpRtt(String host) async {
+    int? rtt;
+    final Completer<void> finished = Completer<void>();
+    StreamSubscription<PingData>? sub;
     try {
-      final Ping ping = Ping(host, count: 1, timeout: 2);
-      await for (final PingData event in ping.stream.handleError((Object _) {})) {
-        final PingResponse? response = event.response;
-        final Duration? time = response?.time;
-        if (time != null) return time.inMilliseconds;
-        if (event.error != null) return null;
-      }
+      final Ping ping = Ping(
+        host,
+        count: 1,
+        timeout: 2,
+        encoding: const Utf8Codec(allowMalformed: true),
+        forceCodepage: Platform.isWindows,
+      );
+      sub = ping.stream.listen(
+        (PingData event) {
+          final Duration? time = event.response?.time;
+          if (time != null) rtt ??= time.inMilliseconds;
+        },
+        onError: (Object _, StackTrace __) {
+          if (!finished.isCompleted) finished.complete();
+        },
+        onDone: () {
+          if (!finished.isCompleted) finished.complete();
+        },
+        cancelOnError: false,
+      );
+      // count: 1 — процесс закрывается сразу после ответа, но ждать
+      // его бесконечно нельзя: без ответа возвращаемся к HTTPS.
+      await finished.future.timeout(const Duration(seconds: 4), onTimeout: () {});
     } catch (_) {
       // ICMP unavailable on this device or network: fall through to HTTPS.
+    } finally {
+      await sub?.cancel();
     }
-    return null;
+    return rtt;
   }
 
   Future<int?> _httpRtt(String baseUrl) async {

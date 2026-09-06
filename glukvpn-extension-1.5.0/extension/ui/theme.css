@@ -1541,13 +1541,31 @@ button.account-device-more:hover{background:rgba(139,92,246,.18)}
 /* ПУНКТ 4: фазы подключения на карте — как на ПК.
    is-pending: нитка вырисовывается снова и снова, пока идёт попытка.
    is-leaving: втягивается обратно при отключении. */
+/* 1.5.0: штрихи остаются штрихами во всех фазах.
+   Было: stroke-dasharray:1 при pathLength="1" — вся дуга становилась
+   ОДНИМ штрихом, поэтому при попытке подключения тянулась сплошная
+   линия ——— вместо «- - -», а при отключении она просто пропадала.
+   Стало: узор пунктира не трогаем совсем (он такой же, как у живых
+   ниток), а появление и втягивание делает маска .route-reveal — она
+   открывает ровно пройденную долю пути. Это то же самое, что делает
+   ПК-версия: _dashed(path, progress) рисует штрихи до нужной доли. */
 .account-route.is-pending,
-.account-route.is-leaving{stroke-dasharray:1;stroke-dashoffset:1}
-.account-route.is-pending{animation:account-attempt 1.15s ease-in-out infinite}
-.account-route.is-leaving{animation:account-retract .6s ease-in forwards}
-@keyframes account-attempt{0%{stroke-dashoffset:1;opacity:.3}45%{stroke-dashoffset:0;opacity:.95}100%{stroke-dashoffset:0;opacity:.12}}
-@keyframes account-retract{from{stroke-dashoffset:0;opacity:.9}to{stroke-dashoffset:1;opacity:0}}
+.account-route.is-leaving{stroke-dasharray:1.6 1.9;stroke-dashoffset:0;opacity:.92}
+.account-route.is-pending{animation:account-flow 3.6s linear infinite,account-attempt 1.15s ease-in-out infinite}
+.account-route.is-leaving{animation:account-flow 3.6s linear infinite,account-retract .6s ease-in forwards}
+/* Маска нормализована pathLength="1", поэтому одна анимация одинаково
+   работает и для короткой, и для длинной дуги. stroke-width с запасом:
+   маска обязана целиком накрывать штрих толщиной .4. */
+.route-reveal{fill:none;stroke:#fff;stroke-width:3;stroke-dasharray:1;stroke-dashoffset:1}
+.route-reveal.is-pending{animation:route-draw 1.15s ease-in-out infinite}
+.route-reveal.is-leaving{animation:route-undraw .6s ease-in forwards}
+@keyframes route-draw{0%{stroke-dashoffset:1}60%{stroke-dashoffset:0}100%{stroke-dashoffset:0}}
+@keyframes route-undraw{from{stroke-dashoffset:0}to{stroke-dashoffset:1}}
+@keyframes account-attempt{0%{opacity:.45}55%{opacity:.95}100%{opacity:.5}}
+@keyframes account-retract{from{opacity:.9}to{opacity:.06}}
 @media (prefers-reduced-motion: reduce){
 	.account-route.is-pending,
-	.account-route.is-leaving{animation:none;stroke-dashoffset:0;opacity:.55}
+	.account-route.is-leaving{animation:none;opacity:.55}
+	.route-reveal.is-pending,
+	.route-reveal.is-leaving{animation:none;stroke-dashoffset:0}
 }

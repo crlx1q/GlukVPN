@@ -499,6 +499,15 @@ function resolveGeo() {
 let selfLatLon = null
 let nodeLatLon = null
 let accountMapSig = ''
+// Прощальная нитка. Отключение в браузере занимает миллисекунды,
+// поэтому анимации втягивания просто не хватало времени: линия
+// исчезала вместе с данными карты — то самое «резко уходит».
+// Запоминаем геометрию своей нитки и даём анимации доиграть —
+// так же, как на ПК, где контроллер докручивает 1 → 0 уже после
+// того, как туннель закрыт.
+let ownRouteMemo = null
+let routeFarewell = null
+let routeFarewellTimer = null
 
 // ------------------------------------------------------------------ views ---
 
@@ -2445,8 +2454,31 @@ function renderAccountMap() {
 	// «пробная» нитка, при disconnect она втягивается обратно. Фаза входит в
 	// отпечаток сцены, иначе её смена не перерисовала бы карту.
 	const phase = phaseOf()
-	const pending = !ownArc && !guest && selfPoint && nodePoint && (phase === 'connecting' || phase === 'disconnecting') ? phase : ''
+	// Своя нитка на этот кадр: либо живой туннель этого устройства,
+	// либо пробная дуга «я → выбранный сервер» на время попытки.
+	const ownPair = order.map(key => pairs[key]).find(p => p.device?.isCurrent) ?? null
+	const ownNow = ownPair
+		? { a: ownPair.a, b: ownPair.b }
+		: (phase === 'connecting' && selfPoint && nodePoint ? { a: selfPoint, b: nodePoint } : null)
+	if (guest) {
+		ownRouteMemo = null; routeFarewell = null
+		if (routeFarewellTimer) { clearTimeout(routeFarewellTimer); routeFarewellTimer = null }
+	} else if (ownNow) {
+		ownRouteMemo = ownNow
+		routeFarewell = null
+		if (routeFarewellTimer) { clearTimeout(routeFarewellTimer); routeFarewellTimer = null }
+	} else if (ownRouteMemo) {
+		// Нитка только что исчезла — втягиваем её по запомненным точкам.
+		routeFarewell = ownRouteMemo
+		ownRouteMemo = null
+		if (routeFarewellTimer) clearTimeout(routeFarewellTimer)
+		routeFarewellTimer = setTimeout(() => { routeFarewell = null; routeFarewellTimer = null; renderAccountMap() }, 680)
+	}
+	const pending = routeFarewell ? 'disconnecting' : (ownNow && !ownPair ? 'connecting' : '')
+	const pendingFrom = routeFarewell ? routeFarewell.a : (ownNow?.a ?? null)
+	const pendingTo = routeFarewell ? routeFarewell.b : (ownNow?.b ?? null)
 	const sig = JSON.stringify([guest, Number.isFinite(total) ? total : null, pending,
+		pendingFrom ? mapSpot(pendingFrom) : null, pendingTo ? mapSpot(pendingTo) : null,
 		order.map(key => [key, spots[pairs[key].from] || 1, pairs[key].device?.platform ?? '', Boolean(pairs[key].device?.isCurrent)]),
 		selfPoint ? mapSpot(selfPoint) : null, nodePoint ? mapSpot(nodePoint) : null])
 	const dirty = sig !== accountMapSig
@@ -2498,12 +2530,36 @@ function renderAccountMap() {
 	// Пробная нитка «я → сервер» на время попытки подключения и отключения.
 	// pathLength="1" даёт нормализованную длину, поэтому одна и та же CSS
 	// анимация одинаково работает и для короткой, и для длинной дуги.
-	if (dirty && pending) {
-		const lift = Math.max(3.5, Math.abs(nodePoint.x - selfPoint.x) * 0.16)
+	if (dirty && pending && pendingFrom && pendingTo) {
+		const lift = Math.max(3.5, Math.abs(pendingTo.x - pendingFrom.x) * 0.16)
+		const d = `M ${pendingFrom.x} ${pendingFrom.y} Q ${(pendingFrom.x + pendingTo.x) / 2} ${Math.max(1.5, Math.min(pendingFrom.y, pendingTo.y) - lift)} ${pendingTo.x} ${pendingTo.y}`
+		const phaseClass = pending === 'connecting' ? 'is-pending' : 'is-leaving'
+		// Штрихи у пробной нитки те же, что у живых: «- - -». Раньше на
+		// видимой дуге стоял pathLength="1", а CSS задавал dasharray:1 —
+		// вся дуга превращалась в ОДИН штрих, и вместо пунктира
+		// тянулась сплошная линия. Теперь pathLength="1" только у маски:
+		// она нормализует прогресс и открывает пройденную долю пути —
+		// ровно как _dashed(path, progress) на ПК.
+		const maskId = pending === 'connecting' ? 'route-reveal-in' : 'route-reveal-out'
+		const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs')
+		const mask = document.createElementNS('http://www.w3.org/2000/svg', 'mask')
+		mask.setAttribute('id', maskId)
+		mask.setAttribute('maskUnits', 'userSpaceOnUse')
+		mask.setAttribute('x', '-10')
+		mask.setAttribute('y', '-10')
+		mask.setAttribute('width', '139')
+		mask.setAttribute('height', '80')
+		const reveal = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+		reveal.setAttribute('class', `route-reveal ${phaseClass}`)
+		reveal.setAttribute('pathLength', '1')
+		reveal.setAttribute('d', d)
+		mask.appendChild(reveal)
+		defs.appendChild(mask)
+		group.appendChild(defs)
 		const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-		path.setAttribute('class', `account-route ${pending === 'connecting' ? 'is-pending' : 'is-leaving'}`)
-		path.setAttribute('pathLength', '1')
-		path.setAttribute('d', `M ${selfPoint.x} ${selfPoint.y} Q ${(selfPoint.x + nodePoint.x) / 2} ${Math.max(1.5, Math.min(selfPoint.y, nodePoint.y) - lift)} ${nodePoint.x} ${nodePoint.y}`)
+		path.setAttribute('class', `account-route ${phaseClass}`)
+		path.setAttribute('mask', `url(#${maskId})`)
+		path.setAttribute('d', d)
 		group.appendChild(path)
 	}
 	if (dirty) {
@@ -2637,6 +2693,7 @@ let statsData = null
 let statsBusy = false
 let statsRevision = 0
 let statsDomainsOpen = false
+let statsKey = ''
 
 function statsNode(tag, className, text) {
 	const el = document.createElement(tag)
@@ -2675,19 +2732,24 @@ async function loadStats(force = false) {
 	const body = $('stats-body')
 	if (!body) return
 	syncSegment('seg-period', statsPeriod)
-	if (state?.signedIn === false || channelSwitching) { statsData = null; body.replaceChildren(); return }
-	if (statsBusy) return
-	if (statsData && !force) { renderStats(); return }
+	if (state?.signedIn === false || channelSwitching) { statsRevision++; statsBusy = false; statsKey = ''; statsData = null; body.replaceChildren(); return }
+	const requestedPeriod = statsPeriod
+	const identity = `${state?.user?.id ?? ''}|${settings?.channel ?? ''}`
+	const key = `${identity}|${requestedPeriod}`
+	if (statsBusy && statsKey === key && !force) return
+	if (statsData && statsKey === key && !force) { renderStats(); return }
+	statsKey = key
+	statsData = null
 	statsBusy = true
 	const revision = ++statsRevision
 	body.replaceChildren(statsNode('div', 'stats-skeleton'))
 	try {
-		const result = await call('analytics', { period: statsPeriod })
-		if (revision !== statsRevision) return
+		const result = await call('analytics', { period: requestedPeriod })
+		if (revision !== statsRevision || channelSwitching || state?.signedIn === false || identity !== `${state?.user?.id ?? ''}|${settings?.channel ?? ''}`) return
 		if (!result?.ok) throw new Error(result?.error || 'analytics_failed')
-		// Ответ на другой период в график не пускаем.
-		if (result.period && result.period !== statsPeriod) return
-		statsData = result
+		const data = result.data ?? result
+		if (data.ok === false || data.period !== requestedPeriod || !data.totals) throw new Error('analytics_invalid_response')
+		statsData = data
 		renderStats()
 	} catch (_) {
 		if (revision !== statsRevision) return

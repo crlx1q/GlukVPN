@@ -172,6 +172,36 @@ export async function purgeOldClientErrors(retentionDays: number): Promise<numbe
 	}
 }
 
+/**
+ * Очистка журнала из админки.
+ *
+ * Сбор при этом НЕ выключается: удаляются только записи, которые
+ * уже существовали на момент запроса (`before`), поэтому отчёт,
+ * пришедший в тот же момент или позже, гарантированно остаётся в списке.
+ * Так можно обнулить старые ошибки перед выпуском и сразу видеть,
+ * что присылает новая сборка.
+ */
+export async function clearClientErrors(
+	query: { platform?: ClientPlatform; before?: Date } = {},
+): Promise<number> {
+	const before = query.before ?? new Date()
+	try {
+		const { count } = await prisma.clientErrorLog.deleteMany({
+			where: {
+				createdAt: { lte: before },
+				...(query.platform ? { platform: query.platform } : {}),
+			},
+		})
+		return count
+	} catch (error) {
+		// eslint-disable-next-line no-console
+		console.error(
+			`client_errors_clear_failed error=${error instanceof Error ? error.message : "unknown"}`,
+		)
+		return 0
+	}
+}
+
 export type ClientErrorView = {
 	id: string
 	platform: string

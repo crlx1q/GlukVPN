@@ -53,7 +53,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late final AccountInsightsController _accountMap;
   @override void initState() {
     super.initState();
-    _accountMap = AccountInsightsController(context.read<VpnController>().api)..addListener(_mapChanged)..setVisible(true);
+    _accountMap = AccountInsightsController(context.read<VpnController>().api);
+    _accountMap.addListener(_mapChanged);
+    _accountMap.setVisible(true);
     WidgetsBinding.instance.addObserver(this);
   }
   void _mapChanged() { if (!mounted)return; if(_accountMap.snapshot!=null)context.read<VpnController>().handleServiceStatus(_accountMap.snapshot!.service);setState(() {}); }

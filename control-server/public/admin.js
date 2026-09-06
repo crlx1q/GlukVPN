@@ -1314,6 +1314,38 @@ el("error-platform").addEventListener("change", (event) => {
 	void loadClientErrors().catch((error) => toast(error.message, true))
 })
 
+/**
+ * Clears the stored reports for the current filter.
+ *
+ * Collection is *not* switched off: the server deletes only what already
+ * existed when the request was made, so anything reported from now on shows
+ * up in the same list. That is the whole point - wipe the noise from the old
+ * build, then watch what the new one sends.
+ */
+el("errors-clear").addEventListener("click", async () => {
+	const scope = state.errorPlatform
+		? PLATFORM_LABELS[state.errorPlatform] || state.errorPlatform
+		: "all platforms"
+	const confirmed = window.confirm(
+		`Clear the client error log for ${scope}? Reporting stays on, so new errors keep arriving.`,
+	)
+	if (!confirmed) return
+	const button = el("errors-clear")
+	button.disabled = true
+	try {
+		const filter = state.errorPlatform
+			? `?platform=${encodeURIComponent(state.errorPlatform)}`
+			: ""
+		const result = await request(`/api/admin/client-errors${filter}`, { method: "DELETE" })
+		toast(`Cleared ${result.removed} report${result.removed === 1 ? "" : "s"}`)
+		await loadClientErrors()
+	} catch (error) {
+		toast(error.message, true)
+	} finally {
+		button.disabled = false
+	}
+})
+
 for (const button of document.querySelectorAll(".tab")) {
 	button.addEventListener("click", () => selectTab(button.dataset.tab))
 }
