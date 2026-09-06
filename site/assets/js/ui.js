@@ -289,7 +289,7 @@
       if (a.closest(".platform") && a.closest(".platform").querySelector(".platform__name")?.textContent.trim().toLowerCase().indexOf("android") !== -1) {
         if (android.url) {
           a.setAttribute("href", android.url);
-          a.setAttribute("download", "glukvpn-release-1.3.0.apk");
+          a.setAttribute("download", "GlukVPN-latest.apk");
         }
         return;
       }
@@ -313,7 +313,7 @@
     $$("[data-download-windows]").forEach(function (a) {
       if (windows.url) {
         a.setAttribute("href", windows.url);
-        a.setAttribute("download", "GlukVPN-Setup-1.3.0.exe");
+        a.setAttribute("download", "GlukVPN-Setup-1.5.0.exe");
       }
     });
 
