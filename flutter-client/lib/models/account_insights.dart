@@ -39,17 +39,21 @@ class GeoPoint {
 }
 
 class ActiveTunnelDevice {
-  const ActiveTunnelDevice({required this.id, required this.deviceName, required this.platform, required this.lastSeen, required this.isCurrent, required this.connectedAt, required this.durationSec, required this.node, this.origin, this.status = 'ACTIVE'});
+  const ActiveTunnelDevice({required this.id, required this.deviceName, required this.platform, required this.lastSeen, required this.isCurrent, required this.connectedAt, required this.durationSec, required this.node, this.origin, this.status = 'ACTIVE', this.sessionId});
   factory ActiveTunnelDevice.fromJson(Map<String, dynamic> json) {
     final originJson = _map(json['origin']);
     return ActiveTunnelDevice(
       status: '${json['status'] ?? 'ACTIVE'}', id: '${json['id'] ?? ''}', deviceName: '${json['deviceName'] ?? 'Device'}', platform: '${json['platform'] ?? ''}',
+      // Сессия нужна кнопке «Отключить»: она гасит именно туннель,
+      // а не выкидывает устройство из аккаунта.
+      sessionId: '${json['sessionId'] ?? ''}'.isEmpty ? null : '${json['sessionId']}',
       lastSeen: _date(json['lastSeen']), isCurrent: json['isCurrent'] == true, connectedAt: _date(json['connectedAt']),
       durationSec: _int(json['durationSec']), node: VpnNodeInfo.fromJson(_map(json['node'])),
       origin: originJson.isEmpty ? null : GeoPoint.fromJson(originJson),
     );
   }
   final String id;
+  final String? sessionId;
   final String deviceName;
   final String status;
   final String platform;

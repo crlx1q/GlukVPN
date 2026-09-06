@@ -256,6 +256,11 @@ class DesktopShellState extends State<DesktopShell> {
             strings: widget.strings,
             loading: !widget.vpn.usageLoaded,
             reduceMotion: _reduceMotion,
+            // Траты инфраструктуры подписаны сервером: серверов
+            // будет больше одного, и безымянный месячный блок
+            // стал бы непонятно чей. displayTitle — только география,
+            // внутренние имена узлов в UI не показываются.
+            serverLabel: widget.vpn.selectedNode?.displayTitle,
           ),
         );
       case _accountTab:

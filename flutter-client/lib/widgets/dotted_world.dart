@@ -361,8 +361,14 @@ class _DottedWorldPainter extends CustomPainter {
 		// Account routes share the exact projection, culling and glow of the original
 		// map. No locale-derived self point is used for a live account snapshot.
 		if (accountArcs != null) {
-			final deviceSpots = <Offset, ({String platform, int count, double fade})>{};
-			final serverSpots = <Offset, double>{};
+			// Ключ карты — ОКРУГЛЁННАЯ позиция, она нужна только для
+			// группировки устройств в одной точке. Рисуем же по точному
+			// `at`. Раньше маркер рисовался прямо по ключу, то есть по
+			// округлённой до целого пикселя координате, и при медленном
+			// «дыхании» зума он щёлкал на пиксель целиком. Именно это и
+			// выглядело как рывки вместо плавного движения.
+			final deviceSpots = <Offset, ({String platform, int count, double fade, Offset at})>{};
+			final serverSpots = <Offset, ({double fade, Offset at})>{};
 			for (final arc in accountArcs!) {
 				final from = _project(arc.from, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
 				final to = _project(arc.to, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
@@ -386,12 +392,13 @@ class _DottedWorldPainter extends CustomPainter {
 					final key = Offset(from.offset.dx.roundToDouble(), from.offset.dy.roundToDouble());
 					final kept = deviceSpots[key];
 					if (kept == null || spot > kept.count) {
-						deviceSpots[key] = (platform: platform, count: spot, fade: math.max(kept?.fade ?? 0, a));
+						deviceSpots[key] = (platform: platform, count: spot, fade: math.max(kept?.fade ?? 0, a), at: from.offset);
 					}
 				}
 				if (b > 0.02) {
 					final key = Offset(to.offset.dx.roundToDouble(), to.offset.dy.roundToDouble());
-					serverSpots[key] = math.max(serverSpots[key] ?? 0, b);
+					final kept = serverSpots[key];
+					serverSpots[key] = (fade: math.max(kept?.fade ?? 0, b), at: to.offset);
 				}
 			}
 			// ЭТАП 3, главное требование: «вошёл — вижу себя на карте».
@@ -409,9 +416,20 @@ class _DottedWorldPainter extends CustomPainter {
 				final me = _project(selfPoint!, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
 				if (me != null) {
 					final fade = ui.lerpDouble(1, me.visibility.clamp(0.0, 1.0), globeness)! * selfOpacity;
-					if (fade > 0.02) {
+					// И второе условие: если рядом уже стоит маркер другого
+					// устройства, свой кружок без туннеля не добавляем: два
+					// маркера в одном городе просто налезают друг на друга. Он
+					// появится при подключении — вместе со своей ниткой.
+					bool crowded = false;
+					for (final other in deviceSpots.keys) {
+						if ((other - me.offset).distance < 30) {
+							crowded = true;
+							break;
+						}
+					}
+					if (fade > 0.02 && !crowded) {
 						final key = Offset(me.offset.dx.roundToDouble(), me.offset.dy.roundToDouble());
-						deviceSpots[key] = (platform: selfPlatform, count: 1, fade: fade);
+						deviceSpots[key] = (platform: selfPlatform, count: 1, fade: fade, at: me.offset);
 					}
 				}
 			}
@@ -421,14 +439,15 @@ class _DottedWorldPainter extends CustomPainter {
 					final fade = ui.lerpDouble(1, node.visibility.clamp(0.0, 1.0), globeness)! * serverOpacity;
 					if (fade > 0.02) {
 						final key = Offset(node.offset.dx.roundToDouble(), node.offset.dy.roundToDouble());
-						serverSpots[key] = math.max(serverSpots[key] ?? 0, fade);
+						final kept = serverSpots[key];
+						serverSpots[key] = (fade: math.max(kept?.fade ?? 0, fade), at: node.offset);
 					}
 				}
 			}
 			// Серверы снизу, устройства сверху: если ты сам сидишь в том же
 			// городе, что и сервер, видно именно твоё устройство.
-			serverSpots.forEach((offset, fade) => _paintMarker(canvas, offset, GlukColors.connected, fade, flatScale, pulsing: true));
-			deviceSpots.forEach((offset, info) => paintDeviceMarker(canvas, offset,
+			serverSpots.forEach((_, info) => _paintMarker(canvas, info.at, GlukColors.connected, info.fade, flatScale, pulsing: true));
+			deviceSpots.forEach((_, info) => paintDeviceMarker(canvas, info.at,
 				platform: info.platform, count: info.count, opacity: info.fade, flatScale: flatScale, pulse: pulse));
 			return;
 		}
@@ -1097,7 +1116,9 @@ class _DottedWorldPainter extends CustomPainter {
 IconData platformGlyph(String platform) {
 	final p = platform.toLowerCase();
 	if (p.contains('android') || p.contains('ios') || p.contains('phone')) return Icons.smartphone;
-	if (p.contains('chrome') || p.contains('browser') || p.contains('extension')) return Icons.web;
+	// Браузерное расширение — пазл, а не `web`: глиф `web` выглядит как
+	// окно браузера и читался как монитор, то есть как ПК.
+	if (p.contains('chrome') || p.contains('browser') || p.contains('extension')) return Icons.extension;
 	return Icons.computer;
 }
 
@@ -1135,8 +1156,8 @@ void paintDeviceMarker(
 		centre,
 		radius * 1.9,
 		Paint()
-			..color = GlukColors.violet.withOpacity(0.24 * opacity)
-			..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * 0.9),
+			..color = GlukColors.violet.withOpacity(0.18 * opacity)
+			..maskFilter = MaskFilter.blur(BlurStyle.normal, radius),
 	);
 
 	if (pulse > 0) {
@@ -1159,6 +1180,17 @@ void paintDeviceMarker(
 			..style = PaintingStyle.stroke
 			..strokeWidth = 1.6
 			..color = GlukColors.violetLight.withOpacity(0.95 * opacity),
+	);
+	// Как в старом клиенте: снаружи тонкая белая обводка поверх
+	// фиолетового кольца — именно она отделяла маркер от тёмной
+	// карты и делала его похожим на маркер из первой сборки.
+	canvas.drawCircle(
+		centre,
+		radius + 1.3,
+		Paint()
+			..style = PaintingStyle.stroke
+			..strokeWidth = 1.0
+			..color = Colors.white.withOpacity(0.55 * opacity),
 	);
 
 	_paintCentredGlyph(canvas, centre, platformGlyph(platform), radius * 1.08,

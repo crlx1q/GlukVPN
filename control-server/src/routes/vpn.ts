@@ -83,7 +83,7 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 		async (request, reply) => {
 			const parsed = DisconnectBody.safeParse(request.body ?? {})
 			if (!parsed.success) throw badRequest("Invalid disconnect payload")
-			const { device } = getAuthUser(request)
+			const { user, device } = getAuthUser(request)
 			if (!device) throw forbidden("Device-scoped token required")
 
 			const requestedId = parsed.data?.sessionId
@@ -94,8 +94,14 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 			if (!session) {
 				return reply.send({ ok: true, alreadyDisconnected: true, session: null })
 			}
-			// A device may only close its own sessions.
-			if (session.deviceId !== device.id) throw notFound("Session not found")
+			// A device always closes its own session. A session that belongs to
+			// ANOTHER device may only be closed by the owner of that account: this
+			// is the "Disconnect" button in the account devices panel, which drops
+			// the tunnel without signing the device out. Sessions of other accounts
+			// stay invisible - the user id simply will not match.
+			if (session.deviceId !== device.id && session.userId !== user.id) {
+				throw notFound("Session not found")
+			}
 
 			// Update final byte counters if provided before closing session
 			const upload = parsed.data?.uploadBytes ?? parsed.data?.bytesRx

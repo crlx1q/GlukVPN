@@ -26,7 +26,9 @@ const double _chipSize = 40;
 IconData accountDeviceIcon(String platform) {
   final p = platform.toLowerCase();
   if (p.contains('android') || p.contains('ios') || p.contains('phone')) return Icons.smartphone;
-  if (p.contains('chrome') || p.contains('browser') || p.contains('extension')) return Icons.web;
+  // Браузерное расширение — пазл, а не `web`: глиф `web` выглядит как
+  // окно браузера и читался как монитор, то есть как ПК.
+  if (p.contains('chrome') || p.contains('browser') || p.contains('extension')) return Icons.extension;
   return Icons.computer;
 }
 
@@ -293,7 +295,14 @@ class _AccountDevicesPanelState extends State<_AccountDevicesPanel> {
                 ]),
                 const SizedBox(height: 8),
                 Flexible(child: opened != null
-                    ? SingleChildScrollView(child: _DeviceDetail(device: opened, russian: ru))
+                    ? SingleChildScrollView(child: _DeviceDetail(
+                        device: opened,
+                        russian: ru,
+                        controller: widget.controller,
+                        // После «Выйти» устройства больше нет — возвращаемся в список,
+                        // иначе панель покажет подробности того, чего уже не существует.
+                        onSignedOut: () => setState(() => _openedId = null),
+                      ))
                     : ActiveAccountMap(
                         api: widget.controller.api,
                         controller: widget.controller,
@@ -391,13 +400,62 @@ class _DeviceRow extends StatelessWidget {
 }
 
 /// Подробности одного устройства — то, что открывается стрелкой «>».
-class _DeviceDetail extends StatelessWidget {
-  const _DeviceDetail({required this.device, required this.russian});
+class _DeviceDetail extends StatefulWidget {
+  const _DeviceDetail({required this.device, required this.russian, this.controller, this.onSignedOut});
   final ActiveTunnelDevice device;
   final bool russian;
+  /// Нужен кнопкам «Отключить» / «Выйти»: через него ходим в API
+  /// и сразу перезапрашиваем карту, чтобы список не врал.
+  final AccountInsightsController? controller;
+  final VoidCallback? onSignedOut;
+  @override State<_DeviceDetail> createState() => _DeviceDetailState();
+}
+
+class _DeviceDetailState extends State<_DeviceDetail> {
+  /// Какое действие выполняется: 'off' — отключение, 'out' — выход.
+  String? _running;
+  String? _failure;
+
+  Future<void> _run(Future<void> Function() action, {required String tag, bool signedOut = false}) async {
+    final controller = widget.controller;
+    if (controller == null || _running != null) return;
+    setState(() { _running = tag; _failure = null; });
+    try {
+      await action();
+      await controller.refresh();
+      if (!mounted) return;
+      setState(() => _running = null);
+      if (signedOut) widget.onSignedOut?.call();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _running = null;
+        _failure = widget.russian ? 'Не получилось — попробуй ещё раз' : 'That did not work — try again';
+      });
+    }
+  }
+
+  /// «Отключить» гасит только туннель: аккаунт на устройстве остаётся.
+  Future<void> _disconnect() => _run(
+        () => widget.controller!.api.disconnect(sessionId: widget.device.sessionId),
+        tag: 'off',
+      );
+
+  /// «Выйти» сначала гасит туннель, потом убирает устройство из аккаунта.
+  /// Падение первого шага не блокирует второй: удаление устройства
+  /// всё равно закрывает его сессии на сервере.
+  Future<void> _signOut() => _run(
+        () async {
+          try { await widget.controller!.api.disconnect(sessionId: widget.device.sessionId); } catch (_) {}
+          await widget.controller!.api.removeDevice(widget.device.id);
+        },
+        tag: 'out',
+        signedOut: true,
+      );
 
   @override Widget build(BuildContext context) {
-    final ru = russian;
+    final device = widget.device;
+    final ru = widget.russian;
     final live = device.status == 'ACTIVE';
     final origin = device.origin;
     final where = origin == null
@@ -450,6 +508,37 @@ class _DeviceDetail extends StatelessWidget {
         ru ? 'Это устройство, с которого ты сейчас смотришь.' : 'This is the device you are looking at now.',
         style: const TextStyle(fontSize: 11, color: GlukColors.violetLight),
       )),
+      if (widget.controller != null) ...<Widget>[
+        const SizedBox(height: 11),
+        Row(children: <Widget>[
+          Expanded(child: _DetailAction(
+            label: ru ? 'Отключить' : 'Disconnect',
+            icon: Icons.link_off_rounded,
+            busy: _running == 'off',
+            // Без сессии гасить нечего — кнопка неактивна, а не врёт.
+            onTap: device.sessionId == null || _running != null ? null : _disconnect,
+          )),
+          const SizedBox(width: 8),
+          Expanded(child: _DetailAction(
+            label: ru ? 'Выйти' : 'Sign out',
+            icon: Icons.logout_rounded,
+            danger: true,
+            busy: _running == 'out',
+            onTap: _running != null ? null : _signOut,
+          )),
+        ]),
+        const SizedBox(height: 7),
+        Text(
+          ru
+              ? '«Отключить» гасит только VPN. «Выйти» ещё и выкидывает устройство из аккаунта.'
+              : '“Disconnect” only drops the VPN. “Sign out” also removes the device from the account.',
+          style: const TextStyle(fontSize: 10.5, height: 1.35, color: GlukColors.text2),
+        ),
+        if (_failure != null) Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(_failure!, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: GlukColors.danger)),
+        ),
+      ],
     ]);
   }
 
@@ -457,6 +546,48 @@ class _DeviceDetail extends StatelessWidget {
     final local = value.toLocal();
     String two(int v) => v < 10 ? '0$v' : '$v';
     return '${two(local.day)}.${two(local.month)} ${two(local.hour)}:${two(local.minute)}';
+  }
+}
+
+/// Кнопка действия в подробностях устройства. Ровно такая же пара есть
+/// в расширении и на сайте, чтобы поведение не расходилось.
+class _DetailAction extends StatelessWidget {
+  const _DetailAction({required this.label, required this.icon, required this.onTap, this.danger = false, this.busy = false});
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+  final bool danger, busy;
+
+  @override Widget build(BuildContext context) {
+    final Color tint = danger ? GlukColors.danger : GlukColors.violetLight;
+    final Color base = danger ? GlukColors.danger : GlukColors.violet;
+    return Opacity(
+      opacity: onTap == null && !busy ? .45 : 1,
+      child: Material(
+        color: base.withOpacity(.12),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: base.withOpacity(.32)),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: <Widget>[
+              busy
+                  ? SizedBox(width: 13, height: 13, child: CircularProgressIndicator(
+                      strokeWidth: 1.7, valueColor: AlwaysStoppedAnimation<Color>(tint)))
+                  : Icon(icon, size: 15, color: tint),
+              const SizedBox(width: 7),
+              Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tint)),
+            ]),
+          ),
+        ),
+      ),
+    );
   }
 }
 

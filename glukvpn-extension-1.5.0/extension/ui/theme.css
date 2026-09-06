@@ -1380,7 +1380,7 @@ body.signed-out .rail { opacity: 0.5; }
    браузера и цифрой, если в той же точке несколько устройств. */
 .account-pins { position:absolute; inset:0; pointer-events:none; z-index:6; }
 .account-pin { position:absolute; transform:translate(-50%,-50%); width:26px; height:26px; display:grid; place-items:center; border-radius:50%; border:1.4px solid rgba(196,181,253,.95); background:rgba(26,19,48,.94); box-shadow:0 0 0 5px rgba(139,92,246,.13), 0 0 16px rgba(139,92,246,.42); animation:account-pin-in .42s ease-out both; }
-.account-pin .material-device { flex:0 0 14px; width:14px; height:14px; -webkit-mask-size:70px 14px; mask-size:70px 14px; background-color:#c4b5fd; }
+.account-pin .material-device { flex:0 0 14px; width:14px; height:14px; -webkit-mask-size:84px 14px; mask-size:84px 14px; background-color:#c4b5fd; }
 .account-pin.is-self { border-color:#c4b5fd; box-shadow:0 0 0 6px rgba(139,92,246,.17), 0 0 20px rgba(139,92,246,.55); }
 .account-pin-count { position:absolute; right:-5px; bottom:-5px; min-width:16px; height:16px; padding:0 4px; display:grid; place-items:center; border-radius:999px; border:2px solid #0a0714; background:#6d4de0; color:#fff; font-size:9.5px; font-weight:800; line-height:1; font-variant-numeric:tabular-nums; }
 @keyframes account-pin-in { from { opacity:0; transform:translate(-50%,-50%) scale(.6); } to { opacity:1; transform:translate(-50%,-50%) scale(1); } }
@@ -1409,7 +1409,7 @@ body.signed-out .rail { opacity: 0.5; }
 
 /* Глифы устройств. Спрайт подключён маской, а не фоном, поэтому глиф
    берёт currentColor и всегда в цвете темы, а не белое пятно. */
-.material-device{display:inline-block;flex:0 0 24px;width:24px;height:24px;vertical-align:middle;background-color:currentColor;-webkit-mask:url('./material-devices.png') 0 0/120px 24px no-repeat;mask:url('./material-devices.png') 0 0/120px 24px no-repeat}
+.material-device{display:inline-block;flex:0 0 24px;width:24px;height:24px;vertical-align:middle;background-color:currentColor;-webkit-mask:url('./material-devices.png') 0 0/144px 24px no-repeat;mask:url('./material-devices.png') 0 0/144px 24px no-repeat}
 /* Смещения — в процентах, а не в пикселях исходника. Спрайт из пяти глифов
    растягивается под каждый размер (плитка 36, чип 19, маркер 14), и при
    пиксельных offsets глиф уезжал за край маски: вместо Chrome была пустота
@@ -1417,10 +1417,14 @@ body.signed-out .rail { opacity: 0.5; }
    ширина маски», то есть от четырёх глифов, поэтому 25/50/75/100 % дают
    ровно 1/2/3/4 глифа при ЛЮБОМ масштабе. */
 .material-device--devices{-webkit-mask-position:0 0;mask-position:0 0}
-.material-device--computer{-webkit-mask-position:25% 0;mask-position:25% 0}
-.material-device--phone{-webkit-mask-position:50% 0;mask-position:50% 0}
-.material-device--web{-webkit-mask-position:75% 0;mask-position:75% 0}
-.material-device--server{-webkit-mask-position:100% 0;mask-position:100% 0}
+.material-device--computer{-webkit-mask-position:20% 0;mask-position:20% 0}
+.material-device--phone{-webkit-mask-position:40% 0;mask-position:40% 0}
+.material-device--web{-webkit-mask-position:60% 0;mask-position:60% 0}
+.material-device--server{-webkit-mask-position:80% 0;mask-position:80% 0}
+/* Шестая клетка — Material `extension`, тот самый пазл. Именно он
+   теперь стоит у браузерного расширения: глиф `web` — это окно
+   браузера, и он читался как монитор, то есть как ПК. */
+.material-device--ext{-webkit-mask-position:100% 0;mask-position:100% 0}
 
 /* Чип «Устройства · N» в углу карты. */
 /* Мелкая кнопка устройств: только значок 36x36, цифра — бейджем НА нём.
@@ -1428,7 +1432,7 @@ body.signed-out .rail { opacity: 0.5; }
 button.map-count{display:grid;place-items:center;gap:0;top:12px;right:12px;bottom:auto;left:auto;width:36px;height:36px;padding:0;border:1px solid rgba(139,92,246,.4);border-radius:12px;background:rgba(26,20,40,.9);color:#c4b5fd;font-family:inherit;pointer-events:auto;cursor:pointer;overflow:visible;z-index:12;transform:none;transition:border-color .16s,background .16s,box-shadow .16s}
 button.map-count:hover,button.map-count.is-open{border-color:rgba(196,181,253,.7);background:rgba(38,29,58,.95);box-shadow:0 0 14px rgba(139,92,246,.34)}
 button.map-count[hidden]{display:none!important}
-button.map-count .material-device{flex:0 0 19px;width:19px;height:19px;-webkit-mask-size:95px 19px;mask-size:95px 19px}
+button.map-count .material-device{flex:0 0 19px;width:19px;height:19px;-webkit-mask-size:114px 19px;mask-size:114px 19px}
 .map-count-num{position:absolute;right:-6px;bottom:-6px;min-width:17px;height:17px;padding:0 4px;display:grid;place-items:center;border-radius:999px;border:2px solid #0a0714;background:#6d4de0;color:#efe7ff;font-size:10px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;box-shadow:0 0 10px rgba(109,77,224,.55)}
 
 /* Панель устройств: полупрозрачный слой с размытием, привязанный к чипу,
@@ -1475,3 +1479,61 @@ button.account-device-more{width:32px;height:32px;display:grid;place-items:cente
 button.account-device-more:hover{background:rgba(139,92,246,.18)}
 .account-device-chev{width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);opacity:.75}
 .account-device-chev.is-back{transform:rotate(135deg)}
+
+/* ------------------------------------------------------------ stats view ---
+   Раздел «Статистика». Те же цвета и та же плотность, что у панели
+   устройств и у экрана ПК: зелёный — входящий трафик, фиолетовый —
+   исходящий. Ширина попапа маленькая, поэтому график сжимается
+   столбиками через flex, а не скроллится. */
+.stats-seg{margin-bottom:10px}
+.stats-cards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stats-card{display:flex;flex-direction:column;gap:4px;padding:10px 11px;border-radius:14px;background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.18)}
+.stats-card-k{font-size:9.5px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;color:#5c5770}
+.stats-card-v{font-size:16px;font-weight:800;line-height:1.1}
+.stats-card.is-down .stats-card-v{color:#3ddc97}
+.stats-card.is-up .stats-card-v{color:#c4b5fd}
+.stats-chart{display:flex;align-items:flex-end;gap:2px;height:104px;margin-top:12px;padding:8px 9px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06)}
+.stats-col{display:flex;align-items:flex-end;justify-content:center;gap:1px;flex:1 1 0;min-width:0;height:100%}
+.stats-bar{display:block;width:100%;min-height:2px;border-radius:2px 2px 0 0}
+.stats-bar.is-down{background:linear-gradient(to top,rgba(61,220,151,.45),#3ddc97)}
+.stats-bar.is-up{background:linear-gradient(to top,rgba(196,181,253,.45),#c4b5fd)}
+.stats-axis{display:flex;justify-content:space-between;margin-top:6px;font-size:9.5px;color:#5c5770}
+.stats-note{margin-top:7px;font-size:10.5px;line-height:1.4;color:#5c5770}
+.stats-note.is-warn{padding:9px 10px;border-radius:12px;color:#f0b567;background:rgba(240,181,103,.10);border:1px solid rgba(240,181,103,.30)}
+.stats-h{margin:18px 0 8px;font-size:9.5px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;color:#5c5770}
+.stats-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px;padding:8px 10px;margin-bottom:6px;border-radius:13px;background:rgba(139,92,246,.06);border:1px solid rgba(139,92,246,.16)}
+.stats-tile{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:10px;background:rgba(139,92,246,.20)}
+.stats-tile .material-device{width:17px;height:17px;flex:0 0 17px;mask-size:102px 17px;-webkit-mask-size:102px 17px;background-color:#c4b5fd}
+.stats-row-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.stats-row-text b{font-size:12px;font-weight:700;color:#f5f3fb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stats-row-text span{font-size:10px;color:#9994ab;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stats-row-v{font-size:12px;font-weight:800;color:#f5f3fb;white-space:nowrap}
+.stats-share{display:block;height:4px;margin-top:3px;border-radius:999px;background:rgba(255,255,255,.06);overflow:hidden}
+.stats-share i{display:block;height:100%;border-radius:999px;background:#8b5cf6}
+.stats-share.is-budget{height:7px;margin-top:6px}
+.stats-share.is-budget i{background:linear-gradient(90deg,#3ddc97,#8b5cf6)}
+.stats-more{margin:2px 0 4px;padding:7px 12px;border-radius:999px;font:inherit;font-size:11px;font-weight:600;color:#c4b5fd;background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.30);cursor:pointer}
+.stats-more:hover{background:rgba(139,92,246,.20)}
+.stats-empty{padding:14px 2px;font-size:11.5px;color:#5c5770}
+.stats-budget{display:flex;flex-direction:column;gap:5px;padding:12px 13px;border-radius:15px;background:rgba(139,92,246,.07);border:1px solid rgba(196,181,253,.20)}
+.stats-budget b{font-size:12.5px;color:#f5f3fb}
+.stats-budget span{font-size:12px;color:#c4b5fd;font-weight:700}
+.stats-budget small{font-size:9.5px;line-height:1.4;color:#5c5770}
+.stats-skeleton{height:170px;border-radius:16px;background:linear-gradient(120deg,rgba(139,92,246,.14),rgba(139,92,246,.04),rgba(139,92,246,.12))}
+
+/* --------------------------------------------- device detail actions ---
+   Кнопки «Отключить» и «Выйти» в раскрытом устройстве. Те же
+   размеры и цвета, что во Flutter и на сайте: фиолетовая — связь,
+   красная — выход из аккаунта. */
+.account-detail-foot{margin-top:11px;display:flex;flex-direction:column;gap:6px}
+.account-detail-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.account-act{height:34px;padding:0 10px;border-radius:12px;font:inherit;font-size:11.5px;font-weight:700;color:#c4b5fd;background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.32);cursor:pointer;transition:background .16s ease,opacity .16s ease}
+.account-act:hover:not(:disabled){background:rgba(139,92,246,.22)}
+.account-act.is-danger{color:#ff6b6b;background:rgba(255,107,107,.10);border-color:rgba(255,107,107,.32)}
+.account-act.is-danger:hover:not(:disabled){background:rgba(255,107,107,.18)}
+.account-act:disabled{opacity:.45;cursor:default}
+.account-detail-hint{margin:0;font-size:10px;line-height:1.35;color:#5c5770}
+.account-detail-error{margin:0;font-size:10.5px;font-weight:600;color:#ff6b6b}
+
+/* То же гало и белое кольцо, что у маркера во Flutter и на сайте. */
+.account-pin{box-shadow:0 0 0 1.4px rgba(255,255,255,.55),0 0 0 5px rgba(139,92,246,.16),0 0 16px 5px rgba(139,92,246,.42)}

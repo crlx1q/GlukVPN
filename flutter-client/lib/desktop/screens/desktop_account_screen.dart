@@ -678,7 +678,9 @@ class _DeviceSegments extends StatelessWidget {
         children: <Widget>[
           _seg(_DeviceFilter.all, ru ? 'Все' : 'All', allCount),
           _seg(_DeviceFilter.active, ru ? 'Активные' : 'Active', activeCount),
-          _seg(_DeviceFilter.revoked, ru ? 'Вышли' : 'Signed out', revokedCount),
+          // ПУНКТ 11: сегмент «Вышли» убран. При выходе устройство
+          // удаляется из списка совсем, так что фильтр всегда пустой и
+          // только путает. Так же убрано на телефоне и в расширении.
         ],
       ),
     );

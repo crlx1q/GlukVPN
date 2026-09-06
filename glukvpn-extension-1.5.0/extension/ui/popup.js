@@ -64,7 +64,7 @@ function paintFlag(holder, code, city) {
 }
 
 const $ = (id) => document.getElementById(id)
-const VIEWS = ['vpn', 'servers', 'settings', 'profile']
+const VIEWS = ['vpn', 'servers', 'stats', 'settings', 'profile']
 const CALL_TIMEOUT_MS = 20000
 const NODES_CACHE = 'gluk.popup.nodes'
 const SAVE_DEBOUNCE_MS = 320
@@ -522,6 +522,9 @@ function syncGlide() {
 function setView(next) {
 	if (!VIEWS.includes(next)) return
 	view = next
+	// Цифры тянем при заходе в раздел, а не на каждом опросе
+	// состояния: попап открывают чаще, чем смотрят статистику.
+	if (next === 'stats') loadStats()
 	for (const section of document.querySelectorAll('.view')) {
 		const on = section.id === `view-${next}`
 		section.classList.toggle('active', on)
@@ -1182,6 +1185,7 @@ async function switchChannel(target) {
 	}
 	channelSwitching = true
 	activeMapData = null
+	activeMapRevision++
 	renderAccountMap()
 	closeDeviceLimitModal(false)
 	setChannelError('')
@@ -1899,6 +1903,7 @@ async function revokeDevice(deviceId) {
 async function signOut() {
 	await call('logout')
 	activeMapData = null
+	activeMapRevision++
 	renderAccountMap()
 	closeDeviceLimitModal(false)
 	devicesLoaded = false
@@ -2063,6 +2068,15 @@ function wire() {
 	$('btn-power')?.addEventListener('click', togglePower)
 	$('btn-servers-jump')?.addEventListener('click', () => setView('servers'))
 	$('btn-refresh')?.addEventListener('click', () => ensureNodes(true))
+	$('btn-stats-refresh')?.addEventListener('click', () => loadStats(true))
+	$('seg-period')?.addEventListener('click', (event) => {
+		const button = event.target.closest('button')
+		if (!button) return
+		statsPeriod = button.dataset.value
+		statsDomainsOpen = false
+		syncSegment('seg-period', statsPeriod)
+		loadStats(true)
+	})
 	$('rail-brand')?.addEventListener('click', () => setView('vpn'))
 
 	$('seg-lang')?.addEventListener('click', (event) => {
@@ -2326,6 +2340,7 @@ function renderLimitDevices(devices) {
 			if (device?.isCurrent || String(state?.device?.id ?? '') === id) {
 				closeDeviceLimitModal(false)
 				activeMapData = null
+				activeMapRevision++
 				renderAccountMap()
 				await refreshState()
 				return
@@ -2375,7 +2390,15 @@ async function openDeviceLimitModal(error) {
 }
 
 function renderAccountMap() {
-  if(!activeMapData)activeMapRevision++
+	// ВАЖНО: здесь нельзя двигать activeMapRevision. Раньше первой строкой
+	// стояло `if(!activeMapData)activeMapRevision++`, и это полностью ломало
+	// карту в расширении: пока refreshServiceAndMap() ждал ответ, любая
+	// перерисовка с ещё пустыми данными (а её вызывает геоблок на каждом
+	// обновлении состояния) увеличивала ревизию, ответ отбрасывался как
+	// устаревший, и activeMapData навсегда оставалась null. Итог: чужие
+	// устройства, нитки и анимации не появлялись вообще. Ревизию двигают
+	// только реальные события инвалидации — выход, смена аккаунта, смена
+	// канала.
 	const group = $('account-map')
 	const count = $('map-count')
 	const pins = $('account-pins')
@@ -2426,7 +2449,7 @@ function renderAccountMap() {
 		group.replaceChildren()
 		if (pins) pins.replaceChildren()
 	}
-	const seenNode = {}, seenPin = {}
+	const seenNode = {}, seenPin = {}, pinPoints = []
 	for (const key of order) {
 		if (!dirty) break
 		const { a, b, from, device } = pairs[key]
@@ -2462,6 +2485,7 @@ function renderAccountMap() {
 		// Фиолетовый маркер устройства с глифом платформы.
 		if (pins && !seenPin[from]) {
 			seenPin[from] = true
+			pinPoints.push(a)
 			pins.appendChild(accountPin(a, device, spots[from] || 1))
 		}
 	}
@@ -2482,11 +2506,15 @@ function renderAccountMap() {
 			dot.setAttribute('r', '1')
 			group.appendChild(dot)
 		}
-		// И я сам — фиолетовый маркер с глифом браузера.
-		if (pins && selfPoint && !seenPin[mapSpot(selfPoint)]) {
+		// И я сам — фиолетовый маркер с глифом расширения. И второе
+		// условие: если рядом уже стоит маркер другого устройства,
+		// свой кружок без туннеля не добавляем — они налезали бы
+		// друг на друга. Он появится при подключении, со своей ниткой.
+		const crowded = selfPoint ? pinPoints.some(p => Math.hypot(p.x - selfPoint.x, p.y - selfPoint.y) < 2.5) : false
+		if (pins && selfPoint && !crowded && !seenPin[mapSpot(selfPoint)]) {
 			pins.appendChild(accountPin(selfPoint, {
 				isCurrent: true,
-				platform: 'web',
+				platform: 'ext',
 				deviceName: currentLang() === 'ru' ? 'Это устройство' : 'This device',
 			}, 1))
 		}
@@ -2578,9 +2606,219 @@ function restrictionLabel(restriction) {
 // Ready-made Material Icons (same glyphs as Flutter Icons.*), locally bundled PNG.
 function materialDeviceIcon(platform) {
  const p=String(platform||'').toLowerCase(),el=document.createElement('span');
- const kind=p==='devices'?'devices':/android|ios|phone/.test(p)?'phone':/chrome|browser|ext/.test(p)?'web':p==='server'?'server':'computer';
+ const kind=p==='devices'?'devices':/android|ios|phone/.test(p)?'phone':/chrome|browser|ext/.test(p)?'ext':p==='server'?'server':'computer';
  el.className='material-device material-device--'+kind;el.setAttribute('aria-hidden','true');return el;
 }
+// ------------------------------------------------------------------ stats ---
+// Статистика использования. Раньше её в расширении не было вообще:
+// цифры жили только на ПК. Берём тот же эндпоинт и те же правила:
+// день — по часам, неделя и месяц — по дням; домены свёрнуты до самых
+// тратных; бюджет инфраструктуры приходит только админам (решает сервер)
+// и подписан сервером — серверов будет больше одного.
+let statsPeriod = 'day'
+let statsData = null
+let statsBusy = false
+let statsRevision = 0
+let statsDomainsOpen = false
+
+function statsNode(tag, className, text) {
+	const el = document.createElement(tag)
+	if (className) el.className = className
+	if (text != null) el.textContent = text
+	return el
+}
+
+function statsBytes(value) {
+	const n = Number(value)
+	if (!Number.isFinite(n) || n < 0) return '—'
+	const units = ['B', 'KB', 'MB', 'GB', 'TB']
+	let size = n
+	let unit = 0
+	while (size >= 1024 && unit < 4) { size /= 1024; unit++ }
+	return `${unit ? (size >= 100 ? Math.round(size) : size.toFixed(1)) : Math.round(size)} ${units[unit]}`
+}
+
+function statsUtc(iso) {
+	if (!iso) return '—'
+	const date = new Date(iso)
+	if (Number.isNaN(date.getTime())) return '—'
+	return `${date.toISOString().slice(0, 16).replace('T', ' ')} UTC`
+}
+
+function statsTick(iso) {
+	const date = new Date(iso)
+	if (Number.isNaN(date.getTime())) return '—'
+	const pad = (value) => String(value).padStart(2, '0')
+	return statsPeriod === 'day'
+		? `${pad(date.getUTCHours())}:00`
+		: `${pad(date.getUTCDate())}.${pad(date.getUTCMonth() + 1)}`
+}
+
+async function loadStats(force = false) {
+	const body = $('stats-body')
+	if (!body) return
+	syncSegment('seg-period', statsPeriod)
+	if (state?.signedIn === false || channelSwitching) { statsData = null; body.replaceChildren(); return }
+	if (statsBusy) return
+	if (statsData && !force) { renderStats(); return }
+	statsBusy = true
+	const revision = ++statsRevision
+	body.replaceChildren(statsNode('div', 'stats-skeleton'))
+	try {
+		const result = await call('analytics', { period: statsPeriod })
+		if (revision !== statsRevision) return
+		if (!result?.ok) throw new Error(result?.error || 'analytics_failed')
+		// Ответ на другой период в график не пускаем.
+		if (result.period && result.period !== statsPeriod) return
+		statsData = result
+		renderStats()
+	} catch (_) {
+		if (revision !== statsRevision) return
+		statsData = null
+		const ru = currentLang() === 'ru'
+		body.replaceChildren(statsNode('div', 'stats-empty', ru ? 'Не удалось получить статистику' : 'Statistics could not be loaded'))
+	} finally {
+		if (revision === statsRevision) statsBusy = false
+	}
+}
+
+function renderStats() {
+	const body = $('stats-body')
+	if (!body || !statsData) return
+	const ru = currentLang() === 'ru'
+	const data = statsData
+	const totals = data.totals || {}
+	const series = Array.isArray(data.series) ? data.series : []
+	const devices = Array.isArray(data.devices) ? data.devices : []
+	const domains = data.domains || {}
+	const items = Array.isArray(domains.items) ? domains.items : []
+	const budget = data.budget
+	const frag = document.createDocumentFragment()
+
+	if (data.coverage?.partial) {
+		frag.appendChild(statsNode('div', 'stats-note is-warn', ru
+			? `История ведётся с ${statsUtc(data.coverage.since)}. За более ранние дни данных нет — это не нулевой трафик.`
+			: `Measurements start at ${statsUtc(data.coverage.since)}. Earlier days have no data — that is missing history, not zero traffic.`))
+	}
+
+	const cards = statsNode('div', 'stats-cards')
+	for (const card of [
+		{ tone: 'is-down', label: ru ? 'Загружено' : 'Downloaded', value: statsBytes(totals.downloadBytes) },
+		{ tone: 'is-up', label: ru ? 'Отправлено' : 'Uploaded', value: statsBytes(totals.uploadBytes) },
+	]) {
+		const cell = statsNode('div', `stats-card ${card.tone}`)
+		cell.appendChild(statsNode('span', 'stats-card-k', card.label))
+		cell.appendChild(statsNode('b', 'stats-card-v', card.value))
+		cards.appendChild(cell)
+	}
+	frag.appendChild(cards)
+
+	const peak = series.reduce((max, point) => Math.max(max, Number(point.downloadBytes) || 0, Number(point.uploadBytes) || 0), 0)
+	if (peak > 0) {
+		const chart = statsNode('div', 'stats-chart')
+		chart.setAttribute('role', 'img')
+		chart.setAttribute('aria-label', ru ? 'График трафика, время UTC' : 'Traffic chart, UTC')
+		for (const point of series) {
+			const column = statsNode('span', 'stats-col')
+			column.title = `${statsUtc(point.start)}\n↓ ${statsBytes(point.downloadBytes)}\n↑ ${statsBytes(point.uploadBytes)}`
+			const rx = statsNode('i', 'stats-bar is-down')
+			const tx = statsNode('i', 'stats-bar is-up')
+			rx.style.height = `${Math.max(2, ((Number(point.downloadBytes) || 0) / peak) * 100)}%`
+			tx.style.height = `${Math.max(2, ((Number(point.uploadBytes) || 0) / peak) * 100)}%`
+			column.append(rx, tx)
+			chart.appendChild(column)
+		}
+		frag.appendChild(chart)
+		const axis = statsNode('div', 'stats-axis')
+		axis.append(
+			statsNode('span', '', statsTick(series[0]?.start)),
+			statsNode('span', '', `${statsTick(series[Math.floor(series.length / 2)]?.start)} UTC`),
+			statsNode('span', '', statsTick(series[series.length - 1]?.start)),
+		)
+		frag.appendChild(axis)
+		frag.appendChild(statsNode('div', 'stats-note', `${ru ? 'Пик' : 'Peak'}: ${statsBytes(peak)} · ${statsPeriod === 'day' ? (ru ? 'по часам' : 'by hour') : (ru ? 'по дням' : 'by day')}`))
+	} else {
+		frag.appendChild(statsNode('div', 'stats-empty', ru ? 'За этот период трафик не записан' : 'No traffic recorded for this period'))
+	}
+
+	frag.appendChild(statsNode('h3', 'stats-h', ru ? 'По устройствам' : 'By device'))
+	if (!devices.length) {
+		frag.appendChild(statsNode('div', 'stats-empty', ru ? 'Трафик устройств не записан' : 'No device traffic recorded'))
+	} else {
+		const top = devices.reduce((max, device) => Math.max(max, (Number(device.downloadBytes) || 0) + (Number(device.uploadBytes) || 0)), 0)
+		for (const device of devices) {
+			const total = (Number(device.downloadBytes) || 0) + (Number(device.uploadBytes) || 0)
+			const row = statsNode('div', 'stats-row')
+			const tile = statsNode('span', 'stats-tile')
+			tile.appendChild(materialDeviceIcon(device.platform))
+			const text = statsNode('span', 'stats-row-text')
+			text.appendChild(statsNode('b', '', device.deviceName || (ru ? 'Устройство' : 'Device')))
+			text.appendChild(statsNode('span', '', `${device.platform || '—'} · ↓ ${statsBytes(device.downloadBytes)} · ↑ ${statsBytes(device.uploadBytes)}`))
+			const track = statsNode('span', 'stats-share')
+			const fill = statsNode('i', '')
+			fill.style.width = `${top ? Math.max(4, (total / top) * 100) : 4}%`
+			track.appendChild(fill)
+			text.appendChild(track)
+			row.append(tile, text, statsNode('b', 'stats-row-v', statsBytes(total)))
+			frag.appendChild(row)
+		}
+	}
+
+	frag.appendChild(statsNode('h3', 'stats-h', ru ? 'Сайты и категории' : 'Sites and categories'))
+	if (domains.enabled === false) {
+		frag.appendChild(statsNode('div', 'stats-empty', ru ? 'Учёт доменов отключён' : 'Domain accounting is disabled'))
+	} else if (!items.length) {
+		frag.appendChild(statsNode('div', 'stats-empty', ru ? 'Домены ещё не записаны' : 'No domains recorded yet'))
+	} else {
+		const shown = statsDomainsOpen ? items : items.slice(0, 5)
+		for (const item of shown) {
+			const row = statsNode('div', 'stats-row')
+			const text = statsNode('span', 'stats-row-text')
+			text.appendChild(statsNode('b', '', item.domain || '—'))
+			text.appendChild(statsNode('span', '', `${item.category || (ru ? 'без категории' : 'uncategorised')} · ${Number(item.connections) || 0} ${ru ? 'соед.' : 'conn.'}`))
+			row.append(text, statsNode('b', 'stats-row-v', statsBytes((Number(item.downloadBytes) || 0) + (Number(item.uploadBytes) || 0))))
+			frag.appendChild(row)
+		}
+		if (items.length > 5) {
+			const more = statsNode('button', 'stats-more', statsDomainsOpen
+				? (ru ? 'Свернуть' : 'Collapse')
+				: `${ru ? 'Показать все' : 'Show all'} · ${items.length}`)
+			more.type = 'button'
+			more.setAttribute('aria-expanded', statsDomainsOpen ? 'true' : 'false')
+			more.onclick = () => { statsDomainsOpen = !statsDomainsOpen; renderStats() }
+			frag.appendChild(more)
+		}
+		frag.appendChild(statsNode('div', 'stats-note', ru
+			? `Самые тратные сайты за окно хранения ${Number(domains.windowDays) || 0} дн. Это не выбранный период графика.`
+			: `Heaviest sites across a ${Number(domains.windowDays) || 0}-day retention window. This is not the selected chart period.`))
+	}
+
+	if (budget && budget.adminOnly === true) {
+		frag.appendChild(statsNode('h3', 'stats-h', ru ? 'Инфраструктура — только админам' : 'Infrastructure — admins only'))
+		const card = statsNode('div', 'stats-budget')
+		const current = $('cur-name')?.textContent?.trim()
+		const server = current && current !== '—' ? current : (ru ? 'текущий сервер' : 'current server')
+		card.appendChild(statsNode('b', '', `${ru ? 'Месячные траты' : 'Monthly spend'} · ${server}`))
+		if (budget.available) {
+			card.appendChild(statsNode('span', '', `${statsBytes(budget.usedBytes)} / ${statsBytes(budget.budgetBytes)} · ${(Number(budget.usedPercent) || 0).toFixed(1)}%`))
+			const track = statsNode('span', 'stats-share is-budget')
+			const fill = statsNode('i', '')
+			fill.style.width = `${Math.max(0, Math.min(100, Number(budget.usedPercent) || 0))}%`
+			track.appendChild(fill)
+			card.appendChild(track)
+			card.appendChild(statsNode('small', '', `${statsUtc(budget.cycleStart)} — ${statsUtc(budget.cycleEnd)}`))
+		} else {
+			card.appendChild(statsNode('span', '', ru ? 'Данные бюджета сейчас недоступны — нулевой расход не предполагается' : 'Budget data is unavailable — zero usage is not assumed'))
+		}
+		card.appendChild(statsNode('small', '', ru
+			? 'Общий бюджет инфраструктуры, а не личная квота. Когда серверов станет больше, у каждого будет своя карточка.'
+			: 'Shared infrastructure budget, not a personal quota. As more servers come online, each gets its own card.'))
+		frag.appendChild(card)
+	}
+
+	body.replaceChildren(frag)
+}
+
 // Панель «Устройства» — выпадашка, привязанная к чипу над картой, а не
 // модальное окно: полупрозрачный слой с размытием, который не накрывает
 // карточку сервера и закрывается кликом мимо или Esc.
@@ -2700,5 +2938,47 @@ function accountDeviceDetail(d, ru) {
   note.textContent=ru?'Это устройство, с которого ты сейчас смотришь.':'This is the device you are looking at now.';
   box.appendChild(note);
  }
+ box.appendChild(accountDeviceActions(d, ru));
  return box;
+}
+// Пара кнопок под подробностями: «Отключить» гасит только туннель,
+// «Выйти» ещё и убирает устройство из аккаунта. Своё устройство гасим
+// обычным disconnect — иначе остались бы включёнными прокси и бейдж;
+// чужое — по id сессии, сервер разрешает это владельцу аккаунта.
+function accountDeviceActions(d, ru) {
+ const foot=document.createElement('div');foot.className='account-detail-foot';
+ const row=document.createElement('div');row.className='account-detail-actions';
+ const hint=document.createElement('p');hint.className='account-detail-hint';
+ hint.textContent=ru?'«Отключить» гасит только VPN. «Выйти» ещё и выкидывает устройство из аккаунта.':'“Disconnect” only drops the VPN. “Sign out” also removes the device from the account.';
+ const error=document.createElement('p');error.className='account-detail-error';error.hidden=true;
+ const off=document.createElement('button');off.type='button';off.className='account-act';
+ off.textContent=ru?'Отключить':'Disconnect';
+ if(!d.sessionId&&!d.isCurrent)off.disabled=true;
+ const out=document.createElement('button');out.type='button';out.className='account-act is-danger';
+ out.textContent=ru?'Выйти':'Sign out';
+ async function run(button, task){
+  const previous=button.textContent;
+  off.disabled=true;out.disabled=true;error.hidden=true;
+  button.textContent=ru?'Секунду…':'One moment…';
+  const response=await task();
+  if(response&&response.ok===false){
+   off.disabled=!d.sessionId&&!d.isCurrent;out.disabled=false;button.textContent=previous;
+   error.textContent=humanError(response);error.hidden=false;
+   return;
+  }
+  accountDetailId=null;
+  await refreshServiceAndMap();
+  updateAccountDevices();
+ }
+ off.onclick=()=>run(off,()=>d.isCurrent?call('disconnect',{silent:false}):call('closeAccountSession',{sessionId:d.sessionId}));
+ out.onclick=()=>run(out,async()=>{
+  // Сначала гасим туннель, потом убираем устройство: если первый
+  // шаг не удался, удаление всё равно закроет сессии на сервере.
+  if(d.isCurrent)await call('disconnect',{silent:true});
+  else if(d.sessionId)await call('closeAccountSession',{sessionId:d.sessionId});
+  return call('revokeDevice',{deviceId:d.id});
+ });
+ row.append(off,out);
+ foot.append(row,hint,error);
+ return foot;
 }

@@ -22,7 +22,7 @@
  // Готовые глифы Material Icons — те же, что Flutter Icons.devices/computer/
  // smartphone/web/dns. Один спрайт material-devices.png на все клиенты.
  D.deviceIcon=function(platform){
-  var p=String(platform||'').toLowerCase(),kind=p==='devices'?'devices':/android|ios|phone/.test(p)?'phone':/chrome|browser|ext/.test(p)?'web':p==='server'?'server':'computer';
+  var p=String(platform||'').toLowerCase(),kind=p==='devices'?'devices':/android|ios|phone/.test(p)?'phone':/chrome|browser|ext/.test(p)?'ext':p==='server'?'server':'computer';
   return '<span class="material-device material-device--'+kind+'" aria-hidden="true"></span>';
  };
 
@@ -106,8 +106,14 @@
   all.forEach(function(d){if(d&&d.isCurrent&&!mine)mine=d;});
   var own=routes.some(function(r){return r.device&&r.device.isCurrent;});
   var exit=mine&&mine.node?mine.node.location:null;
+  var me=!own&&mine&&place(mine.origin)?project(mine.origin):null;
+  // И второе условие: если в той же точке уже стоит маркер
+  // другого устройства, свой кружок без туннеля не добавляем —
+  // два маркера в одном городе налезают друг на друга. Он
+  // появится при подключении, вместе со своей ниткой.
+  if(me&&routes.some(function(r){return Math.hypot(r.a.x-me.x,r.a.y-me.y)<2.5;}))me=null;
   return {
-   self:!own&&mine&&place(mine.origin)?project(mine.origin):null,
+   self:me,
    selfPlatform:mine?mine.platform:'',
    node:place(exit)?project(exit):null
   };
@@ -276,6 +282,15 @@
      return '<div class="gluk-detail__row"><span>'+esc(pair[0])+'</span><b>'+esc(pair[1])+'</b></div>';
     }).join('')+
     (d.isCurrent?'<p class="gluk-detail__note">'+esc(tr('Это устройство, с которого ты сейчас смотришь.','This is the device you are looking at now.'))+'</p>':'')+
+    // Кнопки «Отключить» и «Выйти»: первая гасит только туннель,
+    // вторая ещё и убирает устройство из аккаунта. Такая же пара есть
+    // во Flutter и в расширении — поведение одинаковое на всех площадках.
+    '<div class="gluk-acts">'+
+     '<button type="button" class="gluk-act" data-gluk-off="'+esc(d.sessionId||'')+'"'+(d.sessionId?'':' disabled')+'>'+esc(tr('Отключить','Disconnect'))+'</button>'+
+     '<button type="button" class="gluk-act gluk-act--danger" data-gluk-out="'+esc(d.id)+'" data-gluk-session="'+esc(d.sessionId||'')+'">'+esc(tr('Выйти','Sign out'))+'</button>'+
+    '</div>'+
+    '<p class="gluk-detail__hint">'+esc(tr('«Отключить» гасит только VPN. «Выйти» ещё и выкидывает устройство из аккаунта.','“Disconnect” only drops the VPN. “Sign out” also removes the device from the account.'))+'</p>'+
+    '<p class="gluk-detail__error" data-gluk-error hidden></p>'+
    '</div>';
  }
 
@@ -295,6 +310,30 @@
    if(more){e.stopPropagation();panel.dataset.glukDetail=more.getAttribute('data-gluk-more');D.drawAccountMap(D.lastAccountMap);return;}
    var back=e.target.closest&&e.target.closest('[data-gluk-back]');
    if(back){e.stopPropagation();delete panel.dataset.glukDetail;D.drawAccountMap(D.lastAccountMap);return;}
+   var off=e.target.closest&&e.target.closest('[data-gluk-off]');
+   var out=off?null:(e.target.closest&&e.target.closest('[data-gluk-out]'));
+   if(off||out){
+    e.stopPropagation();
+    var btn=off||out;
+    // Сами запросы живут в sprint2.js: только там есть авторизованный клиент.
+    if(btn.disabled||typeof D.deviceAction!=='function')return;
+    var slot=panel.querySelector('[data-gluk-error]'),label=btn.textContent;
+    var acts=panel.querySelectorAll('.gluk-act');
+    Array.prototype.forEach.call(acts,function(b){b.disabled=true;});
+    btn.textContent=tr('Секунду…','One moment…');
+    if(slot){slot.hidden=true;slot.textContent='';}
+    D.deviceAction(off?'disconnect':'signout',{
+     sessionId:(off?off.getAttribute('data-gluk-off'):out.getAttribute('data-gluk-session'))||null,
+     deviceId:out?out.getAttribute('data-gluk-out'):null
+    }).then(function(){
+     delete panel.dataset.glukDetail;
+    },function(message){
+     Array.prototype.forEach.call(panel.querySelectorAll('.gluk-act'),function(b){b.disabled=false;});
+     btn.textContent=label;
+     if(slot){slot.textContent=String(message||tr('Не получилось — попробуйте ещё раз','That did not work — try again'));slot.hidden=false;}
+    });
+    return;
+   }
    e.stopPropagation();
   });
   document.addEventListener('click',function(e){if(!top.contains(e.target))open(false);});

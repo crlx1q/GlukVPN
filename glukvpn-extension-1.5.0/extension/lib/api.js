@@ -290,6 +290,8 @@ export const Api = {
 
 	devices: () => request('GET', '/api/devices'),
 	activeMap: () => request('GET', '/api/user/active-map'),
+	/** Статистика использования: тот же эндпоинт, что у ПК и телефона. */
+	analytics: (period) => request('GET', `/api/user/analytics?period=${encodeURIComponent(String(period || 'day'))}`),
 	reportMapCountry: (countryCode) => request('POST', '/api/user/map-origin', { body: { countryCode } }),
 	revokeDevice: (id) => request('DELETE', `/api/devices/${encodeURIComponent(String(id))}`),
 

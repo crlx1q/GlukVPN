@@ -504,10 +504,12 @@ class _MapBackdropState extends State<_MapBackdrop>
       if (x > maxX) maxX = x;
     }
     if (serverPoint != null) span(serverPoint.x);
-    for (final ConnectionArc arc in widget.accountArcs) {
-      span(arc.from.x);
-      span(arc.to.x);
-    }
+    // И второе: кадр строится ТОЛЬКО по себе и выбранному серверу —
+    // ровно как в старом клиенте. Раньше в рамку входили ещё и
+    // концы чужих ниток, а список устройств приходит опросом раз в
+    // 5 секунд: любое появление или исчезновение устройства давало
+    // новый центр, и весь мир медленно ехал вбок. Именно это и
+    // выглядело как «шахматные фигуры».
     final FlatMapView view = FlatMapView.topAnchored(
       viewport: MediaQuery.sizeOf(context),
       centreOn: MapPoint((minX + maxX) / 2, selfPoint.y),

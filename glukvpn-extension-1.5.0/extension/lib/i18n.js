@@ -76,7 +76,11 @@ export function resolveLanguage(settingsLanguage, countryCode) {
 const en = {
 	'nav.vpn': 'VPN',
 	'nav.servers': 'Servers',
+	'nav.stats': 'Statistics',
 	'nav.settings': 'Settings',
+	'stats.day': 'Day',
+	'stats.week': 'Week',
+	'stats.month': 'Month',
 
 	'status.connected': 'CONNECTED',
 	'status.connecting': 'CONNECTING',
@@ -320,7 +324,11 @@ const en = {
 const ru = {
 	'nav.vpn': 'VPN',
 	'nav.servers': 'Серверы',
+	'nav.stats': 'Статистика',
 	'nav.settings': 'Настройки',
+	'stats.day': 'День',
+	'stats.week': 'Неделя',
+	'stats.month': 'Месяц',
 
 	'status.connected': 'ПОДКЛЮЧЕНО',
 	'status.connecting': 'ПОДКЛЮЧЕНИЕ',

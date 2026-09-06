@@ -204,3 +204,84 @@ Greyscale uses `HSLColor.fromColor(c).withSaturation(0)` rather than channel ari
 Static only, same sandbox limits: `npm` is absent (`spawn npm ENOENT`) and there is no Flutter SDK, so no suite was executed. Checked by grep: no live references to `drawRoute`, `setPoint`, `conn-path`, `you-dot`, `you-ring`, `server-dot` or `server-ring` remain in the extension (comments only); `accountMapSig`, `nodeLatLon`, `selfLatLon`, `D.lastAccountMapSig` and `selfPlatform` appear exactly at the intended sites; `fitConnections` is gone from `home_screen.dart` and still present in `map_view.dart` for its test. `dashboard.css?v=20260905.4` was again deliberately NOT bumped because `site/tests/site.test.cjs` pins that string.
 
 Still required before release: `npm run typecheck` and `npm test` at the root, `npm test --prefix site`, `node --test glukvpn-extension-1.5.0/extension/tests/sprint2-contracts.test.mjs`, `flutter analyze` + `flutter test`, native Windows and Android builds, then a visual pass at 320/390/900px, the Chrome popup, Windows and Android with zero, one and three live devices.
+
+## Пятый проход: статистика, кнопки устройства и мелочи карты
+
+### Значок расширения и спрайт иконок
+
+Спрайт `material-devices.png` теперь содержит **шесть** клеток — к `devices`,
+`computer`, `phone`, `web`, `server` добавлен `extension` (пазл). Смещения маски:
+0 / 20 / 40 / 60 / 80 / 100 %. Браузерное устройство (`chrome`, `browser`, `ext`)
+рисуется пазлом, а не окном браузера: `web` слишком похож на монитор.
+Источник — `react-icons/md` (`MdExtension`), правило «никаких эмодзи и своих SVG»
+остаётся в силе.
+
+### Маркеры и движение
+
+- Своё устройство прячется, если рядом есть другой маркер: 2.5 единицы карты
+  на сайте и в расширении, 30 px на canvas во Flutter. Числа разные намеренно:
+  это разные системы координат.
+- Ключи группировки считаются по округлённым координатам, но **рисовать надо
+  по точному `at`**. Иначе маркеры шагают по пиксельной сетке рывками.
+- Гало и белое кольцо маркера одинаковы на трёх поверхностях: во Flutter —
+  гало `radius * 1.9` с размытием и кольцо `radius + 1.3`, в CSS — тройной
+  `box-shadow` у `.gluk-pin` и `.account-pin`.
+- Расширение: `activeMapRevision` увеличивается только при выходе, смене
+  аккаунта или переключении канала. Сброс ревизии на каждом пустом ответе
+  гасил нити раз в 5 секунд.
+
+### Экран статистики (один контракт на три площадки)
+
+Источник данных один: `GET /api/user/analytics?period=day|week|month`.
+
+| Площадка | Где |
+| --- | --- |
+| ПК и телефон | общий `lib/widgets/usage_stats.dart` (`UsageStatsView`); подключён в `desktop_stats_screen.dart` и `screens/stats_screen.dart` (телефон — из настроек) |
+| Сайт | `site/assets/js/sprint2.js`, `renderAnalytics` |
+| Расширение | собственный вид `#view-stats` + RPC `analytics` |
+
+Общие правила оформления:
+
+- три периода: день — по часам, неделя — 7 дней, месяц — 30 дней;
+- янтарная плашка про неполную историю (`coverage.partial`), если измерения начались позже начала окна;
+- две карточки итогов: загружено (зелёная) и отправлено (сиреневая);
+- график столбиками с подписью пика и осью в UTC (время сервера честнее локального пересчёта);
+- блок «По устройствам»: иконка платформы из того же спрайта, ↓/↑ и полоса доли;
+- домены и категории: видны **только топ-5**, остальные раскрываются кнопкой «Показать все · N»;
+- карточка бюджета — только админам. `includeBudget` выводится сервером из `isAdmin`, клиент не может попросить его флагом; обычный пользователь получает `budget: null`;
+- бюджет подписан сервером («Месячные траты инфраструктуры · <узел>») и верстается списком карточек: узлов будет несколько, и второй сервер не должен требовать переверстки.
+
+### Кнопки «Отключить» и «Выйти»
+
+Смысл один везде: «Отключить» гасит только туннель, «Выйти» гасит туннель
+и убирает устройство из аккаунта. Пара стоит и в раскрытом устройстве
+панели на карте, и в списках устройств рядом с выходом.
+
+- Сервер: `POST /api/vpn/disconnect` теперь разрешает владельцу аккаунта
+  закрывать сессию другого своего устройства (`session.deviceId === device.id ||
+  session.userId === user.id`). Сессии чужих аккаунтов по-прежнему невидимы (404).
+- В ответе `active-map` у устройства есть `sessionId` — именно он нужен кнопке
+  «Отключить»; `id` — это id устройства для `DELETE /api/devices/{id}`.
+  Во Flutter `ActiveTunnelDevice` теперь читает `sessionId`.
+- `/api/devices` `sessionId` не отдаёт, поэтому списки устройств берут его из живой
+  карты: сайт — из `lastMap`, телефон — запросом `activeMap()` по нажатию.
+  Если сессии нет, кнопка неактивна, а не врёт.
+- Своё устройство гасится обычным путём (расширение — `disconnect`, телефон —
+  `VpnController.disconnect()`), иначе остались бы включёнными прокси и бейдж.
+- Новые имена: RPC расширения `closeAccountSession`, хук сайта `D.deviceAction`
+  (запросы живут в `sprint2.js`, где есть авторизованный клиент),
+  CSS-классы `.gluk-act` / `.account-act` / `.s2-off`.
+
+### Убранное
+
+- Сегменты «Вышли» / «Отозванные» удалены на всех площадках: телефон
+  (`devices_screen.dart`), ПК (`desktop_account_screen.dart`), расширение
+  (`popup.html`, `#seg-devices`). При выходе устройство удаляется из списка,
+  так что раздел всегда был пустым.
+- С экрана аккаунта на телефоне убран список устройств: он дублировал
+  «Мои устройства» до буквы.
+
+### Уведомление на телефоне
+
+В уведомлении показывается человеческое место («Германия, Франкфурт»),
+а не техническое имя узла вида `de-prod-1`.

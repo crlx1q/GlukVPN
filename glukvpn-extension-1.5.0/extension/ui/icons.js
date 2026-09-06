@@ -31,6 +31,9 @@ export const ICONS = {
 		'<path d="M12 2.75 4.75 5.6v5.15c0 4.6 3.02 8.4 7.25 9.9 4.23-1.5 7.25-5.3 7.25-9.9V5.6L12 2.75Z" fill="currentColor" stroke="none"/>',
 	globe:
 		'<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.45 3.6 5.45 3.6 9s-1.2 6.55-3.6 9c-2.4-2.45-3.6-5.45-3.6-9S9.6 5.45 12 3Z"/>',
+	// Столбики для раздела «Статистика» в левом меню.
+	chart:
+		'<path d="M4 20h16"/><path d="M7.5 20V11"/><path d="M12 20V5.5"/><path d="M16.5 20v-6"/>',
 	gear: `<path d="${GEAR_OUTLINE}"/><circle cx="12" cy="12" r="3.2"/>`,
 	user: '<circle cx="12" cy="8" r="3.6"/><path d="M4.8 20.2a7.2 7.2 0 0 1 14.4 0"/>',
 

@@ -10,6 +10,7 @@ import '../services/api_client.dart';
 import '../services/ping_service.dart';
 import '../services/tunnel_notification.dart';
 import '../services/vpn_service.dart';
+import '../utils/geo_dictionary.dart';
 import 'auth_controller.dart';
 
 enum VpnUiState { disconnected, connecting, connected, disconnecting }
@@ -451,7 +452,22 @@ class VpnController extends ChangeNotifier {
   void _showTunnelNotification({bool force = false}) {
     if (_notificationShown && !force) return;
     _notificationShown = true;
-    final String? place = _selectedNode?.name;
+    // ПУНКТ 14: в уведомлении должно быть название сервера
+    // «Германия, Франкфурт», а не внутренний идентификатор узла
+    // вида `de-prod-1`. Берём ту же локализацию, что и чип сервера
+    // на главном экране, и никогда не показываем `node.name`.
+    final VpnNodeInfo? node = _selectedNode;
+    final String country = node == null
+        ? ''
+        : localizeCountry(node.countryCode,
+            russian: _russian, fallback: node.country);
+    final String city =
+        node == null ? '' : localizeCity(node.city, russian: _russian);
+    final String? place = country.isNotEmpty && city.isNotEmpty
+        ? '$country, $city'
+        : (country.isNotEmpty
+            ? country
+            : (city.isNotEmpty ? city : null));
     _notifications
         .show(
           title: _russian ? 'GlukVPN подключён' : 'GlukVPN is connected',

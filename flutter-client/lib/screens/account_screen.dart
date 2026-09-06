@@ -12,7 +12,7 @@ import '../state/vpn_controller.dart';
 import '../theme/tokens.dart';
 import '../utils/format.dart' hide countryFlag;
 import '../widgets/glass.dart';
-import 'devices_screen.dart' show SessionRow, TonePill;
+import 'devices_screen.dart' show TonePill;
 
 /// ROUND 10 (4.2): the "Account" screen the desktop client and the website
 /// already had - profile, plan, and the live sessions with a way to end them.
@@ -37,7 +37,6 @@ class _AccountScreenState extends State<AccountScreen> {
   bool _loading = true;
   String? _error;
   DevicesResult? _devices;
-  String? _revoking;
 
   @override
   void initState() {
@@ -70,51 +69,6 @@ class _AccountScreenState extends State<AccountScreen> {
     }
   }
 
-  Future<void> _revoke(DeviceInfo device) async {
-    final AppStrings s = context.strings;
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        backgroundColor: GlukColors.bg,
-        title: Text(s.revokeDeviceTitle(
-          device.deviceName.isEmpty ? s.unnamedDevice : device.deviceName,
-        )),
-        content: Text(
-          device.isCurrent ? s.revokeCurrentBody : s.revokeOtherBody,
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(s.cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(s.revoke),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    final AuthController auth = context.read<AuthController>();
-    final VpnController vpn = context.read<VpnController>();
-    setState(() => _revoking = device.id);
-    try {
-      // Local tunnel first: leaving a dead interface up after the peer is gone
-      // looks exactly like "the VPN broke".
-      if (device.isCurrent && vpn.isConnected) await vpn.disconnect();
-      await auth.revokeDevice(device.id);
-      if (device.isCurrent && mounted) await auth.ensureDeviceRegistered();
-      if (!mounted) return;
-      await _load();
-    } on ApiException catch (error) {
-      if (!mounted) return;
-      setState(() => _error = error.message);
-    } finally {
-      if (mounted) setState(() => _revoking = null);
-    }
-  }
-
   void _copy(String value, String said) {
     if (value.isEmpty) return;
     Clipboard.setData(ClipboardData(text: value));
@@ -133,8 +87,6 @@ class _AccountScreenState extends State<AccountScreen> {
     final List<DeviceInfo> all = _devices?.devices ?? const <DeviceInfo>[];
     final List<DeviceInfo> active =
         all.where((DeviceInfo d) => d.isActive).toList();
-    final List<DeviceInfo> revoked =
-        all.where((DeviceInfo d) => !d.isActive).toList();
 
     return Scaffold(
       backgroundColor: GlukColors.pageBg,
@@ -246,43 +198,13 @@ class _AccountScreenState extends State<AccountScreen> {
             ),
             const SizedBox(height: 20),
 
-            // --- sessions ---------------------------------------------------
-            Row(
-              children: <Widget>[
-                Text(s.activeSessions.toUpperCase(), style: text.labelMedium),
-                const Spacer(),
-                if (_loading)
-                  const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 1.6),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (active.isEmpty && !_loading)
-              Text(s.noDevicesSignedIn, style: text.bodySmall),
-            // The same row the Devices screen draws. This screen used to carry
-            // a private, English-only copy of it.
-            for (final DeviceInfo device in active) ...<Widget>[
-              SessionRow(
-                device: device,
-                revoking: _revoking == device.id,
-                onRevoke: _revoking == null ? () => _revoke(device) : null,
-              ),
-              const SizedBox(height: 8),
-            ],
-            if (revoked.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 12),
-              Text(s.revoked.toUpperCase(), style: text.labelMedium),
-              const SizedBox(height: 8),
-              for (final DeviceInfo device in revoked) ...<Widget>[
-                SessionRow(device: device, revoking: false),
-                const SizedBox(height: 8),
-              ],
-            ],
-            const SizedBox(height: 16),
-            Text(s.revokeNotice, style: text.bodySmall),
+            // ПУНКТ 12: список устройств отсюда убран. Экран
+            // «Аккаунт» и экран «Мои устройства» показывали ровно одно и
+            // то же, а две копии кнопки «Выйти» в разных местах — это
+            // способ случайно отозвать не то устройство. Теперь
+            // устройства живут в двух синхронных местах: чип на
+            // карте и экран «Мои устройства». Здесь остался только
+            // счётчик занятых слотов в карточке тарифа.
           ],
         ),
       ),

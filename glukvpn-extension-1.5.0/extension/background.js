@@ -1010,6 +1010,17 @@ const HANDLERS = {
 	async serviceStatus() {
 		return checkMaintenance()
 	},
+	// Статистика использования для попапа: цифры берём с того же
+	// эндпоинта, что ПК и телефон, чтобы площадки не расходились.
+	async analytics(message) {
+		try {
+			const period = message?.period === 'week' || message?.period === 'month' ? message.period : 'day'
+			return { ok: true, ...(await Api.analytics(period)) }
+		} catch (error) {
+			const serialized = safeError(error, 'analytics_failed')
+			return { ok: false, error: serialized.message, ...serialized }
+		}
+	},
 	async activeMap(message) {
 		try {
 			const country = message?.countryCode;
@@ -1076,6 +1087,18 @@ const HANDLERS = {
 			return { ok: true, ...(await Api.devices()) }
 		} catch (error) {
 			return { ok: false, error: error?.message ?? 'Could not load devices.' }
+		}
+	},
+	// «Отключить» в панели устройств: гасим туннель конкретной сессии,
+	// но аккаунт на устройстве оставляем. Своё устройство попап гасит
+	// обычным disconnect, чтобы ещё и прокси с бейджем сбросились.
+	async closeAccountSession({ sessionId } = {}) {
+		if (!sessionId) return { ok: false, error: 'No session id.' }
+		try {
+			await Api.disconnect({ sessionId })
+			return { ok: true }
+		} catch (error) {
+			return { ok: false, error: error?.message ?? 'Could not disconnect the device.' }
 		}
 	},
 	async revokeDevice({ deviceId }) {

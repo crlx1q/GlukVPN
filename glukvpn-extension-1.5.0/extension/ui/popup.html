@@ -33,6 +33,12 @@
 				<span class="nav-ic" data-icon="globe"></span>
 				<span class="nav-label" data-i18n="nav.servers">Серверы</span>
 			</button>
+			<!-- Статистика была только на ПК; теперь она есть на всех трёх
+			     площадках и считается одним и тем же эндпоинтом. -->
+			<button class="nav-item" data-view="stats" type="button">
+				<span class="nav-ic" data-icon="chart"></span>
+				<span class="nav-label" data-i18n="nav.stats">Статистика</span>
+			</button>
 			<button class="nav-item" data-view="settings" type="button">
 				<span class="nav-ic" data-icon="gear"></span>
 				<span class="nav-label" data-i18n="nav.settings">Настройки</span>
@@ -162,6 +168,26 @@
 			</div>
 		</section>
 
+		<!-- ----------------------- STATS -------------------------------- -->
+		<section class="view hidden" id="view-stats" hidden>
+			<div class="view-head">
+				<span class="view-title" data-i18n="nav.stats">Статистика</span>
+				<button class="ghost-btn" id="btn-stats-refresh" type="button">
+					<span class="gb-ic" data-icon="refresh"></span>
+					<span data-i18n="servers.refresh">Обновить</span>
+				</button>
+			</div>
+			<div class="body">
+				<div class="seg stats-seg" id="seg-period">
+					<span class="seg-glide" aria-hidden="true"></span>
+					<button type="button" data-value="day" data-i18n="stats.day">День</button>
+					<button type="button" data-value="week" data-i18n="stats.week">Неделя</button>
+					<button type="button" data-value="month" data-i18n="stats.month">Месяц</button>
+				</div>
+				<div id="stats-body"></div>
+			</div>
+		</section>
+
 		<!-- ----------------------- SETTINGS ----------------------------- -->
 		<section class="view hidden" id="view-settings" hidden>
 			<div class="view-head">
@@ -248,7 +274,6 @@
 					<span class="seg-glide" aria-hidden="true"></span>
 					<button type="button" data-value="all" data-i18n="devices.filterAll">Все</button>
 					<button type="button" data-value="active" data-i18n="devices.filterActive">Активные</button>
-					<button type="button" data-value="revoked" data-i18n="devices.filterRevoked">Отозванные</button>
 				</div>
 				<div id="dev-list"></div>
 

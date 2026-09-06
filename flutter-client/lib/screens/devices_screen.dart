@@ -30,6 +30,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
   String? _error;
   DevicesResult? _result;
   String? _revokingId;
+  String? _closingId;
 
   @override
   void initState() {
@@ -104,6 +105,37 @@ class _DevicesScreenState extends State<DevicesScreen> {
     }
   }
 
+  /// ПУНКТ 13: «Отключить» гасит только туннель, аккаунт на
+  /// устройстве остаётся. id сессии /api/devices не отдаёт, поэтому
+  /// берём его из живой карты — точно так же делает сайт.
+  Future<void> _disconnect(DeviceInfo device) async {
+    final AuthController auth = context.read<AuthController>();
+    final VpnController vpn = context.read<VpnController>();
+    setState(() => _closingId = device.id);
+    try {
+      if (device.isCurrent) {
+        await vpn.disconnect();
+      } else {
+        final dynamic map = await auth.api.activeMap();
+        String? sessionId;
+        for (final dynamic row in (map.devices as List<dynamic>)) {
+          if ('${row.id}' == device.id && '${row.status}' == 'ACTIVE' && row.sessionId != null) {
+            sessionId = '${row.sessionId}';
+            break;
+          }
+        }
+        if (sessionId != null) await auth.api.disconnect(sessionId: sessionId);
+      }
+      if (!mounted) return;
+      await _load();
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _closingId = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final AppStrings s = context.strings;
@@ -111,8 +143,6 @@ class _DevicesScreenState extends State<DevicesScreen> {
     final List<DeviceInfo> all = _result?.devices ?? const <DeviceInfo>[];
     final List<DeviceInfo> active =
         all.where((DeviceInfo device) => device.isActive).toList();
-    final List<DeviceInfo> revoked =
-        all.where((DeviceInfo device) => !device.isActive).toList();
 
     return Scaffold(
       backgroundColor: GlukColors.pageBg,
@@ -167,20 +197,19 @@ class _DevicesScreenState extends State<DevicesScreen> {
                   SessionRow(
                     device: device,
                     revoking: _revokingId == device.id,
+                    disconnecting: _closingId == device.id,
                     onRevoke:
                         _revokingId == null ? () => _revoke(device) : null,
+                    onDisconnect: _revokingId == null && _closingId == null
+                        ? () => _disconnect(device)
+                        : null,
                   ),
                   const SizedBox(height: 8),
                 ],
-                if (revoked.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 12),
-                  Text(s.revoked.toUpperCase(), style: text.labelMedium),
-                  const SizedBox(height: 8),
-                  for (final DeviceInfo device in revoked) ...<Widget>[
-                    SessionRow(device: device, revoking: false),
-                    const SizedBox(height: 8),
-                  ],
-                ],
+                // ПУНКТ 11: блок «Отозванные» убран. При выходе
+                // устройство удаляется из списка совсем, так что этот
+                // раздел всегда пустой и только путает. Так же убраны
+                // пункты «Вышли» / «Отозванные» на сайте и в расширении.
                 const SizedBox(height: 16),
                 Text(s.revokeNotice, style: text.bodySmall),
               ],
@@ -205,11 +234,15 @@ class SessionRow extends StatelessWidget {
     required this.device,
     required this.revoking,
     this.onRevoke,
+    this.disconnecting = false,
+    this.onDisconnect,
   });
 
   final DeviceInfo device;
   final bool revoking;
   final VoidCallback? onRevoke;
+  final bool disconnecting;
+  final VoidCallback? onDisconnect;
 
   @override
   Widget build(BuildContext context) {
@@ -282,6 +315,23 @@ class SessionRow extends StatelessWidget {
               ],
             ),
           ),
+          // ПУНКТ 13: «Отключить» рядом с выходом — гасит только VPN.
+          // Такая же пара в панели устройств на карте, в расширении
+          // и на сайте, чтобы поведение не расходилось по площадкам.
+          if (device.isActive && live && onDisconnect != null)
+            TextButton(
+              onPressed: disconnecting ? null : onDisconnect,
+              style: TextButton.styleFrom(
+                foregroundColor: GlukColors.violetLight,
+              ),
+              child: disconnecting
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(s.isRussian ? 'Отключить' : 'Disconnect'),
+            ),
           if (device.isActive && onRevoke != null)
             TextButton(
               onPressed: revoking ? null : onRevoke,
