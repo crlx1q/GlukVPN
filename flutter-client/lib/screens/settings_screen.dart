@@ -16,6 +16,7 @@ import '../theme/tokens.dart';
 import '../utils/format.dart' hide countryFlag;
 import '../widgets/glass.dart';
 import '../widgets/language_pill.dart';
+import '../widgets/plan_badge.dart';
 import 'account_screen.dart';
 import 'devices_screen.dart';
 import 'diagnostics_screen.dart';
@@ -385,9 +386,8 @@ class _SubscriptionCard extends StatelessWidget {
               const SizedBox(width: 8),
               Text(s.isRussian ? 'Подписка' : 'Subscription', style: text.titleMedium),
               const Spacer(),
-              _Pill(
-                label: subscription?.displayPlan ?? '—',
-                tone: GlukColors.violetLight,
+              PlanBadge(
+                subscription: subscription,
               ),
             ],
           ),

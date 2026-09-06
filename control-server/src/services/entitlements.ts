@@ -42,8 +42,17 @@ export type PlanShape = {
  * for a code (fresh database, legacy "test" grants, a beta tier that was never
  * seeded). The table wins whenever it has the plan.
  */
+export const FREE_PLAN: PlanShape = {
+	code: "free",
+	name: "Free",
+	tier: 0,
+	maxDevices: 1,
+	maxSessions: 1,
+	trafficGb: 5,
+}
+
 export const PLAN_MATRIX: Record<string, PlanShape> = {
-	free: { code: "free", name: "Free", tier: 0, maxDevices: 1, maxSessions: 1, trafficGb: 5 },
+	free: FREE_PLAN,
 	basic: { code: "basic", name: "Basic", tier: 1, maxDevices: 3, maxSessions: 3, trafficGb: 50 },
 	pro: { code: "pro", name: "Pro", tier: 2, maxDevices: 5, maxSessions: 5, trafficGb: 150 },
 	pro_3m: { code: "pro_3m", name: "Pro", tier: 2, maxDevices: 5, maxSessions: 5, trafficGb: 150 },
@@ -55,7 +64,7 @@ export const PLAN_MATRIX: Record<string, PlanShape> = {
 
 export function planShape(code: string | null | undefined): PlanShape {
 	const key = (code ?? "").trim().toLowerCase()
-	return PLAN_MATRIX[key] ?? { ...PLAN_MATRIX.free, code: key || FREE_PLAN_CODE }
+	return PLAN_MATRIX[key] ?? { ...FREE_PLAN, code: key || FREE_PLAN_CODE }
 }
 
 /** Display name shown next to a nickname on every platform. */

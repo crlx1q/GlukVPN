@@ -13,6 +13,7 @@ import '../../theme/tokens.dart';
 import '../../utils/format.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/plan_badge.dart';
 import '../i18n/desktop_strings.dart';
 import '../logic/connection_phase.dart';
 import '../services/app_inventory.dart';
@@ -683,25 +684,8 @@ class _ProfileCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: accent.withOpacity(0.14),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: accent.withOpacity(0.35)),
-                      ),
-                      child: Text(
-                        auth.subscription?.displayPlan ?? '—',
-                        style: TextStyle(
-                          color: accent,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.4,
-                        ),
-                      ),
+                    PlanBadge(
+                      subscription: auth.subscription,
                     ),
                   ],
                 ),
