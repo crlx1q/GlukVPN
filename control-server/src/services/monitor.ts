@@ -3,6 +3,7 @@ import { config } from "../config"
 import { writeAudit } from "../lib/audit"
 import { prisma } from "../prisma"
 import { expireStaleOrders } from "./billing"
+import { purgeStaleDevices } from "./deviceAccess"
 import { purgeLinkRequests } from "./linkAuth"
 import { purgeOldLoginAttempts } from "./loginThrottle"
 import { requeueStaleCommands } from "./nodeCommands"
@@ -198,6 +199,16 @@ export function startMonitor(app: FastifyInstance): MonitorHandle {
 						{ commands: { some: { type: "REMOVE_PEER", status: { not: "DONE" } } } },
 					] } },
 				} })
+				// Reinstalls leave behind device rows that never carried a single
+				// session. Nothing references them and nothing is lost by dropping
+				// them at once; keeping them is what made the admin panel count
+				// "58 / 5" devices for one laptop.
+				const staleDevices = await purgeStaleDevices({
+					retentionDays: Math.max(30, config.DOMAIN_STATS_RETENTION_DAYS),
+				})
+				if (staleDevices > 0) {
+					app.log.debug({ staleDevices }, "stale_devices_purged")
+				}
 				const domains = await purgeOldDomainStats()
 				if (domains > 0) app.log.debug({ domains }, "domain_stats_purged")
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import '../config.dart';
 import '../desktop/logic/node_selector.dart';
@@ -752,6 +753,11 @@ class VpnController extends ChangeNotifier {
       case TunnelStage.connected:
         _watchdog?.cancel();
         _watchdog = null;
+        // Ключ заработал — вторая, более заметная отдача. Только на
+        // переходе, чтобы повторные события платформы не тараторили в руке.
+        if (_state != VpnUiState.connected) {
+          HapticFeedback.mediumImpact().ignore();
+        }
         _state = VpnUiState.connected;
         _connectedSince ??= DateTime.now();
         _startTimers();

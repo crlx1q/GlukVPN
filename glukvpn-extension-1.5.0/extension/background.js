@@ -715,7 +715,14 @@ async function poll() {
 			// The control plane closed the session (revoked device, admin action,
 			// subscription lapse). Stop pretending we are up.
 			await disconnect({ silent: true })
-			await patchRuntime({ error: { message: 'The server closed this session.', code: 'closed' } })
+			// Это сообщение, а не вечная ошибка: ставим метку времени,
+			// чтобы попап показал его один раз и убрал, и снимаем
+			// connectIntent — иначе клиент пытается вернуть сессию, которую
+			// закрыл администратор.
+			await patchRuntime({
+				connectIntent: null,
+				error: { message: 'The server closed this session.', code: 'closed', at: Date.now() },
+			})
 			return
 		}
 		const gateway = runtime.gateway
@@ -781,6 +788,22 @@ async function poll() {
 	}
 }
 
+/**
+ * Снимает одноразовое сообщение «сервер закрыл сессию».
+ *
+ * Оно оставалось в runtime навсегда, и попап при каждом опросе снова
+ * рисовал «Ошибка подключения» — выглядело как бесконечное обновление.
+ * Старые сообщения без метки времени тоже сбрасываются — они остались
+ * от предыдущей версии.
+ */
+function withoutStaleNotice(runtime) {
+	if (runtime?.error?.code !== 'closed') return runtime
+	const at = Number(runtime.error.at) || 0
+	if (at && Date.now() - at <= 15000) return runtime
+	void Promise.resolve(patchRuntime({ error: null })).catch(() => {})
+	return { ...runtime, error: null }
+}
+
 async function state() {
 	const [settings, session, device, runtime, nodes] = await Promise.all([
 		Store.settings(),
@@ -796,7 +819,7 @@ async function state() {
 		subscription: session?.subscription ?? null,
 		device: device ? { id: device.id, deviceName: device.deviceName, platform: device.platform, browser: device.browser, os: device.os } : null,
 		nodes,
-		runtime: runtime ?? { phase: signedIn ? PHASE.idle : PHASE.signedOut },
+		runtime: withoutStaleNotice(runtime) ?? { phase: signedIn ? PHASE.idle : PHASE.signedOut },
 		signedIn,
 		browser: detectBrowser(),
 	}

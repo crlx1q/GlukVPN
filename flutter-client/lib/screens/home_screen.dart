@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../config.dart';
@@ -79,6 +80,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _toggle(VpnController vpn) async {
     if (vpn.busy) return;
+    // Короткая отдача на само нажатие: палец получает ответ раньше,
+    // чем сеть. Вторая, более заметная — в контроллере, когда ключ
+    // реально заработал.
+    HapticFeedback.lightImpact().ignore();
     if (vpn.isConnected || vpn.state == VpnUiState.connecting) {
       await vpn.disconnect();
       return;
@@ -597,11 +602,15 @@ class _MapBackdropState extends State<_MapBackdrop>
                         // застывшая линия), при отключении она втягивается
                         // обратно, а в спокойных состояниях работает обычный
                         // плавный tween.
+                        // Фаза 3 раньше брала прогресс из того же
+                        // бесконечного цикла dash, а он крутится всегда:
+                        // нить начинала втягиваться с случайного места и могла
+                        // дёрнуться вверх вместо плавного ухода. Отключение
+                        // теперь ведёт tween `arc` (live уже стал false), который
+                        // привязан именно к моменту нажатия — как на ПК.
                         final double drawn = widget.connecting
                             ? dash.clamp(0.0, 1.0)
-                            : widget.disconnecting
-                                ? (1 - dash).clamp(0.0, 1.0)
-                                : arc;
+                            : arc;
                         return DottedWorld(
                           zoom: widget.overview ? 1 : zoom,
                           focus: widget.overview ? const Offset(.5,.5) : focus,

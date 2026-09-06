@@ -624,6 +624,62 @@ function renderNodes(nodes) {
 	}
 }
 
+/* ---------------- subscription grants (users tab) ---------------- */
+
+/** Выдавать план надо прямо из таблицы, без консоли и SQL. β Pro не
+ *  показывается в каталоге, но руками его выдавать нужно. */
+const GRANT_PLANS = [
+	{ value: "free", label: "Free" },
+	{ value: "basic", label: "Basic" },
+	{ value: "pro", label: "Pro" },
+	{ value: "beta_pro", label: "\u03b2 Pro" },
+]
+
+/** Месяц / 3 / 6 / год — в днях, как ждёт POST /users/:id/subscription. */
+const GRANT_TERMS = [
+	{ value: 30, label: "1 month" },
+	{ value: 90, label: "3 months" },
+	{ value: 180, label: "6 months" },
+	{ value: 365, label: "1 year" },
+]
+
+function smallSelect(options, selected) {
+	const select = document.createElement("select")
+	select.className = "small"
+	for (const option of options) {
+		const node = document.createElement("option")
+		node.value = String(option.value)
+		node.textContent = option.label
+		if (String(option.value) === String(selected)) node.selected = true
+		select.appendChild(node)
+	}
+	return select
+}
+
+function planGrantControl(user) {
+	const wrap = document.createElement("span")
+	wrap.className = "grant-control"
+	const current = user.subscription && user.subscription.plan
+	const plan = smallSelect(GRANT_PLANS, current || "pro")
+	const term = smallSelect(GRANT_TERMS, 30)
+	const grant = actionButton("Grant", "small ghost", () => {
+		const planLabel = plan.options[plan.selectedIndex].textContent
+		const termLabel = term.options[term.selectedIndex].textContent
+		if (
+			!window.confirm(
+				`Grant ${planLabel} for ${termLabel} to ${user.username} (ID ${user.publicId})?`,
+			)
+		)
+			return null
+		return request(`/api/admin/users/${user.id}/subscription`, {
+			method: "POST",
+			body: { planCode: plan.value, days: Number(term.value) },
+		})
+	})
+	wrap.append(plan, term, grant)
+	return wrap
+}
+
 function renderUsers(users) {
 	const body = el("users-body")
 	body.replaceChildren()
@@ -663,6 +719,7 @@ function renderUsers(users) {
 				),
 			)
 		}
+		actions.appendChild(planGrantControl(user))
 		row.appendChild(actions)
 		body.appendChild(row)
 	}
@@ -1322,6 +1379,31 @@ el("error-platform").addEventListener("change", (event) => {
  * up in the same list. That is the whole point - wipe the noise from the old
  * build, then watch what the new one sends.
  */
+/**
+ * Убирает мёртвые строки устройств: отозванные надгробия и те, через которые
+ * ни разу не шёл туннель. Активные устройства не трогаются, так что после
+ * чистки счётчики в панели показывают реальность, а не «58 / 5».
+ */
+const devicesPurgeButton = el("devices-purge")
+if (devicesPurgeButton) {
+	devicesPurgeButton.addEventListener("click", async () => {
+		const confirmed = window.confirm(
+			"Purge revoked and never-used device records? Active devices stay untouched.",
+		)
+		if (!confirmed) return
+		devicesPurgeButton.disabled = true
+		try {
+			const result = await request("/api/admin/devices/stale?days=0", { method: "DELETE" })
+			toast(`Removed ${result.removed} device record${result.removed === 1 ? "" : "s"}`)
+			await loadAll()
+		} catch (error) {
+			toast(error.message, true)
+		} finally {
+			devicesPurgeButton.disabled = false
+		}
+	})
+}
+
 el("errors-clear").addEventListener("click", async () => {
 	const scope = state.errorPlatform
 		? PLATFORM_LABELS[state.errorPlatform] || state.errorPlatform

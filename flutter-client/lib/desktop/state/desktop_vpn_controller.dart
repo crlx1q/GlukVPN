@@ -975,6 +975,60 @@ class DesktopVpnController extends ChangeNotifier {
         await _enterMaintenance(resume: _phase.isConnected || _phase == ConnectionPhase.connecting, seconds: status.retryAfterSec);
         return;
       }
+      // Сессию закрыл сам сервер: админ кикнул устройство, кончилась
+      // подписка или узел выключили. Локальный туннель при этом ещё
+      // жив, поэтому проверка видела лишь «пропало рукопожатие» и
+      // уходила в лестницу реконнектов — клиент не знал, что его
+      // отключили, и сразу лез подключаться заново. Теперь честно
+      // останавливаемся и ждём решения пользователя.
+      if (!status.connected &&
+          _activeSessionId != null &&
+          (_phase.isConnected || _phase == ConnectionPhase.connecting)) {
+        final String reason = status.lastClosedReason ?? 'session_closed';
+        dlog.warn('status', 'session closed by control plane ($reason)');
+        _cancelReconnect();
+        _clearMaintenanceIntent();
+        _cancelConnectDeadline();
+        try {
+          await _tunnel.down();
+        } catch (_) {}
+        try {
+          await _releaseServerSession();
+        } catch (_) {}
+        _usage.endSession();
+        unawaited(_usage.flush());
+        _session = null;
+        _lastServerStatus = null;
+        _connectedSince = null;
+        _publicIp = null;
+        _currentPingMs = null;
+        _dataObserved = false;
+        final bool revoked = reason == 'admin_revoked' ||
+            reason == 'device_revoked' ||
+            reason == 'user_disabled';
+        final bool lapsed = reason == 'subscription_expired';
+        final String message = revoked
+            ? (_ru
+                ? 'Сеанс завершён администратором. Подключение не восстанавливается автоматически.'
+                : 'The session was closed by an administrator. It will not be restored automatically.')
+            : lapsed
+                ? (_ru
+                    ? 'Подписка больше не активна, сеанс закрыт.'
+                    : 'The subscription is no longer active, so the session was closed.')
+                : (_ru
+                    ? 'Сервер закрыл эту сессию. Нажмите «Подключиться», чтобы начать заново.'
+                    : 'The server closed this session. Press Connect to start a new one.');
+        if (revoked) {
+          _fail(ConnectionPhase.accessRevoked, reason, message);
+        } else if (lapsed) {
+          _fail(ConnectionPhase.limitReached, reason, message);
+        } else {
+          _userMessage = message;
+          _setPhase(ConnectionPhase.disconnected, detail: reason);
+        }
+        _notify();
+        return;
+      }
       _session = status.session;
       _lastServerStatus = ServerTunnelStatus(
         peerReady: status.peerReady,

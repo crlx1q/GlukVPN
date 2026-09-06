@@ -59,3 +59,41 @@ export async function revokeDeviceAccess(userId: string, deviceId: string) {
 		return { alreadyRemoved: device.status !== "ACTIVE", removed: false, revoked: true, closedSessions, revokedTokens: revoked.count }
 	})
 }
+
+/**
+ * Убирает кеш старых устройств.
+ *
+ * Каждая переустановка клиента создаёт новую пару ключей, а значит и новую
+ * строку Device; при исчерпании лимита прежние помечаются REVOKED и остаются
+ * в базе навсегда. Из-за этого в админке светилось «58 / 5» — счётчик считал
+ * надгробия. Активные устройства не трогаем никогда.
+ *
+ * Строки без единой сессии удаляем сразу — терять нечего. Остальные только
+ * когда вся их история закрыта и старше окна хранения: удаление Device
+ * каскадом уносит его сессии и статистику трафика.
+ */
+export async function purgeStaleDevices(
+	options: { retentionDays?: number; userId?: string } = {},
+): Promise<number> {
+	const retentionDays = Math.max(0, options.retentionDays ?? 0)
+	const cutoff = new Date(Date.now() - retentionDays * 86_400_000)
+	const scope = options.userId ? { userId: options.userId } : {}
+	const empty = await prisma.device.deleteMany({
+		where: { ...scope, status: { not: "ACTIVE" }, sessions: { none: {} } },
+	})
+	const aged = await prisma.device.deleteMany({
+		where: {
+			...scope,
+			status: { not: "ACTIVE" },
+			OR: [
+				{ revokedAt: { lt: cutoff } },
+				{ revokedAt: null, lastSeen: { lt: cutoff } },
+				{ revokedAt: null, lastSeen: null, createdAt: { lt: cutoff } },
+			],
+			// Открытая сессия (disconnectedAt = null) не проходит проверку `lt`,
+			// поэтому живые туннели удалить нельзя даже с нулевым окном.
+			sessions: { every: { status: "CLOSED", disconnectedAt: { lt: cutoff } } },
+		},
+	})
+	return empty.count + aged.count
+}

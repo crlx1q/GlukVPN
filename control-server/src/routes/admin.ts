@@ -8,6 +8,7 @@ import { badRequest, conflict, notFound } from "../lib/errors"
 import { clientIp, getAuthUser, requireAdmin } from "../middleware/auth"
 import { bytesToNumber, prisma } from "../prisma"
 import { cancelOrder, grantPlan, markOrderPaid, orderView } from "../services/billing"
+import { purgeStaleDevices } from "../services/deviceAccess"
 import { categoryLabel } from "../services/domainCategories"
 import { egressBudgetView } from "../services/egressBudget"
 import { effectiveNodeStatus, nodeEndpoint, nodeLoadPercent } from "../services/nodes"
@@ -698,9 +699,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 		})
 		const items = await Promise.all(
 			users.map(async (user) => {
-				const liveSessions = await prisma.session.count({
-					where: { userId: user.id, status: { in: ["PENDING", "ACTIVE"] } },
-				})
+				// Show what is actually live. The counters used to include revoked
+				// devices and PENDING sessions that never came up, which is how the
+				// panel ended up printing "58 / 5" and "4 / 3" for a single laptop.
+				const [activeDevices, liveSessions] = await Promise.all([
+					prisma.device.count({ where: { userId: user.id, status: "ACTIVE" } }),
+					prisma.session.count({ where: { userId: user.id, status: "ACTIVE" } }),
+				])
 				const subscription = user.subscriptions[0] ?? null
 				return {
 					id: user.id,
@@ -713,7 +718,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 					blockedReason: user.blockedReason,
 					maxDevices: user.maxDevices,
 					maxSessions: user.maxSessions,
-					devices: user._count.devices,
+					devices: activeDevices,
 					sessionsTotal: user._count.sessions,
 					liveSessions,
 					subscription: subscription
@@ -961,6 +966,26 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 			}),
 		)
 		return reply.send({ devices: items })
+	})
+
+	// Чистка кеша старых устройств: отозванные надгробия и строки, которыми
+	// давно никто не пользовался. Активные устройства не трогаем: days=0
+	// убирает всё мёртвое сразу, days=N оставляет окно в N дней.
+	app.delete("/api/admin/devices/stale", async (request, reply) => {
+		const PurgeQuery = z.object({
+			days: z.coerce.number().int().min(0).max(3650).optional().default(0),
+		})
+		const parsed = PurgeQuery.safeParse(request.query ?? {})
+		if (!parsed.success) throw badRequest("Invalid retention window")
+		const { user: admin } = getAuthUser(request)
+		const removed = await purgeStaleDevices({ retentionDays: parsed.data.days })
+		await writeAudit({
+			action: "admin.devices.purge",
+			userId: admin.id,
+			ip: clientIp(request),
+			metadata: { removed, retentionDays: parsed.data.days },
+		})
+		return reply.send({ ok: true, removed, retentionDays: parsed.data.days })
 	})
 
 	app.post("/api/admin/devices/:id/revoke", async (request, reply) => {

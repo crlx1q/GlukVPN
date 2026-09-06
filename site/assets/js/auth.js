@@ -212,6 +212,26 @@
     return (a + b).toUpperCase();
   }
 
+  /* Имя тарифа так же, как в расширении и на ПК: Free / Basic / Pro / β Pro.
+     В шапке раньше висело просто «Активна», а это не отвечало на вопрос
+     «какой у меня план». Общий хелпер из dashboard-ui.js используем, когда он
+     загружен, иначе считаем сами — шапка есть на всех страницах. */
+  function planTitle(s) {
+    var shared = typeof window !== "undefined" && window.GlukDashboard;
+    if (shared && typeof shared.planLabel === "function") {
+      var label = shared.planLabel(s);
+      if (label && label !== "\u2014") return label;
+    }
+    var code = String((s && (s.plan || s.planName)) || "").toLowerCase().replace(/[\s_-]/g, "");
+    if (!code) return "";
+    var beta = code.indexOf("beta") >= 0 || code.indexOf("β") >= 0;
+    var base = code.indexOf("pro") >= 0 ? "Pro"
+      : code.indexOf("basic") >= 0 ? "Basic"
+      : code.indexOf("free") >= 0 ? "Free" : "";
+    if (!base) return "";
+    return beta ? "β " + base : base;
+  }
+
   function subLabel() {
     var s = state.subscription;
     if (!s || !s.status) return { text: T("Нет подписки"), ok: false };
@@ -222,10 +242,11 @@
         ? (I18N ? I18N.dateShort(d)
                 : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" }))
         : "";
-      var until = fmt ? " " + T("до") + " " + fmt : "";
-      return { text: T("Активна") + until, ok: true };
+      var until = fmt ? " · " + T("до") + " " + fmt : "";
+      return { text: (planTitle(s) || T("Активна")) + until, ok: true };
     }
-    return { text: T("Неактивна"), ok: false };
+    var name = planTitle(s);
+    return { text: name ? name + " · " + T("Неактивна") : T("Неактивна"), ok: false };
   }
 
   /* Кабинет живёт под тем же языковым префиксом, что и страница: на /en/

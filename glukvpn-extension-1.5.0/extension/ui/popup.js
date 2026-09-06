@@ -508,6 +508,17 @@ let accountMapSig = ''
 let ownRouteMemo = null
 let routeFarewell = null
 let routeFarewellTimer = null
+// Была ли своя нитка живой на прошлом кадре и успела ли она втянуться.
+// Нужно, чтобы отличать «пользователь нажал отключить» (анимацию уже
+// проиграли локально) от «сервер закрыл сессию сам» (анимации ещё не было).
+let routeWasLive = false
+let routeRetracted = false
+// Отдельный отпечаток для маркеров устройств: они не должны пересобираться
+// из-за смены фазы подключения.
+let accountPinsSig = ''
+// Отпечаток баннера: одна и та же ошибка не должна перерисовываться
+// на каждом опросе состояния.
+let vpnBannerSig = null
 
 // ------------------------------------------------------------------ views ---
 
@@ -733,11 +744,19 @@ function renderVpn() {
 
 	// Errors are shown, never swallowed - and no connection at all outranks
 	// whatever stale error the worker is still holding.
-	if (!online) {
-		banner('vpn-banner', t('err.offlineText'), { title: t('err.offlineTitle'), kind: 'bad' })
-	} else {
-		const error = state?.runtime?.error
-		if (error && phase !== 'connected') showError('vpn-banner', error)
+	//
+	// Баннер перерисовываем только когда он реально изменился. Раньше
+	// каждый опрос состояния заново вызывал showError, и одна и та же
+	// ошибка (например «сервер закрыл сессию») мигала бесконечно —
+	// выглядело так, будто попап вечно обновляется.
+	const runtimeError = phase === 'connected' ? null : state?.runtime?.error
+	const bannerSig = !online
+		? 'offline'
+		: (runtimeError ? `${runtimeError.code ?? ''}|${runtimeError.message ?? ''}` : '')
+	if (bannerSig !== vpnBannerSig) {
+		vpnBannerSig = bannerSig
+		if (!online) banner('vpn-banner', t('err.offlineText'), { title: t('err.offlineTitle'), kind: 'bad' })
+		else if (runtimeError) showError('vpn-banner', runtimeError)
 		else banner('vpn-banner', '')
 	}
 	renderProfile()
@@ -1728,6 +1747,18 @@ async function togglePower() {
 					onAction: () => togglePower(),
 				})
 			}, CONNECT_WATCHDOG_MS)
+		} else {
+			// Отключение тоже локальное. Раньше втягивание нитки начиналось
+			// только когда воркер присылал новую фазу — то есть уже после того,
+			// как туннель закрыт: анимация играла «поздно». Ставим фазу прямо
+			// по нажатию, ровно как на ПК.
+			localPhase = 'disconnecting'
+			state = {
+				...(state ?? {}),
+				runtime: { ...(state?.runtime ?? {}), phase: 'disconnecting' },
+			}
+			renderVpn()
+			renderAccountMap()
 		}
 		// Auto picks the target when the user never chose one, so a power click
 		// no longer means "whatever came first in the list".
@@ -2456,56 +2487,88 @@ function renderAccountMap() {
 	const phase = phaseOf()
 	// Своя нитка на этот кадр: либо живой туннель этого устройства,
 	// либо пробная дуга «я → выбранный сервер» на время попытки.
+	// Три состояния анимации, как на ПК: 1) попытка, 2) держим, 3) отключение.
+	// Фазу берём ЛОКАЛЬНО: phaseOf() отдаёт localPhase, который ставится в
+	// момент нажатия. Поэтому анимация не ждёт ни опроса карты (раз в 5 с), ни
+	// сети — нажал, и нитка пошла; отключил, и она втянулась.
+	//
+	// Раньше фаза вычислялась из полезной нагрузки: своя пара то появлялась,
+	// то исчезала между опросами, из-за чего маркер моргал, а анимации 1 и 3
+	// играли одновременно. Геометрию запоминаем, чтобы втягивать нитку по её
+	// собственным точкам даже после того, как данные о сессии уже ушли.
 	const ownPair = order.map(key => pairs[key]).find(p => p.device?.isCurrent) ?? null
-	const ownNow = ownPair
-		? { a: ownPair.a, b: ownPair.b }
-		: (phase === 'connecting' && selfPoint && nodePoint ? { a: selfPoint, b: nodePoint } : null)
+	const localGeo = selfPoint && nodePoint ? { a: selfPoint, b: nodePoint } : null
+	const ownGeo = ownPair ? { a: ownPair.a, b: ownPair.b } : localGeo
+	const liveOwn = phase === 'connecting' || phase === 'connected' || phase === 'disconnecting'
 	if (guest) {
-		ownRouteMemo = null; routeFarewell = null
+		ownRouteMemo = null; routeFarewell = null; routeWasLive = false; routeRetracted = false
 		if (routeFarewellTimer) { clearTimeout(routeFarewellTimer); routeFarewellTimer = null }
-	} else if (ownNow) {
-		ownRouteMemo = ownNow
-		routeFarewell = null
-		if (routeFarewellTimer) { clearTimeout(routeFarewellTimer); routeFarewellTimer = null }
-	} else if (ownRouteMemo) {
-		// Нитка только что исчезла — втягиваем её по запомненным точкам.
-		routeFarewell = ownRouteMemo
-		ownRouteMemo = null
-		if (routeFarewellTimer) clearTimeout(routeFarewellTimer)
-		routeFarewellTimer = setTimeout(() => { routeFarewell = null; routeFarewellTimer = null; renderAccountMap() }, 680)
+	} else {
+		if (ownGeo) ownRouteMemo = ownGeo
+		if (phase === 'connecting' || phase === 'connected') routeRetracted = false
+		if (phase === 'disconnecting') routeRetracted = true
+		if (liveOwn) {
+			routeFarewell = null
+			if (routeFarewellTimer) { clearTimeout(routeFarewellTimer); routeFarewellTimer = null }
+		} else if (routeWasLive && !routeRetracted && ownRouteMemo) {
+			// Сессию закрыл сервер (кик, лимит, обрыв): локальной фазы
+			// «disconnecting» не было, поэтому втягиваем нитку здесь.
+			routeFarewell = ownRouteMemo
+			if (routeFarewellTimer) clearTimeout(routeFarewellTimer)
+			routeFarewellTimer = setTimeout(() => { routeFarewell = null; routeFarewellTimer = null; renderAccountMap() }, 680)
+		}
+		routeWasLive = liveOwn
 	}
-	const pending = routeFarewell ? 'disconnecting' : (ownNow && !ownPair ? 'connecting' : '')
-	const pendingFrom = routeFarewell ? routeFarewell.a : (ownNow?.a ?? null)
-	const pendingTo = routeFarewell ? routeFarewell.b : (ownNow?.b ?? null)
+	const pending = guest
+		? ''
+		: (phase === 'connecting'
+			? 'connecting'
+			: (phase === 'disconnecting' || routeFarewell ? 'disconnecting' : ''))
+	const pendingGeo = routeFarewell ?? ownGeo ?? ownRouteMemo
+	const pendingFrom = pending && pendingGeo ? pendingGeo.a : null
+	const pendingTo = pending && pendingGeo ? pendingGeo.b : null
+	// Маркеры живут в отдельном слое #account-pins и имеют свой отпечаток:
+	// смена фазы пересобирает только нитки, а маркер устройства остаётся на
+	// месте. Именно его пересборка и выглядела как моргание при нажатии.
+	const pinSig = JSON.stringify([guest,
+		order.map(key => [pairs[key].from, spots[pairs[key].from] || 1, pairs[key].device?.platform ?? '', Boolean(pairs[key].device?.isCurrent)]),
+		selfPoint ? mapSpot(selfPoint) : null])
 	const sig = JSON.stringify([guest, Number.isFinite(total) ? total : null, pending,
 		pendingFrom ? mapSpot(pendingFrom) : null, pendingTo ? mapSpot(pendingTo) : null,
 		order.map(key => [key, spots[pairs[key].from] || 1, pairs[key].device?.platform ?? '', Boolean(pairs[key].device?.isCurrent)]),
 		selfPoint ? mapSpot(selfPoint) : null, nodePoint ? mapSpot(nodePoint) : null])
 	const dirty = sig !== accountMapSig
+	const pinsDirty = pinSig !== accountPinsSig
 	accountMapSig = sig
-	if (dirty) {
-		group.replaceChildren()
-		if (pins) pins.replaceChildren()
-	}
+	accountPinsSig = pinSig
+	if (dirty) group.replaceChildren()
+	if (pinsDirty && pins) pins.replaceChildren()
 	const seenNode = {}, seenPin = {}, pinPoints = []
 	for (const key of order) {
-		if (!dirty) break
+		if (!dirty && !pinsDirty) break
 		const { a, b, from, device } = pairs[key]
 		// Дуга поднимается пропорционально расстоянию, а не на фиксированные
 		// 5 единиц: иначе близкие точки склеиваются в прямую линию.
-		const lift = Math.max(3.5, Math.abs(b.x - a.x) * 0.16)
-		const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-		path.setAttribute('class', 'account-route')
-		path.setAttribute('d', `M ${a.x} ${a.y} Q ${(a.x + b.x) / 2} ${Math.max(1.5, Math.min(a.y, b.y) - lift)} ${b.x} ${b.y}`)
-		const title = document.createElementNS('http://www.w3.org/2000/svg', 'title')
-		title.textContent = `${device.deviceName ?? device.platform ?? t('settings.devices')} → ${formatNodeLocation(device.node, currentLang()) || device.node?.name || t('loc.unknown')}`
-		path.appendChild(title)
-		group.appendChild(path)
+		//
+		// Пока играет своя анимация (попытка или отключение), живую нитку
+		// этого устройства не рисуем: иначе поверх втягивающейся дуги висела
+		// бы вторая, уже «подключённая», и обе анимации читались бы как одна
+		// сломанная. Маркер и точка сервера при этом остаются на месте.
+		if (dirty && !(pending && device?.isCurrent)) {
+			const lift = Math.max(3.5, Math.abs(b.x - a.x) * 0.16)
+			const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+			path.setAttribute('class', 'account-route')
+			path.setAttribute('d', `M ${a.x} ${a.y} Q ${(a.x + b.x) / 2} ${Math.max(1.5, Math.min(a.y, b.y) - lift)} ${b.x} ${b.y}`)
+			const title = document.createElementNS('http://www.w3.org/2000/svg', 'title')
+			title.textContent = `${device.deviceName ?? device.platform ?? t('settings.devices')} → ${formatNodeLocation(device.node, currentLang()) || device.node?.name || t('loc.unknown')}`
+			path.appendChild(title)
+			group.appendChild(path)
+		}
 		// Зелёная точка — выбранный сервер. Ореол нужен только для того,
 		// чтобы точка читалась поверх точек континентов; кликать по ней
 		// по-прежнему нельзя — всё живёт в панели устройств.
 		const nodeKey = mapSpot(b)
-		if (!seenNode[nodeKey]) {
+		if (dirty && !seenNode[nodeKey]) {
 			seenNode[nodeKey] = true
 			const halo = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
 			halo.setAttribute('class', 'account-node-halo')
@@ -2520,11 +2583,12 @@ function renderAccountMap() {
 			dot.setAttribute('r', '1')
 			group.appendChild(dot)
 		}
-		// Фиолетовый маркер устройства с глифом платформы.
-		if (pins && !seenPin[from]) {
+		// Фиолетовый маркер устройства с глифом платформы. seenPin/pinPoints
+		// заполняем всегда — от них зависит проверка «маркеры не налезают».
+		if (!seenPin[from]) {
 			seenPin[from] = true
 			pinPoints.push(a)
-			pins.appendChild(accountPin(a, device, spots[from] || 1))
+			if (pinsDirty && pins) pins.appendChild(accountPin(a, device, spots[from] || 1))
 		}
 	}
 	// Пробная нитка «я → сервер» на время попытки подключения и отключения.
@@ -2562,9 +2626,9 @@ function renderAccountMap() {
 		path.setAttribute('d', d)
 		group.appendChild(path)
 	}
-	if (dirty) {
+	if (dirty || pinsDirty) {
 		// Выбранный сервер — зелёная точка даже без туннеля.
-		if (nodePoint && !seenNode[mapSpot(nodePoint)]) {
+		if (dirty && nodePoint && !seenNode[mapSpot(nodePoint)]) {
 			seenNode[mapSpot(nodePoint)] = true
 			const halo = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
 			halo.setAttribute('class', 'account-node-halo')
@@ -2584,7 +2648,7 @@ function renderAccountMap() {
 		// свой кружок без туннеля не добавляем — они налезали бы
 		// друг на друга. Он появится при подключении, со своей ниткой.
 		const crowded = selfPoint ? pinPoints.some(p => Math.hypot(p.x - selfPoint.x, p.y - selfPoint.y) < 2.5) : false
-		if (pins && selfPoint && !crowded && !seenPin[mapSpot(selfPoint)]) {
+		if (pinsDirty && pins && selfPoint && !crowded && !seenPin[mapSpot(selfPoint)]) {
 			pins.appendChild(accountPin(selfPoint, {
 				isCurrent: true,
 				platform: 'ext',
