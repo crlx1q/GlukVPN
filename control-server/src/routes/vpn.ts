@@ -21,6 +21,7 @@ const ConnectBody = z
 const DisconnectBody = z
 	.object({
 		sessionId: z.string().uuid("Invalid session id").optional(),
+		deviceId: z.string().uuid("Invalid device id").optional(),
 		bytesRx: z.coerce.number().finite().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
 		bytesTx: z.coerce.number().finite().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
 		downloadBytes: z.coerce.number().finite().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
@@ -58,6 +59,11 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 				ip: clientIp(request),
 			})
 
+			await prisma.device.update({
+				where: { id: device.id },
+				data: { lastSeen: new Date() },
+			})
+
 			return reply.code(201).send({
 				session: {
 					id: result.session.id,
@@ -77,19 +83,25 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 	app.post(
 		"/api/vpn/disconnect",
 		{
-			preHandler: requireDeviceScope,
+			preHandler: requireUser,
 			config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
 		},
 		async (request, reply) => {
 			const parsed = DisconnectBody.safeParse(request.body ?? {})
 			if (!parsed.success) throw badRequest("Invalid disconnect payload")
 			const { user, device } = getAuthUser(request)
-			if (!device) throw forbidden("Device-scoped token required")
 
 			const requestedId = parsed.data?.sessionId
+			const requestedDeviceId = parsed.data?.deviceId
+			if (!device && !requestedId && !requestedDeviceId) {
+				throw badRequest("sessionId or deviceId is required when no device is attached")
+			}
+
 			const session = requestedId
 				? await prisma.session.findUnique({ where: { id: requestedId } })
-				: await findLiveSessionForDevice(device.id)
+				: requestedDeviceId
+					? await findLiveSessionForDevice(requestedDeviceId)
+					: await findLiveSessionForDevice(device!.id)
 
 			if (!session) {
 				return reply.send({ ok: true, alreadyDisconnected: true, session: null })
@@ -99,7 +111,7 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 			// is the "Disconnect" button in the account devices panel, which drops
 			// the tunnel without signing the device out. Sessions of other accounts
 			// stay invisible - the user id simply will not match.
-			if (session.deviceId !== device.id && session.userId !== user.id) {
+			if (session.userId !== user.id && (!device || session.deviceId !== device.id)) {
 				throw notFound("Session not found")
 			}
 

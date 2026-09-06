@@ -286,7 +286,7 @@
     // вторая ещё и убирает устройство из аккаунта. Такая же пара есть
     // во Flutter и в расширении — поведение одинаковое на всех площадках.
     '<div class="gluk-acts">'+
-     '<button type="button" class="gluk-act" data-gluk-off="'+esc(d.sessionId||'')+'"'+(d.sessionId?'':' disabled')+'>'+esc(tr('Отключить','Disconnect'))+'</button>'+
+     '<button type="button" class="gluk-act" data-gluk-off="'+esc(d.sessionId||'')+'" data-gluk-device="'+esc(d.id)+'"'+(d.sessionId||d.status==='ACTIVE'||d.connected?'':' disabled')+'>'+esc(tr('Отключить','Disconnect'))+'</button>'+
      '<button type="button" class="gluk-act gluk-act--danger" data-gluk-out="'+esc(d.id)+'" data-gluk-session="'+esc(d.sessionId||'')+'">'+esc(tr('Выйти','Sign out'))+'</button>'+
     '</div>'+
     '<p class="gluk-detail__hint">'+esc(tr('«Отключить» гасит только VPN. «Выйти» ещё и выкидывает устройство из аккаунта.','“Disconnect” only drops the VPN. “Sign out” also removes the device from the account.'))+'</p>'+
@@ -324,7 +324,7 @@
     if(slot){slot.hidden=true;slot.textContent='';}
     D.deviceAction(off?'disconnect':'signout',{
      sessionId:(off?off.getAttribute('data-gluk-off'):out.getAttribute('data-gluk-session'))||null,
-     deviceId:out?out.getAttribute('data-gluk-out'):null
+     deviceId:out?out.getAttribute('data-gluk-out'):(off?off.getAttribute('data-gluk-device'):null)
     }).then(function(){
      delete panel.dataset.glukDetail;
     },function(message){
