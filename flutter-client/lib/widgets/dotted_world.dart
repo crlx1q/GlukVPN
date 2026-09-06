@@ -401,6 +401,61 @@ class _DottedWorldPainter extends CustomPainter {
 					serverSpots[key] = (fade: math.max(kept?.fade ?? 0, b), at: to.offset);
 				}
 			}
+			// ФАЗЫ 1-3, как на ПК: локальная нить «я → выбранный сервер».
+			//
+			// Эта ветка (accountArcs != null — то есть весь домашний экран
+			// телефона) заканчивается `return` ещё до общего блока со своей
+			// ниткой, поэтому нить рисовалась ТОЛЬКО когда её присылал сервер —
+			// раз в пять секунд. Отсюда и «фазы 1 нет никогда», и «фаза 2
+			// появляется резко только после коннекта». Теперь нить ведёт
+			// локальная фаза, как в desktop/widgets/world_stage.dart: нажал —
+			// вырисовывается, подключено — держится, отключаешь — втягивается.
+			final bool ownArcLive =
+					accountArcs!.any((a) => a is AccountConnectionArc && a.isCurrent);
+			if (!ownArcLive &&
+					arcProgress > 0.01 &&
+					selfPoint != null &&
+					serverPoint != null) {
+				final me = _project(selfPoint!, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
+				final node = _project(serverPoint!, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
+				if (me != null && node != null) {
+					// Чужое устройство уже стоит в этой точке и уходит на тот же
+					// сервер: своя нить легла бы вторым шнуром поверх первого,
+					// поэтому её прячем — так же ведёт себя расширение.
+					bool taken = false;
+					for (final arc in accountArcs!) {
+						final from = _project(arc.from, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
+						final to = _project(arc.to, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
+						if (from == null || to == null) continue;
+						if ((from.offset - me.offset).distance < 26 &&
+								(to.offset - node.offset).distance < 26) {
+							taken = true;
+							break;
+						}
+					}
+					final double fade = math.min(
+						ui.lerpDouble(1, me.visibility.clamp(0.0, 1.0), globeness)! * selfOpacity,
+						ui.lerpDouble(1, node.visibility.clamp(0.0, 1.0), globeness)! * serverOpacity,
+					);
+					if (!taken && fade > 0.02) {
+						_paintArc(
+							canvas,
+							from: me.offset,
+							to: node.offset,
+							arc: ConnectionArc(from: selfPoint!, to: serverPoint!),
+							flatScale: flatScale,
+							flatCentre: centre,
+							globeRadius: globeRadius,
+							globeCentre: globeCentre,
+							size: size,
+							opacity: fade,
+							accent: GlukColors.violetLight,
+							accentTo: GlukColors.connected,
+							progress: arcProgress.clamp(0.0, 1.0),
+						);
+					}
+				}
+			}
 			// ЭТАП 3, главное требование: «вошёл — вижу себя на карте».
 			//
 			// Раньше эта ветка рисовала ТОЛЬКО живые нитки, поэтому без

@@ -573,6 +573,11 @@ class _MapBackdropState extends State<_MapBackdrop>
         return LoopingBuilder(
           duration: GlukMotion.connectionDash,
           reduceMotion: motion.reduceMotion,
+          // ФАЗА 1 и бережный режим: этот же цикл даёт прогресс
+          // вырисовки нити. Без frozenValue при «меньше анимации»
+          // (и на экономии батареи) он замирал на 0 — то есть
+          // нить нулевой длины, и фаза попытки просто не была видна.
+          frozenValue: 0.6,
           builder: (BuildContext context, double dash) {
             return LoopingBuilder(
               duration: GlukMotion.mapPulse,

@@ -1569,3 +1569,14 @@ button.account-device-more:hover{background:rgba(139,92,246,.18)}
 	.route-reveal.is-pending,
 	.route-reveal.is-leaving{animation:none;stroke-dashoffset:0}
 }
+
+/* Фаза 2 — «связь есть»: маска открыта полностью, штрихи бегут так же, как
+   у чужих ниток. account-draw тут НЕ проигрывается: иначе на переходе
+   «подключаемся → подключено» линия перерисовывалась бы с нуля, и это
+   читалось как «нитка исчезла и появилась». Специфичность двух классов
+   перебивает базовое правило .account-route. */
+.account-route.is-live{stroke-dasharray:1.6 1.9;opacity:.92;animation:account-flow 3.6s linear infinite}
+.route-reveal.is-live{animation:none;stroke-dashoffset:0}
+@media (prefers-reduced-motion: reduce){
+	.account-route.is-live{animation:none}
+}

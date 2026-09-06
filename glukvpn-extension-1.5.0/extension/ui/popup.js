@@ -512,10 +512,17 @@ let routeFarewellTimer = null
 // Нужно, чтобы отличать «пользователь нажал отключить» (анимацию уже
 // проиграли локально) от «сервер закрыл сессию сам» (анимации ещё не было).
 let routeWasLive = false
-let routeRetracted = false
+// Когда началось втягивание (фаза 3). Нужно, чтобы анимация доиграла
+// целиком: воркер присылает idle через сотню миллисекунд, а втягивание
+// идёт 600 мс — без этого нитка просто срезалась на полпути.
+let routeLeaveAt = 0
 // Отдельный отпечаток для маркеров устройств: они не должны пересобираться
 // из-за смены фазы подключения.
 let accountPinsSig = ''
+// Своя нитка живёт в отдельном слое #own-route со своим отпечатком:
+// пересборка сцены других устройств её не трогает, и между фазами она
+// не пропадает и не мигает прозрачностью.
+let ownRouteSig = ''
 // Отпечаток баннера: одна и та же ошибка не должна перерисовываться
 // на каждом опросе состояния.
 let vpnBannerSig = null
@@ -2497,44 +2504,78 @@ function renderAccountMap() {
 	// играли одновременно. Геометрию запоминаем, чтобы втягивать нитку по её
 	// собственным точкам даже после того, как данные о сессии уже ушли.
 	const ownPair = order.map(key => pairs[key]).find(p => p.device?.isCurrent) ?? null
-	const localGeo = selfPoint && nodePoint ? { a: selfPoint, b: nodePoint } : null
+	// Геометрию своей нитки берём ЛОКАЛЬНО и всегда: selfPoint ниже
+	// обнуляется, когда сервер уже знает про сессию (чтобы не встал второй
+	// маркер), но для анимации точка «я» нужна с первого кадра попытки.
+	const selfSpot = Array.isArray(selfLatLon) ? project(selfLatLon[0], selfLatLon[1]) : null
+	const localGeo = selfSpot && nodePoint ? { a: selfSpot, b: nodePoint } : null
 	const ownGeo = ownPair ? { a: ownPair.a, b: ownPair.b } : localGeo
 	const liveOwn = phase === 'connecting' || phase === 'connected' || phase === 'disconnecting'
 	if (guest) {
-		ownRouteMemo = null; routeFarewell = null; routeWasLive = false; routeRetracted = false
+		ownRouteMemo = null; routeFarewell = null; routeWasLive = false; routeLeaveAt = 0
 		if (routeFarewellTimer) { clearTimeout(routeFarewellTimer); routeFarewellTimer = null }
 	} else {
 		if (ownGeo) ownRouteMemo = ownGeo
-		if (phase === 'connecting' || phase === 'connected') routeRetracted = false
-		if (phase === 'disconnecting') routeRetracted = true
+		if (phase === 'connecting' || phase === 'connected') routeLeaveAt = 0
+		if (phase === 'disconnecting' && !routeLeaveAt) routeLeaveAt = Date.now()
 		if (liveOwn) {
 			routeFarewell = null
 			if (routeFarewellTimer) { clearTimeout(routeFarewellTimer); routeFarewellTimer = null }
-		} else if (routeWasLive && !routeRetracted && ownRouteMemo) {
-			// Сессию закрыл сервер (кик, лимит, обрыв): локальной фазы
-			// «disconnecting» не было, поэтому втягиваем нитку здесь.
-			routeFarewell = ownRouteMemo
+		} else if (routeWasLive && ownRouteMemo) {
+			// Нитка только что была живой, а фазы больше нет. Два случая:
+			// • сессию закрыл сервер (кик, лимит, обрыв) — втягивания не было;
+			// • мы сами нажали «отключить», но воркер прислал idle быстрее,
+			//   чем доиграла анимация, и нитка срезалась на полпути.
+			// В обоих доводим втягивание до конца на запомненной геометрии —
+			// как на ПК, где контроллер докручивает 1 → 0 уже после закрытия.
+			const left = routeLeaveAt ? Math.max(0, 680 - (Date.now() - routeLeaveAt)) : 680
 			if (routeFarewellTimer) clearTimeout(routeFarewellTimer)
-			routeFarewellTimer = setTimeout(() => { routeFarewell = null; routeFarewellTimer = null; renderAccountMap() }, 680)
+			if (left > 0) {
+				routeFarewell = ownRouteMemo
+				routeFarewellTimer = setTimeout(() => {
+					routeFarewell = null; routeFarewellTimer = null; routeLeaveAt = 0; renderAccountMap()
+				}, left)
+			} else {
+				routeFarewell = null; routeFarewellTimer = null; routeLeaveAt = 0
+			}
 		}
 		routeWasLive = liveOwn
 	}
-	const pending = guest
+	// Три фазы своей нитки, как на ПК: 1) connecting — вырисовывается,
+	// 2) live — держится, 3) leaving — втягивается. Фаза — локальная, то
+	// есть та же, что показывает статус и кнопка: написано «Подключено» —
+	// значит и нить держится, а не ждёт ответа опроса карты раз в 5 с.
+	// Если локальной фазы нет, но сервер видит живую сессию этого
+	// устройства — держим нить по его данным.
+	const ownPhase = guest
 		? ''
 		: (phase === 'connecting'
 			? 'connecting'
-			: (phase === 'disconnecting' || routeFarewell ? 'disconnecting' : ''))
-	const pendingGeo = routeFarewell ?? ownGeo ?? ownRouteMemo
-	const pendingFrom = pending && pendingGeo ? pendingGeo.a : null
-	const pendingTo = pending && pendingGeo ? pendingGeo.b : null
+			: (phase === 'connected'
+				? 'live'
+				: ((phase === 'disconnecting' || routeFarewell)
+					? 'leaving'
+					: (ownPair ? 'live' : ''))))
+	const ownRouteGeo = routeFarewell ?? ownGeo ?? ownRouteMemo
+	const ownFrom = ownPhase && ownRouteGeo ? ownRouteGeo.a : null
+	const ownTo = ownPhase && ownRouteGeo ? ownRouteGeo.b : null
+	// Если в той же точке уже стоит ДРУГОЕ устройство и уходит на тот же
+	// сервер, его нитка уже нарисована — свою и её анимации прячем.
+	const ownTaken = ownFrom && ownTo
+		? order.some(key => !pairs[key].device?.isCurrent
+			&& mapSpot(pairs[key].a) === mapSpot(ownFrom)
+			&& mapSpot(pairs[key].b) === mapSpot(ownTo))
+		: false
 	// Маркеры живут в отдельном слое #account-pins и имеют свой отпечаток:
 	// смена фазы пересобирает только нитки, а маркер устройства остаётся на
 	// месте. Именно его пересборка и выглядела как моргание при нажатии.
 	const pinSig = JSON.stringify([guest,
 		order.map(key => [pairs[key].from, spots[pairs[key].from] || 1, pairs[key].device?.platform ?? '', Boolean(pairs[key].device?.isCurrent)]),
 		selfPoint ? mapSpot(selfPoint) : null])
-	const sig = JSON.stringify([guest, Number.isFinite(total) ? total : null, pending,
-		pendingFrom ? mapSpot(pendingFrom) : null, pendingTo ? mapSpot(pendingTo) : null,
+	// Фаза в этот отпечаток больше не входит: свою нитку рисует слой
+	// #own-route, а из-за смены фазы пересобирать чужие нитки и маркеры
+	// нельзя — именно это и выглядело как моргание при нажатии.
+	const sig = JSON.stringify([guest, Number.isFinite(total) ? total : null,
 		order.map(key => [key, spots[pairs[key].from] || 1, pairs[key].device?.platform ?? '', Boolean(pairs[key].device?.isCurrent)]),
 		selfPoint ? mapSpot(selfPoint) : null, nodePoint ? mapSpot(nodePoint) : null])
 	const dirty = sig !== accountMapSig
@@ -2550,11 +2591,11 @@ function renderAccountMap() {
 		// Дуга поднимается пропорционально расстоянию, а не на фиксированные
 		// 5 единиц: иначе близкие точки склеиваются в прямую линию.
 		//
-		// Пока играет своя анимация (попытка или отключение), живую нитку
-		// этого устройства не рисуем: иначе поверх втягивающейся дуги висела
-		// бы вторая, уже «подключённая», и обе анимации читались бы как одна
-		// сломанная. Маркер и точка сервера при этом остаются на месте.
-		if (dirty && !(pending && device?.isCurrent)) {
+		// Нитку ЭТОГО устройства в общем слое не рисуем никогда: она живёт
+		// в #own-route и ведётся локальной фазой. Иначе поверх своей нити
+		// висела бы вторая, «серверная», и обе анимации читались бы как
+		// одна сломанная. Маркер и точка сервера остаются на месте.
+		if (dirty && !device?.isCurrent) {
 			const lift = Math.max(3.5, Math.abs(b.x - a.x) * 0.16)
 			const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
 			path.setAttribute('class', 'account-route')
@@ -2591,40 +2632,54 @@ function renderAccountMap() {
 			if (pinsDirty && pins) pins.appendChild(accountPin(a, device, spots[from] || 1))
 		}
 	}
-	// Пробная нитка «я → сервер» на время попытки подключения и отключения.
-	// pathLength="1" даёт нормализованную длину, поэтому одна и та же CSS
-	// анимация одинаково работает и для короткой, и для длинной дуги.
-	if (dirty && pending && pendingFrom && pendingTo) {
-		const lift = Math.max(3.5, Math.abs(pendingTo.x - pendingFrom.x) * 0.16)
-		const d = `M ${pendingFrom.x} ${pendingFrom.y} Q ${(pendingFrom.x + pendingTo.x) / 2} ${Math.max(1.5, Math.min(pendingFrom.y, pendingTo.y) - lift)} ${pendingTo.x} ${pendingTo.y}`
-		const phaseClass = pending === 'connecting' ? 'is-pending' : 'is-leaving'
-		// Штрихи у пробной нитки те же, что у живых: «- - -». Раньше на
-		// видимой дуге стоял pathLength="1", а CSS задавал dasharray:1 —
-		// вся дуга превращалась в ОДИН штрих, и вместо пунктира
-		// тянулась сплошная линия. Теперь pathLength="1" только у маски:
-		// она нормализует прогресс и открывает пройденную долю пути —
-		// ровно как _dashed(path, progress) на ПК.
-		const maskId = pending === 'connecting' ? 'route-reveal-in' : 'route-reveal-out'
-		const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs')
-		const mask = document.createElementNS('http://www.w3.org/2000/svg', 'mask')
-		mask.setAttribute('id', maskId)
-		mask.setAttribute('maskUnits', 'userSpaceOnUse')
-		mask.setAttribute('x', '-10')
-		mask.setAttribute('y', '-10')
-		mask.setAttribute('width', '139')
-		mask.setAttribute('height', '80')
-		const reveal = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-		reveal.setAttribute('class', `route-reveal ${phaseClass}`)
-		reveal.setAttribute('pathLength', '1')
-		reveal.setAttribute('d', d)
-		mask.appendChild(reveal)
-		defs.appendChild(mask)
-		group.appendChild(defs)
-		const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-		path.setAttribute('class', `account-route ${phaseClass}`)
-		path.setAttribute('mask', `url(#${maskId})`)
-		path.setAttribute('d', d)
-		group.appendChild(path)
+	// --- своя нитка: отдельный слой и три фазы, как на ПК ------------
+	//
+	// Раньше она жила в общем слое #account-map, который пересобирается
+	// целиком, когда меняется что-то у ДРУГИХ устройств. Поэтому при
+	// отключении нитка сначала пропадала вместе с живой сценой,
+	// потом появлялась заново — и только тогда играла анимация
+	// втягивания (то самое «исчезает прозрачностью, затем появляется»).
+	// Теперь у неё свой слой и свой отпечаток: между фазами меняется
+	// только класс, и одна фаза переходит в другую в том же кадре.
+	const ownLayer = $('own-route')
+	if (ownLayer) {
+		const ownSig = JSON.stringify([ownPhase, ownTaken,
+			ownFrom ? mapSpot(ownFrom) : null, ownTo ? mapSpot(ownTo) : null])
+		if (ownSig !== ownRouteSig) {
+			ownRouteSig = ownSig
+			ownLayer.replaceChildren()
+			if (ownPhase && !ownTaken && ownFrom && ownTo) {
+				const lift = Math.max(3.5, Math.abs(ownTo.x - ownFrom.x) * 0.16)
+				const d = `M ${ownFrom.x} ${ownFrom.y} Q ${(ownFrom.x + ownTo.x) / 2} ${Math.max(1.5, Math.min(ownFrom.y, ownTo.y) - lift)} ${ownTo.x} ${ownTo.y}`
+				// Штрихи «- - -» одинаковы во всех трёх фазах: узор пунктира
+				// не трогаем совсем, а появление и втягивание делает маска с
+				// pathLength="1" — ровно как _dashed(path, progress) на ПК.
+				const phaseClass = ownPhase === 'connecting'
+					? 'is-pending'
+					: (ownPhase === 'leaving' ? 'is-leaving' : 'is-live')
+				const maskId = `route-reveal-${ownPhase}`
+				const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs')
+				const mask = document.createElementNS('http://www.w3.org/2000/svg', 'mask')
+				mask.setAttribute('id', maskId)
+				mask.setAttribute('maskUnits', 'userSpaceOnUse')
+				mask.setAttribute('x', '-10')
+				mask.setAttribute('y', '-10')
+				mask.setAttribute('width', '139')
+				mask.setAttribute('height', '80')
+				const reveal = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+				reveal.setAttribute('class', `route-reveal ${phaseClass}`)
+				reveal.setAttribute('pathLength', '1')
+				reveal.setAttribute('d', d)
+				mask.appendChild(reveal)
+				defs.appendChild(mask)
+				ownLayer.appendChild(defs)
+				const route = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+				route.setAttribute('class', `account-route ${phaseClass}`)
+				route.setAttribute('mask', `url(#${maskId})`)
+				route.setAttribute('d', d)
+				ownLayer.appendChild(route)
+			}
+		}
 	}
 	if (dirty || pinsDirty) {
 		// Выбранный сервер — зелёная точка даже без туннеля.
