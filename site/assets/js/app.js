@@ -561,9 +561,14 @@
     set("email", esc(u.email || "\u2014"));
     set("public-id", esc(u.publicId || u.id || "\u2014"));
 
-    var name = D.planLabel(sub);
-    var tier = planTier(sub);
-    var badge = D.planBadge(sub);
+    /* Неактивная подписка не даёт тарифа: на сервере это ровно Free, поэтому
+       имя, уровень и бейджик считаем по действующей подписке, а отозванную
+       или истёкшую строку оставляем только для истории («до …»). */
+    var liveSub = D.subscription(sub, billing.plansByCode).active ? sub : null;
+    var histTier = planTier(sub);
+    var name = D.planLabel(liveSub);
+    var tier = planTier(liveSub);
+    var badge = D.planBadge(liveSub);
     /* Нет подписки — это и есть Free, а не «—». */
     var planText = name && name !== "\u2014" ? name : D.badgeLabel(badge);
     set("plan", esc(planText));
@@ -600,7 +605,7 @@
     var end = model.end !== null ? new Date(model.end) : null;
     if (end && isNaN(end)) end = null;
     var left = model.left;
-    var paid = tier > 0 && (active || status === "EXPIRED" || status === "PENDING");
+    var paid = histTier > 0 && (active || status === "EXPIRED" || status === "PENDING");
 
     set('sub-state',esc(active ? name : subStatusLabel({status:status})));
     setClass("sub-state", "is-ok", active && tier > 0);
@@ -612,7 +617,7 @@
     set("sub-left", esc(left != null && end ? fmtDays(left) : "\u2014"));
     setClass("sub-left", "is-warn", left != null && end && left <= 5);
     var days = model.days;
-    set('sub-hint', esc(days ? name + ' · ' + fmtDays(days) : name));
+    set('sub-hint', esc(days ? planText + ' · ' + fmtDays(days) : planText));
 
     var bar = $('[data-d="sub-bar"]');
     if (bar) {
@@ -627,7 +632,7 @@
 
     var cta = $("[data-dash-upgrade]");
     if (cta) {
-      cta.textContent = paid && active ? T("Продлить") : tier > 0 ? T("Оплатить снова") : T("Перейти на платный тариф");
+      cta.textContent = paid && active ? T("Продлить") : histTier > 0 ? T("Оплатить снова") : T("Перейти на платный тариф");
       cta.setAttribute("href", root + "pricing/");
     }
     setText('sub-note',billing.enabled===null ? (EN?'Payment options are unavailable. Refresh to retry.':'Способы оплаты не загрузились. Повторите обновление.') : billing.enabled ? T('Оплата и продление — на странице тарифов. Платёж зачисляется автоматически.') : T('Оплата и продление на время беты оформляются вручную.'));

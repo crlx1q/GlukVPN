@@ -174,17 +174,10 @@ class _AccountScreenState extends State<AccountScreen> {
             // --- subscription ----------------------------------------------
             _Card(
               title: s.subscription,
-              trailing: TonePill(
-                // Настоящее имя тарифа, как в расширении и на ПК:
-                // Free / Basic / Pro / β Pro. «Активна» ничего не говорило
-                // о плане, а срок уже есть строкой ниже.
-                label: (plan?.displayPlan ?? '\u2014') != '\u2014'
-                    ? plan!.displayPlan
-                    : (plan?.status.toLowerCase() ?? s.none),
-                tone: auth.subscriptionActive
-                    ? GlukColors.connected
-                    : GlukColors.amber,
-              ),
+              // Тот же бейджик, что на сайте, в ПК-версии и в расширении:
+              // значок сети и название тарифа. «Активна»/«Истекла» ничего не
+              // говорили о плане, а срок стоит строкой ниже.
+              trailing: PlanBadge(subscription: auth.subscription),
               children: <Widget>[
                 _Row(
                   label: s.validUntil,

@@ -8,6 +8,9 @@ function subscription(sub,plans,now){
  if(!Number.isFinite(end))end=null;
  if(end!==null&&end<=now&&(status==='ACTIVE'||status==='TRIAL'))status='EXPIRED';
  var active=status==='ACTIVE'||status==='TRIAL',left=end!==null?Math.max(0,Math.ceil((end-now)/86400000)):null;
+ /* Неактивная подписка — это не «осталось 423 дня»: отозванный или истёкший
+    срок уже ничего не даёт, поэтому остаток обнуляем, а не считаем по дате. */
+ if(!active&&end!==null)left=0;
  var plan=plans[code]||{},days=Number(plan.days),start=Date.parse(sub.startsAt||sub.startedAt||'');
  if(Number.isFinite(start)&&end!==null&&end>start)days=(end-start)/86400000;
  if(!Number.isFinite(days)||days<=0)days=null;
