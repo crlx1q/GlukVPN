@@ -23,6 +23,10 @@ const state = {
 	serviceBusy: false,
 	// Client Bug Logs filter: "" = every platform.
 	errorPlatform: "",
+	// Чей блок подписки раскрыт прямо сейчас. Пока он открыт, таблица
+	// пользователей не перерисовывается: иначе опрос раз в 10 секунд
+	// стирал форму выдачи прямо во время заполнения.
+	subPanelUserId: null,
 }
 
 const el = (id) => document.getElementById(id)
@@ -860,6 +864,8 @@ function subscriptionToggle(user, row) {
 	const close = () => {
 		if (panel) panel.remove()
 		panel = null
+		// Закрыли — автообновление снова разрешено.
+		if (state.subPanelUserId === user.id) state.subPanelUserId = null
 		button.setAttribute("aria-expanded", "false")
 	}
 	button.addEventListener("click", () => {
@@ -874,6 +880,9 @@ function subscriptionToggle(user, row) {
 		holder.appendChild(subscriptionPanel(user, close))
 		panel.appendChild(holder)
 		row.after(panel)
+		// С этого момента блок ведёт себя как виджет: таблица замирает, а
+		// если админ всё же нажмёт «Refresh» вручную — блок откроется заново.
+		state.subPanelUserId = user.id
 		button.setAttribute("aria-expanded", "true")
 	})
 	return button
@@ -913,9 +922,13 @@ function renderUsers(users) {
 				),
 			)
 		}
-		actions.appendChild(subscriptionToggle(user, row))
+		const subToggle = subscriptionToggle(user, row)
+		actions.appendChild(subToggle)
 		row.appendChild(actions)
 		body.appendChild(row)
+		// Раскрытый блок переживает любую перерисовку списка: после неё он
+		// открывается заново у того же пользователя, а не исчезает бесследно.
+		if (state.subPanelUserId === user.id) subToggle.click()
 	}
 	if (users.length === 0) {
 		const row = document.createElement("tr")
@@ -1421,6 +1434,9 @@ function startAutoRefresh() {
 	stopAutoRefresh()
 	if (!el("auto-refresh").checked) return
 	state.timer = setInterval(() => {
+		// Открытая панель подписки — это форма, которую заполняют руками.
+		// Перерисовывать таблицу под руками нельзя.
+		if (state.subPanelUserId) return
 		void loadAll()
 	}, 10000)
 }
