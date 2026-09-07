@@ -520,6 +520,11 @@ class VpnController extends ChangeNotifier {
       _resetConnectionState();
       _state = VpnUiState.disconnected;
       _busy = false;
+      // Нажатие «Отключить» в шторке — такое же решение пользователя, как и
+      // кнопка в приложении. Без этого намерение оставалось «хочу быть
+      // подключенным», и первый же опрос статуса после входа в приложение
+      // сам поднимал туннель заново.
+      _connectionIntent = false;
       _notice = _russian
           ? 'Отключено из шторки уведомлений.'
           : 'Disconnected from the notification shade.';
@@ -569,12 +574,23 @@ class VpnController extends ChangeNotifier {
         _state = VpnUiState.disconnected;
       } else if (!status.connected && stage.isConnected) {
         // A tunnel with no session cannot route anything: tear it down.
-        _notice = 'The tunnel was closed because the session is no longer valid.';
+        //
+        // Сюда попадает удалённое отключение: админ закрыл сессию, а ключ
+        // на телефоне ещё жив и приложение считает себя подключённым,
+        // хотя интернета через него уже нет. Говорим причину словами и —
+        // если причина окончательная — снимаем намерение, иначе
+        // следующий же опрос начнёт бесконечный реконнект.
+        final String? remote = _remoteCloseNotice(status.lastClosedReason);
+        if (remote != null) _connectionIntent = false;
+        _notice = remote ?? 'The tunnel was closed because the session is no longer valid.';
         await _vpn.stop();
         _resetConnectionState();
         _state = VpnUiState.disconnected;
+        _probeHomeIp(settle: const Duration(milliseconds: 1200)).ignore();
       } else if (!status.connected && _state == VpnUiState.connected) {
-        _notice = 'The session was closed by the server.';
+        final String? remote = _remoteCloseNotice(status.lastClosedReason);
+        if (remote != null) _connectionIntent = false;
+        _notice = remote ?? 'The session was closed by the server.';
         _resetConnectionState();
         _state = VpnUiState.disconnected;
         _probeHomeIp(settle: const Duration(milliseconds: 1200)).ignore();
@@ -591,8 +607,59 @@ class VpnController extends ChangeNotifier {
     } on ApiException catch (error) {
       // Do not tear down the tunnel just because the control plane blipped.
       debugPrint('vpn: status refresh failed: ${error.message}');
+      // Но отклонённый токен — не сетевой сбой. Так выглядит отзыв
+      // устройства или блокировка аккаунта на живом туннеле: раньше
+      // телефон в этом случае оставался с ключом и надписью
+      // «Подключено», хотя интернета через него уже не было.
+      final bool rejected = error.isUnauthorized || error.isDeviceRevoked;
+      if (rejected && !_disposed) {
+        final TunnelStage stage = await _vpn.currentStage();
+        if (stage.isConnected || _state == VpnUiState.connected) {
+          _connectionIntent = false;
+          _notice = _russian
+              ? 'Доступ для этого устройства отозван, туннель остановлен.'
+              : 'Access for this device was revoked; the tunnel was stopped.';
+          await _vpn.stop();
+          _resetConnectionState();
+          _state = VpnUiState.disconnected;
+          _probeHomeIp(settle: const Duration(milliseconds: 1200)).ignore();
+        }
+      }
     }
     _safeNotify();
+  }
+
+  /// Слова для сессии, которую закрыл СЕРВЕР, а не пользователь.
+  ///
+  /// `null` — причина не окончательная (обычный реконнект и тому подобное),
+  /// такую показывать нечего и намерение снимать не надо. Коды — те же
+  /// самые, что шлёт `closeSession` на сервере.
+  String? _remoteCloseNotice(String? reason) {
+    switch (reason) {
+      case 'admin_revoked':
+      case 'device_revoked':
+        return _russian
+            ? 'Доступ для этого устройства отозван.'
+            : 'Access for this device was revoked.';
+      case 'user_disabled':
+      case 'user_blocked':
+        return _russian ? 'Аккаунт заблокирован.' : 'The account is blocked.';
+      case 'subscription_expired':
+        return _russian
+            ? 'Подписка закончилась, туннель остановлен.'
+            : 'The plan ran out; the tunnel was stopped.';
+      case 'traffic_limit':
+        return _russian
+            ? 'Месячный лимит трафика израсходован.'
+            : 'The monthly traffic allowance is spent.';
+      case 'node_disabled':
+      case 'node_offline':
+        return _russian
+            ? 'Сервер остановил туннель.'
+            : 'The server stopped the tunnel.';
+      default:
+        return null;
+    }
   }
 
   void handleServiceStatus(ServiceStatus status) {

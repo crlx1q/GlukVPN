@@ -317,13 +317,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           tone: GlukColors.amber,
                         ),
                       ],
-                      if (!auth.subscriptionActive) ...<Widget>[
-                        const SizedBox(height: 12),
-                        InlineNotice(
-                          message: s.planInactiveNotice,
-                          tone: GlukColors.amber,
-                        ),
-                      ],
+                      // Плашки «Подписка не активна» здесь больше нет.
+                      // Free — это отсутствие подписки, а не поломка: на нём
+                      // подключаться можно, и жёлтая надпись «новые подключения
+                      // приостановлены» висела враньём у каждого, кто без
+                      // подписки. Реальные запреты — исчерпанный лимит или
+                      // отказ сервера — приходят шкалой лимита и `vpn.error`.
                       if (vpn.notice != null) ...<Widget>[
                         const SizedBox(height: 12),
                         InkWell(
@@ -517,16 +516,42 @@ class _MapBackdropState extends State<_MapBackdrop>
       if (x > maxX) maxX = x;
     }
     if (serverPoint != null) span(serverPoint.x);
-    // И второе: кадр строится ТОЛЬКО по себе и выбранному серверу —
-    // ровно как в старом клиенте. Раньше в рамку входили ещё и
-    // концы чужих ниток, а список устройств приходит опросом раз в
-    // 5 секунд: любое появление или исчезновение устройства давало
-    // новый центр, и весь мир медленно ехал вбок. Именно это и
-    // выглядело как «шахматные фигуры».
+    // Камера обязана видеть выбранный сервер И самое далёкое СВОЕ
+    // устройство.
+    //
+    // Раньше рамка строилась только по «я + сервер», и устройство на
+    // другом конце мира оставалось за кадром: в картинке висела
+    // половина его нити, уходящая в никуда. Теперь в разлёт входят
+    // оба конца каждой живой нити аккаунта.
+    //
+    // От того самого «телепорта фигур» это уже не страдает: зум не
+    // подгоняется под рамку на каждый чих, а остаётся постоянным и
+    // уменьшается РОВНО тогда, когда разлёт точек шире кадра; всё
+    // остальное время вертикаль и масштаб маркеров не меняются. Ушло
+    // далёкое устройство — камера сама возвращается на меня.
+    for (final ConnectionArc arc in widget.accountArcs) {
+      span(arc.from.x);
+      span(arc.to.x);
+    }
+    final Size viewport = MediaQuery.sizeOf(context);
+    // При coverage c масштаб равен c*H/60 пикселей на единицу карты, то
+    // есть в кадр влезает W/(c*H/60) единиц. Отсюда coverage, при
+    // котором разлёт вписывается ровно: 60*W/(H*разлёт). Нижняя
+    // граница нужна, чтобы карта не вырождалась в тонкую полоску у
+    // самого верха при почти антиподальных точках.
+    const double roomyCoverage = 0.88;
+    const double tightestCoverage = 0.34;
+    final double spread = (maxX - minX) + 10;
+    final double fit = viewport.height > 0
+        ? mapHeight * viewport.width / (viewport.height * spread)
+        : roomyCoverage;
+    final double coverage = fit >= roomyCoverage
+        ? roomyCoverage
+        : (fit <= tightestCoverage ? tightestCoverage : fit);
     final FlatMapView view = FlatMapView.topAnchored(
-      viewport: MediaQuery.sizeOf(context),
+      viewport: viewport,
       centreOn: MapPoint((minX + maxX) / 2, selfPoint.y),
-      coverage: 0.88,
+      coverage: coverage,
       topPadding: -6,
     );
     // Пока карта невидима, камера ставится мгновенно: никто не должен
@@ -573,10 +598,10 @@ class _MapBackdropState extends State<_MapBackdrop>
         return LoopingBuilder(
           duration: GlukMotion.connectionDash,
           reduceMotion: motion.reduceMotion,
-          // ФАЗА 1 и бережный режим: этот же цикл даёт прогресс
-          // вырисовки нити. Без frozenValue при «меньше анимации»
-          // (и на экономии батареи) он замирал на 0 — то есть
-          // нить нулевой длины, и фаза попытки просто не была видна.
+          // Этот цикл — только бег штрихов «- - -» вдоль нити (arcPhase).
+          // Длину нити он больше не задаёт: фазой 1 управляет tween ниже,
+          // поэтому в бережном режиме здесь достаточно любого статичного
+          // сдвига узора.
           frozenValue: 0.6,
           builder: (BuildContext context, double dash) {
             return LoopingBuilder(
@@ -601,21 +626,22 @@ class _MapBackdropState extends State<_MapBackdrop>
                       reduceMotion: motion.reduceMotion || !_spawnDone,
                       frozenValue: 0,
                       builder: (BuildContext context, double drift) {
-                        // ПУНКТ 4: фазы подключения теперь видны на карте так
-                        // же, как на ПК. Пока идёт попытка — нитка
-                        // вырисовывается снова и снова (это «идёт работа», а не
-                        // застывшая линия), при отключении она втягивается
-                        // обратно, а в спокойных состояниях работает обычный
-                        // плавный tween.
-                        // Фаза 3 раньше брала прогресс из того же
-                        // бесконечного цикла dash, а он крутится всегда:
-                        // нить начинала втягиваться с случайного места и могла
-                        // дёрнуться вверх вместо плавного ухода. Отключение
-                        // теперь ведёт tween `arc` (live уже стал false), который
-                        // привязан именно к моменту нажатия — как на ПК.
-                        final double drawn = widget.connecting
-                            ? dash.clamp(0.0, 1.0)
-                            : arc;
+                        // Все три фазы ведёт ОДИН tween `arc` — фаза 1 это
+                        // просто зеркало фазы 3.
+                        //
+                        // Раньше попытка подключения брала длину нити из
+                        // бесконечного цикла `dash`. Цикл крутится всегда, и в
+                        // момент нажатия он оказывался в случайной точке —
+                        // нить появлялась сразу наполовину, а в режиме
+                        // энергосбережения цикл вообще замирал и показывал
+                        // статичную половину нити. Отключение же всегда вело
+                        // `arc`, поэтому и выглядело плавным.
+                        //
+                        // Теперь `live` включает и попытку (см. вызов выше), а
+                        // `arc` — это tween 0 -> 1 на подключении и 1 -> 0 на
+                        // отключении, привязанный к моменту смены фазы. То есть
+                        // ровно то, что делает ПК в _arcProgress().
+                        final double drawn = arc;
                         return DottedWorld(
                           zoom: widget.overview ? 1 : zoom,
                           focus: widget.overview ? const Offset(.5,.5) : focus,

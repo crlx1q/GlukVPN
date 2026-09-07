@@ -516,6 +516,11 @@ let routeWasLive = false
 // целиком: воркер присылает idle через сотню миллисекунд, а втягивание
 // идёт 600 мс — без этого нитка просто срезалась на полпути.
 let routeLeaveAt = 0
+// После отключения сервер ещё пару опросов отдаёт живую сессию этого
+// устройства: туннель умирает не мгновенно. Пока флаг поднят,
+// «серверную» нитку не показываем — иначе сразу после втягивания фаза 2
+// мигала обратно на пару секунд. Снимается при новом подключении.
+let routeMuteServer = false
 // Отдельный отпечаток для маркеров устройств: они не должны пересобираться
 // из-за смены фазы подключения.
 let accountPinsSig = ''
@@ -2567,12 +2572,17 @@ function renderAccountMap() {
 	const ownGeo = ownPair ? { a: ownPair.a, b: ownPair.b } : localGeo
 	const liveOwn = phase === 'connecting' || phase === 'connected' || phase === 'disconnecting'
 	if (guest) {
-		ownRouteMemo = null; routeFarewell = null; routeWasLive = false; routeLeaveAt = 0
+		ownRouteMemo = null; routeFarewell = null; routeWasLive = false; routeLeaveAt = 0; routeMuteServer = false
 		if (routeFarewellTimer) { clearTimeout(routeFarewellTimer); routeFarewellTimer = null }
 	} else {
 		if (ownGeo) ownRouteMemo = ownGeo
-		if (phase === 'connecting' || phase === 'connected') routeLeaveAt = 0
-		if (phase === 'disconnecting' && !routeLeaveAt) routeLeaveAt = Date.now()
+		if (phase === 'connecting' || phase === 'connected') { routeLeaveAt = 0; routeMuteServer = false }
+		if (phase === 'disconnecting') {
+			if (!routeLeaveAt) routeLeaveAt = Date.now()
+			// Отключение началось локально — с этого момента данные опроса
+			// о «живой» сессии игнорируем до следующего подключения.
+			routeMuteServer = true
+		}
 		if (liveOwn) {
 			routeFarewell = null
 			if (routeFarewellTimer) { clearTimeout(routeFarewellTimer); routeFarewellTimer = null }
@@ -2587,6 +2597,10 @@ function renderAccountMap() {
 			if (routeFarewellTimer) clearTimeout(routeFarewellTimer)
 			if (left > 0) {
 				routeFarewell = ownRouteMemo
+				// Сюда попадаем и когда сессию закрыл сервер: втягивание
+				// должно доиграть и не смениться обратно живой ниткой из
+				// старого ответа опроса.
+				routeMuteServer = true
 				routeFarewellTimer = setTimeout(() => {
 					routeFarewell = null; routeFarewellTimer = null; routeLeaveAt = 0; renderAccountMap()
 				}, left)
@@ -2601,7 +2615,10 @@ function renderAccountMap() {
 	// есть та же, что показывает статус и кнопка: написано «Подключено» —
 	// значит и нить держится, а не ждёт ответа опроса карты раз в 5 с.
 	// Если локальной фазы нет, но сервер видит живую сессию этого
-	// устройства — держим нить по его данным.
+	// устройства — держим нить по его данным. Но ТОЛЬКО если мы только
+	// что не отключались: иначе после фазы 3 карта на пару секунд
+	// возвращалась в фазу 2 — ровно на время, пока туннель доживал и
+	// опрос продолжал считать его живым.
 	const ownPhase = guest
 		? ''
 		: (phase === 'connecting'
@@ -2610,7 +2627,7 @@ function renderAccountMap() {
 				? 'live'
 				: ((phase === 'disconnecting' || routeFarewell)
 					? 'leaving'
-					: (ownPair ? 'live' : ''))))
+					: ((ownPair && !routeMuteServer) ? 'live' : ''))))
 	const ownRouteGeo = routeFarewell ?? ownGeo ?? ownRouteMemo
 	const ownFrom = ownPhase && ownRouteGeo ? ownRouteGeo.a : null
 	const ownTo = ownPhase && ownRouteGeo ? ownRouteGeo.b : null

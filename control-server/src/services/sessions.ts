@@ -210,11 +210,17 @@ export function gatewayFor(node: VpnNode, device: Device): ClientTunnelConfig["g
 /**
  * Allocates a free tunnel IP and creates the session row atomically, so two
  * parallel connects can never receive the same address.
+ *
+ * `plan` is the entitlement the caller already resolved. It is passed in rather
+ * than looked up again because Free is the *absence* of a subscription: a
+ * second lookup inside the gate finds no row for a Free account and used to
+ * reject it outright.
  */
 async function createSessionWithLease(params: {
 	user: User
 	device: Device
 	node: VpnNode
+	plan: { tier: number; maxSessions: number }
 }): Promise<Session> {
 	for (let attempt = 0; attempt < 3; attempt += 1) {
 		try {
@@ -222,18 +228,21 @@ async function createSessionWithLease(params: {
 				await tx.$queryRaw`SELECT pg_advisory_xact_lock_shared(${SERVICE_GATE_LOCK})::text`
 				await tx.$queryRaw`SELECT id FROM users WHERE id = ${params.user.id}::uuid FOR UPDATE`
 				await tx.$queryRaw`SELECT id FROM vpn_nodes WHERE id = ${params.node.id}::uuid FOR UPDATE`
-				const [currentUser, currentDevice, currentNode, currentPlan] = await Promise.all([
+				const [currentUser, currentDevice, currentNode] = await Promise.all([
 					tx.user.findUnique({ where: { id: params.user.id } }),
 					tx.device.findUnique({ where: { id: params.device.id } }),
 					tx.vpnNode.findUnique({ where: { id: params.node.id } }),
-					tx.subscription.findFirst({ where: { userId: params.user.id, status: "ACTIVE", expiresAt: { gt: new Date() } }, orderBy: { tier: "desc" } }),
 				])
 				if (!currentUser || currentUser.status !== "ACTIVE") throw forbidden("User is disabled")
 				if (!currentDevice || currentDevice.status !== "ACTIVE" || currentDevice.tokenVersion !== params.device.tokenVersion) throw forbidden("Device is revoked")
-				if (!currentNode || !currentPlan || currentPlan.tier < currentNode.tier) throw forbidden("No eligible subscription or node")
+				if (!currentNode) throw serviceUnavailable("Node is unavailable")
+				// Tier gate only. There is no subscription to re-check here: a Free
+				// account has no row, and demanding one is exactly what made every
+				// Free connect fail with "No eligible subscription or node".
+				if (params.plan.tier < currentNode.tier) throw forbidden(`This server requires ${tierLabel(currentNode.tier)}`)
 				await requireVpnAvailable(currentNode, tx)
 				if (!isNodeConnectable(currentNode)) throw serviceUnavailable("Node is unavailable")
-				const allowed = Math.max(effectiveSessionLimit(currentUser), currentPlan.tier >= 2 ? 5 : currentPlan.tier >= 1 ? 3 : 1)
+				const allowed = Math.max(effectiveSessionLimit(currentUser), params.plan.maxSessions)
 				if (await tx.session.count({ where: { userId: currentUser.id, status: { in: [...ACTIVE_SESSION_STATES] } } }) >= allowed) throw conflict("Maximum concurrent sessions reached. Disconnect another device first.")
 				if (await tx.session.count({ where: { deviceId: currentDevice.id, status: { in: [...ACTIVE_SESSION_STATES] } } })) throw conflict("A connection is already being established for this device. Please retry.")
 				if (await tx.session.count({ where: { nodeId: currentNode.id, status: { in: [...ACTIVE_SESSION_STATES] } } }) >= currentNode.capacity) throw conflict("Node is at capacity")
@@ -343,7 +352,12 @@ export async function connectSession(params: {
 	if (nodeLive >= node.capacity) throw conflict(`Node ${node.name} is at capacity`)
 
 	await ensureIpPool(node)
-	const created = await createSessionWithLease({ user, device, node })
+	const created = await createSessionWithLease({
+		user,
+		device,
+		node,
+		plan: { tier: entitlement.tier, maxSessions: entitlement.maxSessions },
+	})
 	const session = params.ip
 		? await prisma.session.update({
 				where: { id: created.id },

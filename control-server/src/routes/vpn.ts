@@ -11,7 +11,6 @@ import {
 	connectSession,
 	findLiveSessionForDevice,
 	findLiveSessionsForUser,
-	hasActiveSubscription,
 	toSessionView,
 } from "../services/sessions"
 
@@ -222,11 +221,22 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 			: await findLiveSessionsForUser(user.id)
 
 		const current = sessions[0] ?? null
-		const subscriptionActive = await hasActiveSubscription(user.id)
 		// The monthly allowance rides along with status, so every platform draws
 		// "234 MB of 5 GB" from the same server-side numbers - the nodes count the
 		// bytes, the client only renders them.
 		const quota = await quotaStatus(user.id)
+		// "May this account open new tunnels?", not "does it hold a paid plan".
+		//
+		// Every client uses this flag to pause connecting and to tear a live
+		// tunnel down. Free is the absence of a subscription and still connects,
+		// so a Free account has to read as true here - reporting the literal
+		// subscription state is what showed "your plan is inactive, connections
+		// are paused" to a perfectly valid user and disconnected them.
+		//
+		// What genuinely stops new tunnels is a spent monthly allowance, which is
+		// exactly what this now reports. Whether a *paid* plan is running, and
+		// until when, comes from /api/auth/me.
+		const subscriptionActive = user.status === "ACTIVE" && !quota.exceeded
 		const service = await serviceStatus()
 		const latest = current ?? await prisma.session.findFirst({
 			where: { userId: user.id, ...(device ? { deviceId: device.id } : {}) },
