@@ -652,7 +652,11 @@
     var A = window.GlukAuth;
     if (billing.loaded || !A || !A.public) return Promise.resolve();
     var version=epoch;
-    return D.request(A,'/api/billing/plans',null,true).then(function (json) {
+    /* Валюта считается по стране. Cloudflare стоит перед сайтом, но не перед
+       API, поэтому CF-IPCountry в этом запросе нет — отдаём свой часовой пояс
+       подсказкой, иначе страна неизвестна и цена падает в доллары. */
+    var tz=''; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { tz=''; }
+    return D.request(A,'/api/billing/plans'+(tz?'?tz='+encodeURIComponent(tz):''),null,true).then(function (json) {
       if(version!==epoch)return;
       billing.loaded = true;
       billing.enabled = !!(json && json.billingEnabled);

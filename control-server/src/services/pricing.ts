@@ -22,29 +22,21 @@ export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number]
 /** What a visitor in a country we have not priced separately pays. */
 export const DEFAULT_CURRENCY: SupportedCurrency = "USD"
 
-/**
- * What a visitor we could not place at all pays.
- *
- * This is deliberately not DEFAULT_CURRENCY. CF-IPCountry only exists on
- * requests that actually pass through Cloudflare, and the apps and the site
- * talk to the API on its own host - so "country unknown" is the normal case
- * here, not an exotic one. Kazakh visitors were being quoted $1.99 for Basic
- * because a browser that sends plain "ru" (no region) left the country empty
- * and the default was dollars. price.md is written in tenge, so the home
- * market is the honest fallback: a Kazakh user seeing 790 ₸ is right, and a
- * German user seeing tenge is at least a price we actually charge.
- */
-export const HOME_CURRENCY: SupportedCurrency = "KZT"
-
 export const DEFAULT_LOCALE = "en"
 
 // Only the markets we price separately need an entry; everything else is USD
 // and English, which is what "US and the rest of the world" means on the
-// pricing page. Neighbours that overwhelmingly read Russian get the Russian
-// site but still pay in dollars, because we do not hold their currency.
+// pricing page.
+//
+// Belarus and Kyrgyzstan are quoted in roubles instead of dollars: they share
+// a payment area with Russia, so a rouble price is one they can actually pay.
+// The other neighbours still open the Russian site (see RUSSIAN_SPEAKING) but
+// pay in dollars, because we hold no catalogue row in their currency.
 const COUNTRY_CURRENCY: Record<string, SupportedCurrency> = {
 	KZ: "KZT",
 	RU: "RUB",
+	BY: "RUB",
+	KG: "RUB",
 }
 
 const RUSSIAN_SPEAKING = new Set([
@@ -69,7 +61,95 @@ function headerValue(request: FastifyRequest, name: string): string {
 }
 
 /**
+ * IANA time zone -> country, for the markets where the price differs.
+ *
+ * Deliberately not a complete zone database: the job is to tell a visitor in
+ * Almaty from one in Frankfurt, so only the zones of the countries we price
+ * separately and their neighbours are listed. Anything unlisted stays unknown
+ * and is quoted in dollars.
+ */
+const TIMEZONE_COUNTRY: Record<string, string> = {
+	"Asia/Almaty": "KZ",
+	"Asia/Aqtau": "KZ",
+	"Asia/Aqtobe": "KZ",
+	"Asia/Atyrau": "KZ",
+	"Asia/Oral": "KZ",
+	"Asia/Qostanay": "KZ",
+	"Asia/Qyzylorda": "KZ",
+	// Legacy aliases still sent by older Android and Windows builds.
+	"Asia/Alma-Ata": "KZ",
+	"Asia/Kashgar": "KZ",
+	"Europe/Moscow": "RU",
+	"Europe/Kaliningrad": "RU",
+	"Europe/Samara": "RU",
+	"Europe/Saratov": "RU",
+	"Europe/Astrakhan": "RU",
+	"Europe/Volgograd": "RU",
+	"Europe/Kirov": "RU",
+	"Europe/Ulyanovsk": "RU",
+	"Asia/Yekaterinburg": "RU",
+	"Asia/Omsk": "RU",
+	"Asia/Novosibirsk": "RU",
+	"Asia/Barnaul": "RU",
+	"Asia/Tomsk": "RU",
+	"Asia/Novokuznetsk": "RU",
+	"Asia/Krasnoyarsk": "RU",
+	"Asia/Irkutsk": "RU",
+	"Asia/Chita": "RU",
+	"Asia/Yakutsk": "RU",
+	"Asia/Khandyga": "RU",
+	"Asia/Vladivostok": "RU",
+	"Asia/Ust-Nera": "RU",
+	"Asia/Magadan": "RU",
+	"Asia/Sakhalin": "RU",
+	"Asia/Srednekolymsk": "RU",
+	"Asia/Kamchatka": "RU",
+	"Asia/Anadyr": "RU",
+	"Europe/Minsk": "BY",
+	"Asia/Bishkek": "KG",
+	"Asia/Tashkent": "UZ",
+	"Asia/Samarkand": "UZ",
+	"Asia/Dushanbe": "TJ",
+	"Asia/Ashgabat": "TM",
+	"Asia/Baku": "AZ",
+	"Asia/Yerevan": "AM",
+	"Asia/Tbilisi": "GE",
+	"Europe/Kyiv": "UA",
+	"Europe/Kiev": "UA",
+	"Europe/Chisinau": "MD",
+}
+
+/** The IANA zone the client says it is in: `X-Client-Timezone` or `?tz=`. */
+function clientTimeZone(request: FastifyRequest): string {
+	const header = headerValue(request, "x-client-timezone")
+	if (header) return header.slice(0, 64)
+	const query = request.query as { tz?: unknown } | undefined
+	return typeof query?.tz === "string" ? query.tz.trim().slice(0, 64) : ""
+}
+
+/** Country for an IANA zone name, case-insensitively. "" when unlisted. */
+function countryForTimeZone(zone: string): string {
+	const name = zone.trim()
+	if (!name) return ""
+	const exact = TIMEZONE_COUNTRY[name]
+	if (exact) return exact
+	const lower = name.toLowerCase()
+	for (const [key, country] of Object.entries(TIMEZONE_COUNTRY)) {
+		if (key.toLowerCase() === lower) return country
+	}
+	return ""
+}
+
+/**
  * Two-letter country code, uppercased, or "" when nothing usable was sent.
+ *
+ * Tried in order: the Cloudflare edge header, the region of the first
+ * Accept-Language tag, then the client's own time zone. The last one is a
+ * self-reported hint, so it is only consulted when both better sources are
+ * silent - but it is the one that actually works here: Cloudflare fronts the
+ * site, not the API, so CF-IPCountry is absent on every direct API call, and a
+ * browser that asks for plain "ru" carries no region either. That combination
+ * is exactly how a visitor in Kazakhstan ended up being quoted $1.99.
  *
  * Cloudflare uses "XX" for a client it cannot place and "T1" for Tor, both of
  * which are worse than no answer: they would pin such a visitor to a market
@@ -86,7 +166,7 @@ export function resolveCountry(request: FastifyRequest): string {
 	const region = /[-_]([A-Za-z]{2})(?:$|[-_;])/.exec(firstTag)
 	if (region && region[1]) return region[1].toUpperCase()
 
-	return ""
+	return countryForTimeZone(clientTimeZone(request))
 }
 
 export type Market = {
@@ -96,24 +176,30 @@ export type Market = {
 	/** UI language to open with: "ru" or "en". */
 	locale: string
 	/** Where the country came from, for debugging a wrong price. */
-	source: "cloudflare" | "language" | "default"
+	source: "cloudflare" | "language" | "timezone" | "default"
 }
 
 /** Country, currency and language for one request. Never throws. */
 export function resolveMarket(request: FastifyRequest): Market {
 	const edge = headerValue(request, "cf-ipcountry").toUpperCase()
+	const edgeKnown = /^[A-Z]{2}$/.test(edge) && edge !== "XX" && edge !== "T1"
+	const firstTag = headerValue(request, "accept-language").split(",")[0] ?? ""
+	const languageKnown = /[-_]([A-Za-z]{2})(?:$|[-_;])/.test(firstTag)
 	const country = resolveCountry(request)
 	const source: Market["source"] = !country
 		? "default"
-		: /^[A-Z]{2}$/.test(edge) && edge !== "XX" && edge !== "T1"
+		: edgeKnown
 			? "cloudflare"
-			: "language"
+			: languageKnown
+				? "language"
+				: "timezone"
 
 	return {
 		country,
-		// Known country -> its currency, or dollars for a market we have not
-		// priced. Unknown country -> the home market, never dollars by accident.
-		currency: COUNTRY_CURRENCY[country] ?? (country ? DEFAULT_CURRENCY : HOME_CURRENCY),
+		// A country we price -> its currency. Anything else, including a visitor
+		// we could not place at all, is quoted in dollars: tenge for an unknown
+		// country would be a price most of the world cannot pay.
+		currency: COUNTRY_CURRENCY[country] ?? DEFAULT_CURRENCY,
 		locale: RUSSIAN_SPEAKING.has(country) ? "ru" : DEFAULT_LOCALE,
 		source,
 	}

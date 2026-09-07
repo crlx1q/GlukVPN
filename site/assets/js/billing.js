@@ -472,7 +472,11 @@
   function boot() {
     var A = window.GlukAuth;
     if (!A || !A.public) { disabledMode(null, null); return; }
-    A.public("/api/billing/plans").then(function (json) {
+    /* Часовой пояс — подсказка о стране: Cloudflare стоит перед сайтом, но не
+       перед API, поэтому CF-IPCountry здесь отсутствует и без подсказки
+       казахстанский посетитель получал цену в долларах. */
+    var tz = ""; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) { tz = ""; }
+    A.public("/api/billing/plans" + (tz ? "?tz=" + encodeURIComponent(tz) : "")).then(function (json) {
       var plans = json && Array.isArray(json.plans)
         ? json.plans.filter(function (p) { return p && p.code; })
         : [];

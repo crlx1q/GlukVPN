@@ -3,7 +3,6 @@ import type { FastifyRequest } from "fastify"
 
 import {
 	DEFAULT_CURRENCY,
-	HOME_CURRENCY,
 	normalizeCurrency,
 	resolveCountry,
 	resolveMarket,
@@ -51,6 +50,30 @@ describe("resolveCountry", () => {
 		expect(resolveCountry(request({ "accept-language": "ru,en-US;q=0.9" }))).toBe("")
 	})
 
+	// The API is not behind Cloudflare and a browser that asks for plain "ru"
+	// carries no region, so the zone the client reports is the only thing left
+	// to place a visitor with. It is checked last, after both better sources.
+	it("falls back to the time zone the client reports", () => {
+		expect(resolveCountry(request({ "x-client-timezone": "Asia/Almaty" }))).toBe("KZ")
+		expect(resolveCountry(request({ "x-client-timezone": "asia/qyzylorda" }))).toBe("KZ")
+		expect(resolveCountry(request({ "x-client-timezone": "Europe/Moscow" }))).toBe("RU")
+		expect(resolveCountry(request({ "x-client-timezone": "Europe/Berlin" }))).toBe("")
+	})
+
+	it("prefers a real signal over the reported zone", () => {
+		expect(
+			resolveCountry(request({ "cf-ipcountry": "DE", "x-client-timezone": "Asia/Almaty" })),
+		).toBe("DE")
+		expect(
+			resolveCountry(request({ "accept-language": "ru-RU", "x-client-timezone": "Asia/Almaty" })),
+		).toBe("RU")
+	})
+
+	it("reads the zone from the query string too", () => {
+		const withQuery = { headers: {}, query: { tz: "Asia/Almaty" } } as unknown as FastifyRequest
+		expect(resolveCountry(withQuery)).toBe("KZ")
+	})
+
 	it("returns nothing when there is nothing to go on", () => {
 		expect(resolveCountry(request({}))).toBe("")
 	})
@@ -87,28 +110,47 @@ describe("resolveMarket", () => {
 	// Currency follows the country, language follows the region: a neighbour we
 	// hold no currency for still reads Russian but pays in dollars.
 	it("separates language from currency", () => {
-		expect(resolveMarket(request({ "cf-ipcountry": "KG" }))).toMatchObject({
+		expect(resolveMarket(request({ "cf-ipcountry": "UZ" }))).toMatchObject({
 			currency: "USD",
 			locale: "ru",
 		})
 	})
 
+	// Belarus and Kyrgyzstan share a payment area with Russia, so they are
+	// quoted in a currency they can actually pay in rather than in dollars.
+	it("quotes the rouble area in roubles", () => {
+		expect(resolveMarket(request({ "cf-ipcountry": "BY" })).currency).toBe("RUB")
+		expect(resolveMarket(request({ "cf-ipcountry": "KG" })).currency).toBe("RUB")
+	})
+
 	it("reports where the country came from", () => {
 		expect(resolveMarket(request({ "accept-language": "ru-RU" })).source).toBe("language")
+		expect(resolveMarket(request({ "x-client-timezone": "Asia/Almaty" })).source).toBe(
+			"timezone",
+		)
 		expect(resolveMarket(request({})).source).toBe("default")
 	})
 
-	// The API is not behind Cloudflare, so an unplaceable visitor is routine.
-	// Dollars were the old fallback, which is how a Kazakh browser sending
-	// plain "ru" ended up being quoted $1.99 for Basic.
-	it("quotes the home market when the country is unknown", () => {
-		expect(resolveMarket(request({})).currency).toBe(HOME_CURRENCY)
+	// A visitor we cannot place pays in dollars, never in tenge: the home price
+	// is the wrong guess for most of the world. Kazakhstan is recognised by its
+	// time zone instead, which is what actually fixed the $1.99 quote.
+	it("quotes dollars when the country is unknown", () => {
+		expect(resolveMarket(request({})).currency).toBe(DEFAULT_CURRENCY)
 		expect(resolveMarket(request({ "accept-language": "ru,en-US;q=0.9" })).currency).toBe(
-			HOME_CURRENCY,
+			DEFAULT_CURRENCY,
 		)
-		expect(resolveMarket(request({ "cf-ipcountry": "XX" })).currency).toBe(HOME_CURRENCY)
-		// A country we know but have not priced still pays in dollars.
+		expect(resolveMarket(request({ "cf-ipcountry": "XX" })).currency).toBe(DEFAULT_CURRENCY)
 		expect(resolveMarket(request({ "cf-ipcountry": "DE" })).currency).toBe(DEFAULT_CURRENCY)
+	})
+
+	// The whole point of the zone fallback: a browser in Almaty that asks for
+	// plain "ru" must be quoted 790 ₸, not $1.99.
+	it("quotes tenge for a visitor placed by time zone alone", () => {
+		expect(
+			resolveMarket(
+				request({ "accept-language": "ru", "x-client-timezone": "Asia/Almaty" }),
+			),
+		).toMatchObject({ country: "KZ", currency: "KZT", locale: "ru", source: "timezone" })
 	})
 })
 
