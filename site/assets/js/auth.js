@@ -238,11 +238,32 @@
      не выбирает; для старых серверов выводим из кода тарифа. Free — это
      отсутствие подписки, поэтому и пустой план даёт серый Free. */
   var BADGE_LABELS = { free: "Free", basic: "Basic", pro: "Pro", beta: "\u03b2 Pro" };
+  /* Глиф — сеть: узел в центре и нити к соседним узлам. Free — одинокая точка,
+     Basic — одна нить, Pro — три уравновешенных узла, β Pro — та же сеть за
+     пунктирным контуром. Координаты те же, что в расширении и во Flutter. */
+  var BADGE_CORE = '<circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="12" r="1.15" fill="currentColor"/>';
+  var BADGE_SPOTS = [[15.25, 6.37], [15.25, 17.63], [5.5, 12]];
+  function badgeNodes(count, halo, dot) {
+    var spots = BADGE_SPOTS.slice(0, count), out = "";
+    spots.forEach(function (s) {
+      out += '<line x1="12" y1="12" x2="' + s[0] + '" y2="' + s[1] +
+        '" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity=".85"/>';
+    });
+    spots.forEach(function (s) {
+      out += '<circle cx="' + s[0] + '" cy="' + s[1] + '" r="' + halo +
+        '" fill="currentColor" fill-opacity=".18"/>';
+    });
+    spots.forEach(function (s) {
+      out += '<circle cx="' + s[0] + '" cy="' + s[1] + '" r="' + dot + '" fill="currentColor"/>';
+    });
+    return out;
+  }
   var BADGE_GLYPHS = {
-    free: '<circle cx="12" cy="12" r="6.6" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/>',
-    basic: '<path d="M12 3.4 5.4 6.5v4.7c0 4 2.8 7.4 6.6 8.4 3.8-1 6.6-4.4 6.6-8.4V6.5L12 3.4Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 12.1l2.2 2.2 4-4.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
-    pro: '<path d="M12 3l1.9 4.9L19 9.8l-5.1 1.9L12 17l-1.9-5.3L5 9.8l5.1-1.9L12 3Z" fill="currentColor"/><path d="M18.7 14.7l.6 1.8 1.8.6-1.8.6-.6 1.8-.6-1.8-1.8-.6 1.8-.6.6-1.8Z" fill="currentColor"/>',
-    beta: '<path d="M9.3 3h5.4M10.3 3v5.6l-4.9 8.7A2 2 0 0 0 7.1 20.3h9.8a2 2 0 0 0 1.7-3l-4.9-8.7V3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="15.4" r="1.6" fill="currentColor"/>'
+    free: BADGE_CORE,
+    basic: badgeNodes(1, 2.05, 1) + BADGE_CORE,
+    pro: badgeNodes(3, 1.9, 0.95) + BADGE_CORE,
+    beta: '<circle cx="12" cy="12" r="9.3" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="1.4 2" opacity=".5"/>' +
+      badgeNodes(3, 1.9, 0.95) + BADGE_CORE
   };
 
   function badgeToken(s) {
@@ -260,7 +281,8 @@
     var label = BADGE_LABELS[token];
     return '<span class="gl-badge gl-badge--' + token + (extra ? " " + extra : "") +
       '" title="' + esc(T("Тариф")) + ": " + esc(label) + '">' +
-      '<svg viewBox="0 0 24 24" aria-hidden="true">' + BADGE_GLYPHS[token] + "</svg>" +
+      '<span class="gl-badge__ic"><svg viewBox="0 0 24 24" aria-hidden="true">' +
+      BADGE_GLYPHS[token] + "</svg></span>" +
       "<span>" + esc(label) + "</span></span>";
   }
 

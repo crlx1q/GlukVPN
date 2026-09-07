@@ -1407,12 +1407,13 @@ body.signed-out .rail { opacity: 0.5; }
 
 /* Бейджик уровня подписки рядом с ником — те же цвета и тот же глиф,
    что на сайте, ПК и телефоне. */
-.prof-chip.plan-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 9px 4px 7px;font-size:11px;font-weight:700;letter-spacing:0;text-transform:none;box-shadow:none;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:var(--text-1)}
-.prof-chip.plan-badge svg{width:13px;height:13px;flex:0 0 13px}
-.prof-chip.plan-badge--free{color:#c3cbd8;border-color:rgba(154,164,178,.34);background:rgba(154,164,178,.13)}
-.prof-chip.plan-badge--basic{color:#8fb8ff;border-color:rgba(76,141,255,.4);background:rgba(76,141,255,.15)}
-.prof-chip.plan-badge--pro{color:#d6bcff;border-color:rgba(169,112,255,.44);background:rgba(169,112,255,.17)}
-.prof-chip.plan-badge--beta{color:#7ff0dd;border-color:rgba(22,224,192,.45);background:linear-gradient(135deg,rgba(22,224,192,.2),rgba(169,112,255,.22))}
+.prof-chip.plan-badge{position:relative;display:inline-flex;align-items:center;gap:6px;height:27px;border-radius:999px;padding:0 11px 0 8px;--gb-h:224;--gb-c:10%;--gb-l:74%;font-size:12px;font-weight:640;letter-spacing:0;text-transform:none;box-shadow:none;border:1px solid hsl(var(--gb-h) var(--gb-c) var(--gb-l)/.32);background:hsl(var(--gb-h) var(--gb-c) var(--gb-l)/.10);color:hsl(var(--gb-h) var(--gb-c) var(--gb-l))}
+.prof-chip.plan-badge::before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 1px 0 hsl(var(--gb-h) 100% 95%/.09);pointer-events:none}
+.prof-chip.plan-badge svg{width:16px;height:16px;flex:0 0 16px;display:block;overflow:visible}
+.prof-chip.plan-badge--free{--gb-h:224;--gb-c:10%;--gb-l:74%}
+.prof-chip.plan-badge--basic{--gb-h:215;--gb-c:90%;--gb-l:70%}
+.prof-chip.plan-badge--pro{--gb-h:266;--gb-c:84%;--gb-l:75%}
+.prof-chip.plan-badge--beta{--gb-h:172;--gb-c:70%;--gb-l:62%;border-color:hsl(266 60% 72%/.34);background:linear-gradient(120deg,hsl(172 70% 62%/.15),hsl(266 84% 75%/.16))}
 
 /* Глифы устройств. Спрайт подключён маской, а не фоном, поэтому глиф
    берёт currentColor и всегда в цвете темы, а не белое пятно. */

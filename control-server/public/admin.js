@@ -653,11 +653,50 @@ const BADGE_LABELS = { free: "Free", basic: "Basic", pro: "Pro", beta: "\u03b2 P
  * расширении. Free — не подписка, а её отсутствие, поэтому серый значок и
  * никакого срока.
  */
+const BADGE_SPOTS = [
+	["15.25", "6.37"],
+	["15.25", "17.63"],
+	["5.5", "12"],
+]
+
+/**
+ * Глиф бейджика: узел в центре и нити к соседним узлам — Free одинокая точка,
+ * Basic одна нить, Pro три уравновешенных узла, β Pro та же сеть за пунктирным
+ * контуром. Координаты те же, что в site/assets/js/auth.js, extension/ui/popup.js
+ * и flutter-client/lib/widgets/plan_badge.dart.
+ */
+function planBadgeSvg(kind) {
+	const ns = "http://www.w3.org/2000/svg"
+	const svg = document.createElementNS(ns, "svg")
+	svg.setAttribute("viewBox", "0 0 24 24")
+	svg.setAttribute("aria-hidden", "true")
+	const add = (tag, attrs) => {
+		const node = document.createElementNS(ns, tag)
+		for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, value)
+		svg.appendChild(node)
+	}
+	const count = kind === "free" ? 0 : kind === "basic" ? 1 : 3
+	const halo = kind === "basic" ? "2.05" : "1.9"
+	const dot = kind === "basic" ? "1" : "0.95"
+	const spots = BADGE_SPOTS.slice(0, count)
+	if (kind === "beta") {
+		add("circle", { cx: "12", cy: "12", r: "9.3", fill: "none", stroke: "currentColor", "stroke-width": "1", "stroke-dasharray": "1.4 2", opacity: "0.5" })
+	}
+	for (const [x, y] of spots) {
+		add("line", { x1: "12", y1: "12", x2: x, y2: y, stroke: "currentColor", "stroke-width": "1.3", "stroke-linecap": "round", opacity: "0.85" })
+	}
+	for (const [x, y] of spots) add("circle", { cx: x, cy: y, r: halo, fill: "currentColor", "fill-opacity": "0.18" })
+	for (const [x, y] of spots) add("circle", { cx: x, cy: y, r: dot, fill: "currentColor" })
+	add("circle", { cx: "12", cy: "12", r: "2.6", fill: "none", stroke: "currentColor", "stroke-width": "1.3" })
+	add("circle", { cx: "12", cy: "12", r: "1.15", fill: "currentColor" })
+	return svg
+}
+
 function planBadge(badge, label) {
 	const kind = BADGE_LABELS[badge] ? badge : "free"
 	const span = document.createElement("span")
 	span.className = `plan-badge plan-badge--${kind}`
-	span.appendChild(document.createElement("i"))
+	span.appendChild(planBadgeSvg(kind))
 	span.appendChild(document.createTextNode(label || BADGE_LABELS[kind]))
 	return span
 }

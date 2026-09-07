@@ -1451,50 +1451,68 @@ summary:focus-visible {
  */
 
 .plan-badge {
+	position: relative;
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
-	padding: 3px 9px 3px 7px;
-	border: 1px solid var(--stroke);
+	height: 27px;
+	padding: 0 11px 0 8px;
+	--gb-h: 224;
+	--gb-c: 10%;
+	--gb-l: 74%;
+	border: 1px solid hsl(var(--gb-h) var(--gb-c) var(--gb-l) / 0.32);
+	background: hsl(var(--gb-h) var(--gb-c) var(--gb-l) / 0.1);
+	color: hsl(var(--gb-h) var(--gb-c) var(--gb-l));
 	border-radius: 999px;
-	font-size: 11px;
-	font-weight: 600;
-	letter-spacing: 0.01em;
+	font-size: 12px;
+	font-weight: 640;
+	letter-spacing: 0;
 	white-space: nowrap;
-	line-height: 1.5;
+	line-height: 1;
 }
 
-.plan-badge > i {
-	width: 7px;
-	height: 7px;
-	border-radius: 50%;
-	background: currentColor;
+.plan-badge::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	box-shadow: inset 0 1px 0 hsl(var(--gb-h) 100% 95% / 0.09);
+	pointer-events: none;
+}
+
+.plan-badge > svg {
+	width: 16px;
+	height: 16px;
 	flex: none;
+	display: block;
+	overflow: visible;
 }
 
 .plan-badge--free {
-	color: #9aa4b2;
-	border-color: rgba(154, 164, 178, 0.35);
-	background: rgba(154, 164, 178, 0.12);
+	--gb-h: 224;
+	--gb-c: 10%;
+	--gb-l: 74%;
 }
 
 .plan-badge--basic {
-	color: #4c8dff;
-	border-color: rgba(76, 141, 255, 0.4);
-	background: rgba(76, 141, 255, 0.14);
+	--gb-h: 215;
+	--gb-c: 90%;
+	--gb-l: 70%;
 }
 
 .plan-badge--pro {
-	color: #a970ff;
-	border-color: rgba(169, 112, 255, 0.42);
-	background: rgba(169, 112, 255, 0.15);
+	--gb-h: 266;
+	--gb-c: 84%;
+	--gb-l: 75%;
 }
 
 /* β Pro — внутренний тариф, поэтому цвет намеренно «не из палитры». */
 .plan-badge--beta {
-	color: #16e0c0;
-	border-color: rgba(22, 224, 192, 0.45);
-	background: linear-gradient(135deg, rgba(22, 224, 192, 0.18), rgba(169, 112, 255, 0.18));
+	--gb-h: 172;
+	--gb-c: 70%;
+	--gb-l: 62%;
+	border-color: hsl(266 60% 72% / 0.34);
+	background: linear-gradient(120deg, hsl(172 70% 62% / 0.15), hsl(266 84% 75% / 0.16));
 }
 
 .sub-cell {

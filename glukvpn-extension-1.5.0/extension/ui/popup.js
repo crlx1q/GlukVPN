@@ -1073,23 +1073,40 @@ function isAdminUser() {
    отсутствие подписки — это Free. */
 const PLAN_BADGE_LABELS = { free: 'Free', basic: 'Basic', pro: 'Pro', beta: '\u03b2 Pro' }
 
-/** Те же контуры, что в site/assets/js/auth.js и во Flutter-версиях. */
+/* Глиф — сеть: узел в центре и нити к соседним узлам. Free — одинокая точка,
+   Basic — одна нить, Pro — три уравновешенных узла, β Pro — та же сеть за
+   пунктирным контуром. Координаты те же, что в site/assets/js/auth.js и во
+   Flutter (flutter-client/lib/widgets/plan_badge.dart). */
+const PLAN_BADGE_CORE = [
+	['circle', { cx: '12', cy: '12', r: '2.6', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3' }],
+	['circle', { cx: '12', cy: '12', r: '1.15', fill: 'currentColor' }],
+]
+
+const PLAN_BADGE_SPOTS = [
+	['15.25', '6.37'],
+	['15.25', '17.63'],
+	['5.5', '12'],
+]
+
+function planBadgeNodes(count, halo, dot) {
+	const spots = PLAN_BADGE_SPOTS.slice(0, count)
+	const parts = []
+	for (const [x, y] of spots) {
+		parts.push(['line', { x1: '12', y1: '12', x2: x, y2: y, stroke: 'currentColor', 'stroke-width': '1.3', 'stroke-linecap': 'round', opacity: '0.85' }])
+	}
+	for (const [x, y] of spots) parts.push(['circle', { cx: x, cy: y, r: halo, fill: 'currentColor', 'fill-opacity': '0.18' }])
+	for (const [x, y] of spots) parts.push(['circle', { cx: x, cy: y, r: dot, fill: 'currentColor' }])
+	return parts
+}
+
 const PLAN_BADGE_GLYPHS = {
-	free: [
-		['circle', { cx: '12', cy: '12', r: '6.6', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.9' }],
-		['circle', { cx: '12', cy: '12', r: '2.4', fill: 'currentColor' }],
-	],
-	basic: [
-		['path', { d: 'M12 3.4 5.4 6.5v4.7c0 4 2.8 7.4 6.6 8.4 3.8-1 6.6-4.4 6.6-8.4V6.5L12 3.4Z', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.7', 'stroke-linejoin': 'round' }],
-		['path', { d: 'M9 12.1l2.2 2.2 4-4.1', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }],
-	],
-	pro: [
-		['path', { d: 'M12 3l1.9 4.9L19 9.8l-5.1 1.9L12 17l-1.9-5.3L5 9.8l5.1-1.9L12 3Z', fill: 'currentColor' }],
-		['path', { d: 'M18.7 14.7l.6 1.8 1.8.6-1.8.6-.6 1.8-.6-1.8-1.8-.6 1.8-.6.6-1.8Z', fill: 'currentColor' }],
-	],
+	free: PLAN_BADGE_CORE,
+	basic: [...planBadgeNodes(1, '2.05', '1'), ...PLAN_BADGE_CORE],
+	pro: [...planBadgeNodes(3, '1.9', '0.95'), ...PLAN_BADGE_CORE],
 	beta: [
-		['path', { d: 'M9.3 3h5.4M10.3 3v5.6l-4.9 8.7A2 2 0 0 0 7.1 20.3h9.8a2 2 0 0 0 1.7-3l-4.9-8.7V3', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.7', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }],
-		['circle', { cx: '12', cy: '15.4', r: '1.6', fill: 'currentColor' }],
+		['circle', { cx: '12', cy: '12', r: '9.3', fill: 'none', stroke: 'currentColor', 'stroke-width': '1', 'stroke-dasharray': '1.4 2', opacity: '0.5' }],
+		...planBadgeNodes(3, '1.9', '0.95'),
+		...PLAN_BADGE_CORE,
 	],
 }
 

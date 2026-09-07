@@ -738,14 +738,18 @@
    в ПК-версии, на телефоне и в расширении: серый Free, синий Basic,
    фиолетовый Pro и бирюзово-фиолетовый β Pro — тариф внутренний, потому и
    цвет у него намеренно не из общего ряда. */
-.gl-badge{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px 0 7px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:var(--text-1);font-size:11.5px;font-weight:700;line-height:1;white-space:nowrap;vertical-align:middle;flex:none}
-.gl-badge svg{width:14px;height:14px;flex:none}
-.gl-badge--sm{height:21px;padding:0 8px 0 6px;font-size:10.5px}
-.gl-badge--sm svg{width:12px;height:12px}
-.gl-badge--free{color:#c3cbd8;border-color:rgba(154,164,178,.34);background:rgba(154,164,178,.13)}
-.gl-badge--basic{color:#8fb8ff;border-color:rgba(76,141,255,.4);background:rgba(76,141,255,.15)}
-.gl-badge--pro{color:#d6bcff;border-color:rgba(169,112,255,.44);background:rgba(169,112,255,.17)}
-.gl-badge--beta{color:#7ff0dd;border-color:rgba(22,224,192,.45);background:linear-gradient(135deg,rgba(22,224,192,.2),rgba(169,112,255,.22))}
+.gl-badge{position:relative;display:inline-flex;align-items:center;gap:6px;height:27px;padding:0 11px 0 8px;border-radius:999px;--gb-h:224;--gb-c:10%;--gb-l:74%;color:hsl(var(--gb-h) var(--gb-c) var(--gb-l));border:1px solid hsl(var(--gb-h) var(--gb-c) var(--gb-l)/.32);background:hsl(var(--gb-h) var(--gb-c) var(--gb-l)/.10);font-size:12px;font-weight:640;line-height:1;white-space:nowrap;vertical-align:middle;flex:none;user-select:none}
+.gl-badge::before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 1px 0 hsl(var(--gb-h) 100% 95%/.09);pointer-events:none}
+/* Иконка живёт в своём флекс-боксе фиксированного размера: так глиф садится
+   строго по центру бейджика, а не «на глаз» через line-height. */
+.gl-badge__ic{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex:none}
+.gl-badge svg{width:16px;height:16px;display:block;overflow:visible;flex:none}
+.gl-badge--sm{height:23px;padding:0 9px 0 7px;gap:5px;font-size:11px}
+.gl-badge--sm .gl-badge__ic,.gl-badge--sm svg{width:14px;height:14px}
+.gl-badge--free{--gb-h:224;--gb-c:10%;--gb-l:74%}
+.gl-badge--basic{--gb-h:215;--gb-c:90%;--gb-l:70%}
+.gl-badge--pro{--gb-h:266;--gb-c:84%;--gb-l:75%}
+.gl-badge--beta{--gb-h:172;--gb-c:70%;--gb-l:62%;border-color:hsl(266 60% 72%/.34);background:linear-gradient(120deg,hsl(172 70% 62%/.15),hsl(266 84% 75%/.16))}
 .acct__head .gl-badge{margin-left:auto}
 /* В узкой шапке имя и так обрезается — бейджик остаётся в меню. */
 @media (max-width:560px){.acct__chip .gl-badge{display:none}}

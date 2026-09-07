@@ -166,8 +166,9 @@
 /* Бейджик тарифа в кабинете — те же цвета, что в шапке сайта и в клиентах.
    Селектор с [data-badge] специфичнее общего правила выше, поэтому цвет
    тарифа побеждает независимо от порядка загрузки стилей. */
-.dashboard-page .dash-badge--plan[data-badge="free"]{color:#c3cbd8;border-color:rgba(154,164,178,.34);background:rgba(154,164,178,.13)}
-.dashboard-page .dash-badge--plan[data-badge="basic"]{color:#8fb8ff;border-color:rgba(76,141,255,.4);background:rgba(76,141,255,.15)}
-.dashboard-page .dash-badge--plan[data-badge="pro"]{color:#d6bcff;border-color:rgba(169,112,255,.44);background:rgba(169,112,255,.17)}
-.dashboard-page .dash-badge--plan[data-badge="beta"]{color:#7ff0dd;border-color:rgba(22,224,192,.45);background:linear-gradient(135deg,rgba(22,224,192,.2),rgba(169,112,255,.22))}
+.dashboard-page .dash-badge--plan{--gb-h:224;--gb-c:10%;--gb-l:74%;color:hsl(var(--gb-h) var(--gb-c) var(--gb-l));border-color:hsl(var(--gb-h) var(--gb-c) var(--gb-l)/.32);background:hsl(var(--gb-h) var(--gb-c) var(--gb-l)/.10)}
+.dashboard-page .dash-badge--plan[data-badge="free"]{--gb-h:224;--gb-c:10%;--gb-l:74%}
+.dashboard-page .dash-badge--plan[data-badge="basic"]{--gb-h:215;--gb-c:90%;--gb-l:70%}
+.dashboard-page .dash-badge--plan[data-badge="pro"]{--gb-h:266;--gb-c:84%;--gb-l:75%}
+.dashboard-page .dash-badge--plan[data-badge="beta"]{--gb-h:172;--gb-c:70%;--gb-l:62%;border-color:hsl(266 60% 72%/.34);background:linear-gradient(120deg,hsl(172 70% 62%/.15),hsl(266 84% 75%/.16))}
 .dashboard-page .dash-badge--plan svg{opacity:1}
