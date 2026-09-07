@@ -65,7 +65,14 @@ $NativeDir    = Join-Path $RepoRoot 'native\glukvpn-tunnel-service'
 $DistDir      = Join-Path $RepoRoot 'dist'
 $NativeBuild  = Join-Path $NativeDir 'build'
 
-$AppVersion = '1.3.0'
+$FlutterPubspec = Join-Path $FlutterDir 'pubspec.yaml'
+$AppVersion = '1.5.0'
+if (Test-Path $FlutterPubspec) {
+    $verMatch = Select-String -Path $FlutterPubspec -Pattern '^\s*version:\s*([^\+\s]+)'
+    if ($verMatch -and $verMatch.Matches.Count -gt 0) {
+        $AppVersion = $verMatch.Matches[0].Groups[1].Value.Trim()
+    }
+}
 
 function Write-Step($message) {
     Write-Host ""
@@ -352,6 +359,9 @@ if ($Installer) {
     $setup = Join-Path $DistDir "GlukVPN-Setup-$AppVersion.exe"
     Invoke-Sign $setup
     Write-Note "Installer: $setup"
+    if ($AppVersion -ne '1.3.0') {
+        Copy-Item $setup (Join-Path $DistDir "GlukVPN-Setup-1.3.0.exe") -Force
+    }
 }
 
 # ---------------------------------------------------------------------------
