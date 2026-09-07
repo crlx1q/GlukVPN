@@ -345,6 +345,8 @@ class VpnController extends ChangeNotifier {
         _serviceMaintenance = true;
         _notice = _russian ? 'Идут технические работы. Подключение возобновится автоматически.' : 'Maintenance is in progress. The connection will resume automatically.';
         _scheduleMaintenanceRetry(error.retryAfterSec ?? (error.details?['retryAfterSec'] as num?)?.toInt() ?? 30);
+      } else if (error.isTrafficLimit) {
+        _error = _trafficLimitMessage(error.message);
       } else {
         _error = error.message;
       }
@@ -627,6 +629,29 @@ class VpnController extends ChangeNotifier {
       }
     }
     _safeNotify();
+  }
+
+  /// Отказ по месячному лимиту — самая частая ошибка из видимых
+  /// пользователю, и она обязана звучать на языке интерфейса, а не
+  /// английской строкой с сервера, как было на телефоне.
+  ///
+  /// Сервер присылает её текстом вида «Monthly traffic limit reached
+  /// (5 GB). The allowance resets 2026-09-18T15:32:11.604Z.», машинного кода
+  /// у неё пока нет, поэтому цифры берём из самого текста. Лимит и
+  /// срок считает сервер — клиент только пересказывает.
+  String _trafficLimitMessage(String raw) {
+    if (!_russian) return raw;
+    final RegExpMatch? gb = RegExp(r'\(([\d.,]+)\s*GB\)').firstMatch(raw);
+    final RegExpMatch? iso =
+        RegExp(r'\d{4}-\d{2}-\d{2}T[\d:.]+Z?').firstMatch(raw);
+    final DateTime? resets =
+        iso == null ? null : DateTime.tryParse(iso.group(0)!)?.toLocal();
+    final String limit = gb == null ? '' : ' (${gb.group(1)} ГБ)';
+    final String when = resets == null
+        ? ''
+        : ' Лимит обновится ${resets.day.toString().padLeft(2, '0')}.'
+            '${resets.month.toString().padLeft(2, '0')}.${resets.year}.';
+    return 'Месячный лимит трафика израсходован$limit.$when';
   }
 
   /// Слова для сессии, которую закрыл СЕРВЕР, а не пользователь.

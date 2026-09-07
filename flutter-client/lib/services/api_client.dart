@@ -59,6 +59,13 @@ class ApiException implements Exception {
   bool get isDeviceRevoked =>
       isForbidden && (code == 'device_revoked' || message.toLowerCase().contains('device'));
 
+  /// Месячный лимит тарифа исчерпан: новый туннель не поднимется до
+  /// сброса окна. Машинного кода у этого отказа пока нет, поэтому
+  /// сверяем текст — точно так же, как это делает расширение.
+  bool get isTrafficLimit =>
+      isForbidden &&
+      (code == 'traffic_limit' || message.toLowerCase().contains('traffic limit'));
+
   @override
   String toString() => message;
 }
