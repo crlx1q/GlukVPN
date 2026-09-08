@@ -58,6 +58,10 @@ class VpnController extends ChangeNotifier {
   /// мгновенный реконнект выглядел бы как борьба с админом.
   DateTime? _autoReconnectAfter;
 
+  /// Авто-выбор сервера, как на ПК: на Free он единственно возможный,
+  /// на платном тарифе его можно выключить, выбрав узел руками.
+  bool _autoSelection = true;
+
   List<VpnNodeInfo> _nodes = const <VpnNodeInfo>[];
   VpnNodeInfo? _selectedNode;
   VpnUiState _state = VpnUiState.disconnected;
@@ -90,6 +94,22 @@ class VpnController extends ChangeNotifier {
   ApiClient get api => _api;
   VpnService get vpnService => _vpn;
   List<VpnNodeInfo> get nodes => _nodes;
+
+  /// Free выбирает сервер только автоматически — тот же замок, что на ПК.
+  bool get manualSelectionLocked => !manualSelectionAllowed(_auth.subscription);
+
+  /// Включён ли авто-выбор. На закрытом тарифе он всегда включён.
+  bool get autoSelectionEnabled => _autoSelection || manualSelectionLocked;
+
+  /// Вернуться к авто-выбору и сразу пересчитать лучший узел.
+  void enableAutoSelection() {
+    _autoSelection = true;
+    final VpnNodeInfo? best = pickBestNode(_nodes).node ??
+        _firstOrNull(_nodes.where((VpnNodeInfo n) => n.connectable));
+    if (best != null) _selectedNode = best;
+    _error = null;
+    _safeNotify();
+  }
   VpnNodeInfo? get selectedNode => _selectedNode;
   VpnUiState get state => _state;
   TunnelStage get tunnelStage => _tunnelStage;
@@ -229,7 +249,8 @@ class VpnController extends ChangeNotifier {
       // an idle one. It now scores exactly like Windows and the browser
       // extension - latency, then current load, then spare capacity - through
       // the shared selector.
-      final String? currentId = _selectedNode?.id;
+      // При авто-выборе не цепляемся за прежний узел: лучший пересчитывается.
+      final String? currentId = autoSelectionEnabled ? null : _selectedNode?.id;
       VpnNodeInfo? next;
       if (currentId != null) {
         next = _firstOrNull(
@@ -249,11 +270,21 @@ class VpnController extends ChangeNotifier {
   }
 
   void selectNode(VpnNodeInfo node) {
-    if (_state != VpnUiState.disconnected) {
-      _notice = 'Disconnect first to switch server.';
+    if (manualSelectionLocked) {
+      _notice = _russian
+          ? 'Ручной выбор доступен на платном тарифе.'
+          : 'Manual selection is available on a paid plan.';
       _safeNotify();
       return;
     }
+    if (_state != VpnUiState.disconnected) {
+      _notice = _russian
+          ? 'Сначала отключитесь, чтобы сменить сервер.'
+          : 'Disconnect first to switch server.';
+      _safeNotify();
+      return;
+    }
+    _autoSelection = false;
     _selectedNode = node;
     _error = null;
     _safeNotify();

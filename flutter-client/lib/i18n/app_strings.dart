@@ -226,6 +226,9 @@ class AppStrings {
 		required this.planInactiveNotice,
 		// --- servers ---
 		required this.servers,
+		required this.autoBestServer,
+		required this.autoDescription,
+		required this.manualLocked,
 		required this.forYou,
 		required this.otherServers,
 		required this.offline,
@@ -497,6 +500,10 @@ class AppStrings {
 
 	// --- servers ---
 	final String servers;
+	/// «Авто · Лучший сервер» и замок ручного выбора — как на ПК.
+	final String autoBestServer;
+	final String autoDescription;
+	final String manualLocked;
 	final String forYou;
 	final String otherServers;
 	final String offline;
@@ -929,6 +936,9 @@ class AppStrings {
 		planInactiveNotice:
 				'Your plan is inactive, so new connections are paused.',
 		servers: 'Servers',
+		autoBestServer: 'Auto · Best server',
+		autoDescription: 'Picks the fastest available server for you',
+		manualLocked: 'Manual selection is available on a paid plan',
 		forYou: 'For You',
 		otherServers: 'Other Servers',
 		offline: 'Offline',
@@ -1220,6 +1230,9 @@ class AppStrings {
 		planInactiveNotice:
 				'Подписка не активна, поэтому новые подключения приостановлены.',
 		servers: 'Серверы',
+		autoBestServer: 'Авто · Лучший сервер',
+		autoDescription: 'Сами подберём самый быстрый доступный сервер',
+		manualLocked: 'Ручной выбор доступен на платном тарифе',
 		forYou: 'Для вас',
 		otherServers: 'Другие серверы',
 		offline: 'Офлайн',

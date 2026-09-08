@@ -164,6 +164,21 @@ class _ServersScreenState extends State<ServersScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(24, 8, 24, 108),
                 children: <Widget>[
+                  // Авто-выбор — первым, как в версии для ПК.
+                  _AutoTile(
+                    strings: s,
+                    selected: vpn.autoSelectionEnabled,
+                    resolved: vpn.selectedNode,
+                    onTap: vpn.enableAutoSelection,
+                  ),
+                  const SizedBox(height: 12),
+                  if (vpn.manualSelectionLocked) ...<Widget>[
+                    InlineNotice(
+                      message: s.manualLocked,
+                      tone: GlukColors.violetLight,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   // First load: three rows in the shape of a server row, so
                   // the list arrives into a layout that already exists instead
                   // of replacing a spinner in the middle of nowhere.
@@ -192,8 +207,11 @@ class _ServersScreenState extends State<ServersScreen> {
                         child: _ServerTile(
                           node: node,
                           sample: _samples[node.id],
-                          selected: vpn.selectedNode?.id == node.id,
-                          onTap: () => _select(vpn, node),
+                          selected: !vpn.autoSelectionEnabled &&
+                              vpn.selectedNode?.id == node.id,
+                          onTap: vpn.manualSelectionLocked
+                              ? null
+                              : () => _select(vpn, node),
                         ),
                       ),
                   ],
@@ -207,7 +225,8 @@ class _ServersScreenState extends State<ServersScreen> {
                         child: _ServerTile(
                           node: node,
                           sample: _samples[node.id],
-                          selected: vpn.selectedNode?.id == node.id,
+                          selected: !vpn.autoSelectionEnabled &&
+                              vpn.selectedNode?.id == node.id,
                           onTap: null,
                         ),
                       ),
@@ -439,6 +458,78 @@ class _Radio extends StatelessWidget {
       child: selected
           ? const Icon(Icons.check_rounded, size: 15, color: GlukColors.bg)
           : null,
+    );
+  }
+}
+
+/// «Авто · Лучший сервер» — та же плитка, что в версии для ПК: молния,
+/// название режима и подсказка с тем узлом, который выбран сейчас.
+///
+/// На Free это единственный способ выбора, поэтому плитка всегда активна:
+/// раньше телефон молча подставлял узел и не объяснял, почему ручной
+/// выбор ничего не меняет.
+class _AutoTile extends StatelessWidget {
+  const _AutoTile({
+    required this.strings,
+    required this.selected,
+    required this.onTap,
+    this.resolved,
+  });
+
+  final AppStrings strings;
+  final bool selected;
+  final VoidCallback onTap;
+  final VpnNodeInfo? resolved;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme text = Theme.of(context).textTheme;
+    final VpnNodeInfo? node = resolved;
+    final String subtitle = node == null
+        ? strings.autoDescription
+        : '${strings.autoDescription}  \u00b7  '
+            '${formatNodeLocation(city: node.city, countryCode: node.countryCode, countryName: node.country, region: node.region, russian: strings.isRussian)}';
+
+    return GlassPanel(
+      radius: 999,
+      padding: const EdgeInsets.fromLTRB(10, 9, 12, 9),
+      onTap: onTap,
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: GlukSizes.flagCircle,
+            height: GlukSizes.flagCircle,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: GlukGradients.arrow,
+            ),
+            child: const Icon(
+              Icons.bolt_rounded,
+              size: 15,
+              color: GlukColors.bg,
+            ),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(strings.autoBestServer, style: text.titleMedium),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: text.bodySmall?.copyWith(fontSize: 10.5),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          _Radio(selected: selected, enabled: true),
+        ],
+      ),
     );
   }
 }
