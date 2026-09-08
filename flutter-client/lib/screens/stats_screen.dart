@@ -17,7 +17,12 @@ import '../widgets/usage_stats.dart';
 /// только на Windows. Рисует его тот же [UsageStatsView], что и на ПК,
 /// поэтому площадки не могут разойтись по виду.
 class StatsScreen extends StatefulWidget {
-  const StatsScreen({super.key});
+  const StatsScreen({super.key, this.embedded = false});
+
+  /// В режиме вкладки экран живёт внутри общей оболочки: свой
+  /// AppBar и непрозрачный фон там лишние (фон рисует PageBackground),
+  /// а снизу нужно место под плавающий навбар.
+  final bool embedded;
 
   @override
   State<StatsScreen> createState() => _StatsScreenState();
@@ -111,11 +116,13 @@ class _StatsScreenState extends State<StatsScreen> {
             russian: s.isRussian,
           );
     return Scaffold(
-      backgroundColor: GlukColors.pageBg,
-      appBar: AppBar(
-        title: Text(s.isRussian ? 'Статистика' : 'Statistics'),
-        backgroundColor: Colors.transparent,
-      ),
+      backgroundColor: widget.embedded ? Colors.transparent : GlukColors.pageBg,
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: Text(s.isRussian ? 'Статистика' : 'Statistics'),
+              backgroundColor: Colors.transparent,
+            ),
       body: UsageStatsView(
         title: s.isRussian ? 'Статистика использования' : 'Usage statistics',
         period: _period,
@@ -124,7 +131,16 @@ class _StatsScreenState extends State<StatsScreen> {
         error: _error,
         russian: s.isRussian,
         serverLabel: server,
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        padding: widget.embedded
+            // Без AppBar верх ушёл бы под статус-бар, а низ — под
+            // навбар, потому отступы считаем от вырезов системы.
+            ? EdgeInsets.fromLTRB(
+                16,
+                MediaQuery.of(context).padding.top + 12,
+                16,
+                96,
+              )
+            : const EdgeInsets.fromLTRB(16, 4, 16, 24),
         onReload: _reload,
         onPeriod: (AnalyticsPeriod value) {
           if (_period == value) return;

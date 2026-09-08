@@ -2914,6 +2914,35 @@ function statsNode(tag, className, text) {
 	return el
 }
 
+/* Кружок лимита — тот же значок, что во Flutter: дуга по кругу вместо
+   полоски. Собирается через createElementNS: innerHTML в MV3 закрыт CSP.
+   Процент берётся с сервера (quota.usedPercent), клиент его не считает. */
+function statsRing(percent) {
+	const NS = 'http://www.w3.org/2000/svg'
+	const svg = document.createElementNS(NS, 'svg')
+	svg.setAttribute('viewBox', '0 0 40 40')
+	svg.setAttribute('class', 'stats-quota__ring')
+	svg.setAttribute('aria-hidden', 'true')
+	const radius = 16.4
+	const length = 2 * Math.PI * radius
+	let share = Math.max(0, Math.min(100, Number(percent) || 0)) / 100
+	// Начатый расход не должен выглядеть нулёвым: оставляем точку.
+	if (share > 0 && share < 0.02) share = 0.02
+	for (const kind of ['trk', 'val']) {
+		const ring = document.createElementNS(NS, 'circle')
+		ring.setAttribute('class', kind)
+		ring.setAttribute('cx', '20')
+		ring.setAttribute('cy', '20')
+		ring.setAttribute('r', String(radius))
+		if (kind === 'val') {
+			ring.setAttribute('stroke-dasharray', String(length))
+			ring.setAttribute('stroke-dashoffset', String(length * (1 - share)))
+		}
+		svg.appendChild(ring)
+	}
+	return svg
+}
+
 function statsBytes(value) {
 	const n = Number(value)
 	if (!Number.isFinite(n) || n < 0) return '—'
@@ -2993,8 +3022,16 @@ function renderStats() {
 	if (quota && quota.unlimited !== true && Number(quota.limitBytes) > 0) {
 		frag.appendChild(statsNode('h3', 'stats-h', ru ? 'Лимит тарифа' : 'Plan allowance'))
 		const card = statsNode('div', `stats-budget stats-quota${quota.exceeded ? ' is-over' : ''}`)
-		card.appendChild(statsNode('b', '', `${statsBytes(quota.usedBytes)} ${ru ? 'из' : 'of'} ${statsBytes(quota.limitBytes)}`))
-		card.appendChild(statsNode('span', '', `${(Number(quota.usedPercent) || 0).toFixed(1)}%`))
+		// Шапка карточки один в один как во Flutter: кружок, название
+		// лимита, расход и процент.
+		const head = statsNode('div', 'stats-quota__head')
+		head.appendChild(statsRing(quota.usedPercent))
+		const headText = statsNode('div', 'stats-quota__txt')
+		headText.appendChild(statsNode('span', 'stats-quota__k', ru ? 'Лимит тарифа' : 'Plan allowance'))
+		headText.appendChild(statsNode('b', '', `${statsBytes(quota.usedBytes)} ${ru ? 'из' : 'of'} ${statsBytes(quota.limitBytes)}`))
+		head.appendChild(headText)
+		head.appendChild(statsNode('span', '', `${(Number(quota.usedPercent) || 0).toFixed(1)}%`))
+		card.appendChild(head)
 		const track = statsNode('span', 'stats-share is-quota')
 		const fill = statsNode('i', '')
 		fill.style.width = `${Math.max(2, Math.min(100, Number(quota.usedPercent) || 0))}%`

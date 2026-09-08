@@ -20,7 +20,6 @@ import '../widgets/plan_badge.dart';
 import 'account_screen.dart';
 import 'devices_screen.dart';
 import 'diagnostics_screen.dart';
-import 'stats_screen.dart';
 
 /// Account, channel and diagnostics.
 ///
@@ -142,21 +141,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          // ПУНКТ 7: статистика теперь есть и на телефоне, а не только
-          // на ПК. Сам экран рисует общий UsageStatsView.
-          _ActionTile(
-            icon: Icons.insights_rounded,
-            title: s.isRussian ? 'Статистика' : 'Statistics',
-            subtitle: s.isRussian
-                ? 'Трафик по часам и дням, по устройствам и сайтам'
-                : 'Traffic by hour and day, by device and site',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (BuildContext context) => const StatsScreen(),
-              ),
-            ),
-          ),
+          // Статистика переехала из настроек в нижнее меню: туда
+          // заглядывают чаще, чем в остальные пункты настроек.
           const SizedBox(height: 8),
           _ActionTile(
             icon: motion.reduceMotion

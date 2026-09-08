@@ -7,6 +7,7 @@ import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/servers_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/stats_screen.dart';
 import 'services/connectivity_service.dart';
 import 'services/update_checker.dart';
 import 'state/auth_controller.dart';
@@ -449,9 +450,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
           children: <Widget>[
             HomeScreen(
               onOpenServers: () => _select(1),
-              onOpenProfile: () => _select(2),
+              onOpenProfile: () => _select(3),
             ),
             ServersScreen(onDone: () => _select(0)),
+            // Статистика была закопана в настройках, хотя смотрят её
+            // чаще всего остального в них. Теперь это отдельная вкладка
+            // нижнего меню — как пункт в боковом меню ПК-версии.
+            const StatsScreen(embedded: true),
             const SettingsScreen(),
           ],
         )),
@@ -468,6 +473,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
               icon: Icons.public_outlined,
               activeIcon: Icons.public,
               label: s.servers,
+            ),
+            GlukNavItem(
+              icon: Icons.insights_outlined,
+              activeIcon: Icons.insights_rounded,
+              label: s.isRussian ? 'Статистика' : 'Stats',
             ),
             GlukNavItem(
               icon: Icons.settings_outlined,

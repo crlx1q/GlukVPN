@@ -92,6 +92,11 @@ class GlukNavBar extends StatelessWidget {
                             const SizedBox(height: 4),
                             Text(
                               item.label,
+                              // Четырёх пунктов достаточно, чтобы длинное
+                              // слово вроде «Статистика» упёрлось в соседа.
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
                               style: text.bodySmall?.copyWith(
                                 fontSize: 9.5,
                                 fontWeight: FontWeight.w600,

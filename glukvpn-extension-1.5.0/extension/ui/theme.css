@@ -1540,6 +1540,20 @@ button.account-device-more:hover{background:rgba(139,92,246,.18)}
 .stats-quota.is-over{background:rgba(248,113,113,.09);border-color:rgba(248,113,113,.30)}
 .stats-quota.is-over span{color:#fca5a5}
 .stats-quota.is-over .stats-share.is-quota i{background:linear-gradient(90deg,#f59e0b,#f87171)}
+/* Кружок лимита — тот же, что во Flutter: дуга по кругу слева,
+   название и цифры справа. Раньше карточка начиналась сразу с цифр
+   и прижималась к переключателю периода — оттуда и ощущение, что
+   пробела не хватает. */
+#stats-body > .stats-h:first-child{margin-top:14px}
+.stats-quota{gap:7px;padding:13px}
+.stats-quota__head{display:flex;align-items:center;gap:10px}
+.stats-quota__ring{flex:0 0 34px;width:34px;height:34px;display:block}
+.stats-quota__ring circle{fill:none;stroke-linecap:round}
+.stats-quota__ring .trk{stroke:rgba(255,255,255,.10);stroke-width:3.4}
+.stats-quota__ring .val{stroke:#3ddc97;stroke-width:3.4;transform:rotate(-90deg);transform-origin:50% 50%;transition:stroke-dashoffset .42s cubic-bezier(.22,1,.36,1)}
+.stats-quota.is-over .stats-quota__ring .val{stroke:#f87171}
+.stats-quota__txt{min-width:0;flex:1;display:flex;flex-direction:column;gap:1px}
+.stats-quota__k{font-size:9.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#5c5770}
 .stats-skeleton{height:170px;border-radius:16px;background:linear-gradient(120deg,rgba(139,92,246,.14),rgba(139,92,246,.04),rgba(139,92,246,.12))}
 
 /* --------------------------------------------- device detail actions ---
