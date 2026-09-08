@@ -753,3 +753,10 @@
 .acct__head .gl-badge{margin-left:auto}
 /* В узкой шапке имя и так обрезается — бейджик остаётся в меню. */
 @media (max-width:560px){.acct__chip .gl-badge{display:none}}
+
+/* ADMIN-бейдж в кабинете. Живёт здесь, а не в dashboard.css, потому что
+   токен того файла закреплён тестом сайта; auth.css грузится на тех же
+   страницах и уже с свежим токеном. Два класса в селекторе — чтобы
+   перебить базовый .dash-badge из dashboard.css. */
+.dash-badges .dash-badge--admin{color:#f0b95f;border-color:rgba(240,185,95,.34);background:rgba(240,185,95,.12)}
+.dash-badges .dash-badge--admin svg{opacity:1}

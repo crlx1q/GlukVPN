@@ -1585,6 +1585,10 @@ function renderProfile() {
 		text.textContent = PLAN_BADGE_LABELS[badge]
 		chip.replaceChildren(planBadgeSvg(badge), text)
 	}
+	// Роль показываем одинаково на всех площадках: ADMIN был только в
+	// ПК-версии. Флаг считает сервер, клиент его только отрисовывает.
+	const role = $('prof-role')
+	if (role) role.hidden = !isAdminUser()
 	set('prof-status', label)
 	set('prof-plan', displayPlan(sub))
 	const until = sub?.expiresAt ? new Date(sub.expiresAt) : null

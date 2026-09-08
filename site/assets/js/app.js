@@ -587,6 +587,9 @@
     setClass("status-badge", "dash-badge--ok", ustatus === "ACTIVE");
     setClass("status-badge", "dash-badge--warn", !!ustatus && ustatus !== "ACTIVE");
     show('[data-d="status-badge"]', !!ustatus && ustatus!=='ACTIVE');
+    /* Роль показываем одинаково на всех площадках: ADMIN есть в ПК-версии,
+       на телефоне и в расширении, а в кабинете его не было. */
+    show('[data-d="admin-badge"]', !!u.isAdmin);
 
     set("sec-email", esc(u.email || "\u2014"));
     set("sec-verified", esc(u.emailVerified ? T("Подтверждена") : T("Не подтверждена")));

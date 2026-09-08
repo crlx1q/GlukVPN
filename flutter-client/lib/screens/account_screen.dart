@@ -128,9 +128,20 @@ class _AccountScreenState extends State<AccountScreen> {
                   value: user?.username ?? '\u2014',
                   // Бейджик уровня подписки рядом с ником — такой же, как на
                   // сайте, ПК и в расширении: Free / Basic / Pro / β Pro.
-                  trailing: PlanBadge(
-                    subscription: auth.subscription,
-                    compact: true,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      PlanBadge(
+                        subscription: auth.subscription,
+                        compact: true,
+                      ),
+                      // Такой же ADMIN, как в ПК-версии, на сайте и в
+                      // расширении: роль видна одинаково везде.
+                      if (user?.isAdmin ?? false) ...<Widget>[
+                        const SizedBox(width: 6),
+                        TonePill(label: 'ADMIN', tone: GlukColors.amber),
+                      ],
+                    ],
                   ),
                 ),
                 _Row(

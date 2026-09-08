@@ -678,13 +678,44 @@ class _DeviceSegments extends StatelessWidget {
         border: Border.all(color: DesktopTokens.hairline),
       ),
       child: Row(
-        children: <Widget>[
-          _seg(_DeviceFilter.all, ru ? 'Все' : 'All', allCount),
-          _seg(_DeviceFilter.active, ru ? 'Активные' : 'Active', activeCount),
-          // ПУНКТ 11: сегмент «Вышли» убран. При выходе устройство
-          // удаляется из списка совсем, так что фильтр всегда пустой и
-          // только путает. Так же убрано на телефоне и в расширении.
-        ],
+        // Пока ни одно устройство не отвалилось, «Все» и «Активные» — это
+        // один и тот же список, и переключатель из двух одинаковых
+        // вкладок только сбивает с толку. Тогда остаётся одна строка
+        // со счётчиком, а вкладки возвращаются, как только есть что
+        // разделять.
+        //
+        // Сегмент «Вышли» убран раньше: при выходе устройство пропадает
+        // из списка совсем. Так же сделано на телефоне и в расширении.
+        children: allCount == activeCount
+            ? <Widget>[_count(ru ? 'Активные' : 'Active', activeCount)]
+            : <Widget>[
+                _seg(_DeviceFilter.all, ru ? 'Все' : 'All', allCount),
+                _seg(
+                  _DeviceFilter.active,
+                  ru ? 'Активные' : 'Active',
+                  activeCount,
+                ),
+              ],
+      ),
+    );
+  }
+
+  /// Некликабельная строка вместо двух одинаковых вкладок.
+  Widget _count(String label, int count) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Text(
+          '$label · $count',
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: GlukColors.text2,
+            fontSize: 11.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
     );
   }

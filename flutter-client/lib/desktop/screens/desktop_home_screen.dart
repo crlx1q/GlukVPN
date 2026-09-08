@@ -11,6 +11,7 @@ import '../../state/account_insights_controller.dart';
 import '../../theme/tokens.dart';
 import '../../utils/format.dart';
 import '../../widgets/active_account_map.dart';
+import '../../widgets/plan_badge.dart';
 import '../../utils/geo.dart';
 import '../i18n/desktop_strings.dart';
 import '../logic/connection_phase.dart';
@@ -361,6 +362,18 @@ class _MapCard extends StatelessWidget {
                     forceFlat: flatMap,
                   );
                 },
+              ),
+            ),
+
+            // Бейджик тарифа в углу карточки — такой же, как на сайте,
+            // телефоне и в расширении. На ПК он был только в аккаунте,
+            // хотя главный экран — единственное, что видно постоянно.
+            Positioned(
+              top: 18,
+              left: 20,
+              child: PlanBadge(
+                subscription: widget.auth.subscription,
+                compact: true,
               ),
             ),
 
