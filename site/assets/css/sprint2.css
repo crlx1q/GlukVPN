@@ -31,3 +31,25 @@
 .s2-quota.is-over .s2-quotabar i{background:linear-gradient(90deg,#e5a458,#e56458)}
 .s2-quota.is-over p{color:#ffc9c9}
 @media(prefers-reduced-motion:reduce){.s2-quotabar i{transition:none}}
+
+/* ==========================================================================
+   ФОТО 5: аналитика — итоги слева, две волны справа. Частокол столбиков
+   на неделе и месяце был нечитаем, поэтому график стал площадным.
+   ========================================================================== */
+.s2-analytics .s2-graph{display:grid;grid-template-columns:minmax(150px,200px) minmax(0,1fr);gap:14px;align-items:start}
+.s2-analytics .s2-graph .s2-total{display:grid;grid-template-columns:1fr;gap:8px}
+.s2-analytics .s2-plot{min-width:0}
+.s2-analytics .s2-wave{margin:0;padding:12px 12px 8px;border:1px solid var(--stroke-soft);border-radius:14px;background:linear-gradient(180deg,rgba(94,159,232,.06),transparent)}
+.s2-analytics .s2-wave svg{display:block;width:100%;height:200px}
+.s2-analytics .s2-grid{stroke:rgba(255,255,255,.08);stroke-width:1;vector-effect:non-scaling-stroke}
+.s2-analytics .s2-wave__line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.s2-analytics .s2-wave__line--dn{stroke:#8b7cf6}
+.s2-analytics .s2-wave__line--up{stroke:#5ee7a3}
+.s2-analytics .s2-hit{fill:transparent}
+.s2-analytics .s2-hit:hover{fill:rgba(255,255,255,.05)}
+.s2-analytics .s2-wave__axis{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 2px 0;color:var(--text-2);font-size:11.5px}
+.s2-analytics .s2-wave__legend{display:inline-flex;align-items:center;gap:6px;color:var(--text-1)}
+.s2-analytics .s2-wave__legend i{display:inline-block;width:8px;height:8px;border-radius:999px}
+.s2-analytics .s2-wave__legend i.is-dn{background:#8b7cf6}
+.s2-analytics .s2-wave__legend i.is-up{background:#5ee7a3}
+@media(max-width:720px){.s2-analytics .s2-graph{grid-template-columns:1fr}.s2-analytics .s2-graph .s2-total{grid-template-columns:1fr 1fr}.s2-analytics .s2-wave svg{height:170px}}
