@@ -53,6 +53,11 @@ class VpnController extends ChangeNotifier {
   bool _connectionIntent = false;
   bool _serviceMaintenance = false;
 
+  /// До этого момента автоматический реконнект запрещён: сервер только
+  /// что закрыл сессию сам (удалённое отключение, лимит, работы), и
+  /// мгновенный реконнект выглядел бы как борьба с админом.
+  DateTime? _autoReconnectAfter;
+
   List<VpnNodeInfo> _nodes = const <VpnNodeInfo>[];
   VpnNodeInfo? _selectedNode;
   VpnUiState _state = VpnUiState.disconnected;
@@ -537,6 +542,19 @@ class VpnController extends ChangeNotifier {
 
   // --- status polling ------------------------------------------------------
 
+  /// Можно ли сейчас поднимать туннель самостоятельно.
+  bool get _autoReconnectReady {
+    final DateTime? after = _autoReconnectAfter;
+    return after == null || DateTime.now().isAfter(after);
+  }
+
+  /// Пауза перед автоматическим реконнектом после серверного закрытия.
+  void _holdAutoReconnect([
+    Duration hold = const Duration(seconds: 20),
+  ]) {
+    _autoReconnectAfter = DateTime.now().add(hold);
+  }
+
   Future<void> refreshStatus() => _syncWithServer();
 
   Future<void> _syncWithServer({bool initial = false}) async {
@@ -554,7 +572,11 @@ class VpnController extends ChangeNotifier {
         _safeNotify();
         return;
       }
-      if (!_serviceMaintenance && _connectionIntent && _state == VpnUiState.disconnected && !initial) {
+      if (!_serviceMaintenance &&
+          _connectionIntent &&
+          _autoReconnectReady &&
+          _state == VpnUiState.disconnected &&
+          !initial) {
         unawaited(connect(automatic: true));
       }
       if (status.session != null) _session = status.session;
@@ -584,6 +606,7 @@ class VpnController extends ChangeNotifier {
         // следующий же опрос начнёт бесконечный реконнект.
         final String? remote = _remoteCloseNotice(status.lastClosedReason);
         if (remote != null) _connectionIntent = false;
+        _holdAutoReconnect();
         _notice = remote ?? 'The tunnel was closed because the session is no longer valid.';
         await _vpn.stop();
         _resetConnectionState();
@@ -592,7 +615,13 @@ class VpnController extends ChangeNotifier {
       } else if (!status.connected && _state == VpnUiState.connected) {
         final String? remote = _remoteCloseNotice(status.lastClosedReason);
         if (remote != null) _connectionIntent = false;
+        _holdAutoReconnect();
         _notice = remote ?? 'The session was closed by the server.';
+        // Стадию туннеля плагин иногда отдаёт как unknown (экономия батареи,
+        // сон процесса), и тогда ветка выше не срабатывала: сессии нет, а
+        // ключ оставался установлен — именно это и видно было на телефоне
+        // при удалённом отключении. Остановить туннель второй раз безвредно.
+        await _vpn.stop();
         _resetConnectionState();
         _state = VpnUiState.disconnected;
         _probeHomeIp(settle: const Duration(milliseconds: 1200)).ignore();
@@ -600,7 +629,12 @@ class VpnController extends ChangeNotifier {
 
       // Subscription expiry / user disable must also end an active tunnel.
       if (!status.subscriptionActive && _state == VpnUiState.connected) {
-        _notice = 'Subscription is not active any more. Disconnecting.';
+        _notice = _russian
+            ? 'Подписка больше не активна — отключаемся.'
+            : 'Subscription is not active any more. Disconnecting.';
+        // Без подписки реконнект всё равно получит отказ — не стучимся.
+        _connectionIntent = false;
+        _holdAutoReconnect();
         await disconnect();
         return;
       }
