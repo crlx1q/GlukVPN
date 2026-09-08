@@ -383,8 +383,6 @@ class _TrafficChart extends StatelessWidget {
 			return _Empty(russian ? 'За этот период трафик не записан' : 'No traffic recorded for this period');
 		}
 		const double chartHeight = 132;
-		double bar(int value) =>
-				value <= 0 ? 2 : (value / peak * chartHeight).clamp(3.0, chartHeight);
 
 		return GlassPanel(
 			radius: 18,
@@ -407,32 +405,25 @@ class _TrafficChart extends StatelessWidget {
 					const SizedBox(height: 12),
 					SizedBox(
 						height: chartHeight,
-						child: Row(
-							crossAxisAlignment: CrossAxisAlignment.end,
-							children: points.map((TrafficPoint p) {
-								return Expanded(
-									child: Tooltip(
-										message: '${_utc(p.start)}\n'
-												'↓ ${formatBytes(p.downloadBytes)}\n'
-												'↑ ${formatBytes(p.uploadBytes)}',
-										child: Padding(
-											padding: const EdgeInsets.symmetric(horizontal: 1.2),
-											child: Row(
-												crossAxisAlignment: CrossAxisAlignment.end,
-												children: <Widget>[
-													Expanded(
-														child: _Bar(height: bar(p.downloadBytes), tone: GlukColors.connected),
-													),
-													const SizedBox(width: 1.6),
-													Expanded(
-														child: _Bar(height: bar(p.uploadBytes), tone: GlukColors.violetLight),
-													),
-												],
-											),
+						child: CustomPaint(
+							painter: _WavePainter(
+								points: points,
+								peak: peak,
+								download: GlukColors.connected,
+								upload: GlukColors.violetLight,
+							),
+							child: Row(
+								children: points.map((TrafficPoint p) {
+									return Expanded(
+										child: Tooltip(
+											message: '${_utc(p.start)}\n'
+													'↓ ${formatBytes(p.downloadBytes)}\n'
+													'↑ ${formatBytes(p.uploadBytes)}',
+											child: const SizedBox.expand(),
 										),
-									),
-								);
-							}).toList(),
+									);
+								}).toList(),
+							),
 						),
 					),
 					const SizedBox(height: 7),
@@ -455,24 +446,97 @@ class _TrafficChart extends StatelessWidget {
 	}
 }
 
-class _Bar extends StatelessWidget {
-	const _Bar({required this.height, required this.tone});
+/// ФОТО 5: одинаковая форма графика на сайте, пк, телефоне и в расширении:
+/// две плавные волны вместо частокола столбиков, который на неделе и месяце
+/// невозможно было прочитать.
+class _WavePainter extends CustomPainter {
+	const _WavePainter({
+		required this.points,
+		required this.peak,
+		required this.download,
+		required this.upload,
+	});
 
-	final double height;
-	final Color tone;
+	final List<TrafficPoint> points;
+	final int peak;
+	final Color download;
+	final Color upload;
+
+	// Catmull-Rom → кубические Безье: волна, а не ломаная.
+	Path _wave(Size size, List<double> values) {
+		final Path path = Path();
+		final int count = values.length;
+		if (count == 0 || peak <= 0) return path;
+		double x(int i) => count < 2 ? size.width / 2 : size.width * i / (count - 1);
+		double y(double value) => size.height - (value / peak).clamp(0.0, 1.0) * size.height;
+		if (count == 1) {
+			path.moveTo(0, y(values.first));
+			path.lineTo(size.width, y(values.first));
+			return path;
+		}
+		path.moveTo(x(0), y(values[0]));
+		for (int i = 0; i < count - 1; i++) {
+			final int prev = i == 0 ? 0 : i - 1;
+			final int next = i + 2 > count - 1 ? count - 1 : i + 2;
+			final double x1 = x(i);
+			final double y1 = y(values[i]);
+			final double x2 = x(i + 1);
+			final double y2 = y(values[i + 1]);
+			path.cubicTo(
+				x1 + (x2 - x(prev)) / 6,
+				y1 + (y2 - y(values[prev])) / 6,
+				x2 - (x(next) - x1) / 6,
+				y2 - (y(values[next]) - y1) / 6,
+				x2,
+				y2,
+			);
+		}
+		return path;
+	}
+
+	void _draw(Canvas canvas, Size size, List<double> values, Color tone) {
+		final Path line = _wave(size, values);
+		final Path area = Path.from(line)
+			..lineTo(size.width, size.height)
+			..lineTo(0, size.height)
+			..close();
+		canvas.drawPath(
+			area,
+			Paint()
+				..shader = LinearGradient(
+					begin: Alignment.topCenter,
+					end: Alignment.bottomCenter,
+					colors: <Color>[tone.withOpacity(0.34), tone.withOpacity(0.02)],
+				).createShader(Rect.fromLTWH(0, 0, size.width, size.height)),
+		);
+		canvas.drawPath(
+			line,
+			Paint()
+				..color = tone
+				..style = PaintingStyle.stroke
+				..strokeWidth = 2
+				..strokeCap = StrokeCap.round
+				..strokeJoin = StrokeJoin.round,
+		);
+	}
 
 	@override
-	Widget build(BuildContext context) => Container(
-				height: height,
-				decoration: BoxDecoration(
-					borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
-					gradient: LinearGradient(
-						begin: Alignment.bottomCenter,
-						end: Alignment.topCenter,
-						colors: <Color>[tone.withOpacity(0.45), tone],
-					),
-				),
-			);
+	void paint(Canvas canvas, Size size) {
+		if (points.isEmpty || peak <= 0 || size.width <= 0 || size.height <= 0) return;
+		final Paint grid = Paint()
+			..color = Colors.white.withOpacity(0.06)
+			..strokeWidth = 1;
+		for (int i = 0; i <= 2; i++) {
+			final double y = size.height * i / 2;
+			canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+		}
+		_draw(canvas, size, points.map((TrafficPoint p) => p.downloadBytes.toDouble()).toList(), download);
+		_draw(canvas, size, points.map((TrafficPoint p) => p.uploadBytes.toDouble()).toList(), upload);
+	}
+
+	@override
+	bool shouldRepaint(covariant _WavePainter old) =>
+			old.points != points || old.peak != peak || old.download != download || old.upload != upload;
 }
 
 class _Legend extends StatelessWidget {
