@@ -322,7 +322,22 @@
       ul.innerHTML = '<li class="dash-empty">' + esc(T("Активных устройств пока нет. Запустите приложение и подключитесь — устройство появится здесь.")) + "</li>";
       return;
     }
-    ul.innerHTML = list.map(function (d) {
+    // «1 в 1 название и ОС» — это одно устройство: переустановка клиента
+    // создаёт новую строку с новым ключом, и в списке висело два
+    // «Chrome 152 - Windows». Схлопываем их в одну строку: главной
+    // становится текущая или живая, а число копий показываем меткой ×N,
+    // чтобы ничего не исчезало молча.
+    function rank(d) { return (d.current ? 4 : 0) + (d.online ? 2 : 0) + (d.status === "ACTIVE" ? 1 : 0); }
+    var groups = [], index = {};
+    list.forEach(function (d) {
+      var key = String(d.name || "") + "\u0000" + String(d.kind || "");
+      var g = index[key];
+      if (!g) { g = { main: d, copies: 1 }; index[key] = g; groups.push(g); return; }
+      g.copies += 1;
+      if (rank(d) > rank(g.main)) g.main = d;
+    });
+    ul.innerHTML = groups.map(function (g) {
+      var d = g.main;
       var meta = [T(KIND_LABEL[d.kind] || KIND_LABEL.other)];
       if (d.online && d.node) meta.push(esc(nodeLabel(d.node)));
       if (d.status && d.status !== "ACTIVE") meta.push(esc(d.status.toLowerCase()));
@@ -330,7 +345,8 @@
       return '<li class="dev' + (d.current ? " dev--current" : "") + '" data-dev-id="' + esc(d.id) + '">' +
         '<span class="dev__ic">' + (IC[d.kind] || IC.other) + "</span>" +
         '<span class="dev__body"><span class="dev__name"><span>' + esc(d.name) + "</span>" +
-        (d.current ? '<span class="dev__tag">' + esc(T("текущее")) + "</span>" : "") + "</span>" +
+        (d.current ? '<span class="dev__tag">' + esc(T("текущее")) + "</span>" : "") +
+        (g.copies > 1 ? '<span class="dev__tag dev__tag--dup" title="' + esc(T("Одинаковое название и ОС — считаем одним устройством")) + '">\u00d7' + g.copies + "</span>" : "") + "</span>" +
         '<span class="dev__meta">' + meta.join(" \u00b7 ") + "</span></span>" +
         '<span class="dev__right"><span class="dev__state' + (d.online ? " is-on" : "") + '"><i></i>' +
         esc(d.online ? T("Подключено") : T("Не подключено")) + "</span>" +

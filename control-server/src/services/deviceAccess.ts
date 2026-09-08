@@ -17,6 +17,40 @@ export async function registerDeviceSlot(userId: string, input: { deviceName: st
 		if (existing && existing.userId !== userId) throw conflict("This public key is already registered")
 		const reactivating = existing !== null && existing.status !== "ACTIVE"
 		const maxDevices = effectiveDeviceLimit(user)
+		// «1 в 1 название и ОС» — это одно и то же устройство после переустановки:
+		// новая пара ключей создавала вторую строку Device, и в списке висело два
+		// «Chrome 152 - Windows», а слоты тарифа выедались впустую. Забираем прежнюю
+		// строку себе (ротация ключа) — но только если на ней нет живого туннеля:
+		// подключённое устройство с таким же именем — это точно другая машина.
+		const twin = existing
+			? null
+			: await tx.device.findFirst({
+					where: {
+						userId,
+						status: "ACTIVE",
+						deviceName: input.deviceName,
+						platform: input.platform ?? null,
+						sessions: { none: { status: { in: ["PENDING", "ACTIVE"] } } },
+					},
+					orderBy: [{ lastSeen: "desc" }, { createdAt: "desc" }],
+				})
+		if (twin) {
+			const device = await tx.device.update({
+				where: { id: twin.id },
+				data: {
+					publicKey: input.publicKey,
+					vlessUuid: randomUUID(),
+					lastSeen: new Date(),
+					// Ключ сменился — старые токены этой строки оживить нельзя.
+					tokenVersion: { increment: 1 },
+				},
+			})
+			await tx.refreshToken.updateMany({
+				where: { userId, deviceId: twin.id, revokedAt: null },
+				data: { revokedAt: new Date(), replacedById: null },
+			})
+			return { device, maxDevices, existed: true, reactivating: false, needsPolicySync: true }
+		}
 		if (!existing || reactivating) {
 			const active = await tx.device.findMany({
 				where: { userId, status: "ACTIVE" }, orderBy: [{ lastSeen: "desc" }, { createdAt: "desc" }],
