@@ -3140,20 +3140,79 @@ function renderStats() {
 
 	const peak = series.reduce((max, point) => Math.max(max, Number(point.downloadBytes) || 0, Number(point.uploadBytes) || 0), 0)
 	if (peak > 0) {
-		const chart = statsNode('div', 'stats-chart')
-		chart.setAttribute('role', 'img')
-		chart.setAttribute('aria-label', ru ? 'График трафика, время UTC' : 'Traffic chart, UTC')
-		for (const point of series) {
-			const column = statsNode('span', 'stats-col')
-			column.title = `${statsUtc(point.start)}\n↓ ${statsBytes(point.downloadBytes)}\n↑ ${statsBytes(point.uploadBytes)}`
-			const rx = statsNode('i', 'stats-bar is-down')
-			const tx = statsNode('i', 'stats-bar is-up')
-			rx.style.height = `${Math.max(2, ((Number(point.downloadBytes) || 0) / peak) * 100)}%`
-			tx.style.height = `${Math.max(2, ((Number(point.uploadBytes) || 0) / peak) * 100)}%`
-			column.append(rx, tx)
-			chart.appendChild(column)
+		// ФОТО 5: две плавные волны вместо частокола столбиков — один и тот же
+		// вид на сайте, пк, телефоне и здесь. Цифры серверные, подписи UTC.
+		const svgNS = 'http://www.w3.org/2000/svg'
+		const mkSvg = (name, attrs) => {
+			const el = document.createElementNS(svgNS, name)
+			for (const [key, value] of Object.entries(attrs || {})) el.setAttribute(key, String(value))
+			return el
 		}
+		const chartW = 300
+		const chartH = 104
+		const padX = 4
+		const padY = 6
+		const innerW = chartW - padX * 2
+		const innerH = chartH - padY * 2
+		const points = series.length
+		const bucketX = (index) => (points < 2 ? padX + innerW / 2 : padX + (innerW * index) / (points - 1))
+		const bucketY = (value) => padY + innerH - (Math.max(0, Number(value) || 0) / peak) * innerH
+		// Catmull-Rom → кубические Безье: волна, а не ломаная.
+		const wavePath = (key) => {
+			const coords = series.map((point, index) => ({ x: bucketX(index), y: bucketY(point[key]) }))
+			if (coords.length === 1) return `M${padX} ${coords[0].y.toFixed(1)}L${chartW - padX} ${coords[0].y.toFixed(1)}`
+			let d = `M${coords[0].x.toFixed(1)} ${coords[0].y.toFixed(1)}`
+			for (let i = 0; i < coords.length - 1; i++) {
+				const p0 = coords[i - 1] || coords[i]
+				const p1 = coords[i]
+				const p2 = coords[i + 1]
+				const p3 = coords[i + 2] || coords[i + 1]
+				const c1x = p1.x + (p2.x - p0.x) / 6
+				const c1y = p1.y + (p2.y - p0.y) / 6
+				const c2x = p2.x - (p3.x - p1.x) / 6
+				const c2y = p2.y - (p3.y - p1.y) / 6
+				d += `C${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`
+			}
+			return d
+		}
+		const waveArea = (key) => `${wavePath(key)}L${bucketX(points - 1).toFixed(1)} ${(padY + innerH).toFixed(1)}L${bucketX(0).toFixed(1)} ${(padY + innerH).toFixed(1)}Z`
+		const chart = statsNode('div', 'stats-chart')
+		const svg = mkSvg('svg', {
+			viewBox: `0 0 ${chartW} ${chartH}`,
+			preserveAspectRatio: 'none',
+			role: 'img',
+			'aria-label': ru ? 'График трафика, время UTC' : 'Traffic chart, UTC',
+		})
+		for (let line = 0; line <= 2; line++) {
+			const y = (padY + (innerH * line) / 2).toFixed(1)
+			svg.appendChild(mkSvg('line', { class: 'stats-grid', x1: padX, y1: y, x2: chartW - padX, y2: y }))
+		}
+		svg.appendChild(mkSvg('path', { class: 'stats-area is-down', d: waveArea('downloadBytes') }))
+		svg.appendChild(mkSvg('path', { class: 'stats-area is-up', d: waveArea('uploadBytes') }))
+		svg.appendChild(mkSvg('path', { class: 'stats-line is-down', d: wavePath('downloadBytes') }))
+		svg.appendChild(mkSvg('path', { class: 'stats-line is-up', d: wavePath('uploadBytes') }))
+		series.forEach((point, index) => {
+			const width = points < 2 ? innerW : innerW / (points - 1)
+			const x = Math.max(padX, bucketX(index) - width / 2)
+			const hit = mkSvg('rect', { class: 'stats-hit', x: x.toFixed(1), y: padY, width: Math.min(width, chartW - padX - x).toFixed(1), height: innerH })
+			const title = document.createElementNS(svgNS, 'title')
+			title.textContent = `${statsUtc(point.start)}\n↓ ${statsBytes(point.downloadBytes)}\n↑ ${statsBytes(point.uploadBytes)}`
+			hit.appendChild(title)
+			svg.appendChild(hit)
+		})
+		chart.appendChild(svg)
 		frag.appendChild(chart)
+		const legend = statsNode('div', 'stats-legend')
+		for (const item of [
+			{ tone: 'is-down', label: ru ? 'Получено' : 'Downloaded' },
+			{ tone: 'is-up', label: ru ? 'Отправлено' : 'Uploaded' },
+		]) {
+			const cell = statsNode('span', `stats-legend__i ${item.tone}`)
+			cell.appendChild(statsNode('i', ''))
+			cell.appendChild(statsNode('span', '', item.label))
+			legend.appendChild(cell)
+		}
+		frag.appendChild(legend)
 		const axis = statsNode('div', 'stats-axis')
 		axis.append(
 			statsNode('span', '', statsTick(series[0]?.start)),
