@@ -757,10 +757,11 @@ async function poll() {
 			gatewayMisses: stats === null ? (runtime.gatewayMisses ?? 0) + 1 : 0,
 		})
 		if (stats && (stats.bytesRx > 0 || stats.bytesTx > 0)) {
+			// Байты больше не передаём: их сообщает сам прокси со
+			// стороны сервера, и только ему сервер верит. Здесь
+			// остаётся только признак жизни и пометка транспорта.
 			Api.reportStats({
 				sessionId: runtime.session?.id ?? undefined,
-				downloadBytes: stats.bytesRx,
-				uploadBytes: stats.bytesTx,
 				transport: 'browser',
 			}).catch(() => {})
 		}

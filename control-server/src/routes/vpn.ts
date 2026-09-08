@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify"
+import type { FastifyInstance, FastifyRequest } from "fastify"
 import { z } from "zod"
 import { badRequest, forbidden, notFound } from "../lib/errors"
 import { clientIp, getAuthUser, requireDeviceScope, requireUser } from "../middleware/auth"
@@ -37,6 +37,24 @@ const StatsBody = z.object({
 	uploadBytes: z.coerce.number().finite().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
 	transport: z.string().trim().max(40).optional(),
 })
+
+/**
+ * Кто имеет право сообщать байты.
+ *
+ * Расход тарифа и всю статистику считает сервер из TrafficUsageBucket,
+ * а бакеты пишет узел (WireGuard/VLESS) или наш же браузерный прокси.
+ * Оставалась щель: любой клиент с токеном мог прислать свои цифры в
+ * /api/vpn/stats и /api/vpn/disconnect и тем самым раздуть счётчики сессии,
+ * которые видны в админке и в карточке устройства. Теперь байты принимаются
+ * только с петли: браузерный прокси живёт на том же хосте и стучится в
+ * 127.0.0.1, а запрос снаружи всегда приходит с публичного адреса.
+ * Сам вызов остаётся рабочим для любого клиента — он держит сессию «живой»
+ * и помечает транспорт, просто цифры из него больше не берём.
+ */
+function isTrustedTrafficReporter(request: FastifyRequest): boolean {
+	const ip = clientIp(request)
+	return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1"
+}
 
 export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 	// Device-scoped token required: a plain login token cannot open a tunnel.
@@ -115,9 +133,11 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 				throw notFound("Session not found")
 			}
 
-			// Update final byte counters if provided before closing session
-			const upload = parsed.data?.uploadBytes ?? parsed.data?.bytesRx
-			const download = parsed.data?.downloadBytes ?? parsed.data?.bytesTx
+			// Финальные счётчики — только от доверенного отчётчика,
+			// см. isTrustedTrafficReporter.
+			const trusted = isTrustedTrafficReporter(request)
+			const upload = trusted ? (parsed.data?.uploadBytes ?? parsed.data?.bytesRx) : undefined
+			const download = trusted ? (parsed.data?.downloadBytes ?? parsed.data?.bytesTx) : undefined
 			if (upload !== undefined || download !== undefined) {
 				await prisma.session.update({
 					where: { id: session.id },
@@ -176,8 +196,11 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 			// A device/user may only report stats for their own sessions
 			if (session.userId !== user.id || (device && session.deviceId !== device.id)) throw notFound("Session not found")
 
-			const upload = parsed.data.uploadBytes ?? parsed.data.bytesRx
-			const download = parsed.data.downloadBytes ?? parsed.data.bytesTx
+			// Цифры от самого клиента игнорируем, но вызов оставляем:
+			// он обновляет признак жизни и пометку транспорта.
+			const trusted = isTrustedTrafficReporter(request)
+			const upload = trusted ? (parsed.data.uploadBytes ?? parsed.data.bytesRx) : undefined
+			const download = trusted ? (parsed.data.downloadBytes ?? parsed.data.bytesTx) : undefined
 			const now = new Date()
 
 			const updated = await prisma.session.update({
@@ -206,7 +229,7 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 					.catch(() => undefined)
 			}
 
-			return reply.send({ ok: true, session: toSessionView(updated) })
+			return reply.send({ ok: true, countersAccepted: trusted, session: toSessionView(updated) })
 		},
 	)
 

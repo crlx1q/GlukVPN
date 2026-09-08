@@ -300,9 +300,12 @@ export const Api = {
 		request('POST', '/api/vpn/disconnect', {
 			body: payload && typeof payload === 'object' ? payload : payload ? { sessionId: payload } : {},
 		}),
-	reportStats: ({ downloadBytes, uploadBytes, sessionId, transport = 'browser' } = {}) =>
+	/* Счётчики трафика клиент больше не сообщает: их пишет узел или
+	   наш браузерный прокси со стороны сервера, а сервер цифры с
+	   клиента и не принимает. Вызов остаётся как признак жизни сессии. */
+	reportStats: ({ sessionId, transport = 'browser' } = {}) =>
 		request('POST', '/api/vpn/stats', {
-			body: { downloadBytes, uploadBytes, sessionId, transport },
+			body: { sessionId, transport },
 		}),
 	status: () => request('GET', '/api/vpn/status'),
 
