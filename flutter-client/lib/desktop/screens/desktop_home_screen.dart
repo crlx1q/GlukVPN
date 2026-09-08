@@ -193,6 +193,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> with WidgetsBindi
         final Widget mapCard = _MapCard(
           accountMap: _accountMap,
           vpn: vpn,
+          auth: widget.auth,
           strings: s,
           reduceMotion: widget.reduceMotion,
           self: self,
@@ -272,6 +273,7 @@ class _MapCard extends StatelessWidget {
   const _MapCard({
     required this.accountMap,
     required this.vpn,
+    required this.auth,
     required this.strings,
     required this.reduceMotion,
     required this.self,
@@ -283,6 +285,7 @@ class _MapCard extends StatelessWidget {
   });
 
   final DesktopVpnController vpn;
+  final AuthController auth;
   final DesktopStrings strings;
   final bool reduceMotion;
   final SelfLocation? self;
@@ -372,7 +375,7 @@ class _MapCard extends StatelessWidget {
               top: 18,
               left: 20,
               child: PlanBadge(
-                subscription: widget.auth.subscription,
+                subscription: auth.subscription,
                 compact: true,
               ),
             ),
