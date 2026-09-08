@@ -829,6 +829,38 @@ function renderMetric(el, { value = DASH, loading = false, chars = 6 } = {}) {
 	if (el.textContent !== text) el.textContent = text
 }
 
+/*
+ * Требование 8, как на ПК: платный тариф выбирает узел руками, Free —
+ * только «Авто». Раньше расширение молча разрешало ручной выбор, а сервер
+ * потом отказывал — и причина не была видна.
+ */
+function manualSelectionLocked() {
+	return String(state?.subscription?.status ?? '').toUpperCase() !== 'ACTIVE'
+}
+
+/** Режим «Авто»: ручного предпочтения нет или оно закрыто тарифом. */
+function autoSelectionEnabled() {
+	return !settings.preferredNodeId || manualSelectionLocked()
+}
+
+/** Узел, который выберет «Авто» — тот же расчёт, что на ПК и телефоне. */
+function autoPickedNode() {
+	return bestNode(nodes, {
+		preferCountryCode: state?.runtime?.geo?.countryCode ?? '',
+	}).node
+}
+
+/** Возврат к «Авто»: снимаем ручное предпочтение узла. */
+async function chooseAuto() {
+	const response = await call('selectNode', { nodeId: null })
+	if (!response?.ok) {
+		banner('srv-banner', humanError(response), { actionLabel: t('common.retry'), onAction: () => chooseAuto() })
+		return
+	}
+	banner('srv-banner', '')
+	await refreshState({ quiet: true })
+}
+
 function renderServers() {
 	const list = $('srv-list')
 	if (!list) return
@@ -840,6 +872,38 @@ function renderServers() {
 		list.appendChild(empty)
 		return
 	}
+	const locked = manualSelectionLocked()
+	const autoOn = autoSelectionEnabled()
+	// «Авто · Лучший сервер» — первой строкой, как в версии для ПК.
+	const autoRow = document.createElement('button')
+	autoRow.type = 'button'
+	autoRow.className = 'srv-row srv-row--auto' + (autoOn ? ' active' : '')
+	const autoMark = document.createElement('span')
+	autoMark.className = 'flag-circle sm auto-mark'
+	autoMark.appendChild(iconSvg('speed', 15))
+	autoRow.appendChild(autoMark)
+	const autoText = document.createElement('span')
+	autoText.className = 's-text'
+	const autoName = document.createElement('span')
+	autoName.className = 's-name'
+	autoName.textContent = t('servers.auto')
+	autoText.appendChild(autoName)
+	const autoMeta = document.createElement('span')
+	autoMeta.className = 's-meta'
+	const autoLang = resolveLanguage(settings.language, state?.runtime?.geo?.countryCode)
+	const picked = autoPickedNode()
+	const pickedLabel = picked ? formatNodeLocation(picked, autoLang) : ''
+	autoMeta.textContent = pickedLabel ? `${t('servers.autoHint')} \u00b7 ${pickedLabel}` : t('servers.autoHint')
+	autoText.appendChild(autoMeta)
+	autoRow.appendChild(autoText)
+	autoRow.addEventListener('click', () => chooseAuto())
+	list.appendChild(autoRow)
+	if (locked) {
+		const hint = document.createElement('div')
+		hint.className = 'empty srv-locked'
+		hint.textContent = t('servers.manualLocked')
+		list.appendChild(hint)
+	}
 	const activeId = activeNodeId() || String(activeNode()?.id ?? '')
 	nodes.forEach((node, index) => {
 		const id = String(node?.id ?? node?.nodeId ?? index)
@@ -847,7 +911,7 @@ function renderServers() {
 		const offline = maintenance || node?.online === false || String(node?.status ?? '').toLowerCase() === 'offline'
 		const row = document.createElement('button')
 		row.type = 'button'
-		row.className = 'srv-row' + (id === activeId ? ' active' : '') + (offline ? ' offline' : '') + (maintenance ? ' maintenance' : '')
+		row.className = 'srv-row' + (!autoOn && id === activeId ? ' active' : '') + (offline ? ' offline' : '') + (maintenance ? ' maintenance' : '') + (locked ? ' locked' : '')
 		row.style.animationDelay = `${Math.min(index, 8) * 26}ms`
 
 		const flag = document.createElement('span')
@@ -1873,6 +1937,11 @@ async function togglePower() {
 
 async function chooseNode(nodeId, offline) {
 	if (offline) return
+	if (manualSelectionLocked()) {
+		// Тариф не разрешает ручной выбор — говорим об этом, а не молчим.
+		banner('srv-banner', t('servers.manualLocked'), { kind: 'info' })
+		return
+	}
 	const response = await call('selectNode', { nodeId })
 	if (!response?.ok) {
 		banner('srv-banner', humanError(response), { actionLabel: t('common.retry'), onAction: () => chooseNode(nodeId, false) })

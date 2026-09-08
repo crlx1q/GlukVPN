@@ -1390,6 +1390,11 @@ body.signed-out .rail { opacity: 0.5; }
 .s-restrictions { display:flex; flex-wrap:wrap; gap:4px; margin-top:2px; }
 .restriction { font-size:8.5px; padding:2px 6px; border-radius:999px; color:#f3c98b; background:rgba(240,181,103,.1); border:1px solid rgba(240,181,103,.3); }
 .srv-row.maintenance { opacity:.62; cursor:not-allowed; border-color:rgba(240,181,103,.35); }
+/* «Авто · Лучший сервер» и замок ручного выбора — как в версии для ПК. */
+.srv-row--auto .auto-mark { display:grid; place-items:center; background:linear-gradient(135deg, rgba(139,92,246,.92), rgba(90,160,255,.92)); box-shadow:none; }
+.srv-row--auto .auto-mark svg { width:15px; height:15px; color:#fff; }
+.srv-row.locked { opacity:.55; cursor:not-allowed; }
+.srv-locked { font-size:10px; color:#9aa0b4; text-align:left; padding:2px 4px 0; }
 .modal-backdrop { position:fixed; inset:0; z-index:80; display:grid; place-items:center; padding:16px; background:rgba(3,2,8,.82); backdrop-filter:blur(8px); }
 .modal-card { width:100%; max-height:560px; overflow:auto; padding:16px; border-radius:20px; background:#100b1b; border:1px solid var(--stroke-violet); box-shadow:0 24px 70px rgba(0,0,0,.65); }
 .modal-card:focus { outline:none; }
