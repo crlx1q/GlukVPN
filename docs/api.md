@@ -175,6 +175,32 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 `peerReady` становится `true` после того, как нода подтвердила `ADD_PEER`.
 Клиент ждёт именно этого флага, прежде чем поднять туннель.
 
+Кроме показанных полей ответ содержит `service` (режим обслуживания),
+`lastClosedReason` (почему закрылась предыдущая сессия), `nodeMaintenance` и
+`quota` — тот же блок лимита тарифа, что и в `/api/user/analytics`
+(`usedBytes`, `limitBytes`, `usedPercent`, `resetsAt`, `exceeded`).
+Все клиенты рисуют шкалу расхода только из этих серверных цифр.
+
+### POST /api/vpn/disconnect
+
+`{ "sessionId": "..." }`; поле можно опустить — тогда сервер сам найдёт живую
+сессию устройства. Ответ: `{ "ok": true, "session": { "...": "SessionView" } }`.
+Владелец аккаунта может закрыть сессию любого своего устройства (чужие — 404).
+
+### POST /api/vpn/stats
+
+Пинг живой сессии: `{ "sessionId": "...", "transport": "browser" }`.
+
+```json
+{ "ok": true, "countersAccepted": false, "session": { "...": "SessionView" } }
+```
+
+Байты (`uploadBytes` / `downloadBytes`) принимаются только от доверенного
+репортера — ноды или нашего browser-proxy на loopback. У обычного клиента
+они молча игнорируются, а `countersAccepted: false` показывает, что счётчики
+не учтены (поле additive — старые клиенты не ломаются). Подробности и
+проверочные curl-команды — в `docs/traffic-integrity.md`.
+
 ### DELETE /api/devices/:id
 
 Отзыв устройства: `{ "ok": true, "closedSessions": 1, "revokedTokens": 2 }`.
