@@ -3,7 +3,7 @@ import { config } from "../config"
 import { writeAudit } from "../lib/audit"
 import { prisma } from "../prisma"
 import { expireStaleOrders } from "./billing"
-import { purgeStaleDevices } from "./deviceAccess"
+import { downgradeToPlanAllowance, purgeStaleDevices } from "./deviceAccess"
 import { purgeLinkRequests } from "./linkAuth"
 import { purgeOldLoginAttempts } from "./loginThrottle"
 import { requeueStaleCommands } from "./nodeCommands"
@@ -19,6 +19,8 @@ export type MonitorTickResult = {
 	nodesMarkedOffline: number
 	subscriptionsExpired: number
 	sessionsClosed: number
+	/** Устройства, выкинутые после истечения подписки (Kick/Disconnect). */
+	devicesKicked: number
 	leasesReclaimed: number
 	commandsRequeued: number
 	commandsFailed: number
@@ -60,10 +62,37 @@ export async function runMonitorTick(): Promise<MonitorTickResult> {
 	}
 
 	// 2. Expire subscriptions that ran out.
+	// Кого именно разлогинивать, известно только до updateMany: он не возвращает
+	// изменённые строки, поэтому список аккаунтов собираем заранее.
+	const expiringRows = await prisma.subscription.findMany({
+		where: { status: "ACTIVE", expiresAt: { lte: new Date() } },
+		select: { userId: true },
+	})
 	const expired = await prisma.subscription.updateMany({
 		where: { status: "ACTIVE", expiresAt: { lte: new Date() } },
 		data: { status: "EXPIRED" },
 	})
+
+	// 2b. Принудительное отключение (Kick/Disconnect).
+	//
+	// Человек купил месяц на пять устройств, месяц кончился — Free даёт одно.
+	// `billing.ts` поднимает `user.maxDevices` при активации и никогда не опускает,
+	// поэтому опускаем здесь: лимиты — до фактического тарифа, а лишние
+	// устройства разлогиниваются, доступ остаётся на первом подключённом.
+	let devicesKicked = 0
+	for (const userId of new Set(expiringRows.map((row) => row.userId))) {
+		try {
+			const kicked = await downgradeToPlanAllowance(userId, "subscription_expired")
+			devicesKicked += kicked.revoked
+		} catch (error) {
+			// Один сорвавшийся аккаунт не должен ронять весь тик монитора.
+			await writeAudit({
+				action: "subscription.downgrade.failed",
+				userId,
+				metadata: { error: error instanceof Error ? error.message : String(error) },
+			})
+		}
+	}
 
 	// 3. Close sessions that must not stay open.
 	let sessionsClosed = 0
@@ -145,6 +174,7 @@ export async function runMonitorTick(): Promise<MonitorTickResult> {
 		nodesMarkedOffline: offlineNodes.length,
 		subscriptionsExpired: expired.count,
 		sessionsClosed,
+		devicesKicked,
 		leasesReclaimed: staleLeases.length,
 		commandsRequeued: requeued,
 		commandsFailed: failed,

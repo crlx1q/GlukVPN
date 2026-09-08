@@ -8,15 +8,13 @@ import { badRequest, conflict, notFound } from "../lib/errors"
 import { clientIp, getAuthUser, requireAdmin } from "../middleware/auth"
 import { bytesToNumber, prisma } from "../prisma"
 import { cancelOrder, grantPlan, markOrderPaid, orderView } from "../services/billing"
-import { purgeStaleDevices } from "../services/deviceAccess"
+import { downgradeToPlanAllowance, purgeStaleDevices } from "../services/deviceAccess"
 import { categoryLabel } from "../services/domainCategories"
 import { egressBudgetView } from "../services/egressBudget"
 import {
 	entitlementPayload,
-	FREE_PLAN_CODE,
 	isGrantablePlanCode,
 	planDisplayName,
-	planShape,
 	resolveEntitlement,
 } from "../services/entitlements"
 import { effectiveNodeStatus, nodeEndpoint, nodeLoadPercent } from "../services/nodes"
@@ -992,11 +990,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 			where: { userId: target.id, status: "ACTIVE" },
 			data: { status: "DISABLED" },
 		})
-		const free = planShape(FREE_PLAN_CODE)
-		await prisma.user.update({
-			where: { id: target.id },
-			data: { maxDevices: free.maxDevices, maxSessions: free.maxSessions },
-		})
+		// Лимиты опускаются до фактического тарифа (Free), а лишние устройства
+		// разлогиниваются — доступ остаётся на одном, самом первом подключённом.
+		const kicked = await downgradeToPlanAllowance(target.id, "subscription_expired")
 		const closedSessions = await closeSessionsForUser(target.id, "subscription_expired")
 		await requestPolicySync()
 		await writeAudit({
@@ -1006,12 +1002,16 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 			metadata: {
 				targetUserId: target.id,
 				subscriptionsDisabled: disabled.count,
+				plan: kicked.plan,
+				devicesRevoked: kicked.revoked,
 				closedSessions,
 			},
 		})
 		return reply.send({
 			ok: true,
 			subscriptionsDisabled: disabled.count,
+			plan: kicked.plan,
+			devicesRevoked: kicked.revoked,
 			closedSessions,
 			entitlement: entitlementPayload(await resolveEntitlement(target.id)),
 		})

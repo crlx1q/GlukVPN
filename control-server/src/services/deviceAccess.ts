@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { deviceLimitReached, effectiveDeviceLimit } from "../lib/deviceLimit"
 import { badRequest, conflict, forbidden, notFound } from "../lib/errors"
 import { prisma } from "../prisma"
+import { FREE_PLAN_CODE, planShape } from "./entitlements"
 import { closeSessionsInTransaction, SERVICE_GATE_LOCK } from "./serviceControl"
 
 /** Serialize slot allocation per account, not per process: two simultaneous
@@ -96,4 +97,97 @@ export async function purgeStaleDevices(
 		},
 	})
 	return empty.count + aged.count
+}
+
+/**
+ * Принудительное отключение лишних устройств (Kick/Disconnect).
+ *
+ * Подписка кончилась — тариф давал 3–5 слотов, Free даёт один. Доступ
+ * остаётся на одном устройстве (самом первом зарегистрированном), остальные
+ * разлогиниваются: статус REVOKED, tokenVersion++, refresh-токены отозваны,
+ * живые туннели закрыты. Клиент на следующем же запросе получает 401 /
+ * device_revoked и выходит из аккаунта сам — эта ветка уже реализована на
+ * телефоне, ПК и в расширении.
+ *
+ * «Первое подключённое» = самая старая живая строка Device (createdAt asc):
+ * человек, который перестал платить, сохраняет то устройство, с которого
+ * начал, а не случайное последнее.
+ */
+export async function enforceDeviceAllowance(params: {
+	userId: string
+	allowance: number
+	reason?: string
+}): Promise<{ allowance: number; kept: number; revoked: number; closedSessions: number }> {
+	const allowance = Math.max(1, Math.trunc(params.allowance))
+	const reason = params.reason ?? "subscription_expired"
+	return prisma.$transaction(
+		async (tx) => {
+			await tx.$queryRaw`SELECT pg_advisory_xact_lock_shared(${SERVICE_GATE_LOCK})::text`
+			await tx.$queryRaw`SELECT id FROM users WHERE id = ${params.userId}::uuid FOR UPDATE`
+			const active = await tx.device.findMany({
+				where: { userId: params.userId, status: "ACTIVE" },
+				orderBy: [{ createdAt: "asc" }],
+				select: { id: true },
+			})
+			if (active.length <= allowance) {
+				return { allowance, kept: active.length, revoked: 0, closedSessions: 0 }
+			}
+			let closedSessions = 0
+			const extra = active.slice(allowance)
+			for (const device of extra) {
+				await tx.device.update({
+					where: { id: device.id },
+					data: {
+						status: "REVOKED",
+						revokedAt: new Date(),
+						tokenVersion: { increment: 1 },
+						vlessUuid: null,
+					},
+				})
+				await tx.refreshToken.updateMany({
+					where: { userId: params.userId, deviceId: device.id, revokedAt: null },
+					data: { revokedAt: new Date(), replacedById: null },
+				})
+				closedSessions += await closeSessionsInTransaction(tx, { deviceId: device.id }, reason)
+			}
+			return { allowance, kept: allowance, revoked: extra.length, closedSessions }
+		},
+		{ timeout: 15000 },
+	)
+}
+
+/**
+ * Опустить лимиты аккаунта до того тарифа, который у него реально остался,
+ * и выкинуть лишние устройства.
+ *
+ * Вызывается при истечении подписки (монитор) и при её ручном отключении в
+ * админке. `billing.ts` поднимает `user.maxDevices` при активации и никогда
+ * не опускает — без этой функции аккаунт после окончания месяца продолжал
+ * жить с пятью залогиненными устройствами.
+ *
+ * Если у человека осталась ещё одна активная подписка (перекрывающиеся
+ * выдачи), применяются её лимиты, а не Free.
+ */
+export async function downgradeToPlanAllowance(
+	userId: string,
+	reason = "subscription_expired",
+): Promise<{ plan: string; allowance: number; kept: number; revoked: number; closedSessions: number }> {
+	const active = await prisma.subscription.findFirst({
+		where: {
+			userId,
+			status: "ACTIVE",
+			expiresAt: { gt: new Date() },
+			plan: { not: FREE_PLAN_CODE },
+		},
+		orderBy: [{ tier: "desc" }, { expiresAt: "desc" }],
+		select: { plan: true },
+	})
+	const shape = planShape(active?.plan ?? FREE_PLAN_CODE)
+	// Таблица `plans` главнее матрицы в коде — как в resolveEntitlement.
+	const row = await prisma.plan.findFirst({ where: { code: shape.code } })
+	const maxDevices = row?.maxDevices ?? shape.maxDevices
+	const maxSessions = row?.maxSessions ?? shape.maxSessions
+	await prisma.user.update({ where: { id: userId }, data: { maxDevices, maxSessions } })
+	const kicked = await enforceDeviceAllowance({ userId, allowance: maxDevices, reason })
+	return { plan: shape.code, ...kicked }
 }
