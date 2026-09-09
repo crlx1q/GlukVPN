@@ -801,6 +801,11 @@ body.signed-out .rail { opacity: 0.5; }
 .dev-row.revoked { opacity: 0.52; }
 .d-ic { width: 18px; height: 18px; flex: 0 0 auto; color: var(--violet-light); }
 .d-ic svg { width: 18px; height: 18px; display: block; }
+/* Глиф-спрайт не наследует размер плитки: у .material-device свои 24px, и в
+   списке устройств он торчал из 18-пиксельной ячейки, выпадая из ряда с
+   остальными иконками. Маска обязана масштабироваться вместе с ним —
+   шесть глифов в ряд, поэтому mask-size это шесть высот. */
+.d-ic .material-device { flex: 0 0 18px; width: 18px; height: 18px; -webkit-mask-size: 108px 18px; mask-size: 108px 18px; }
 .d-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .d-name { font-size: 12px; font-weight: var(--fw-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .d-sub { font-size: 10px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1463,11 +1468,12 @@ button.map-count .material-device{flex:0 0 19px;width:19px;height:19px;-webkit-m
 .account-devices-pop header button[hidden]{display:none}
 .account-devices-pop [data-summary]{margin:5px 0 10px;font-size:11px;color:#9b93ad}
 .account-devices-pop [data-summary][hidden]{display:none}
+.account-devices-pop [data-summary].is-error{color:#ff8f8f;font-weight:600}
 .account-devices-pop [data-rows]{display:grid;gap:7px}
 
 /* Подробности об устройстве — второй экран той же панели. */
 .account-detail{display:grid;gap:7px}
-.account-detail-top{display:grid;grid-template-columns:40px minmax(0,1fr);align-items:center;gap:10px;padding:9px;border-radius:13px;background:rgba(139,92,246,.09)}
+.account-detail-top{display:grid;grid-template-columns:36px minmax(0,1fr);align-items:center;gap:10px;padding:9px;border-radius:13px;background:rgba(139,92,246,.09)}
 .account-detail-id{display:grid;gap:3px;min-width:0}
 .account-detail-id b{font-size:12.5px;font-weight:700;color:#f5f3fb}
 .account-detail-state{font-size:11px;color:#9b93ad}
@@ -1480,8 +1486,11 @@ button.map-count .material-device{flex:0 0 19px;width:19px;height:19px;-webkit-m
 
 /* Плитка устройства: глиф в сиреневом квадрате, имя, «платформа · время»,
    маршрут, зелёная точка и шеврон. То же самое на сайте и во Flutter. */
-.account-device{display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:center;gap:11px;margin:0;padding:9px;border-radius:16px;background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.18)}
-.account-device-avatar{width:40px;height:40px;display:grid;place-items:center;border-radius:13px;background:rgba(139,92,246,.2);color:#c4b5fd}
+.account-device{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:11px;margin:0;padding:9px;border-radius:16px;background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.18)}
+/* Плитка и глиф — как на сайте (36 и 19), а не 40 и 24: в узкой попап-панели
+   прежняя пара выглядела крупнее всех остальных иконок расширения. */
+.account-device-avatar{width:36px;height:36px;display:grid;place-items:center;border-radius:12px;background:rgba(139,92,246,.2);color:#c4b5fd}
+.account-device-avatar .material-device{flex:0 0 19px;width:19px;height:19px;-webkit-mask-size:114px 19px;mask-size:114px 19px}
 .account-device-body{min-width:0;display:grid;gap:2px}
 .account-device p{margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .account-device-name{font-size:13px;font-weight:700;color:#f5f3fb}
@@ -1494,6 +1503,13 @@ button.map-count .material-device{flex:0 0 19px;width:19px;height:19px;-webkit-m
 /* Стрелка «>» — настоящая кнопка 32x32, а не картинка в шесть пикселей. */
 button.account-device-more{width:32px;height:32px;display:grid;place-items:center;padding:0;border:0;border-radius:10px;background:transparent;color:#c4b5fd;cursor:pointer;transition:background .14s}
 button.account-device-more:hover{background:rgba(139,92,246,.18)}
+/* «Отключить» в строке списка: то же действие, что на втором экране панели,
+   но без захода в подробности — как в мобильном клиенте. */
+button.account-device-off{width:30px;height:30px;display:grid;place-items:center;padding:0;border:0;border-radius:9px;background:transparent;color:#ff8f8f;cursor:pointer;transition:background .14s,opacity .14s}
+button.account-device-off svg{width:15px;height:15px;display:block}
+button.account-device-off:hover:not(:disabled){background:rgba(255,107,107,.16)}
+button.account-device-off:disabled{opacity:.32;cursor:default}
+button.account-device-off.is-busy{opacity:.55}
 .account-device-chev{width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);opacity:.75}
 .account-device-chev.is-back{transform:rotate(135deg)}
 

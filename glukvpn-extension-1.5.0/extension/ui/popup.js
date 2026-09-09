@@ -3324,12 +3324,39 @@ function ensureAccountDevicesPanel() {
  (document.querySelector('.hero')||document.body).appendChild(panel);
  panel.querySelector('[data-close]').onclick=()=>setAccountDevicesOpen(false);
  panel.querySelector('[data-back]').onclick=()=>{accountDetailId=null;updateAccountDevices();};
- document.addEventListener('click',event=>{
-  if(panel.hidden||panel.contains(event.target)||$('map-count')?.contains(event.target))return;
-  setAccountDevicesOpen(false);
- });
- document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!panel.hidden)setAccountDevicesOpen(false);});
+ bindAccountDevicesDismiss();
  return panel;
+}
+// Закрытие «кликом мимо» — и главная причина, по которой подробности об
+// устройстве «не открывались».
+//
+// Слушатель висел на click и сверял event.target с панелью УЖЕ ПОСЛЕ того,
+// как обработчик кнопки перерисовал список. К этому моменту узел, по
+// которому щёлкнули, выброшен из DOM: panel.contains() отвечает false, и та
+// же самая стрелка «Подробнее» закрывала всю панель. Первый клик по чипу
+// страдал от того же — слушатель добавлялся во время его же обработки.
+//
+// Ловим pointerdown (приходит до click, узел ещё на месте) и сверяем путь
+// события, а не живого родителя. И ставим слушатель ровно один раз: пересборка
+// панели добавляла бы ещё один, а старый закрывал бы новую панель.
+let accountDevicesDismissBound=false;
+function bindAccountDevicesDismiss() {
+ if(accountDevicesDismissBound)return;
+ accountDevicesDismissBound=true;
+ document.addEventListener('pointerdown',event=>{
+  const panel=$('account-devices-pop');
+  if(!panel||panel.hidden)return;
+  const chip=$('map-count');
+  const path=typeof event.composedPath==='function'?event.composedPath():[];
+  const inside=path.length
+   ? path.includes(panel)||(!!chip&&path.includes(chip))
+   : panel.contains(event.target)||(!!chip&&chip.contains(event.target));
+  if(!inside)setAccountDevicesOpen(false);
+ });
+ document.addEventListener('keydown',event=>{
+  const panel=$('account-devices-pop');
+  if(event.key==='Escape'&&panel&&!panel.hidden)setAccountDevicesOpen(false);
+ });
 }
 function setAccountDevicesOpen(open) {
  const panel=$('account-devices-pop');if(!panel)return;
@@ -3356,6 +3383,7 @@ function updateAccountDevices() {
   return;
  }
  summary.hidden=false;
+ summary.classList.remove('is-error');
  panel.querySelector('#account-devices-title').textContent=ru?'Устройства онлайн':'Devices online';
  summary.textContent=activeMapData ? (ru?`${activeMapData.activeTunnels} подключено · лимит устройств ${activeMapData.maxDevices}`:`${activeMapData.activeTunnels} connected · device limit ${activeMapData.maxDevices}`):(ru?'Подключения сейчас недоступны':'Connections unavailable');
  for(const d of list)rows.appendChild(accountDeviceRow(d,ru));
@@ -3387,8 +3415,48 @@ function accountDeviceRow(d, ru) {
  more.onclick=()=>{accountDetailId=String(d.id);updateAccountDevices();};
  const chev=document.createElement('i');chev.className='account-device-chev';chev.setAttribute('aria-hidden','true');
  more.appendChild(chev);
- end.append(live,more);card.appendChild(end);
+ // «Отключить» — прямо в строке, как на телефоне. Раньше кнопка жила только
+ // на втором экране панели, то есть погасить чужое устройство можно было
+ // лишь через подробности.
+ end.append(live,accountDeviceOffButton(d,ru),more);card.appendChild(end);
  return card;
+}
+// Кнопка «Отключить» для строки списка. Своё устройство гасим обычным
+// disconnect — иначе остались бы включёнными прокси и бейдж; чужое — по id
+// сессии, сервер разрешает это владельцу аккаунта. Без сессии гасить нечего,
+// и кнопка неактивна, а не врёт.
+function accountDeviceOffButton(d, ru) {
+ const off=document.createElement('button');off.type='button';off.className='account-device-off';
+ off.title=ru?'Отключить':'Disconnect';off.setAttribute('aria-label',off.title);
+ off.appendChild(powerGlyph());
+ off.disabled=!d.isCurrent&&!d.sessionId;
+ off.onclick=async()=>{
+  off.disabled=true;off.classList.add('is-busy');
+  const response=await(d.isCurrent?call('disconnect',{silent:false}):call('closeAccountSession',{sessionId:d.sessionId}));
+  off.classList.remove('is-busy');
+  if(response&&response.ok===false){
+   off.disabled=false;
+   const note=$('account-devices-pop')?.querySelector('[data-summary]');
+   if(note){note.textContent=humanError(response);note.classList.add('is-error');}
+   return;
+  }
+  await refreshServiceAndMap();
+  updateAccountDevices();
+ };
+ return off;
+}
+// Глиф питания — тот же смысл, что Icons.power_settings_new во Flutter.
+function powerGlyph() {
+ const ns='http://www.w3.org/2000/svg';
+ const svg=document.createElementNS(ns,'svg');
+ svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('fill','none');svg.setAttribute('aria-hidden','true');
+ for(const shape of ['M12 3.6v7.4','M7.4 7.4a6.6 6.6 0 1 0 9.2 0']){
+  const path=document.createElementNS(ns,'path');
+  path.setAttribute('d',shape);path.setAttribute('stroke','currentColor');
+  path.setAttribute('stroke-width','2');path.setAttribute('stroke-linecap','round');
+  svg.appendChild(path);
+ }
+ return svg;
 }
 // Подробности об устройстве — те же поля, что во Flutter и на сайте.
 function accountDeviceDetail(d, ru) {
