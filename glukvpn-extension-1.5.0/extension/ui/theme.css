@@ -1395,17 +1395,24 @@ body.signed-out .rail { opacity: 0.5; }
 /* «Что запрещено на этом сервере»: свёрнуто — одна строка со счётчиком
    под сервером, раскрыто — запрет, его правила и комментарий. Раньше
    плашки висели в строке всегда и повторялись. */
-.srv-limits { display:flex; flex-direction:column; gap:6px; margin:-2px 0 1px; }
-button.srv-limits-toggle { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; padding:5px 10px; border:1px solid rgba(240,181,103,.26); border-radius:10px; background:rgba(240,181,103,.07); color:#f3c98b; font-size:10px; font-weight:700; cursor:pointer; }
-button.srv-limits-toggle:hover { border-color:rgba(240,181,103,.44); background:rgba(240,181,103,.12); }
-.srv-limits-chev { width:6px; height:6px; border-right:1.6px solid currentColor; border-bottom:1.6px solid currentColor; transform:rotate(45deg); transition:transform .16s ease; }
+.srv-limits { display:flex; flex-direction:column; align-items:flex-start; gap:5px; margin:-3px 0 1px; padding:0 4px; }
+/* Свёрнутое состояние — именно бейджик, как в админке, а не полоса на всю
+   ширину: серверов будет много, и строка не должна распухать. */
+button.srv-limits-toggle { display:inline-flex; align-items:center; gap:6px; width:auto; max-width:100%; padding:3px 9px; border:1px solid rgba(240,181,103,.28); border-radius:999px; background:rgba(240,181,103,.08); color:#f3c98b; font-size:9.5px; font-weight:700; letter-spacing:.01em; cursor:pointer; }
+button.srv-limits-toggle:hover { border-color:rgba(240,181,103,.46); background:rgba(240,181,103,.14); }
+.srv-limits.is-open button.srv-limits-toggle { border-color:rgba(240,181,103,.46); background:rgba(240,181,103,.14); }
+.srv-limits-chev { width:5px; height:5px; border-right:1.6px solid currentColor; border-bottom:1.6px solid currentColor; transform:rotate(45deg); transition:transform .16s ease; }
 .srv-limits.is-open .srv-limits-chev { transform:rotate(-135deg); }
-.srv-limits-body { display:flex; flex-direction:column; gap:9px; padding:8px 10px; border:1px solid rgba(240,181,103,.18); border-radius:10px; background:rgba(240,181,103,.04); }
+.srv-limits-body { display:flex; flex-direction:column; gap:9px; width:100%; padding:8px 10px; border:1px solid rgba(240,181,103,.18); border-radius:12px; background:rgba(240,181,103,.04); animation:srvLimitsIn .16s ease both; }
+/* Без этого правила display:flex перебивал атрибут hidden и список
+   висел раскрытым всегда — закрыть его было нельзя. */
+.srv-limits-body[hidden] { display:none; }
+@keyframes srvLimitsIn { from { opacity:0; transform:translateY(-3px); } to { opacity:1; transform:none; } }
 .srv-limit { display:flex; flex-direction:column; gap:3px; }
 .srv-limit-rules { font-size:9px; font-weight:600; color:var(--text-2); }
 .srv-limit-note { margin:0; font-size:9.5px; line-height:1.42; color:var(--text-2); }
 .restriction { align-self:flex-start; font-size:8.5px; padding:2px 6px; border-radius:999px; color:#f3c98b; background:rgba(240,181,103,.1); border:1px solid rgba(240,181,103,.3); }
-@media (prefers-reduced-motion:reduce) { .srv-limits-chev { transition:none; } }
+@media (prefers-reduced-motion:reduce) { .srv-limits-chev { transition:none; } .srv-limits-body { animation:none; } }
 .srv-row.maintenance { opacity:.62; cursor:not-allowed; border-color:rgba(240,181,103,.35); }
 /* «Авто · Лучший сервер» и замок ручного выбора — как в версии для ПК. */
 .srv-row--auto .auto-mark { display:grid; place-items:center; background:linear-gradient(135deg, rgba(139,92,246,.92), rgba(90,160,255,.92)); box-shadow:none; }
