@@ -49,6 +49,75 @@ class FlatMapView {
 		);
 	}
 
+	/// Кадр по точкам «я → выбранный сервер», прижатый к верху экрана.
+	///
+	/// [topAnchored] считает только горизонталь: `centreOn.fy` он игнорирует, а
+	/// зум ему задают снаружи. На телефоне это выглядело как фиксированный зум:
+	/// далёкий сервер уезжал под показания или вовсе за кадр. Здесь и масштаб,
+	/// и вертикальный сдвиг считаются от разлёта точек — но с двумя
+	/// обещаниями, ради которых зум когда-то и сделали постоянным:
+	///
+	///  * ближе, чем [roomyCoverage], камера не подъезжает — мелкие правки
+	///    геолокации не дёргают картинку;
+	///  * мир никогда не съезжает ниже [topPadding], то есть пустоты над
+	///    картой не появляется. Вверх он сдвигается только тогда, когда южная
+	///    точка иначе спряталась бы за показаниями.
+	///
+	/// Полоса [bandTop]..[bandBottom] — доли высоты экрана, в которые обязаны
+	/// влезть все точки: ниже начинаются показания и кнопка.
+	static FlatMapView framePoints({
+		required Size viewport,
+		required List<MapPoint> points,
+		double roomyCoverage = 0.88,
+		double tightestCoverage = 0.34,
+		double topPadding = 0,
+		double sideMargin = 26,
+		double padX = 10,
+		double padY = 12,
+		double bandTop = 0.14,
+		double bandBottom = 0.6,
+	}) {
+		if (points.isEmpty || viewport.width <= 0 || viewport.height <= 0) {
+			return const FlatMapView(zoom: 1, focus: Offset(.5, .5));
+		}
+		var minX = points.first.x, maxX = minX, minY = points.first.y, maxY = minY;
+		for (final MapPoint p in points) {
+			if (p.x < minX) minX = p.x;
+			if (p.x > maxX) maxX = p.x;
+			if (p.y < minY) minY = p.y;
+			if (p.y > maxY) maxY = p.y;
+		}
+		// При coverage c масштаб равен c*H/60 пикселей на единицу карты, значит
+		// coverage, при котором разлёт вписывается ровно, это 60*room/(H*разлёт).
+		final double roomX = viewport.width - sideMargin * 2;
+		final double roomY = viewport.height * (bandBottom - bandTop);
+		final double fitX = roomX > 0
+				? mapHeight * roomX / (viewport.height * ((maxX - minX) + padX))
+				: roomyCoverage;
+		final double fitY = roomY > 0
+				? mapHeight * roomY / (viewport.height * ((maxY - minY) + padY))
+				: roomyCoverage;
+		final double fit = fitX < fitY ? fitX : fitY;
+		final double coverage = fit >= roomyCoverage
+				? roomyCoverage
+				: (fit <= tightestCoverage ? tightestCoverage : fit);
+		final double scale = scaleFor(viewport: viewport, coverage: coverage);
+		// Верхний край мира: базово там же, где его держал `topAnchored`.
+		double top = topPadding;
+		final double bandTopPx = viewport.height * bandTop;
+		final double bandBottomPx = viewport.height * bandBottom;
+		if (top + maxY * scale > bandBottomPx) top = bandBottomPx - maxY * scale;
+		if (top + minY * scale < bandTopPx) top = bandTopPx - minY * scale;
+		if (top > topPadding) top = topPadding;
+		return FlatMapView(
+			zoom: scale * mapWidth / viewport.width,
+			focus: Offset(
+				(((minX + maxX) / 2) / mapWidth).clamp(0.0, 1.0),
+				(viewport.height / 2 - top) / (mapHeight * scale),
+			),
+		);
+	}
+
 	/// Fit every account endpoint into the visible background, not only the selected route.
 	static FlatMapView fitConnections({required Size viewport, required List<MapPoint> points, required double maxZoom}) {
 		if (points.isEmpty || viewport.width <= 48 || viewport.height <= 160) return const FlatMapView(zoom: 1, focus: Offset(.5,.5));
