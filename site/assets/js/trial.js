@@ -100,26 +100,32 @@
     }
   }
 
-  /* Списываем всегда рубли — это единственная валюта шлюза. Тенге и доллары
-     показываем рядом, чтобы посетитель понимал масштаб суммы. */
+  /* Цену показываем в валюте рынка: сервер уже посчитал её по стране (СНГ —
+     рубли, Казахстан — тенге, остальной мир — доллар). Приписку «(≈ 100 ₸ ·
+     $0.10)» рядом с суммой не пишем: она ничего не добавляет тому, кто и так
+     видит цену в своих деньгах. */
+  function priceLabel(offer) {
+    var price = (offer && offer.price) || {};
+    return price.label || (offer && offer.charge && offer.charge.label) || "";
+  }
+
+  /* Списание идёт рублями — это единственная валюта шлюза. Говорим об этом
+     ровно один раз и только там, где цена показана в другой валюте: на /trial,
+     где человек решает платить. */
   function chargeLabel(offer) {
     return (offer && offer.charge && offer.charge.label) || "";
   }
 
-  function equivalents(offer) {
+  function chargeNote(offer) {
+    var price = (offer && offer.price) || {};
     var charge = (offer && offer.charge) || {};
-    var out = [];
-    ((offer && offer.equivalents) || []).forEach(function (m) {
-      if (!m || !m.label || m.currency === charge.currency) return;
-      out.push(m.label);
-    });
-    return out;
+    if (!charge.label || !price.currency || price.currency === charge.currency) return "";
+    return L(
+      "Списание пройдёт в рублях: " + charge.label + " через СБП или картой.",
+      "The charge itself settles in roubles: " + charge.label + " by SBP or card."
+    );
   }
 
-  function equivSuffix(offer) {
-    var eq = equivalents(offer);
-    return eq.length ? " (\u2248 " + eq.join(" \u00b7 ") + ")" : "";
-  }
 
   function planName(offer) {
     return (offer && offer.planName) || "Basic";
@@ -135,12 +141,11 @@
   /* ----------------------------------------------------- баннер и полоса */
   function bannerText(offer) {
     var days = daysLabel(offer.days);
-    var price = chargeLabel(offer);
-    var eq = equivSuffix(offer);
+    var price = priceLabel(offer);
     return L(
-      "Новым аккаунтам с подтверждённым Telegram — " + days + " " + planName(offer) + " за " + price + eq +
+      "Новым аккаунтам с подтверждённым Telegram — " + days + " " + planName(offer) + " за " + price +
         ". Автосписаний нет: подписка просто закончится.",
-      "New accounts with a confirmed Telegram get " + days + " of " + planName(offer) + " for " + price + eq +
+      "New accounts with a confirmed Telegram get " + days + " of " + planName(offer) + " for " + price +
         ". No auto-renewal — the trial simply ends."
     );
   }
@@ -152,7 +157,7 @@
         '<span class="trial-banner__badge">' + esc(L("Акция", "Offer")) + "</span>" +
         '<h2 class="trial-banner__title">' +
           esc(L("Пробный период " + planName(offer) + " — " + days + " за ", "Try " + planName(offer) + " for " + days + " — ")) +
-          '<span class="trial-banner__price">' + esc(chargeLabel(offer)) + "</span>" +
+          '<span class="trial-banner__price">' + esc(priceLabel(offer)) + "</span>" +
         "</h2>" +
         '<p class="trial-banner__text">' + esc(bannerText(offer)) + "</p>" +
       "</div>" +
@@ -166,12 +171,12 @@
   function renderStrip(host, offer) {
     var days = daysLabel(offer.days);
     host.innerHTML =
-      '<span class="trial-strip__badge">' + esc(days + " \u00b7 " + chargeLabel(offer)) + "</span>" +
+      '<span class="trial-strip__badge">' + esc(days + " \u00b7 " + priceLabel(offer)) + "</span>" +
       '<p class="trial-strip__text">' +
         esc(L("Пробный период для новых аккаунтов: ", "Trial for new accounts: ")) +
         "<b>" + esc(planName(offer)) + "</b>" +
-        esc(L(" на " + days + " за " + chargeLabel(offer) + equivSuffix(offer) + ", дальше — обычная цена.",
-              " for " + days + " at " + chargeLabel(offer) + equivSuffix(offer) + ", then the usual price.")) +
+        esc(L(" на " + days + " за " + priceLabel(offer) + ", дальше — обычная цена.",
+              " for " + days + " at " + priceLabel(offer) + ", then the usual price.")) +
       "</p>" +
       '<a class="btn btn--primary" href="' + esc(href("/trial/")) + '">' + esc(L("Попробуйте", "Try it")) + "</a>";
     host.hidden = false;
@@ -193,8 +198,8 @@
       link.className = "plan__trial";
       link.href = href("/trial/");
       link.textContent = L(
-        "Новым аккаунтам: " + days + " за " + chargeLabel(offer),
-        "New accounts: " + days + " for " + chargeLabel(offer)
+        "Новым аккаунтам: " + days + " за " + priceLabel(offer),
+        "New accounts: " + days + " for " + priceLabel(offer)
       );
       var price = card.querySelector(".plan__price");
       if (price) card.insertBefore(link, price);
@@ -227,8 +232,8 @@
         "",
         L("Сегодня, " + fmtDate(tl.startsAt), "Today, " + fmtDate(tl.startsAt)),
         L(planName(offer) + " на " + days + " за " + chargeLabel(offer), planName(offer) + " for " + days + " at " + chargeLabel(offer)),
-        L("Один платёж " + chargeLabel(offer) + equivSuffix(offer) + " — и доступ открывается сразу после подтверждения оплаты.",
-          "A single " + chargeLabel(offer) + equivSuffix(offer) + " payment, and access opens as soon as it is confirmed.")
+        L("Один платёж " + priceLabel(offer) + " — и доступ открывается сразу после подтверждения оплаты.",
+          "A single " + priceLabel(offer) + " payment, and access opens as soon as it is confirmed.")
       ) +
       step(
         "",
@@ -339,10 +344,16 @@
   function renderPage(host, offer) {
     var days = daysLabel(offer.days);
     fill(host, "[data-trial-plan]", planName(offer) + " \u00b7 " + days);
-    fill(host, "[data-trial-amount]", chargeLabel(offer));
+    fill(host, "[data-trial-amount]", priceLabel(offer));
     fill(host, "[data-trial-per]", L("за " + days, "for " + days));
-    var eq = equivalents(offer);
-    fill(host, "[data-trial-equiv]", eq.length ? L("Эквивалент: ", "Equivalent: ") + eq.join(" \u00b7 ") : "");
+    /* Не эквиваленты, а одна строка про валюту списания — и только тем,
+       кому цена показана не в рублях. Пустую строку скрываем: пустой абзац
+       оставляет дырку между ценой и таймлайном. */
+    var note = host.querySelector("[data-trial-equiv]");
+    if (note) {
+      note.textContent = chargeNote(offer);
+      note.hidden = !note.textContent;
+    }
     renderTimeline(host, offer);
     renderClaim(host, offer);
   }
@@ -422,6 +433,19 @@
         state.busy = false;
         btn.disabled = false;
         btn.textContent = label;
+        /* Заказ уже оплачен: сервер сверился со шлюзом и сам включил подписку —
+           платить второй раз не за что. */
+        if (String(order.status || "") === "PAID") {
+          status(
+            "ok",
+            "<b>" + esc(L("Оплата уже прошла", "That payment already went through")) + "</b>" +
+              "<p>" + esc(L("Пробный период уже включён.", "The trial is already switched on.")) +
+              ' <a href="' + esc(href("/app/")) + '">' + esc(L("Открыть кабинет", "Open the dashboard")) + "</a></p>"
+          );
+          if (A.refresh) A.refresh();
+          load();
+          return;
+        }
         /* Ручной режим оплаты: заказ есть, дальше — инструкция из ответа. */
         status(
           "ok",
@@ -442,18 +466,68 @@
   }
 
   /* Возврат со страницы оплаты: TabPay присылает браузер на /trial/?paid=1
-     или ?failed=1. Подписку выдаёт вебхук, а не этот редирект, поэтому текст
-     говорит про подтверждение, а не про готовность. */
+     или ?failed=1. Подписку выдаёт вебхук, но его доставка может опоздать или
+     потеряться, поэтому здесь мы просим сервер сверить открытые платежи со
+     шлюзом: заплативший не должен видеть «подписки нет», а отклонённая попытка
+     не должна мешать следующей. */
+  function syncOrders(done) {
+    var A = window.GlukAuth;
+    if (!A || !A.call) {
+      done(null);
+      return;
+    }
+    /* Сессия ещё проверяется — без токена сверка ничего не даст, ждём ответ. */
+    if (A.state && A.state.status === "loading") {
+      var once = function () {
+        document.removeEventListener("gluk:auth", once);
+        syncOrders(done);
+      };
+      document.addEventListener("gluk:auth", once);
+      return;
+    }
+    if (!A.isAuthed || !A.isAuthed()) {
+      done(null);
+      return;
+    }
+    A.call("/api/billing/orders/sync", { method: "POST", body: {} }).then(
+      function (res) { done(res || null); },
+      function () { done(null); }
+    );
+  }
+
+  function paidOrder(res) {
+    var found = null;
+    ((res && res.orders) || []).forEach(function (o) {
+      if (!found && o && String(o.status || "") === "PAID") found = o;
+    });
+    return found;
+  }
+
   function gatewayReturn() {
     if (param("paid")) {
-      status(
-        "ok",
-        "<b>" + esc(L("Оплата отправлена", "Payment sent")) + "</b>" +
-          "<p>" + esc(L(
-            "Подписка включится автоматически, как только банк подтвердит платёж — обычно это несколько секунд.",
-            "The subscription switches on automatically as soon as the bank confirms the payment — usually a few seconds."
-          )) + ' <a href="' + esc(href("/app/")) + '">' + esc(L("Открыть кабинет", "Open the dashboard")) + "</a></p>"
-      );
+      status("ok", "<b>" + esc(L("Проверяем платёж…", "Checking the payment…")) + "</b>");
+      syncOrders(function (res) {
+        var A = window.GlukAuth;
+        if (paidOrder(res)) {
+          status(
+            "ok",
+            "<b>" + esc(L("Подписка активна", "The subscription is live")) + "</b>" +
+              "<p>" + esc(L("Пробный период уже включён.", "The trial is already switched on.")) +
+              ' <a href="' + esc(href("/app/")) + '">' + esc(L("Открыть кабинет", "Open the dashboard")) + "</a></p>"
+          );
+          if (A && A.refresh) A.refresh();
+        } else {
+          status(
+            "ok",
+            "<b>" + esc(L("Оплата отправлена", "Payment sent")) + "</b>" +
+              "<p>" + esc(L(
+                "Подписка включится автоматически, как только банк подтвердит платёж — обычно это несколько секунд.",
+                "The subscription switches on automatically as soon as the bank confirms the payment — usually a few seconds."
+              )) + ' <a href="' + esc(href("/app/")) + '">' + esc(L("Открыть кабинет", "Open the dashboard")) + "</a></p>"
+          );
+        }
+        load();
+      });
       return;
     }
     if (param("failed")) {
@@ -461,32 +535,65 @@
         "err",
         "<b>" + esc(L("Оплата не прошла", "The payment did not go through")) + "</b>" +
           "<p>" + esc(L(
-            "Деньги не списаны. Можно попробовать снова — другой способ оплаты или другую карту.",
-            "Nothing was charged. You can try again with another method or card."
+            "Деньги не списаны. Можно попробовать снова — кнопка ниже создаст новый платёж, можно взять другую карту или СБП.",
+            "Nothing was charged. You can try again — the button below starts a new payment, with another card or SBP."
           )) + "</p>"
       );
+      /* Закрываем отклонённую попытку сразу, чтобы следующее нажатие шло за новым
+         платежом, а не на ту же страницу отказа. */
+      syncOrders(function () { load(); });
     }
   }
 
   /* ---------------------------------------------------------------- вывод */
+  /* Секция-обёртка, если она помечена: убирать надо её, иначе от «скрытого»
+     блока останутся отступы секции. */
+  function section(host) {
+    return (host.closest && host.closest("[data-trial-section]")) || host;
+  }
+
+  /* Кому акция не положена, у того блока нет в разметке вовсе. Скрытый пустой
+     блок всё равно находится поиском по странице и оставляет дырку в ритме
+     секций, а попытки заплатить рубль у такого человека быть не должно вовсе.
+     Место запоминаем: состояние меняется прямо на странице (вошёл, вышел,
+     подтвердил Telegram), и блок должен уметь вернуться туда, где был. */
+  function drop(host) {
+    var box = section(host);
+    if (!box.parentNode) return;
+    if (!host.trialSlot) host.trialSlot = { parent: box.parentNode, next: box.nextSibling };
+    host.innerHTML = "";
+    box.parentNode.removeChild(box);
+  }
+
+  function restore(host) {
+    var box = section(host);
+    if (box.parentNode) return;
+    var slot = host.trialSlot;
+    if (!slot || !slot.parent) return;
+    var ref = slot.next && slot.next.parentNode === slot.parent ? slot.next : null;
+    slot.parent.insertBefore(box, ref);
+  }
+
   function apply() {
     var offer = state.offer;
     var show = !!offer && state.enabled && !!offer.enabled &&
       !!PROMO_REASONS[String((offer.eligibility || {}).reason || "")];
 
     banners.forEach(function (host) {
-      if (show) renderBanner(host, offer);
-      else {
-        host.hidden = true;
-        host.innerHTML = "";
+      if (!show) {
+        drop(host);
+        return;
       }
+      restore(host);
+      renderBanner(host, offer);
     });
     strips.forEach(function (host) {
-      if (show) renderStrip(host, offer);
-      else {
-        host.hidden = true;
-        host.innerHTML = "";
+      if (!show) {
+        drop(host);
+        return;
       }
+      restore(host);
+      renderStrip(host, offer);
     });
     decorateCards(offer, show);
     /* Страница /trial показывает акцию всегда: даже отказ там полезен —

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Пробный период за 1 ₽ — GlukVPN</title>
-  <meta name="description" content="Пробный период GlukVPN: 7 дней тарифа Basic за 1 ₽ (≈100 ₸ / $0.10) для новых аккаунтов. Одно списание, без автопродления.">
+  <meta name="description" content="Пробный период GlukVPN: 7 дней тарифа Basic за 1 ₽ для новых аккаунтов. Одно списание, без автопродления.">
   <link rel="canonical" href="https://vpn.gluk.tech/trial/">
   <meta name="theme-color" content="#0a0714">
   <meta name="color-scheme" content="dark">
@@ -43,14 +43,14 @@
   <link rel="stylesheet" href="/assets/css/utilities.css?v=1.3.0">
   <link rel="stylesheet" href="/assets/css/fx.css?v=1.3.0">
   <link rel="stylesheet" href="/assets/css/auth.css?v=20260907.1">
-  <link rel="stylesheet" href="/assets/css/trial.css?v=20260909.1">
+  <link rel="stylesheet" href="/assets/css/trial.css?v=20260909.2">
   <script src="/assets/js/config.js?v=1.3.1" defer></script>
   <script src="/assets/js/i18n.js?v=1.3.0" defer></script>
   <script src="/assets/js/sections.js?v=1.3.0" defer></script>
   <script src="/assets/js/ui.js?v=1.3.1" defer></script>
   <script src="/assets/js/fx.js?v=1.3.0" defer></script>
   <script src="/assets/js/auth.js?v=20260907.1" defer></script>
-  <script src="/assets/js/trial.js?v=20260909.1" defer></script>
+  <script src="/assets/js/trial.js?v=20260909.2" defer></script>
   <script src="/assets/js/fonts.js?v=1.3.0" defer></script>
 </head>
 <body>
@@ -121,7 +121,10 @@
               <span class="trial-card__amount" data-trial-amount>1 ₽</span>
               <span class="trial-card__per" data-trial-per>за 7 дней</span>
             </div>
-            <p class="trial-card__equiv" data-trial-equiv>Эквивалент: 100 ₸ · $0.10</p>
+            <!-- Цена выше уже в валюте рынка, поэтому здесь не эквиваленты, а
+                 одна честная строка о том, что само списание идёт в рублях — и
+                 только тем, кому цена показана не в рублях. Заполняет trial.js. -->
+            <p class="trial-card__equiv" data-trial-equiv hidden></p>
           </div>
 
           <ol class="trial-timeline" data-trial-timeline>

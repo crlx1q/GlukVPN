@@ -27,7 +27,9 @@
   align-items: center;
   gap: clamp(16px, 2.4vw, 32px);
   padding: clamp(18px, 2vw, 26px) clamp(18px, 2.4vw, 30px);
-  border: 1px solid var(--stroke-violet);
+  /* Пунктир — та же рамка, что у метки на карточке тарифа: акция
+     читается как оторванный билет, а не как ещё один блок сайта. */
+  border: 1.5px dashed var(--stroke-violet);
   border-radius: var(--r-lg);
   background:
     radial-gradient(120% 180% at 6% 0%, rgba(124, 77, 234, 0.3), rgba(20, 15, 30, 0.72) 58%),
@@ -35,16 +37,29 @@
   box-shadow: var(--glow-soft);
 }
 
-/* Живое свечение справа — декор, поэтому не ловит курсор. */
+/* Свет медленно ходит за пунктиром из края в край: движение ловится
+   краем глаза и не мешает читать. Декор, поэтому не ловит курсор. */
 .trial-banner::after {
   content: "";
   position: absolute;
-  inset: -40% -20% auto auto;
-  width: 320px;
-  height: 320px;
+  inset: -55% auto auto -15%;
+  width: clamp(260px, 34vw, 420px);
+  aspect-ratio: 1;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(168, 85, 247, 0.35), transparent 70%);
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.34), transparent 68%);
   pointer-events: none;
+  will-change: transform;
+  animation: trial-banner-light 16s var(--ease-soft) infinite alternate;
+}
+
+@keyframes trial-banner-light {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(190%, 16%, 0);
+  }
 }
 
 .trial-banner__copy {
@@ -428,7 +443,27 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Свет остаётся, но стоит на месте: кто просил без анимаций, тот
+     видит тот же баннер без движения. */
   .trial-banner::after {
-    display: none;
+    animation: none;
+    transform: translate3d(120%, 8%, 0);
   }
+}
+
+/* Метка промокода на карточке тарифа. Скидку надо видеть там, где цена:
+   строчка под полем ввода теряется, и рабочий код кажется нерабочим. */
+.plan__promo {
+  display: inline-flex;
+  align-items: center;
+  align-self: start;
+  margin: 0 0 var(--s-2);
+  padding: 4px 10px;
+  border: 1px dashed var(--stroke-violet);
+  border-radius: var(--r-pill);
+  background: rgba(124, 77, 234, 0.14);
+  color: var(--violet-light);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-strong);
+  letter-spacing: 0.02em;
 }
