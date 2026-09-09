@@ -122,6 +122,44 @@ class _DesktopAccountScreenState extends State<DesktopAccountScreen> {
     }
   }
 
+  /// «Отключить» гасит только туннель: аккаунт на устройстве остаётся.
+  ///
+  /// В строке была одна кнопка — «Выйти», то есть чтобы снять чужой
+  /// туннель, приходилось выкидывать устройство из аккаунта целиком. На
+  /// телефоне есть обе кнопки — теперь и здесь.
+  Future<void> _disconnectDevice(DeviceInfo device) async {
+    if (_busyDeviceId != null) return;
+    setState(() {
+      _busyDeviceId = device.id;
+      _notice = null;
+    });
+    try {
+      // Своё устройство гасим через контроллер: иначе сессия закроется, а
+      // локальный туннель и иконка в трее останутся включёнными.
+      if (device.isCurrent) {
+        await widget.vpn.disconnect();
+      } else {
+        await widget.vpn.api.disconnect(deviceId: device.id);
+      }
+      if (!mounted) return;
+      setState(() {
+        _busyDeviceId = null;
+        _notice = _ru
+            ? 'Туннель на устройстве отключён. Аккаунт на нём остался.'
+            : 'The tunnel on that device was closed. It stays signed in.';
+      });
+      await _load();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _busyDeviceId = null;
+        _notice = _ru
+            ? 'Не удалось отключить устройство'
+            : 'Could not disconnect that device';
+      });
+    }
+  }
+
   Future<void> _confirmSignOutDevice(DeviceInfo device) async {
     final bool ok = await _confirm(
       title: _ru ? 'Выйти на этом устройстве?' : 'Sign this device out?',
@@ -333,6 +371,9 @@ class _DesktopAccountScreenState extends State<DesktopAccountScreen> {
                   ru: _ru,
                   busy: _busyDeviceId == device.id,
                   onSignOut: () => _confirmSignOutDevice(device),
+                  // Гасить нечего, пока устройство не в сети.
+                  onDisconnect:
+                      device.connected ? () => _disconnectDevice(device) : null,
                 ),
               ),
 
@@ -755,12 +796,16 @@ class _DeviceRow extends StatelessWidget {
     required this.ru,
     required this.busy,
     required this.onSignOut,
+    this.onDisconnect,
   });
 
   final DeviceInfo device;
   final bool ru;
   final bool busy;
   final VoidCallback onSignOut;
+
+  /// null — устройство не в сети, гасить нечего.
+  final VoidCallback? onDisconnect;
 
   @override
   Widget build(BuildContext context) {
@@ -834,6 +879,24 @@ class _DeviceRow extends StatelessWidget {
               ],
             ),
           ),
+          // «Отключить» рядом с «Выйти», как в мобильной версии: первая гасит
+          // туннель, вторая ещё и выкидывает устройство из аккаунта.
+          if (!revoked && !busy && onDisconnect != null)
+            TextButton(
+              onPressed: onDisconnect,
+              style: TextButton.styleFrom(
+                minimumSize: const Size(0, 30),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+              ),
+              child: Text(
+                ru ? 'Отключить' : 'Disconnect',
+                style: const TextStyle(
+                  color: GlukColors.violetLight,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           if (!revoked)
             busy
                 ? const SizedBox(

@@ -633,10 +633,17 @@ class ApiClient {
     return ConnectResult.fromJson(json);
   }
 
-  Future<void> disconnect({String? sessionId}) => _request(
+  /// Гасит туннель: свой — без параметров, чужой — по сессии или по
+  /// устройству. `deviceId` нужен ПК-версии: её список устройств приходит
+  /// из /api/devices, где id сессии нет, а сервер принимает любой из двух
+  /// ключей и сам ищет живую сессию устройства.
+  Future<void> disconnect({String? sessionId, String? deviceId}) => _request(
         'POST',
         '/api/vpn/disconnect',
-        body: <String, dynamic>{if (sessionId != null) 'sessionId': sessionId},
+        body: <String, dynamic>{
+          if (sessionId != null) 'sessionId': sessionId,
+          if (deviceId != null) 'deviceId': deviceId,
+        },
       );
 
   Future<VpnStatusInfo> status() async =>
