@@ -58,14 +58,24 @@ class VpnController extends ChangeNotifier {
   /// мгновенный реконнект выглядел бы как борьба с админом.
   DateTime? _autoReconnectAfter;
 
-  /// Сколько опросов статуса подряд должно не дойти, чтобы счесть
-  /// туннель мёртвым. При интервале в 10 секунд это около полминуты:
-  /// короткий провал сети (лифт, метро, переезд с Wi-Fi на LTE)
-  /// переживаем молча.
+  /// Сколько улик подряд считаем приговором мёртвому туннелю.
+  ///
+  /// Улики две, и обе идут ПО туннелю: опрос статуса (ждёт до 15 секунд,
+  /// поэтому весит два) и замер пинга до шлюза с откатом на HTTPS к API
+  /// (раз в 3 секунды, весит один). Порог в три очка — это примерно
+  /// десяток секунд молчания: короткий провал сети (лифт, метро, переезд
+  /// с Wi-Fi на LTE) переживаем молча, а оборванный туннель ловим, пока
+  /// пользователь ещё смотрит на экран, а не через минуту.
   static const int deadTunnelStrikes = 3;
 
-  /// Опросы статуса, не дошедшие подряд.
-  int _statusFailures = 0;
+  /// Вес одного не дошедшего опроса статуса.
+  static const int _statusStrikeWeight = 2;
+
+  /// Накопленные улики. Любая удачная проба через туннель их обнуляет.
+  int _tunnelStrikes = 0;
+
+  /// Туннель уже гасит сторожевой таймер — второй раз не надо.
+  bool _killingDeadTunnel = false;
 
   /// Авто-выбор сервера, как на ПК: на Free он единственно возможный,
   /// на платном тарифе его можно выключить, выбрав узел руками.
@@ -595,13 +605,56 @@ class VpnController extends ChangeNotifier {
     _autoReconnectAfter = DateTime.now().add(hold);
   }
 
+  /// Регистрирует пробу, которая не прошла ПО туннелю, и гасит туннель,
+  /// когда улик набралось достаточно.
+  ///
+  /// Это и есть удалённое отключение с точки зрения телефона. На ПК
+  /// сессию закрывает сам сервер и ответ до приложения доходит, а здесь
+  /// весь трафик (включая запросы к API) идёт через туннель: как только
+  /// узел выкинул пира, до приложения не доходит ничего — ни 401, ни
+  /// причина. Единственный честный вывод — «через туннель больше не
+  /// живём», и сделать его надо самому.
+  Future<void> _registerTunnelStrike(int weight) async {
+    if (_disposed || _killingDeadTunnel) return;
+    final TunnelStage stage = await _vpn.currentStage();
+    final bool believedUp =
+        stage.isConnected || _state == VpnUiState.connected;
+    if (!believedUp) {
+      // Туннеля и так нет: улики к делу не относятся.
+      _tunnelStrikes = 0;
+      return;
+    }
+    _tunnelStrikes += weight;
+    if (_tunnelStrikes < deadTunnelStrikes) return;
+    _tunnelStrikes = 0;
+    _killingDeadTunnel = true;
+    try {
+      _holdAutoReconnect(const Duration(seconds: 8));
+      _notice = _russian
+          ? 'Туннель перестал отвечать и был остановлен. Выясняем причину…'
+          : 'The tunnel stopped responding and was shut down. Checking why…';
+      await _vpn.stop();
+      _resetConnectionState();
+      _state = VpnUiState.disconnected;
+      _safeNotify();
+      _probeHomeIp(settle: const Duration(milliseconds: 1200)).ignore();
+      // Статус теперь уходит напрямую и через пару секунд расскажет,
+      // кто и почему закрыл сессию, подменив сообщение выше.
+      Timer(const Duration(seconds: 3), () {
+        if (!_disposed) unawaited(refreshStatus());
+      });
+    } finally {
+      _killingDeadTunnel = false;
+    }
+  }
+
   Future<void> refreshStatus() => _syncWithServer();
 
   Future<void> _syncWithServer({bool initial = false}) async {
     try {
       final VpnStatusInfo status = await _api.status();
-      // Ответ дошёл — значит туннель живой, счётчик обнуляем.
-      _statusFailures = 0;
+      // Ответ дошёл — значит туннель живой, улики обнуляем.
+      _tunnelStrikes = 0;
       final TunnelStage stage = await _vpn.currentStage();
       _peerReady = status.peerReady;
       _serviceMaintenance = status.maintenance || status.nodeMaintenance;
@@ -711,30 +764,16 @@ class VpnController extends ChangeNotifier {
       // доходить вообще: приходит statusCode 0 (таймаут), а не 401 — то
       // есть узнать причину телефон уже не может, и раньше он навсегда
       // оставался «подключённым» без интернета — ровно то, что видно на
-      // телефоне при удалённом отключении. Ждём несколько опросов подряд
-      // (сеть иногда честно мигает) и гасим туннель сами: после этого
-      // трафик идёт напрямую, статус снова доходит и говорит настоящую
-      // причину закрытия сессии.
+      // телефоне при удалённом отключении. Улики копим (сеть иногда
+      // честно мигает) и гасим туннель сами: после этого трафик идёт
+      // напрямую, статус снова доходит и говорит настоящую причину
+      // закрытия сессии.
       if (!rejected && error.isNetwork && !_disposed) {
-        _statusFailures++;
-        final TunnelStage stage = await _vpn.currentStage();
-        final bool believedUp = stage.isConnected || _state == VpnUiState.connected;
-        if (believedUp && _statusFailures >= deadTunnelStrikes) {
-          _statusFailures = 0;
-          _holdAutoReconnect(const Duration(seconds: 8));
-          _notice = _russian
-              ? 'Туннель перестал отвечать и был остановлен. Выясняем причину…'
-              : 'The tunnel stopped responding and was shut down. Checking why…';
-          await _vpn.stop();
-          _resetConnectionState();
-          _state = VpnUiState.disconnected;
-          _probeHomeIp(settle: const Duration(milliseconds: 1200)).ignore();
-          // Статус теперь уходит напрямую и через пару секунд расскажет,
-          // кто и почему закрыл сессию, подменив сообщение выше.
-          Timer(const Duration(seconds: 3), () {
-            if (!_disposed) unawaited(refreshStatus());
-          });
-        }
+        // Пинг спрашиваем сразу, не дожидаясь его таймера: он идёт по
+        // тому же туннелю, но отвечает быстрее опроса статуса, поэтому
+        // вдвоём они добирают порог за секунды, а не за минуту.
+        unawaited(_samplePing());
+        await _registerTunnelStrike(_statusStrikeWeight);
       }
     }
     _safeNotify();
@@ -877,6 +916,14 @@ class VpnController extends ChangeNotifier {
     );
     _pingSample = sample;
     _safeNotify();
+    // Замер — это вторая проба туннеля, и самая быстрая: сначала ICMP до
+    // шлюза внутри туннеля, потом HTTPS к API. Ответил хоть кто-то —
+    // путь наружу жив; молчат оба — улика к делу о мёртвом туннеле.
+    if (sample.ok) {
+      _tunnelStrikes = 0;
+    } else {
+      await _registerTunnelStrike(1);
+    }
   }
 
   /// Reads the address the world sees us as.
