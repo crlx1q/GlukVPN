@@ -892,9 +892,41 @@ class DesktopVpnController extends ChangeNotifier {
     }
   }
 
+  /// Отмена подключения, которая ощущается сразу.
+  ///
+  /// Раньше нажатие шло в `disconnect()`, а тот сразу выходил по `_busy`,
+  /// который держит текущий `connect()`: флаг выставлялся, но ни фаза,
+  /// ни кнопка не менялись до конца попытки — со стороны это выглядело как
+  /// «кнопка не нажимается». Теперь фаза и уборка начинаются в момент
+  /// нажатия, а `finally` у `connect()` лишь доводит дело до конца.
+  Future<void> cancelConnect() async {
+    if (_disposed) return;
+    _cancelPendingConnect = true;
+    _clearMaintenanceIntent();
+    _cancelReconnect();
+    _cancelConnectDeadline();
+    _userMessage = null;
+    _setPhase(ConnectionPhase.disconnecting, detail: 'cancelling');
+    _notify();
+    if (_busy) {
+      // Попытка ещё в полёте: рвём то, что успело подняться. Повторный
+      // down() безвреден, а connect() в finally увидит флаг и отдаст сессию.
+      try {
+        await _tunnel.down();
+      } catch (_) {
+        // Отмена не имеет права упасть: состояние выправит опрос туннеля.
+      }
+      return;
+    }
+    await disconnect();
+  }
+
   Future<void> toggle() async {
     if (_phase.isConnected) {
       await disconnect();
+    } else if (_phase == ConnectionPhase.connecting) {
+      // На этой фазе кнопка подписана «Отмена» — значит она и отменяет.
+      await cancelConnect();
     } else if (!_phase.isBusy) {
       await connect();
     }
