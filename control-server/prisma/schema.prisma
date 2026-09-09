@@ -182,6 +182,7 @@ model User {
   blockRules        NodeBlockRule[]
   domainStats       TrafficDomainStat[]
   orders            Order[]
+  promoRedemptions  PromoRedemption[]
 
   @@map("users")
 }
@@ -598,13 +599,85 @@ model Order {
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan Plan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan            Plan             @relation(fields: [planId], references: [id], onDelete: Restrict)
+  promoRedemption PromoRedemption?
 
   @@index([userId, createdAt])
   @@index([status])
   @@index([providerRef])
   @@map("orders")
+}
+
+/// A percentage discount applied to one order at checkout.
+///
+/// Everything about a code is checked on the server, and the discount is taken
+/// off the amount the gateway is asked for - a client can type a code, it can
+/// never decide what the code is worth.
+model PromoCode {
+  id             String    @id @default(uuid()) @db.Uuid
+  /// Stored upper-case; lookups normalise before comparing.
+  code           String    @unique
+  description    String?
+  percentOff     Int       @map("percent_off")
+  active         Boolean   @default(true)
+  startsAt       DateTime? @map("starts_at")
+  endsAt         DateTime? @map("ends_at")
+  /// Total redemptions allowed. NULL = unlimited.
+  maxRedemptions Int?      @map("max_redemptions")
+  /// Redemptions allowed per account. 0 = unlimited.
+  perUserLimit   Int       @default(1) @map("per_user_limit")
+  /// Plan codes the code applies to. Empty array = every paid plan.
+  planCodes      Json      @default("[]") @map("plan_codes") @db.JsonB
+  /// Denormalised counter, so the global limit is a read and not a COUNT(*).
+  redeemedCount  Int       @default(0) @map("redeemed_count")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  redemptions PromoRedemption[]
+
+  @@map("promo_codes")
+}
+
+/// One code against one paid order. Unique per order, which is what makes a
+/// webhook delivered five times count once.
+model PromoRedemption {
+  id            String   @id @default(uuid()) @db.Uuid
+  promoCodeId   String   @map("promo_code_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  orderId       String   @unique @map("order_id") @db.Uuid
+  discountMinor Int      @map("discount_minor")
+  currency      String
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  promoCode PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order     Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([promoCodeId])
+  @@index([userId])
+  @@map("promo_redemptions")
+}
+
+/// The trial promotion, exactly as the admin panel edits it. One row.
+///
+/// It lives in the database rather than in .env so switching the offer off,
+/// moving it to Pro or changing the sign-up window is a click instead of a
+/// deploy; the .env values only seed this row the first time it is read.
+model TrialOffer {
+  id              String   @id @default("global")
+  enabled         Boolean  @default(true)
+  /// Which plan the trial previews: "basic" or "pro".
+  planCode        String   @default("basic") @map("plan_code")
+  days            Int      @default(7)
+  /// How long after sign-up an account may still claim it.
+  eligibilityDays Int      @default(14) @map("eligibility_days")
+  requireTelegram Boolean  @default(true) @map("require_telegram")
+  /// The token charge in kopecks: 100 = 1 ₽, the gateway's own minimum.
+  priceKopecks    Int      @default(100) @map("price_kopecks")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("trial_offers")
 }
 
 model AuditLog {

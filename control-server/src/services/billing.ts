@@ -13,6 +13,9 @@
  *   - "stripe": Stripe Checkout (hosted page) + the `checkout.session.completed`
  *     webhook, verified with the endpoint secret. Written against Stripe's
  *     plain REST API with fetch, so there is no SDK to keep up to date.
+ *   - "tabpay": TabPay's hosted page (SBP + cards, roubles only) + a webhook
+ *     signed with the shop's secret. See `tabpay.ts`; the gateway settles in
+ *     one currency, which is why `settlementCurrency()` exists.
  *
  * Adding Kaspi / Freedom Pay / CloudPayments / crypto means one more adapter
  * implementing `PaymentProvider`; nothing else changes.
@@ -26,6 +29,13 @@ import { prisma } from "../prisma"
 import { FREE_PLAN_CODE } from "./entitlements"
 import { requestPolicySync } from "./policy"
 import { type PlanWithPrices, resolvePlanPrice } from "./pricing"
+import { type PromoApplication, applyPromo, redeemPromo } from "./promo"
+import {
+	TABPAY_CURRENCY,
+	TABPAY_MIN_KOPECKS,
+	type TabpayWebhookEvent,
+	tabpayProvider,
+} from "./tabpay"
 
 // --------------------------------------------------------------- plans -----
 
@@ -280,10 +290,41 @@ const stripeProvider: PaymentProvider = {
 
 function provider(): PaymentProvider {
 	if (!config.billingEnabled) throw serviceUnavailable("Billing is not enabled on this server")
-	return config.BILLING_PROVIDER === "stripe" ? stripeProvider : manualProvider
+	if (config.BILLING_PROVIDER === "stripe") return stripeProvider
+	if (config.BILLING_PROVIDER === "tabpay") return tabpayProvider
+	return manualProvider
+}
+
+/** Which adapter is live, or "" when billing is switched off. */
+export function activeProviderName(): string {
+	return config.billingEnabled ? config.BILLING_PROVIDER : ""
+}
+
+/**
+ * The currency the active gateway can actually settle in, or null when it
+ * takes whatever the visitor was quoted.
+ *
+ * TabPay is a Russian acquirer: roubles and nothing else. Without this, a
+ * visitor quoted "790 ₸" would be handed a checkout for 790 roubles, and the
+ * one-rouble trial would be a one-tenge trial.
+ */
+export function settlementCurrency(): string | null {
+	return config.BILLING_PROVIDER === "tabpay" ? TABPAY_CURRENCY : null
+}
+
+/** Smallest amount the active gateway accepts, in minor units. */
+export function minimumChargeMinor(): number {
+	return config.BILLING_PROVIDER === "tabpay" ? TABPAY_MIN_KOPECKS : 1
 }
 
 // --------------------------------------------------------------- orders ----
+
+/** Order metadata as an object, whatever the JSON column happens to hold. */
+function orderMetadata(order: Order): Record<string, unknown> {
+	return typeof order.metadata === "object" && order.metadata !== null && !Array.isArray(order.metadata)
+		? (order.metadata as Record<string, unknown>)
+		: {}
+}
 
 export type OrderView = {
 	id: string
@@ -295,11 +336,20 @@ export type OrderView = {
 	priceLabel: string
 	provider: string
 	paymentUrl: string | null
+	/** The code that was applied, and what it took off the charge. */
+	promoCode: string | null
+	discountMinor: number
+	/** What the visitor was quoted, when the gateway forced another currency. */
+	quotedCurrency: string | null
+	quotedMinor: number | null
 	paidAt: string | null
 	createdAt: string
 }
 
 export function orderView(order: Order & { plan: Plan }): OrderView {
+	const meta = orderMetadata(order)
+	const quotedCurrency = typeof meta.quotedCurrency === "string" ? meta.quotedCurrency : null
+	const quotedMinor = typeof meta.quotedMinor === "number" ? meta.quotedMinor : null
 	return {
 		id: order.id,
 		status: order.status,
@@ -310,6 +360,12 @@ export function orderView(order: Order & { plan: Plan }): OrderView {
 		priceLabel: priceLabel(order.amountMinor, order.currency),
 		provider: order.provider,
 		paymentUrl: order.status === "PENDING" ? order.paymentUrl : null,
+		promoCode: typeof meta.promoCode === "string" ? meta.promoCode : null,
+		discountMinor: typeof meta.discountMinor === "number" ? meta.discountMinor : 0,
+		// Only interesting when it differs: same currency means nothing was
+		// converted and the quote is the charge.
+		quotedCurrency: quotedCurrency && quotedCurrency !== order.currency ? quotedCurrency : null,
+		quotedMinor: quotedCurrency && quotedCurrency !== order.currency ? quotedMinor : null,
 		paidAt: order.paidAt?.toISOString() ?? null,
 		createdAt: order.createdAt.toISOString(),
 	}
@@ -321,10 +377,24 @@ export async function createOrder(params: {
 	ip?: string | null
 	/** Which currency to charge in. Defaults to the plan's own. */
 	currency?: string | null
+	/** A promo code typed by the visitor. Validated here, never trusted. */
+	promoCode?: string | null
+	/**
+	 * Allow ordering a plan that is not in the public catalogue. Only the trial
+	 * uses this: its plan is hidden so it cannot be bought straight off the
+	 * pricing page, and `trial.ts` opens it once eligibility is proven.
+	 */
+	allowHidden?: boolean
+	/** Recorded on the order; "trial" makes the grant a trial subscription. */
+	source?: string | null
 }): Promise<{ order: Order & { plan: Plan }; checkout: CheckoutResult }> {
 	const gateway = provider()
 	const plan = await prisma.plan.findFirst({
-		where: { code: params.planCode.toLowerCase(), active: true, isPublic: true },
+		where: {
+			code: params.planCode.toLowerCase(),
+			active: true,
+			...(params.allowHidden ? {} : { isPublic: true }),
+		},
 		include: { prices: true },
 	})
 	if (!plan) throw notFound("Plan not found")
@@ -333,19 +403,56 @@ export async function createOrder(params: {
 	// The order carries the amount actually charged, and both gateway adapters
 	// read the amount from the order rather than from the plan - so quoting a
 	// visitor in roubles and then billing them in tenge cannot happen.
-	const price = resolvePlanPrice(plan, params.currency)
+	const quoted = resolvePlanPrice(plan, params.currency)
+	// When the gateway settles in a single currency, that currency wins and the
+	// quote is kept on the order so the site can explain the conversion.
+	const settle = settlementCurrency()
+	const price = settle ? resolvePlanPrice(plan, settle) : quoted
+	if (settle && price.currency.toUpperCase() !== settle) {
+		throw serviceUnavailable("This plan is not priced in the gateway's currency")
+	}
+
+	// A code changes the amount, so it is resolved before any order exists.
+	let promo: PromoApplication | null = null
+	if (params.promoCode?.trim()) {
+		promo = await applyPromo({
+			code: params.promoCode,
+			userId: params.user.id,
+			planCode: plan.code,
+			amountMinor: price.priceMinor,
+			currency: price.currency,
+			minimumMinor: minimumChargeMinor(),
+		})
+	}
+	const amountMinor = promo ? promo.amountMinor : price.priceMinor
+	const metadata: Prisma.InputJsonValue = {
+		quotedCurrency: quoted.currency,
+		quotedMinor: quoted.priceMinor,
+		...(promo
+			? {
+					promoCode: promo.promo.code,
+					promoPercent: promo.percentOff,
+					discountMinor: promo.discountMinor,
+				}
+			: {}),
+		...(params.source ? { source: params.source } : {}),
+	}
 
 	// One open order per plan per user: a double click should not make two.
+	// The amount is part of the match, or a second attempt carrying a promo
+	// code would silently reuse the full-price checkout.
 	const open = await prisma.order.findFirst({
 		where: {
 			userId: params.user.id,
 			planId: plan.id,
 			status: "PENDING",
+			amountMinor,
+			currency: price.currency,
 			createdAt: { gt: new Date(Date.now() - 6 * 60 * 60 * 1000) },
 		},
 		include: { plan: true },
 	})
-	if (open && open.provider === gateway.name) {
+	if (open && open.provider === gateway.name && (gateway.name === "manual" || open.paymentUrl)) {
 		return {
 			order: open,
 			checkout: {
@@ -364,9 +471,10 @@ export async function createOrder(params: {
 		data: {
 			userId: params.user.id,
 			planId: plan.id,
-			amountMinor: price.priceMinor,
+			amountMinor,
 			currency: price.currency,
 			provider: gateway.name,
+			metadata,
 		},
 		include: { plan: true },
 	})
@@ -405,6 +513,12 @@ export async function markOrderPaid(params: {
 	providerRef?: string | null
 	by: "webhook" | "admin"
 	adminId?: string | null
+	/**
+	 * Accept money for an order we had already given up on. TabPay documents
+	 * late settlement - EXPIRED or FAILED can still become SUCCESS - and the
+	 * payment is real, so the plan has to follow it.
+	 */
+	revive?: boolean
 }): Promise<Order & { plan: Plan }> {
 	const order = await prisma.order.findUnique({
 		where: { id: params.orderId },
@@ -412,11 +526,15 @@ export async function markOrderPaid(params: {
 	})
 	if (!order) throw notFound("Order not found")
 	if (order.status === "PAID") return order
-	if (order.status !== "PENDING") throw conflict(`Order is ${order.status.toLowerCase()}`)
+	const revivable = params.revive === true && (order.status === "FAILED" || order.status === "CANCELLED")
+	if (order.status !== "PENDING" && !revivable) throw conflict(`Order is ${order.status.toLowerCase()}`)
 
 	// PENDING -> PAID is the gate; the loser of a race sees the winner's row.
 	const claimed = await prisma.order.updateMany({
-		where: { id: order.id, status: "PENDING" },
+		where: {
+			id: order.id,
+			status: revivable ? { in: ["PENDING", "FAILED", "CANCELLED"] } : "PENDING",
+		},
 		data: {
 			status: "PAID",
 			paidAt: new Date(),
@@ -428,7 +546,22 @@ export async function markOrderPaid(params: {
 		return prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { plan: true } })
 	}
 
-	const granted = await grantPlan({ userId: order.userId, plan: order.plan, source: "order" })
+	const meta = orderMetadata(order)
+	// A trial is still an order; the subscription just remembers where it came
+	// from, which is what makes "one trial per account" answerable later.
+	const source = meta.source === "trial" ? "trial" : "order"
+	const granted = await grantPlan({ userId: order.userId, plan: order.plan, source })
+	// A code is consumed by the payment, not by the checkout, so an abandoned
+	// order never burns it. Best effort: bookkeeping must not undo a grant.
+	if (typeof meta.promoCode === "string" && meta.promoCode) {
+		await redeemPromo({
+			code: meta.promoCode,
+			userId: order.userId,
+			orderId: order.id,
+			discountMinor: Number(meta.discountMinor) || 0,
+			currency: order.currency,
+		}).catch(() => false)
+	}
 	await writeAudit({
 		action: "billing.order.paid",
 		userId: params.adminId ?? order.userId,
@@ -505,4 +638,101 @@ export async function handleStripeEvent(event: {
 	if (session?.payment_status && session.payment_status !== "paid") return { handled: false, orderId }
 	await markOrderPaid({ orderId, providerRef: session?.id ?? null, by: "webhook" })
 	return { handled: true, orderId }
+}
+
+// ---------------------------------------------------------- tabpay hook ----
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Marks an order dead. False when it was not PENDING any more. */
+export async function markOrderFailed(params: {
+	orderId: string
+	status: "FAILED" | "CANCELLED"
+	reason?: string | null
+}): Promise<boolean> {
+	const result = await prisma.order.updateMany({
+		where: { id: params.orderId, status: "PENDING" },
+		data: { status: params.status },
+	})
+	if (result.count !== 1) return false
+	await writeAudit({
+		action: "billing.order.failed",
+		metadata: { orderId: params.orderId, status: params.status, reason: params.reason ?? null },
+	})
+	return true
+}
+
+/**
+ * Records a refund. The subscription is deliberately left alone: giving money
+ * back is a support decision, and taking access away is an explicit act in the
+ * admin panel - not something a webhook does behind an operator's back.
+ */
+export async function markOrderRefunded(params: {
+	orderId: string
+	reason?: string | null
+}): Promise<boolean> {
+	const result = await prisma.order.updateMany({
+		where: { id: params.orderId, status: "PAID" },
+		data: { status: "REFUNDED" },
+	})
+	if (result.count !== 1) return false
+	await writeAudit({
+		action: "billing.order.refunded",
+		metadata: { orderId: params.orderId, reason: params.reason ?? null },
+	})
+	return true
+}
+
+export type TabpayEventOutcome = {
+	handled: boolean
+	orderId?: string
+	status?: string
+	/** Why nothing was done, when nothing was done. */
+	ignored?: string
+}
+
+/**
+ * Applies one TabPay webhook. The signature is verified by the route before
+ * this runs; the only job here is to move the order.
+ *
+ * Anything unrecognised is acknowledged rather than refused: the gateway
+ * retries every non-2xx for a day, and an event about an order this database
+ * does not have (the other environment's shop, a purged order) will never
+ * start succeeding.
+ */
+export async function handleTabpayEvent(event: TabpayWebhookEvent): Promise<TabpayEventOutcome> {
+	const paymentId = typeof event.id === "string" ? event.id.trim() : ""
+	const orderId = typeof event.orderId === "string" ? event.orderId.trim() : ""
+	const status = typeof event.status === "string" ? event.status.trim().toUpperCase() : ""
+
+	// The dashboard's "send test webhook" button signs a synthetic event whose
+	// id is not a payment. It proves the URL and the secret, and must hand out
+	// nothing. `test: true` is a different thing entirely: a sandbox payment is
+	// exactly what the bank's reviewer will make, and it has to work.
+	if (paymentId.startsWith("test-")) return { handled: false, ignored: "probe", status }
+	if (!orderId || !status) return { handled: false, ignored: "malformed" }
+	if (!UUID_RE.test(orderId)) return { handled: false, ignored: "unknown_order", orderId, status }
+
+	const known = await prisma.order.findUnique({ where: { id: orderId }, select: { id: true } })
+	if (!known) return { handled: false, ignored: "unknown_order", orderId, status }
+
+	switch (status) {
+		case "SUCCESS":
+			await markOrderPaid({ orderId, providerRef: paymentId || null, by: "webhook", revive: true })
+			return { handled: true, orderId, status }
+		case "FAILED":
+		case "EXPIRED":
+			await markOrderFailed({ orderId, status: "FAILED", reason: status.toLowerCase() })
+			return { handled: true, orderId, status }
+		case "CANCELED":
+		case "CANCELLED":
+			await markOrderFailed({ orderId, status: "CANCELLED", reason: "canceled" })
+			return { handled: true, orderId, status }
+		case "REFUNDED":
+			await markOrderRefunded({ orderId, reason: "refunded" })
+			return { handled: true, orderId, status }
+		default:
+			// CREATED / PENDING, and whatever the status set grows into later.
+			return { handled: false, ignored: "no_action", orderId, status }
+	}
 }

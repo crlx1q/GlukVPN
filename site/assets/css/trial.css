@@ -1,0 +1,434 @@
+/* ==========================================================================
+   GlukVPN — акция «Пробный период за 1 ₽».
+
+   Три места, где акция видна: баннер на главной, полоса над тарифами
+   и страница /trial. Отдельный файл, а не добавка к sections.css:
+   акцию выключают из админки, и тогда ни один из этих блоков не рисуется
+   вообще — удобно, когда весь её CSS лежит в одном месте.
+
+   Цвета, радиусы и шаги сетки — токены из tokens.css, чтобы блоки
+   выглядели частью сайта, а не рекламной вставкой.
+   ========================================================================== */
+
+.trial-banner[hidden],
+.trial-strip[hidden],
+.trial-claim[hidden],
+.trial-status[hidden],
+.promo[hidden] {
+  display: none !important;
+}
+
+/* ----------------------------------------------------- баннер на главной */
+.trial-banner {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(16px, 2.4vw, 32px);
+  padding: clamp(18px, 2vw, 26px) clamp(18px, 2.4vw, 30px);
+  border: 1px solid var(--stroke-violet);
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(120% 180% at 6% 0%, rgba(124, 77, 234, 0.3), rgba(20, 15, 30, 0.72) 58%),
+    var(--glass-2);
+  box-shadow: var(--glow-soft);
+}
+
+/* Живое свечение справа — декор, поэтому не ловит курсор. */
+.trial-banner::after {
+  content: "";
+  position: absolute;
+  inset: -40% -20% auto auto;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.35), transparent 70%);
+  pointer-events: none;
+}
+
+.trial-banner__copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: var(--s-2);
+}
+
+.trial-banner__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  justify-self: start;
+  padding: 5px 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--stroke-violet);
+  background: rgba(124, 77, 234, 0.18);
+  color: var(--violet-light);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-strong);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.trial-banner__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.25rem, 1.05rem + 1vw, 1.75rem);
+  font-weight: var(--fw-display);
+  line-height: 1.2;
+  color: var(--text-0);
+}
+
+.trial-banner__price {
+  color: var(--violet-light);
+  white-space: nowrap;
+}
+
+.trial-banner__text {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--text-1);
+  font-size: var(--fs-sm);
+}
+
+.trial-banner__actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.trial-banner__more {
+  color: var(--text-1);
+  font-size: var(--fs-sm);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--stroke);
+}
+
+.trial-banner__more:hover {
+  color: var(--text-0);
+}
+
+@media (max-width: 860px) {
+  .trial-banner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .trial-banner__actions {
+    justify-content: flex-start;
+  }
+}
+
+/* -------------------------------------------------- полоса над тарифами */
+.trial-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3) var(--s-4);
+  margin: 0 0 var(--s-4);
+  padding: 14px 18px;
+  border: 1px solid var(--stroke-violet);
+  border-radius: var(--r-md);
+  background: linear-gradient(120deg, rgba(124, 77, 234, 0.22), rgba(20, 15, 30, 0.62) 70%);
+}
+
+.trial-strip__badge {
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  background: var(--grad-cta);
+  color: #fff;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-strong);
+  white-space: nowrap;
+}
+
+.trial-strip__text {
+  flex: 1 1 260px;
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-sm);
+}
+
+.trial-strip__text b {
+  color: var(--violet-light);
+}
+
+.trial-strip .btn {
+  flex: 0 0 auto;
+}
+
+/* Метка, которую trial.js вешает на саму карточку Basic. */
+.plan__trial {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-3);
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  border: 1px dashed var(--stroke-violet);
+  background: rgba(124, 77, 234, 0.14);
+  color: var(--violet-light);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+}
+
+.plan__trial:hover {
+  border-style: solid;
+  color: var(--text-0);
+}
+
+/* ------------------------------------------------------------- промокод */
+.promo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  margin: 0 0 var(--s-4);
+}
+
+.promo__label {
+  color: var(--text-1);
+  font-size: var(--fs-sm);
+}
+
+.promo__input {
+  flex: 0 1 200px;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-pill);
+  background: var(--glass);
+  color: var(--text-0);
+  font: inherit;
+  font-size: var(--fs-sm);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.promo__input:focus-visible {
+  outline: 2px solid var(--violet);
+  outline-offset: 2px;
+}
+
+.promo__status {
+  flex: 1 1 240px;
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-sm);
+}
+
+.promo__status--ok {
+  color: var(--green);
+}
+
+.promo__status--err {
+  color: var(--amber);
+}
+
+/* ------------------------------------------------------- страница /trial */
+.trial-card {
+  display: grid;
+  gap: var(--s-5);
+  padding: clamp(20px, 2.6vw, 34px);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-lg);
+  background: var(--glass-2);
+}
+
+.trial-card__head {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.trial-card__plan {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-display);
+  color: var(--text-0);
+}
+
+.trial-card__price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2) var(--s-3);
+}
+
+.trial-card__amount {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 1.4rem + 2.4vw, 3rem);
+  font-weight: var(--fw-display);
+  line-height: 1;
+  background: var(--grad-line);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.trial-card__per {
+  color: var(--text-1);
+  font-size: var(--fs-sm);
+}
+
+.trial-card__equiv {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+
+/* Таймлайн: даты считает сервер, здесь только линия и точки. */
+.trial-timeline {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trial-step {
+  position: relative;
+  display: grid;
+  gap: var(--s-1);
+  padding: 0 0 var(--s-5) 34px;
+}
+
+.trial-step::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: 7px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--violet);
+  box-shadow: 0 0 0 4px rgba(124, 77, 234, 0.22);
+}
+
+/* Линия идёт от точки вниз и обрывается на последнем шаге. */
+.trial-step::after {
+  content: "";
+  position: absolute;
+  top: 20px;
+  bottom: 0;
+  left: 12px;
+  width: 2px;
+  background: linear-gradient(180deg, rgba(124, 77, 234, 0.55), rgba(124, 77, 234, 0.08));
+}
+
+.trial-step:last-child {
+  padding-bottom: 0;
+}
+
+.trial-step:last-child::after {
+  display: none;
+}
+
+.trial-step--end::before {
+  background: var(--amber);
+  box-shadow: 0 0 0 4px rgba(240, 181, 103, 0.18);
+}
+
+.trial-step__date {
+  color: var(--violet-light);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-strong);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.trial-step__title {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-strong);
+}
+
+.trial-step__text {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-sm);
+}
+
+.trial-claim {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.trial-claim__note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+
+.trial-status {
+  display: grid;
+  gap: var(--s-2);
+  padding: 14px 18px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-md);
+  background: var(--glass);
+  color: var(--text-1);
+  font-size: var(--fs-sm);
+}
+
+.trial-status b {
+  color: var(--text-0);
+}
+
+.trial-status--ok {
+  border-color: rgba(94, 231, 163, 0.4);
+  background: rgba(94, 231, 163, 0.1);
+}
+
+.trial-status--err {
+  border-color: rgba(240, 181, 103, 0.4);
+  background: rgba(240, 181, 103, 0.1);
+}
+
+/* Список «что входит» рядом с таймлайном. */
+.trial-facts {
+  display: grid;
+  gap: var(--s-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trial-facts li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  color: var(--text-1);
+  font-size: var(--fs-sm);
+}
+
+.trial-facts svg {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  color: var(--violet-light);
+}
+
+.trial-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: clamp(20px, 3vw, 40px);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .trial-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trial-banner::after {
+    display: none;
+  }
+}

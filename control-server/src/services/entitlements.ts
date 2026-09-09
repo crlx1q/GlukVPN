@@ -55,7 +55,13 @@ export const PLAN_MATRIX: Record<string, PlanShape> = {
 	free: FREE_PLAN,
 	basic: { code: "basic", name: "Basic", tier: 1, maxDevices: 3, maxSessions: 3, trafficGb: 50 },
 	pro: { code: "pro", name: "Pro", tier: 2, maxDevices: 5, maxSessions: 5, trafficGb: 150 },
+	basic_3m: { code: "basic_3m", name: "Basic", tier: 1, maxDevices: 3, maxSessions: 3, trafficGb: 50 },
 	pro_3m: { code: "pro_3m", name: "Pro", tier: 2, maxDevices: 5, maxSessions: 5, trafficGb: 150 },
+	// Trial tiers: the paid plan's limits for a few days, bought for a token
+	// rouble. Deliberately the same shape as the plan they preview, so nothing
+	// downstream has to special-case a trial - it simply expires.
+	basic_trial: { code: "basic_trial", name: "Basic", tier: 1, maxDevices: 3, maxSessions: 3, trafficGb: 50 },
+	pro_trial: { code: "pro_trial", name: "Pro", tier: 2, maxDevices: 5, maxSessions: 5, trafficGb: 150 },
 	// Internal test tier: never sold, never listed, but grantable by an admin.
 	beta_pro: { code: "beta_pro", name: "\u03b2 Pro", tier: 2, maxDevices: 5, maxSessions: 5, trafficGb: 150 },
 	// Legacy: accounts created by the old admin form got plan "test".
@@ -80,8 +86,8 @@ export function planDisplayName(code: string | null | undefined): string {
 export function planBadge(code: string | null | undefined): "free" | "basic" | "pro" | "beta" {
 	const key = (code ?? "").trim().toLowerCase()
 	if (key === "beta_pro" || key === "test") return "beta"
-	if (key === "pro" || key === "pro_3m") return "pro"
-	if (key === "basic") return "basic"
+	if (key === "pro" || key === "pro_3m" || key === "pro_trial") return "pro"
+	if (key === "basic" || key === "basic_3m" || key === "basic_trial") return "basic"
 	return "free"
 }
 

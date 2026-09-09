@@ -43,6 +43,7 @@
   <link rel="stylesheet" href="/assets/css/utilities.css?v=1.3.0">
   <link rel="stylesheet" href="/assets/css/fx.css?v=1.3.0">
   <link rel="stylesheet" href="/assets/css/auth.css?v=20260907.1">
+  <link rel="stylesheet" href="/assets/css/trial.css?v=20260909.1">
   <script src="/assets/js/config.js?v=1.3.1" defer></script>
   <script src="/assets/js/i18n.js?v=1.3.0" defer></script>
   <script src="/assets/js/world-dots.js?v=1.3.0" defer></script>
@@ -52,6 +53,7 @@
   <script src="/assets/js/ui.js?v=1.3.1" defer></script>
   <script src="/assets/js/fx.js?v=1.3.0" defer></script>
   <script src="/assets/js/auth.js?v=20260907.1" defer></script>
+  <script src="/assets/js/trial.js?v=20260909.1" defer></script>
   <script src="/assets/js/fonts.js?v=1.3.0" defer></script>
   <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Can I use it for free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. The Free plan needs no payment and no card: one region, one device and limited speed."}}, {"@type": "Question", "name": "When do payments go live?", "acceptedAnswer": {"@type": "Answer", "text": "Payments switch on together with billing. Until then the prices on the site are preliminary and may change."}}, {"@type": "Question", "name": "Can I switch plans?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, you can change the plan in the app at any time. Your account and device list stay in place."}}, {"@type": "Question", "name": "How many devices can I connect?", "acceptedAnswer": {"@type": "Answer", "text": "Free covers one device, Basic up to three, Pro up to ten. The device list lives in the app and extra devices can be disconnected."}}]}</script>
 </head>
@@ -113,6 +115,17 @@
   <section class="section section--tight">
     <div class="wrap">
       <div class="plan-period" data-plan-period hidden></div>
+      <!-- The offer strip and the promo field. The strip stays hidden until the
+           server says this visitor can still claim the trial (trial.js); the
+           discount itself is priced by POST /api/billing/promo/check, never by
+           the browser. -->
+      <div class="trial-strip" data-trial-strip hidden></div>
+      <form class="promo" data-promo>
+        <label class="promo__label" for="promo-code">Promo code</label>
+        <input class="promo__input" id="promo-code" name="promo" type="text" maxlength="32" placeholder="TIKTOK" autocomplete="off" autocapitalize="characters" spellcheck="false" data-promo-input>
+        <button class="btn btn--ghost" type="submit" data-promo-apply>Apply</button>
+        <p class="promo__status" role="status" aria-live="polite" data-promo-status></p>
+      </form>
       <div class="plans reveal" data-plans>
         <article class="plan glass"><div class="plan__head"><h3 class="plan__name">Free</h3></div><div class="plan__price"><span class="plan__amount">0</span><span class="plan__period">/ mo</span></div><p class="plan__note">Try it without paying</p><ul class="plan__features"><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>1 device</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>5 GB per month</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Auto Best Server</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Kill Switch</span></li><li data-off><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Server choice</span></li><li data-off><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Priority support</span></li></ul><a class="btn btn--ghost btn--block plan__cta" href="/en/download/">Start for free</a></article>
         <article class="plan glass plan--featured"><div class="plan__head"><h3 class="plan__name">Basic</h3><span class="chip chip--violet">Popular</span></div><div class="plan__price"><span class="plan__amount">$1.99</span><span class="plan__period">/ mo</span></div><p class="plan__note">For everyday use</p><ul class="plan__features"><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>3 devices</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>3 simultaneous connections</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>50 GB per month</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Server choice</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>DNS Protection and Kill Switch</span></li><li data-off><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Priority support</span></li></ul><a class="btn btn--primary btn--block plan__cta" href="/en/pricing/">Choose Basic</a></article>

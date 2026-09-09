@@ -54,7 +54,10 @@
     periodId: PRICING.defaultPeriod || "monthly",
     currency: (PRICE && PRICE.currency) || (EN ? "USD" : PRICING.defaultCurrency || "KZT"),
     plans: [],
-    enabled: false
+    enabled: false,
+    /* Промокод: клиент его только запоминает и передаёт с заказом. Скидку
+       считает сервер, поэтому подставить в консоли «−90%» бесполезно. */
+    promoCode: ""
   };
 
   function esc(s) {
@@ -338,6 +341,13 @@
         .join("");
     });
     renderToggle(group, pairs);
+    /* Акция «пробный период» вешает метку на карточку Basic (trial.js), а
+       карточки переживают смену периода — поэтому сообщаем о перерисовке. */
+    try {
+      document.dispatchEvent(new CustomEvent("gluk:plans", {
+        detail: { periodId: state.periodId, currency: state.currency, enabled: state.enabled, plans: list }
+      }));
+    } catch (e) {}
   }
 
   function noteBox() {
@@ -368,6 +378,100 @@
       n.textContent = text;
     });
   }
+
+  /* ------------------------------------------------------------- промокод */
+  /* Поле промокода живёт над сеткой тарифов. Для вошедшего пользователя код
+     сразу проверяется на сервере (POST /api/billing/promo/check) — человек
+     видит новую сумму до перехода к оплате; гостю код просто запоминается и
+     уходит вместе с заказом после входа. Причина отказа приходит кодом
+     ("promo_expired", "promo_already_used", ...), фраза — здесь. */
+  var PROMO_ERRORS = {
+    promo_not_found: ["Такого промокода нет.", "No such promo code."],
+    promo_inactive: ["Промокод отключён.", "This promo code is switched off."],
+    promo_not_started: ["Промокод ещё не начал действовать.", "This promo code has not started yet."],
+    promo_expired: ["Срок промокода истёк.", "This promo code has expired."],
+    promo_plan_not_eligible: ["Промокод не действует на этот тариф.", "This promo code does not apply to this plan."],
+    promo_limit_reached: ["Промокод уже исчерпан.", "This promo code has been fully redeemed."],
+    promo_already_used: ["Вы уже использовали этот промокод.", "You have already used this promo code."],
+    promo_amount_too_small: ["Со скидкой сумма меньше минимального платежа.", "With the discount the amount falls below the minimum payment."]
+  };
+
+  function promoStatus(text, kind) {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-promo-status]"), function (el) {
+      el.textContent = text || "";
+      el.className = "promo__status" + (kind ? " promo__status--" + kind : "");
+    });
+  }
+
+  function promoError(e) {
+    var code = e && e.code ? String(e.code) : "";
+    if (PROMO_ERRORS[code]) return L(PROMO_ERRORS[code][0], PROMO_ERRORS[code][1]);
+    return human(e, L("Не удалось проверить промокод.", "Could not check the promo code."));
+  }
+
+  /* Проверять код надо против конкретного тарифа: скидка может быть
+     ограничена планами. Берём самый заметный платный тариф текущего
+     периода — тот, на который человек и смотрит. */
+  function promoPlanCode() {
+    var all = state.plans && state.plans.length ? state.plans : fromConfig(state.currency);
+    var paid = (buckets(all)[state.periodId] || []).filter(paidPlan);
+    if (!paid.length) return "";
+    var featured = null;
+    paid.forEach(function (p) {
+      if (!featured && (p.featured || (cfgPlan(p.code) || {}).featured)) featured = p;
+    });
+    return (featured || paid[0]).code;
+  }
+
+  function usePromo(raw, btn) {
+    var code = String(raw || "").trim().toUpperCase();
+    state.promoCode = code;
+    if (!code) { promoStatus("", ""); return; }
+    if (!state.enabled) {
+      promoStatus(T("Оплата откроется вместе с запуском биллинга"), "");
+      return;
+    }
+    var A = window.GlukAuth;
+    if (!A || !A.isAuthed || !A.isAuthed()) {
+      promoStatus(L("Код сохранён — скидка применится при оплате после входа.", "Saved: the discount is applied at checkout once you sign in."), "");
+      return;
+    }
+    var planCode = promoPlanCode();
+    if (!planCode) {
+      promoStatus(L("Код сохранён — скидка применится при оплате.", "Saved: the discount is applied at checkout."), "");
+      return;
+    }
+    if (btn) btn.disabled = true;
+    A.call("/api/billing/promo/check", {
+      method: "POST",
+      body: { code: code, planCode: planCode, currency: state.currency }
+    }).then(
+      function (res) {
+        if (btn) btn.disabled = false;
+        var pct = (res && res.percentOff) || 0;
+        var sum = res && res.amountMinor != null ? money(res.amountMinor, res.currency) : "";
+        promoStatus(
+          L("Промокод " + code + ": \u2212" + pct + "%" + (sum ? ", к оплате " + sum : ""),
+            "Promo " + code + ": \u2212" + pct + "%" + (sum ? ", total " + sum : "")),
+          "ok"
+        );
+      },
+      function (e) {
+        if (btn) btn.disabled = false;
+        /* Забываем негодный код, чтобы он не уехал с заказом. */
+        state.promoCode = "";
+        promoStatus(promoError(e), "err");
+      }
+    );
+  }
+
+  document.addEventListener("submit", function (e) {
+    var form = e.target && e.target.closest ? e.target.closest("[data-promo]") : null;
+    if (!form) return;
+    e.preventDefault();
+    var input = form.querySelector("[data-promo-input]");
+    usePromo(input ? input.value : "", form.querySelector("[data-promo-apply]"));
+  });
 
   /* ---------------------------------------------------------------- заказ */
   function human(e, fallback) {
@@ -405,7 +509,9 @@
     btn.disabled = true;
     btn.textContent = T("Создаём заказ…");
     notice("");
-    A.call("/api/billing/orders", { method: "POST", body: { planCode: code, currency: state.currency } })
+    var body = { planCode: code, currency: state.currency };
+    if (state.promoCode) body.promoCode = state.promoCode;
+    A.call("/api/billing/orders", { method: "POST", body: body })
       .then(function (res) {
         var order = (res && res.order) || {};
         if (res && res.paymentUrl) {

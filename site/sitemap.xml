@@ -29,6 +29,13 @@
     <xhtml:link rel="alternate" hreflang="en" href="https://vpn.gluk.tech/en/pricing/"/>
   </url>
   <url>
+    <loc>https://vpn.gluk.tech/trial/</loc>
+    <lastmod>2026-09-09</lastmod>
+    <priority>0.8</priority>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://vpn.gluk.tech/trial/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://vpn.gluk.tech/en/trial/"/>
+  </url>
+  <url>
     <loc>https://vpn.gluk.tech/download/</loc>
     <lastmod>2026-08-25</lastmod>
     <priority>0.9</priority>
@@ -97,6 +104,13 @@
     <priority>0.9</priority>
     <xhtml:link rel="alternate" hreflang="ru" href="https://vpn.gluk.tech/pricing/"/>
     <xhtml:link rel="alternate" hreflang="en" href="https://vpn.gluk.tech/en/pricing/"/>
+  </url>
+  <url>
+    <loc>https://vpn.gluk.tech/en/trial/</loc>
+    <lastmod>2026-09-09</lastmod>
+    <priority>0.8</priority>
+    <xhtml:link rel="alternate" hreflang="ru" href="https://vpn.gluk.tech/trial/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://vpn.gluk.tech/en/trial/"/>
   </url>
   <url>
     <loc>https://vpn.gluk.tech/en/download/</loc>

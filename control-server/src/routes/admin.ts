@@ -26,6 +26,7 @@ import {
 	normalizeRule,
 	requestPolicySync,
 } from "../services/policy"
+import { listPromos, normalizePromoCode, promoView } from "../services/promo"
 import {
 	closeSessionsForDevice,
 	closeSessionsForNode,
@@ -33,6 +34,7 @@ import {
 } from "../services/sessions"
 import { clearClientErrors, listClientErrors } from "../services/telemetry"
 import { revokeRefreshTokens } from "../services/tokens"
+import { ensureTrialPlan, trialSettings, updateTrialSettings } from "../services/trial"
 
 const IdParams = z.object({ id: z.string().uuid("Invalid id") })
 
@@ -67,6 +69,43 @@ const BlockBody = z
 	.optional()
 
 const TesterBody = z.object({ enabled: z.boolean() })
+
+// The trial promotion as the panel edits it. Every field is optional: the form
+// sends what changed and the service keeps the rest.
+const TrialSettingsBody = z.object({
+	enabled: z.boolean().optional(),
+	planCode: z.enum(["basic", "pro"]).optional(),
+	days: z.number().int().min(1).max(90).optional(),
+	eligibilityDays: z.number().int().min(1).max(365).optional(),
+	requireTelegram: z.boolean().optional(),
+	// Kopecks. The gateway refuses anything below one rouble.
+	priceKopecks: z.number().int().min(100).max(1_000_000).optional(),
+})
+
+const CreatePromoBody = z.object({
+	code: z.string().trim().min(2).max(32),
+	percentOff: z.number().int().min(1).max(100),
+	description: z.string().trim().max(200).nullable().optional(),
+	active: z.boolean().optional(),
+	startsAt: z.string().trim().max(40).nullable().optional(),
+	endsAt: z.string().trim().max(40).nullable().optional(),
+	maxRedemptions: z.number().int().min(1).max(1_000_000).nullable().optional(),
+	// 0 = unlimited per account.
+	perUserLimit: z.number().int().min(0).max(100).optional(),
+	// Empty = every paid plan.
+	planCodes: z.array(z.string().trim().min(2).max(32)).max(20).optional(),
+})
+
+const UpdatePromoBody = CreatePromoBody.omit({ code: true }).partial()
+
+/** An ISO date from the panel. An empty string clears the field. */
+function optionalDate(value: string | null | undefined): Date | null | undefined {
+	if (value === undefined) return undefined
+	if (value === null || value.trim() === "") return null
+	const parsed = new Date(value)
+	if (Number.isNaN(parsed.getTime())) throw badRequest("Invalid date")
+	return parsed
+}
 
 const TierBody = z.object({ tier: z.coerce.number().int().min(0).max(9) })
 
@@ -1169,6 +1208,160 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 		if (!parsed.success) throw badRequest("Invalid order id")
 		const { user: admin } = getAuthUser(request)
 		await cancelOrder(parsed.data.id, admin.id)
+		return reply.send({ ok: true })
+	})
+
+	// ------------------------------------------------------ trial offer ----
+
+	/**
+	 * The trial promotion. Its length, sign-up window, plan and price live in
+	 * the database, so switching the offer off or moving it to Pro is a click
+	 * here instead of a deploy. Reading it also creates the hidden plan the
+	 * offer sells, which keeps the two from drifting apart.
+	 */
+	app.get("/api/admin/billing/trial", async (_request, reply) => {
+		const settings = await trialSettings()
+		const plan = await ensureTrialPlan(settings)
+		const [claimed, paid] = await Promise.all([
+			prisma.order.count({ where: { planId: plan.id } }),
+			prisma.order.count({ where: { planId: plan.id, status: "PAID" } }),
+		])
+		return reply.send({
+			billingEnabled: config.billingEnabled,
+			provider: config.billingEnabled ? config.BILLING_PROVIDER : null,
+			trial: {
+				enabled: settings.enabled,
+				planCode: settings.planCode,
+				days: settings.days,
+				eligibilityDays: settings.eligibilityDays,
+				requireTelegram: settings.requireTelegram,
+				priceKopecks: settings.priceKopecks,
+				updatedAt: settings.updatedAt.toISOString(),
+			},
+			plan: {
+				code: plan.code,
+				name: plan.name,
+				days: plan.days,
+				priceMinor: plan.priceMinor,
+				currency: plan.currency,
+			},
+			stats: { orders: claimed, paid },
+		})
+	})
+
+	app.post("/api/admin/billing/trial", async (request, reply) => {
+		const parsed = TrialSettingsBody.safeParse(request.body ?? {})
+		if (!parsed.success) throw badRequest("Invalid trial settings")
+		const { user: admin } = getAuthUser(request)
+		const settings = await updateTrialSettings(parsed.data, admin.id)
+		return reply.send({
+			ok: true,
+			trial: { ...settings, updatedAt: settings.updatedAt.toISOString() },
+		})
+	})
+
+	// ------------------------------------------------------ promo codes ----
+
+	app.get("/api/admin/billing/promos", async (_request, reply) => {
+		const promos = await listPromos()
+		return reply.send({ promos: promos.map(promoView) })
+	})
+
+	app.post("/api/admin/billing/promos", async (request, reply) => {
+		const parsed = CreatePromoBody.safeParse(request.body)
+		if (!parsed.success) throw badRequest("code and percentOff are required")
+		const { user: admin } = getAuthUser(request)
+		const code = normalizePromoCode(parsed.data.code)
+		if (!code) throw badRequest("code is required")
+
+		const existing = await prisma.promoCode.findUnique({ where: { code } })
+		if (existing) throw conflict("This promo code already exists")
+
+		const promo = await prisma.promoCode.create({
+			data: {
+				code,
+				percentOff: parsed.data.percentOff,
+				description: parsed.data.description ?? null,
+				active: parsed.data.active ?? true,
+				startsAt: optionalDate(parsed.data.startsAt) ?? null,
+				endsAt: optionalDate(parsed.data.endsAt) ?? null,
+				maxRedemptions: parsed.data.maxRedemptions ?? null,
+				perUserLimit: parsed.data.perUserLimit ?? 1,
+				planCodes: (parsed.data.planCodes ?? []).map((item) => item.toLowerCase()),
+			},
+		})
+		await writeAudit({
+			action: "admin.promo.create",
+			userId: admin.id,
+			ip: clientIp(request),
+			metadata: { code, percentOff: promo.percentOff },
+		})
+		return reply.code(201).send({ ok: true, promo: promoView(promo) })
+	})
+
+	// POST and not PATCH: the CORS allowlist is GET / POST / DELETE.
+	app.post("/api/admin/billing/promos/:id", async (request, reply) => {
+		const params = IdParams.safeParse(request.params)
+		if (!params.success) throw badRequest("Invalid promo id")
+		const parsed = UpdatePromoBody.safeParse(request.body ?? {})
+		if (!parsed.success) throw badRequest("Invalid promo update")
+		const { user: admin } = getAuthUser(request)
+
+		const promo = await prisma.promoCode.findUnique({ where: { id: params.data.id } })
+		if (!promo) throw notFound("Promo code not found")
+
+		const updated = await prisma.promoCode.update({
+			where: { id: promo.id },
+			data: {
+				...(parsed.data.percentOff === undefined ? {} : { percentOff: parsed.data.percentOff }),
+				...(parsed.data.description === undefined
+					? {}
+					: { description: parsed.data.description }),
+				...(parsed.data.active === undefined ? {} : { active: parsed.data.active }),
+				...(parsed.data.startsAt === undefined
+					? {}
+					: { startsAt: optionalDate(parsed.data.startsAt) ?? null }),
+				...(parsed.data.endsAt === undefined
+					? {}
+					: { endsAt: optionalDate(parsed.data.endsAt) ?? null }),
+				...(parsed.data.maxRedemptions === undefined
+					? {}
+					: { maxRedemptions: parsed.data.maxRedemptions }),
+				...(parsed.data.perUserLimit === undefined
+					? {}
+					: { perUserLimit: parsed.data.perUserLimit }),
+				...(parsed.data.planCodes === undefined
+					? {}
+					: { planCodes: parsed.data.planCodes.map((item) => item.toLowerCase()) }),
+			},
+		})
+		await writeAudit({
+			action: "admin.promo.update",
+			userId: admin.id,
+			ip: clientIp(request),
+			metadata: { code: updated.code },
+		})
+		return reply.send({ ok: true, promo: promoView(updated) })
+	})
+
+	/**
+	 * Removes a code. Its redemption rows go with it - they only describe the
+	 * code - while every order keeps its own copy of the code and the discount
+	 * in metadata, so paid history stays readable afterwards.
+	 */
+	app.delete("/api/admin/billing/promos/:id", async (request, reply) => {
+		const params = IdParams.safeParse(request.params)
+		if (!params.success) throw badRequest("Invalid promo id")
+		const { user: admin } = getAuthUser(request)
+		const promo = await prisma.promoCode.findUnique({ where: { id: params.data.id } })
+		if (!promo) throw notFound("Promo code not found")
+		await prisma.promoCode.delete({ where: { id: promo.id } })
+		await writeAudit({
+			action: "admin.promo.delete",
+			userId: admin.id,
+			ip: clientIp(request),
+			metadata: { code: promo.code },
+		})
 		return reply.send({ ok: true })
 	})
 

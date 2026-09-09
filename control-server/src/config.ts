@@ -123,8 +123,9 @@ const EnvSchema = z.object({
 
 	// ------------------------------ billing ----------------------------------
 	// Payment gateway adapter: "" (billing hidden), "manual" (orders are
-	// created, an admin marks them paid), "stripe" (Checkout + webhook).
-	BILLING_PROVIDER: z.enum(["", "manual", "stripe"]).default(""),
+	// created, an admin marks them paid), "stripe" (Checkout + webhook),
+	// "tabpay" (hosted RUB page for SBP/cards + signed webhook).
+	BILLING_PROVIDER: z.enum(["", "manual", "stripe", "tabpay"]).default(""),
 	BILLING_CURRENCY: z.string().min(3).max(3).default("KZT"),
 	// Where the gateway sends the browser afterwards. Defaults derive from
 	// SITE_BASE_URL when empty.
@@ -140,6 +141,39 @@ const EnvSchema = z.object({
 	// !! SECRETS !! Stripe only.
 	STRIPE_SECRET_KEY: z.string().default(""),
 	STRIPE_WEBHOOK_SECRET: z.string().default(""),
+
+	// ------------------------------- TabPay ----------------------------------
+	// Russian acquirer with a hosted payment page: card data never touches this
+	// server, and the plan is handed out by the signed webhook rather than by
+	// the redirect back to the site. A sandbox shop speaks exactly the same API
+	// as a live one, so going live is a key swap and nothing else.
+	TABPAY_API_BASE: z.string().default("https://tabpay.org"),
+	// !! SECRETS !! TabPay only.
+	TABPAY_API_KEY: z.string().default(""),
+	TABPAY_WEBHOOK_SECRET: z.string().default(""),
+	// Which shop the key belongs to. Informational: the API identifies the shop
+	// by the key, but having the id in env makes a mismatch obvious.
+	TABPAY_SHOP_ID: z.string().default(""),
+	// Pin a single method ("SBP" or "CARD"); empty lets the payer choose.
+	TABPAY_METHOD: z.enum(["", "SBP", "CARD"]).default(""),
+	TABPAY_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(15000),
+
+	// ----------------------------- trial offer -------------------------------
+	// Seed values for the "Basic for 1 ₽" promotion. They only fill the row on
+	// first boot; from then on the admin panel owns it, so changing the offer
+	// (plan, length, eligibility window, or switching it off) is a click and
+	// not a deploy.
+	TRIAL_OFFER_ENABLED: envFlag("true"),
+	TRIAL_OFFER_PLAN: z.enum(["basic", "pro"]).default("basic"),
+	TRIAL_OFFER_DAYS: z.coerce.number().int().min(1).max(90).default(7),
+	// How long after sign-up an account may still claim it.
+	TRIAL_OFFER_WINDOW_DAYS: z.coerce.number().int().min(1).max(365).default(14),
+	// The token charge, in kopecks. 100 = 1 ₽, which is also TabPay's minimum:
+	// a card that can be charged once is the point of the exercise.
+	TRIAL_OFFER_PRICE_KOPECKS: z.coerce.number().int().min(100).max(1000000).default(100),
+	// A Telegram-verified account is the cheapest proof that a sign-up is a
+	// person; without it one browser could mint trials all day.
+	TRIAL_OFFER_REQUIRE_TELEGRAM: envFlag("true"),
 
 	MAX_DEVICES_PER_USER: z.coerce.number().int().min(1).max(100).default(3),
 	MAX_CONCURRENT_SESSIONS: z.coerce.number().int().min(1).max(50).default(1),
@@ -367,7 +401,8 @@ function loadConfig(): Config {
 		googleEnabled: env.GOOGLE_CLIENT_ID.trim().length > 0,
 		billingEnabled:
 			env.BILLING_PROVIDER === "manual" ||
-			(env.BILLING_PROVIDER === "stripe" && env.STRIPE_SECRET_KEY.trim().length > 0),
+			(env.BILLING_PROVIDER === "stripe" && env.STRIPE_SECRET_KEY.trim().length > 0) ||
+			(env.BILLING_PROVIDER === "tabpay" && env.TABPAY_API_KEY.trim().length > 0),
 		corsOrigins: env.CORS_ALLOWED_ORIGINS.split(",")
 			.map((origin) => origin.trim())
 			.filter((origin) => origin.length > 0),

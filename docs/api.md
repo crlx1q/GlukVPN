@@ -43,6 +43,12 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 | POST | `/api/vpn/disconnect` | device-scoped | 30/мин |
 | GET | `/api/vpn/status` | device-scoped | — |
 | GET | `/api/vpn/sessions` | user | — |
+| GET | `/api/billing/plans` | открыто | 60/мин |
+| POST | `/api/billing/orders` | user | 10/мин |
+| GET | `/api/billing/trial` | открыто | 60/мин |
+| POST | `/api/billing/trial/claim` | user | 5/мин |
+| POST | `/api/billing/promo/check` | user | 20/мин |
+| POST | `/api/billing/webhook/tabpay` | подпись TabPay | — |
 | POST | `/api/node/register` | enrollment-токен | 10 / 10 мин |
 | POST | `/api/node/heartbeat` | node-токен | 120/мин |
 | POST | `/api/node/report` | node-токен | 60/мин |
@@ -63,6 +69,12 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 | GET | `/api/admin/sessions` | admin | — |
 | POST | `/api/admin/sessions/:id/close` | admin | — |
 | GET | `/api/admin/audit` | admin | — |
+| GET | `/api/admin/billing/trial` | admin | — |
+| POST | `/api/admin/billing/trial` | admin | — |
+| GET | `/api/admin/billing/promos` | admin | — |
+| POST | `/api/admin/billing/promos` | admin | — |
+| POST | `/api/admin/billing/promos/:id` | admin | — |
+| DELETE | `/api/admin/billing/promos/:id` | admin | — |
 
 Уровни доступа: `user` — `Authorization: Bearer <accessToken>`;
 `device-scoped` — тот же токен, но обязательно с `deviceId` в claims (выдаётся
@@ -206,6 +218,186 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 Отзыв устройства: `{ "ok": true, "closedSessions": 1, "revokedTokens": 2 }`.
 Побочные эффекты: refresh-токены аннулированы, сессия закрыта, на ноду
 поставлен `REMOVE_PEER`.
+
+## Биллинг, пробный период и промокоды
+
+Оплата идёт через внешний провайдер (`BILLING_PROVIDER=tabpay`). Карта вводится
+на его странице: мы отдаём `paymentUrl`, куда клиент перенаправляет
+пользователя, и ждём вебхук. Своих форм для карт нет и не будет: PAN не
+должен проходить через наш сервер.
+
+### GET /api/billing/plans
+
+Открытый каталог. Необязательные `?currency=RUB|KZT|USD|EUR` и `?tz=` перебивают
+валюту, выбранную по `CF-IPCountry`.
+
+```json
+{
+  "billingEnabled": true,
+  "provider": "tabpay",
+  "currency": "KZT",
+  "market": { "country": "KZ", "currency": "KZT", "lang": "ru" },
+  "plans": [{ "code": "basic", "name": "Basic", "priceMinor": 79000, "currency": "KZT" }]
+}
+```
+
+### POST /api/billing/orders
+
+Создаёт заказ и ссылку на оплату. `promoCode` необязателен; скидку считает
+сервер, цифра из браузера не участвует в расчёте.
+
+```json
+{ "planCode": "basic", "currency": "KZT", "promoCode": "TIKTOK" }
+```
+
+```json
+{
+  "order": {
+    "id": "…",
+    "status": "PENDING",
+    "amountMinor": 59250,
+    "currency": "KZT",
+    "promoCode": "TIKTOK",
+    "discountMinor": 19750
+  },
+  "paymentUrl": "https://tabpay.org/pay/…",
+  "manual": false,
+  "instructions": null
+}
+```
+
+Когда провайдер не настроен (`BILLING_PROVIDER=manual`), `paymentUrl` отсутствует,
+`manual: true`, а в `instructions` лежит текст для ручной оплаты.
+
+### GET /api/billing/trial
+
+Открытый endpoint акции «Пробный период»: баннер на главной и страница
+`/trial/` рисуются именно по этому ответу. Если пришёл `Authorization`, ответ
+учитывает конкретного пользователя; просроченный токен — это гость, а не ошибка.
+
+```json
+{
+  "billingEnabled": true,
+  "provider": "tabpay",
+  "trial": {
+    "enabled": true,
+    "planCode": "basic",
+    "planName": "Basic",
+    "trialPlanCode": "basic_trial",
+    "days": 7,
+    "eligibilityDays": 14,
+    "requireTelegram": true,
+    "price": { "currency": "RUB", "minor": 100, "label": "1 ₽" },
+    "charge": { "currency": "RUB", "minor": 100, "label": "1 ₽" },
+    "equivalents": [
+      { "currency": "KZT", "minor": 10000, "label": "100 ₸" },
+      { "currency": "USD", "minor": 10, "label": "$0.10" }
+    ],
+    "timeline": {
+      "startsAt": "2026-09-09T14:00:00.000Z",
+      "reminderAt": "2026-09-14T14:00:00.000Z",
+      "endsAt": "2026-09-16T14:00:00.000Z",
+      "reminderDays": 2
+    },
+    "autoRenew": false,
+    "eligibility": {
+      "eligible": false,
+      "reason": "sign_in_required",
+      "registeredAt": null,
+      "eligibleUntil": null,
+      "daysLeft": null
+    }
+  }
+}
+```
+
+`reason`: `ok`, `offer_disabled`, `sign_in_required`, `telegram_required`,
+`window_passed`, `already_used`, `already_subscribed`. Первые три — повод показать
+акцию (с разными кнопками), остальные — повод её скрыть.
+
+### POST /api/billing/trial/claim
+
+Активация акции: тело не нужно. Ответ `201`; при отказе — `409` с кодом
+`trial_<reason>` (например `trial_already_used`, `trial_telegram_required`).
+
+```json
+{
+  "order": { "id": "…", "status": "PENDING", "amountMinor": 100, "currency": "RUB" },
+  "paymentUrl": "https://tabpay.org/pay/…",
+  "manual": false,
+  "instructions": null,
+  "days": 7
+}
+```
+
+Подписка выдаётся не здесь, а после вебхука со статусом `SUCCESS`.
+
+### POST /api/billing/promo/check
+
+Предварительная проверка кода — чтобы показать сумму до создания заказа.
+Ничего не списывает и не расходует лимит кода.
+
+```json
+{ "code": "TIKTOK", "planCode": "basic", "currency": "KZT" }
+```
+
+```json
+{
+  "ok": true,
+  "code": "TIKTOK",
+  "percentOff": 25,
+  "discountMinor": 19750,
+  "amountMinor": 59250,
+  "currency": "KZT"
+}
+```
+
+Отказ — HTTP-ошибка с кодом `promo_not_found`, `promo_inactive`,
+`promo_not_started`, `promo_expired`, `promo_plan_not_eligible`,
+`promo_limit_reached`, `promo_already_used` или `promo_amount_too_small`.
+
+### POST /api/billing/webhook/tabpay
+
+Вебхук провайдера. Адрес для кабинета TabPay:
+`https://api.gluk.tech/api/billing/webhook/tabpay` (beta — `beta-api.gluk.tech`).
+
+Проверка подписи: `X-Signature-V2` = HMAC-SHA256(`${X-Timestamp}.${rawBody}`) с
+`TABPAY_WEBHOOK_SECRET`, hex в нижнем регистре, окно ±300 с. Сравнение
+постоянного времени; тело берётся сырым, до JSON-разбора. Старый
+`X-Signature` тоже принимается.
+
+```json
+{
+  "id": "…",
+  "orderId": "…",
+  "status": "SUCCESS",
+  "amountKopecks": 100,
+  "telegramId": "123456789",
+  "metadata": { "planCode": "basic_trial" },
+  "test": true
+}
+```
+
+Ответ всегда быстрый `{ "received": true, … }`. Повторная доставка того же
+события безопасна: оплаченный заказ не продлевает подписку дважды.
+
+### Админские ручки акции
+
+`GET /api/admin/billing/trial` возвращает текущие настройки,
+`POST /api/admin/billing/trial` их меняет:
+
+```json
+{ "enabled": true, "planCode": "pro", "days": 7, "eligibilityDays": 14, "requireTelegram": true, "priceKopecks": 100 }
+```
+
+Промокоды: `GET /api/admin/billing/promos`, `POST /api/admin/billing/promos`
+(`code`, `description`, `percentOff`, `startsAt`, `endsAt`, `maxRedemptions`,
+`perUserLimit`, `planCodes`), `POST /api/admin/billing/promos/:id` — частичное
+обновление, `DELETE /api/admin/billing/promos/:id` — удаление (если кодом уже
+воспользовались, он деактивируется, а не теряется).
+
+Все изменения пишутся в аудит: `billing.trial.update`, `billing.trial.claim`,
+`admin.promo.create`, `admin.promo.update`, `admin.promo.delete`.
 
 ## Endpoints ноды
 
