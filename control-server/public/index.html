@@ -93,6 +93,7 @@
 				<button type="button" class="tab" data-tab="users">Users</button>
 				<button type="button" class="tab" data-tab="devices">Devices</button>
 				<button type="button" class="tab" data-tab="sessions">Sessions</button>
+				<button type="button" class="tab" data-tab="billing">Billing</button>
 				<button type="button" class="tab" data-tab="audit">Audit</button>
 				<button type="button" class="tab" data-tab="errors">Client Bug Logs</button>
 			</nav>
@@ -327,6 +328,100 @@
 							</thead>
 							<tbody id="sessions-body"></tbody>
 						</table>
+					</div>
+				</section>
+
+				<!-- billing: акция и промокоды -->
+				<section class="tabview" data-view="billing" hidden>
+					<div class="glass block" id="trial-block" aria-busy="true">
+						<div class="block-head">
+							<div>
+								<h3>Trial offer</h3>
+								<p class="muted small" id="trial-scope">Loading the promotion…</p>
+							</div>
+							<span class="muted small" id="trial-updated"></span>
+						</div>
+						<div class="service-grid">
+							<label class="service-control" for="trial-enabled">
+								<span class="service-copy">
+									<strong>Offer enabled</strong>
+									<span>Show the banner and let new accounts claim the trial.</span>
+								</span>
+								<input class="switch" type="checkbox" id="trial-enabled" disabled />
+							</label>
+							<label class="service-control" for="trial-telegram">
+								<span class="service-copy">
+									<strong>Telegram required</strong>
+									<span>Only accounts with a confirmed Telegram can claim it.</span>
+								</span>
+								<input class="switch" type="checkbox" id="trial-telegram" disabled />
+							</label>
+						</div>
+						<div class="billing-form">
+							<label class="sub-field" for="trial-plan">
+								<span>Plan on offer</span>
+								<select id="trial-plan" disabled>
+									<option value="basic">Basic</option>
+									<option value="pro">Pro</option>
+								</select>
+							</label>
+							<label class="sub-field" for="trial-days">
+								<span>Days of access</span>
+								<input id="trial-days" type="number" min="1" max="90" step="1" disabled />
+							</label>
+							<label class="sub-field" for="trial-window">
+								<span>Sign-up window, days</span>
+								<input id="trial-window" type="number" min="1" max="365" step="1" disabled />
+							</label>
+							<label class="sub-field" for="trial-price">
+								<span>Price, ₽</span>
+								<input id="trial-price" type="number" min="1" max="10000" step="0.01" disabled />
+							</label>
+						</div>
+						<div class="billing-actions">
+							<button type="button" class="primary small" id="trial-save" disabled>Save offer</button>
+							<span class="muted small" id="trial-stats"></span>
+						</div>
+						<p class="muted small">
+							One charge, no auto-renewal. Switching the offer off hides the banner
+							everywhere and makes the claim impossible, not just invisible.
+						</p>
+						<p class="service-error" id="trial-error" role="alert" hidden></p>
+					</div>
+
+					<div class="glass block" id="promo-block">
+						<div class="block-head">
+							<div>
+								<h3>Promo codes</h3>
+								<p class="muted small">A percentage off one order. A code is only spent when the money arrives.</p>
+							</div>
+							<button type="button" id="promo-new-btn" class="ghost small">New code</button>
+						</div>
+						<form id="promo-form" class="inline-form" hidden>
+							<input id="promo-code" placeholder="CODE" minlength="2" maxlength="32" required />
+							<input id="promo-percent" type="number" min="1" max="100" step="1" placeholder="% off" required />
+							<input id="promo-plans" placeholder="plans: basic,pro (empty = all)" />
+							<input id="promo-limit" type="number" min="1" max="100000" step="1" placeholder="total uses (empty = no cap)" />
+							<button type="submit" class="primary small">Create</button>
+							<button type="button" id="promo-cancel-btn" class="ghost small">Cancel</button>
+						</form>
+						<div class="table-wrap">
+							<table>
+								<thead>
+									<tr>
+										<th>Code</th>
+										<th>Discount</th>
+										<th>Plans</th>
+										<th>Used</th>
+										<th>Per account</th>
+										<th>Window</th>
+										<th>Actions</th>
+									</tr>
+								</thead>
+								<tbody id="promos-body"></tbody>
+							</table>
+						</div>
+						<p class="service-error" id="promo-error" role="alert" hidden></p>
 					</div>
 				</section>
 

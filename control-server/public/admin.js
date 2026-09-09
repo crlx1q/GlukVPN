@@ -21,6 +21,10 @@ const state = {
 	channel: "current",
 	serviceSettings: null,
 	serviceBusy: false,
+	// Акция и промокоды в том виде, в каком их сейчас показывает вкладка Billing.
+	trial: null,
+	trialBusy: false,
+	promos: [],
 	// Client Bug Logs filter: "" = every platform.
 	errorPlatform: "",
 	// Чей блок подписки раскрыт прямо сейчас. Пока он открыт, таблица
@@ -1443,6 +1447,242 @@ async function loadEgressBudget() {
 	}
 }
 
+/* ---------------- billing: trial offer + promo codes ---------------- */
+/* Длина акции, окно регистрации, тариф, цена и сам выключатель лежат в базе,
+   поэтому отключить рубль или отдать неделю Pro — это клик здесь, а не деплой.
+   Промокоды тоже заводятся и снимаются тут: контроль над скидками должен быть в
+   панели, а не в SQL-консоли. */
+
+const MONEY_SYMBOL = { RUB: "\u20bd", KZT: "\u20b8", USD: "$", EUR: "\u20ac" }
+
+function minorMoney(minor, currency) {
+	const amount = Number(minor || 0) / 100
+	const text = Number.isInteger(amount) ? String(amount) : amount.toFixed(2)
+	const symbol = MONEY_SYMBOL[String(currency || "").toUpperCase()] || currency || ""
+	return symbol ? `${text} ${symbol}` : text
+}
+
+const TRIAL_FIELDS = ["trial-enabled", "trial-telegram", "trial-plan", "trial-days", "trial-window", "trial-price", "trial-save"]
+
+function setTrialBusy(isBusy) {
+	state.trialBusy = isBusy
+	el("trial-block").setAttribute("aria-busy", String(isBusy))
+	for (const id of TRIAL_FIELDS) el(id).disabled = isBusy || !state.trial
+}
+
+function trialError(text) {
+	const box = el("trial-error")
+	box.textContent = text
+	box.hidden = !text
+}
+
+function renderTrial(view) {
+	state.trial = view
+	const trial = view.trial || {}
+	const plan = view.plan || {}
+	const stats = view.stats || {}
+	el("trial-enabled").checked = Boolean(trial.enabled)
+	el("trial-telegram").checked = Boolean(trial.requireTelegram)
+	el("trial-plan").value = trial.planCode === "pro" ? "pro" : "basic"
+	el("trial-days").value = String(Number(trial.days || 7))
+	el("trial-window").value = String(Number(trial.eligibilityDays || 14))
+	el("trial-price").value = (Number(trial.priceKopecks || 100) / 100).toFixed(2)
+	el("trial-scope").textContent = view.billingEnabled
+		? `Gateway ${view.provider || "\u2014"} \u00b7 sells ${plan.code || "\u2014"} \u00b7 ${minorMoney(plan.priceMinor, plan.currency)} for ${Number(plan.days || 0)} days`
+		: "Billing is switched off for this channel, so nothing is sold until a gateway is configured."
+	el("trial-stats").textContent = `Claimed ${Number(stats.orders || 0)} \u00b7 paid ${Number(stats.paid || 0)}`
+	el("trial-updated").textContent = trial.updatedAt ? `updated ${ago(trial.updatedAt)}` : ""
+	trialError("")
+	setTrialBusy(false)
+}
+
+async function loadTrial() {
+	try {
+		renderTrial(await request("/api/admin/billing/trial"))
+		return true
+	} catch (error) {
+		state.trial = null
+		setTrialBusy(true)
+		trialError(
+			error.status === 404
+				? "This control server does not expose the trial offer yet."
+				: `Could not load the trial offer: ${error.message}`,
+		)
+		return false
+	}
+}
+
+/** Ranges are checked here as well, so a typo gets a plain sentence instead of
+    a 400 from the API. */
+async function saveTrial() {
+	if (!state.trial || state.trialBusy) return
+	const days = Number(el("trial-days").value)
+	const eligibility = Number(el("trial-window").value)
+	const price = Math.round(Number(el("trial-price").value) * 100)
+	if (!Number.isInteger(days) || days < 1 || days > 90) {
+		trialError("Days of access: a whole number from 1 to 90.")
+		return
+	}
+	if (!Number.isInteger(eligibility) || eligibility < 1 || eligibility > 365) {
+		trialError("Sign-up window: a whole number of days from 1 to 365.")
+		return
+	}
+	if (!Number.isFinite(price) || price < 100) {
+		trialError("The gateway refuses anything below one rouble.")
+		return
+	}
+	const body = {
+		enabled: el("trial-enabled").checked,
+		requireTelegram: el("trial-telegram").checked,
+		planCode: el("trial-plan").value === "pro" ? "pro" : "basic",
+		days,
+		eligibilityDays: eligibility,
+		priceKopecks: price,
+	}
+	setTrialBusy(true)
+	try {
+		await request("/api/admin/billing/trial", { method: "POST", body })
+		await loadTrial()
+		toast(
+			body.enabled
+				? `Trial offer: ${days} days of ${body.planCode} for ${minorMoney(price, "RUB")}, new accounts within ${eligibility} days`
+				: "Trial offer switched off: the banner disappears and claims are refused.",
+		)
+	} catch (error) {
+		await loadTrial()
+		trialError(`The offer was not saved: ${error.message}`)
+		toast(error.message, true)
+	} finally {
+		setTrialBusy(!state.trial)
+	}
+}
+
+function promoBoxError(text) {
+	const box = el("promo-error")
+	box.textContent = text
+	box.hidden = !text
+}
+
+function promoWindow(promo) {
+	if (!promo.startsAt && !promo.endsAt) return "always"
+	const from = promo.startsAt ? dateLabel(promo.startsAt) : "now"
+	const to = promo.endsAt ? dateLabel(promo.endsAt) : "\u221e"
+	return `${from} \u2192 ${to}`
+}
+
+function promoCodeCell(promo) {
+	const box = document.createElement("div")
+	box.className = "promo-code"
+	const code = document.createElement("strong")
+	code.textContent = promo.code
+	box.appendChild(code)
+	if (promo.description) {
+		const note = document.createElement("span")
+		note.className = "sub-line"
+		note.textContent = promo.description
+		box.appendChild(note)
+	}
+	return box
+}
+
+function renderPromos(promos) {
+	state.promos = promos
+	const body = el("promos-body")
+	body.replaceChildren()
+	if (!promos.length) {
+		const row = document.createElement("tr")
+		const td = cell(row, "No promo codes yet.")
+		td.colSpan = 7
+		td.className = "muted"
+		body.appendChild(row)
+		promoBoxError("")
+		return
+	}
+	for (const promo of promos) {
+		const row = document.createElement("tr")
+		// Выключенный код остаётся в списке: его включают чаще, чем удаляют.
+		if (!promo.active) row.className = "is-off"
+		cell(row, promoCodeCell(promo))
+		cell(row, `\u2212${promo.percentOff}%`)
+		cell(row, promo.planCodes && promo.planCodes.length ? promo.planCodes.join(", ") : "every paid plan")
+		cell(row, promo.maxRedemptions ? `${promo.redeemedCount} / ${promo.maxRedemptions}` : String(promo.redeemedCount))
+		cell(row, promo.perUserLimit > 0 ? `${promo.perUserLimit}\u00d7` : "unlimited")
+		cell(row, promoWindow(promo))
+		const actions = document.createElement("div")
+		actions.className = "promo-actions"
+		actions.append(
+			actionButton(promo.active ? "Switch off" : "Switch on", "ghost small", () =>
+				request(`/api/admin/billing/promos/${promo.id}`, {
+					method: "POST",
+					body: { active: !promo.active },
+				}),
+			),
+			actionButton("Delete", "ghost small danger", () => {
+				// Заказы хранят свою копию кода и скидки, так что историю это не ломает.
+				if (!confirm(`Delete ${promo.code}? Paid orders keep their own copy of the code.`)) return Promise.resolve()
+				return request(`/api/admin/billing/promos/${promo.id}`, { method: "DELETE" })
+			}),
+		)
+		cell(row, actions)
+		body.appendChild(row)
+	}
+	promoBoxError("")
+}
+
+async function loadPromos() {
+	try {
+		const data = await request("/api/admin/billing/promos")
+		renderPromos(data.promos || [])
+		return true
+	} catch (error) {
+		state.promos = []
+		el("promos-body").replaceChildren()
+		promoBoxError(
+			error.status === 404
+				? "This control server does not expose promo codes yet."
+				: `Could not load promo codes: ${error.message}`,
+		)
+		return false
+	}
+}
+
+/** Empty plans mean every paid plan; an empty cap means no cap. New codes are
+    one per account, which is what a public discount usually needs. */
+async function createPromo() {
+	const code = el("promo-code").value.trim().toUpperCase()
+	const percentOff = Number(el("promo-percent").value)
+	const plans = el("promo-plans")
+		.value.split(",")
+		.map((item) => item.trim().toLowerCase())
+		.filter(Boolean)
+	const rawCap = el("promo-limit").value.trim()
+	if (code.length < 2) {
+		promoBoxError("A code needs at least two characters.")
+		return
+	}
+	if (!Number.isInteger(percentOff) || percentOff < 1 || percentOff > 100) {
+		promoBoxError("The discount is a whole percentage from 1 to 100.")
+		return
+	}
+	const body = { code, percentOff, perUserLimit: 1 }
+	if (plans.length) body.planCodes = plans
+	if (rawCap) body.maxRedemptions = Number(rawCap)
+	try {
+		await request("/api/admin/billing/promos", { method: "POST", body })
+		el("promo-code").value = ""
+		el("promo-percent").value = ""
+		el("promo-plans").value = ""
+		el("promo-limit").value = ""
+		el("promo-form").hidden = true
+		promoBoxError("")
+		toast(`Promo ${code} created: \u2212${percentOff}%`)
+		await loadPromos()
+	} catch (error) {
+		promoBoxError(`The code was not created: ${error.message}`)
+		toast(error.message, true)
+	}
+}
+
 async function loadDeploy() {
 	try {
 		const status = await request("/api/admin/deploy/status")
@@ -1474,7 +1714,14 @@ async function loadAll() {
 		renderSessions(sessions.sessions)
 		renderAudit(audit.logs)
 		// Optional/rolling-deploy data loaders isolate their own availability errors.
-		await Promise.all([loadServiceSettings(), loadEgressBudget(), loadDeploy(), loadClientErrors()])
+		await Promise.all([
+			loadServiceSettings(),
+			loadEgressBudget(),
+			loadDeploy(),
+			loadClientErrors(),
+			loadTrial(),
+			loadPromos(),
+		])
 	} catch (error) {
 		if (error.status === 401 || error.status === 403) signOut(error.message)
 		else toast(error.message, true)
@@ -1812,6 +2059,22 @@ el("create-user-form").addEventListener("submit", async (event) => {
 	} catch (error) {
 		toast(error.message, true)
 	}
+})
+
+el("trial-save").addEventListener("click", () => {
+	void saveTrial()
+})
+
+el("promo-new-btn").addEventListener("click", () => {
+	el("promo-form").hidden = false
+	el("promo-code").focus()
+})
+el("promo-cancel-btn").addEventListener("click", () => {
+	el("promo-form").hidden = true
+})
+el("promo-form").addEventListener("submit", (event) => {
+	event.preventDefault()
+	void createPromo()
 })
 
 void loadChannelBadge()
