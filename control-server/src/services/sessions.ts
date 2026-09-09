@@ -17,6 +17,7 @@ import {
 } from "./nodes"
 import { requestPolicySync } from "./policy"
 import { maintenanceError, requireVpnAvailable, SERVICE_GATE_LOCK } from "./serviceControl"
+import { tunnelAllowedIps } from "./tunnelRoutes"
 
 const ACTIVE_SESSION_STATES = ["PENDING", "ACTIVE"] as const
 
@@ -402,7 +403,10 @@ export async function connectSession(params: {
 			mtu: node.mtu,
 			peerPublicKey: wireguardPublicKey,
 			endpoint: nodeEndpoint(node),
-			allowedIps: ["0.0.0.0/0"],
+			// Everything except the control-plane addresses. A revoked peer must
+			// not blind the client: it still has to be able to ask the server why
+			// the tunnel went quiet, otherwise the UI can only guess by timeout.
+			allowedIps: tunnelAllowedIps(config.TUNNEL_BYPASS_IPS),
 			persistentKeepalive: 25,
 			...(gateway ? { gateway } : {}),
 		},

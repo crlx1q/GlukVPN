@@ -111,6 +111,12 @@ class AppConfig {
 	/// How often the app re-reads /api/vpn/status while connected.
 	static const Duration statusPollInterval = Duration(seconds: 10);
 
+	/// Пока туннель поднят, статус спрашиваем чаще: удалённое
+	/// отключение должно ощущаться сразу, а не через полминуты. Запрос
+	/// к API идёт мимо туннеля, поэтому ответ приходит даже тогда, когда
+	/// узел уже выкинул нашего пира.
+	static const Duration connectedPollInterval = Duration(seconds: 4);
+
 	/// Live ping cadence on the home screen.
 	static const Duration pingInterval = Duration(seconds: 3);
 

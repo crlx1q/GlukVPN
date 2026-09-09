@@ -631,16 +631,17 @@ class VpnController extends ChangeNotifier {
     try {
       _holdAutoReconnect(const Duration(seconds: 8));
       _notice = _russian
-          ? 'Туннель перестал отвечать и был остановлен. Выясняем причину…'
-          : 'The tunnel stopped responding and was shut down. Checking why…';
+          ? 'Туннель перестал отвечать и был остановлен.'
+          : 'The tunnel stopped responding and was shut down.';
       await _vpn.stop();
       _resetConnectionState();
       _state = VpnUiState.disconnected;
       _safeNotify();
       _probeHomeIp(settle: const Duration(milliseconds: 1200)).ignore();
-      // Статус теперь уходит напрямую и через пару секунд расскажет,
-      // кто и почему закрыл сессию, подменив сообщение выше.
-      Timer(const Duration(seconds: 3), () {
+      // Запрос статуса идёт мимо туннеля, поэтому ответ придёт даже с
+      // мёртвым пиром: через секунду он подменит сообщение выше на точную
+      // причину — кто и почему закрыл сессию.
+      Timer(const Duration(seconds: 1), () {
         if (!_disposed) unawaited(refreshStatus());
       });
     } finally {
@@ -867,7 +868,7 @@ class VpnController extends ChangeNotifier {
 
   void _startTimers() {
     _statusTimer ??= Timer.periodic(
-      AppConfig.statusPollInterval,
+      AppConfig.connectedPollInterval,
       (_) => refreshStatus(),
     );
     _pingTimer ??= Timer.periodic(AppConfig.pingInterval, (_) => _samplePing());

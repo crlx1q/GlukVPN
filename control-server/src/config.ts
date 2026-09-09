@@ -39,6 +39,17 @@ const EnvSchema = z.object({
 		.default("info"),
 	PUBLIC_API_URL: z.string().url().default("http://127.0.0.1:8081"),
 
+	// ------------------------- control-plane bypass --------------------------
+	// Which addresses stay OUTSIDE the tunnel. A phone routes 0.0.0.0/0 into
+	// WireGuard, so the moment a node drops the peer the app can no longer ask
+	// "was I disconnected?" - it can only time out, which is why a remotely
+	// closed session kept reading "connected" while the phone already had no
+	// internet. Keeping the control API reachable over the physical network
+	// lets the app learn the truth on the very next poll, the same way the
+	// desktop client does through its TLS gateway.
+	// Comma-separated IPv4 addresses or CIDRs, e.g. "203.0.113.7,198.51.100.0/24".
+	TUNNEL_BYPASS_IPS: z.string().default(""),
+
 	// --------------------------- release channel -----------------------------
 	// Two isolated stacks live on one machine: prod (:8081) and beta (:8082).
 	// Each has its own database, its own env file and — importantly — its own
