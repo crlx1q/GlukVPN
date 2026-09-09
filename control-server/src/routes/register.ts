@@ -14,9 +14,10 @@ import {
 	resendRegistrationCode,
 	startRegistration,
 	startTelegramRebind,
-	telegramConfigured,
 	telegramDeepLink,
+	telegramUsable,
 } from "../services/registration"
+import { botChannel, botUsername } from "../services/telegramLinks"
 import { revokeRefreshTokens } from "../services/tokens"
 import {
 	consumeCode,
@@ -96,8 +97,15 @@ export async function registrationRoutes(app: FastifyInstance): Promise<void> {
 			selfRegistration: (await serviceStatus()).registrationEnabled,
 			emailDelivery: mailerReady(),
 			telegram: {
-				enabled: telegramConfigured(),
-				username: config.TELEGRAM_BOT_USERNAME.trim().replace(/^@/, ""),
+				// "Can a Telegram step actually finish here", not merely "is a token
+				// set": only the channel that owns the bot can read its codes back.
+				enabled: telegramUsable(),
+				username: botUsername(),
+				// Which channel long-polls the bot, and which one answered this
+				// request. Equal on a healthy deployment; when they differ, that
+				// difference alone explains a "code not found" in the chat.
+				botChannel: botChannel(),
+				channel: config.CHANNEL,
 			},
 			// The site renders the Google button only when a client id exists; the
 			// id is public by design (it is embedded in every Google sign-in page).
@@ -138,9 +146,18 @@ export async function registrationRoutes(app: FastifyInstance): Promise<void> {
 			const captcha = await verifyCaptcha(captchaToken, ip)
 			if (!captcha.ok) throw badRequest("Please complete the anti-bot check")
 
+			// Step 2 is a code in an inbox. With no SMTP credentials the code is
+			// issued and nothing is sent, which from the outside is indistinguishable
+			// from "email sign-in does not work" - so refuse instead of pretending.
+			if (!mailerReady()) {
+				throw serviceUnavailable("Email delivery is not configured on this server")
+			}
+
 			// Telegram is a required step, so starting a sign-up that can never
-			// finish would be worse than refusing it.
-			if (!telegramConfigured()) {
+			// finish would be worse than refusing it. `telegramUsable` also covers
+			// the channel that does not own the bot: it can hand out a deep link,
+			// but nothing on the other side will ever read this database.
+			if (!telegramUsable()) {
 				throw serviceUnavailable("Sign-up is temporarily unavailable")
 			}
 
@@ -356,7 +373,7 @@ export async function registrationRoutes(app: FastifyInstance): Promise<void> {
 		},
 		async (request, reply) => {
 			const { user } = getAuthUser(request)
-			if (!telegramConfigured()) {
+			if (!telegramUsable()) {
 				throw serviceUnavailable("Telegram is not available on this server")
 			}
 
@@ -385,7 +402,7 @@ export async function registrationRoutes(app: FastifyInstance): Promise<void> {
 			// anything else on the account and never needs to be echoed back.
 			phoneTail: user.telegramPhone ? user.telegramPhone.slice(-4) : null,
 			verifiedAt: user.telegramVerifiedAt?.toISOString() ?? null,
-			botUrl: telegramConfigured() ? telegramDeepLink("") : null,
+			botUrl: telegramUsable() ? telegramDeepLink("") : null,
 		})
 	})
 }

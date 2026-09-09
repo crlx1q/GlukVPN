@@ -18,7 +18,7 @@ import { requireRegistrationEnabled } from "../services/serviceControl"
 import { latestSubscription, subscriptionPayload, userPayload } from "../services/accountView"
 import { refreshUserOrigin } from "../services/geo"
 import { googleConfigured, verifyGoogleIdToken } from "../services/googleAuth"
-import { startGoogleRegistration, telegramConfigured } from "../services/registration"
+import { startGoogleRegistration, telegramUsable } from "../services/registration"
 import { closeSessionsForDevice } from "../services/sessions"
 import { checkLoginThrottle, recordLoginAttempt } from "../services/loginThrottle"
 import {
@@ -274,7 +274,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 			// 3. New person.
 			await requireRegistrationEnabled()
 			if (config.GOOGLE_REQUIRE_TELEGRAM) {
-				if (!telegramConfigured()) throw serviceUnavailable("Sign-up is temporarily unavailable")
+				if (!telegramUsable()) throw serviceUnavailable("Sign-up is temporarily unavailable")
 				const started = await startGoogleRegistration({
 					email: identity.email,
 					googleSub: identity.sub,

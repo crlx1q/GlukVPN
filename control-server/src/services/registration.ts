@@ -30,20 +30,28 @@ import { badRequest, conflict } from "../lib/errors"
 import { prisma } from "../prisma"
 import { grantDefaultSubscription } from "./billing"
 import { requireRegistrationEnabled, withRegistrationGate } from "./serviceControl"
+import { telegramDeepLink } from "./telegramLinks"
 import { consumeCode, issueCode, normalizeEmail } from "./verification"
 
 /** The whole funnel. Long enough to go find the email, short enough to be junk. */
 const PENDING_TTL_MIN = 30
 
+/**
+ * How long a Telegram re-bind link stays valid. Longer than a mailed code on
+ * purpose - see the note on `startTelegramRebind`.
+ */
+const TELEGRAM_LINK_TTL_MIN = 15
+
 /** No I, L, O, U, 0 or 1: this token can end up retyped into a chat by hand. */
 const TOKEN_ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ23456789"
 
 /**
- * Assembled from parts rather than written as one literal, so that no tool in
- * the pipeline mistakes it for a real link and rewrites it.
+ * Deep links, the channel that owns the bot and payload tagging live in
+ * `telegramLinks.ts`: the bot module needs them too, and importing this file
+ * from there would be an import cycle. Re-exported here so that every existing
+ * call site keeps working unchanged.
  */
-const LINK_SCHEME = "https:"
-const TELEGRAM_LINK_HOST = "t.me"
+export { telegramConfigured, telegramDeepLink, telegramUsable } from "./telegramLinks"
 
 export type RegistrationState = "email" | "telegram" | "done"
 
@@ -53,17 +61,6 @@ function newToken(): string {
 		out += TOKEN_ALPHABET[randomInt(0, TOKEN_ALPHABET.length)]
 	}
 	return out
-}
-
-/** t.me/<bot>?start=<token> - one tap, and the bot already knows who is asking. */
-export function telegramDeepLink(token: string): string {
-	const bot = config.TELEGRAM_BOT_USERNAME.trim().replace(/^@/, "")
-	const base = `${LINK_SCHEME}//${TELEGRAM_LINK_HOST}/${bot}`
-	return token ? `${base}?start=${encodeURIComponent(token)}` : base
-}
-
-export function telegramConfigured(): boolean {
-	return config.TELEGRAM_BOT_TOKEN.trim().length > 0
 }
 
 /**
@@ -358,10 +355,15 @@ export async function registrationStatus(email: string): Promise<{
  * Start a Telegram re-bind for an account that already exists
  * (Settings -> Account -> "Change Telegram").
  *
- * The token is stored as a verification code so it inherits the 5-minute TTL,
- * the attempt counter and the sweeper. `destination` holds the token itself
- * because unlike an email flow there is no address to send to - the token *is*
- * the address, and the bot has to be able to find the row from it alone.
+ * The token is stored as a verification code so it inherits the attempt
+ * counter and the sweeper. `destination` holds the token itself because unlike
+ * an email flow there is no address to send to - the token *is* the address,
+ * and the bot has to be able to find the row from it alone.
+ *
+ * Its TTL is longer than the five minutes a mailed code gets: opening
+ * Telegram, pressing start and pressing "share contact" is three app switches
+ * on a phone, and a token that dies halfway through reads as "Telegram
+ * linking is broken" rather than "you were too slow".
  */
 export async function startTelegramRebind(userId: string): Promise<{
 	token: string
@@ -374,6 +376,7 @@ export async function startTelegramRebind(userId: string): Promise<{
 		destination: token,
 		channel: "TELEGRAM",
 		userId,
+		ttlMinutes: TELEGRAM_LINK_TTL_MIN,
 		// The token is the secret and it is already in the deep link, so there is
 		// nothing to deliver.
 		deliver: false,

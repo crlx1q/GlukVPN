@@ -36,11 +36,23 @@
 
 import { config } from "../config"
 import { HttpError } from "../lib/errors"
+import { attachTelegram, normalizePhone } from "./registration"
+import type { ReleaseChannel } from "./telegramLinks"
 import {
-	attachTelegram,
-	normalizePhone,
+	botChannel,
+	botOwnedHere,
+	botUsername,
+	channelLabel,
+	LOGIN_PREFIX,
+	parseStartPayload,
+	rememberBotUsername,
 	telegramConfigured,
-} from "./registration"
+} from "./telegramLinks"
+
+// The link builders moved to `telegramLinks.ts`, which also owns the channel
+// tag: the registration service needs them too, and importing this file from
+// there would be a cycle. Re-exported so `routes/link.ts` keeps its import.
+export { botUsername, telegramLoginLink } from "./telegramLinks"
 
 const API_BASE = "https://api.telegram.org"
 
@@ -127,26 +139,9 @@ export function setTelegramLoginBridge(bridge: TelegramLoginBridge | null): void
 	loginBridge = bridge
 }
 
-/** `@name` without the `@`, or "" when the bot is not configured. */
-export function botUsername(): string {
-	return config.TELEGRAM_BOT_USERNAME.trim().replace(/^@/, "")
-}
-
-/**
- * The deep link a client opens to confirm a sign-in.
- *
- * Telegram's `start` payload allows `A-Za-z0-9_-` only, which the Crockford
- * code and its single dash already satisfy - no encoding games needed.
- */
-export function telegramLoginLink(userCode: string): string {
-	const name = botUsername()
-	if (!name || !telegramConfigured()) return ""
-	// Assembled from parts rather than written as one inline literal. The
-	// editor tooling used to produce this file rewrites anything shaped like a
-	// template placeholder, and it silently corrupted this link twice.
-	const host = "https:" + "//" + "t.me" + "/"
-	return host + name + "?start=login-" + userCode
-}
+// `botUsername()` and `telegramLoginLink()` live in `telegramLinks.ts` now.
+// That module keeps assembling the host from parts for the same reason as the
+// note below, and adds the channel tag to the payload.
 
 // Editor artefact of that corruption, left as a comment: `https://t.me/${name?start=login-${userCode}
 
@@ -166,6 +161,23 @@ async function call<T>(method: string, payload: unknown): Promise<T | null> {
 		})
 		const body = (await response.json()) as { ok: boolean; result?: T; description?: string }
 		if (!body.ok) {
+			// 409 means another process is long-polling this same bot token. It
+			// deserves its own loud line, because the symptom users report is not
+			// an error at all: the updates that do get through land in whichever
+			// process won the race, and if that is the other channel, its database
+			// has never seen the code - so the bot answers "код не найден".
+			if (response.status === 409 || /conflict/i.test(body.description ?? "")) {
+				consoleLogger.error(
+					{
+						method,
+						channel: config.CHANNEL,
+						botChannel: botChannel(),
+						description: body.description,
+					},
+					"telegram_getupdates_conflict",
+				)
+				return null
+			}
 			// The token is in the URL, never in the body, so this is safe to log.
 			consoleLogger.warn({ method, description: body.description }, "telegram_api_error")
 			return null
@@ -204,10 +216,15 @@ export async function sendTelegramMessage(
 
 /** Resolve @username once, so deep links keep working if config is left blank. */
 export async function resolveBotUsername(): Promise<string> {
-	const configured = config.TELEGRAM_BOT_USERNAME.trim().replace(/^@/, "")
+	const configured = botUsername()
 	if (configured) return configured
 	const me = await call<{ username?: string }>("getMe", {})
-	return me?.username ?? ""
+	const name = me?.username ?? ""
+	// Cached, so every link built afterwards carries a real bot name instead of
+	// `t.me/?start=CODE` - a link that opens Telegram search and looks, to the
+	// person tapping it, exactly like a broken bot.
+	if (name) rememberBotUsername(name)
+	return name
 }
 
 // -------------------------------------------------------------- handlers ---
@@ -377,17 +394,28 @@ async function handleLoginDecision(message: TelegramMessage, allow: boolean): Pr
 	)
 }
 
+/**
+ * What to say when a payload minted by the other control plane lands here.
+ *
+ * Worth a message of its own: "код не найден" was technically true and
+ * completely misleading - the code exists, in the other channel's database,
+ * and no amount of retrying or hurrying could ever have helped.
+ */
+function foreignChannelText(minted: ReleaseChannel): string {
+	return (
+		`Эта ссылка выдана каналом <b>${channelLabel(minted)}</b>, а этот бот ` +
+		`отвечает на канале <b>${channelLabel(config.CHANNEL)}</b>.\n\n` +
+		"Код хранится в базе того канала, который его выдал, поэтому здесь его " +
+		"действительно нет — дело не в сроке действия.\n\n" +
+		`Откройте сайт или приложение на канале ${channelLabel(config.CHANNEL)} ` +
+		"и повторите. Вход можно подтвердить и на сайте — там канал передаётся " +
+		"в самой ссылке."
+	)
+}
+
 async function handleStart(message: TelegramMessage, argument: string): Promise<void> {
 	const chatId = message.chat.id
 	const name = message.from?.first_name ?? ""
-
-	// ROUND 11: `/start login-XXXX-XXXX` is a sign-in confirmation, not a
-	// sign-up. Checked before anything else so a login code can never be
-	// mistaken for a registration token.
-	if (/^login-/i.test(argument)) {
-		await handleLoginStart(message, argument.slice("login-".length))
-		return
-	}
 
 	if (!argument) {
 		await sendTelegramMessage(
@@ -401,7 +429,25 @@ async function handleStart(message: TelegramMessage, argument: string): Promise<
 		return
 	}
 
-	rememberToken(chatId, argument.trim().toUpperCase())
+	// ROUND 27: the payload now names the control plane that minted it
+	// (`<TOKEN>_beta`), so a code that reaches the wrong bot gets the real
+	// reason instead of "not found". An untagged payload counts as local, which
+	// keeps every link issued before this change working.
+	const payload = parseStartPayload(argument)
+	if (payload.channel !== config.CHANNEL) {
+		await sendTelegramMessage(chatId, foreignChannelText(payload.channel), HIDE_KEYBOARD)
+		return
+	}
+
+	// ROUND 11: `/start login-XXXX-XXXX` is a sign-in confirmation, not a
+	// sign-up. Checked before the token path so a login code can never be
+	// mistaken for a registration token.
+	if (payload.value.toLowerCase().startsWith(LOGIN_PREFIX)) {
+		await handleLoginStart(message, payload.value.slice(LOGIN_PREFIX.length))
+		return
+	}
+
+	rememberToken(chatId, payload.value.toUpperCase())
 	await sendTelegramMessage(
 		chatId,
 		"Остался один шаг.\n\n" +
@@ -478,17 +524,20 @@ async function handleContact(message: TelegramMessage): Promise<void> {
 		registration_disabled: "Регистрация временно приостановлена. Попробуйте позже.",
 		// ROUND 17: this used to talk only about registration, which is wrong for
 		// the case the user actually hits - linking Telegram to an account that
-		// already exists, from the cabinet. It also has to name the environment
-		// trap: the token lives in the database of whichever control plane issued
-		// it, and the bot can only long-poll from one of them, so a token minted
-		// on BETA is genuinely absent for a bot answering on PROD.
+		// already exists, from the cabinet.
+		//
+		// ROUND 27: the channel trap it went on to describe is now prevented
+		// instead of explained - only the owning channel polls the bot, and a
+		// tagged payload from the other one is answered by `foreignChannelText`.
+		// What can still reach this branch is a code typed in by hand, so the
+		// channel is still named.
 		unknown:
 			"Код не найден или уже истёк.\n\n" +
 			"Если привязываете Telegram к готовому аккаунту — откройте личный " +
 			"кабинет на vpn.gluk.tech, раздел «Безопасность», и нажмите " +
-			"«Привязать Telegram» заново.\n\n" +
-			"Если кабинет открыт на канале BETA, а бот отвечает на PROD — код " +
-			"не найдётся. Переключите канал на PROD и повторите.",
+			"«Привязать Telegram» заново: ссылка передаёт код сама.\n\n" +
+			`Этот бот отвечает на канале <b>${channelLabel(config.CHANNEL)}</b> — ` +
+			"код, выданный другим каналом, здесь не найдётся.",
 		email_pending: "Сначала подтвердите почту кодом на сайте, потом возвращайтесь сюда.",
 		phone_taken: "На этот номер уже зарегистрирован аккаунт. Воспользуйтесь входом или восстановлением пароля.",
 		telegram_taken: "Этот Telegram уже привязан к другому аккаунту.",
@@ -540,7 +589,7 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
 	}
 
 	// A bare code pasted by hand still works - some people will do that.
-	if (/^[A-Z0-9]{8,12}$/i.test(text)) {
+	if (/^[A-Z0-9]{8,12}(?:_(?:prod|beta))?$/i.test(text)) {
 		await handleStart(message, text)
 		return
 	}
@@ -555,12 +604,25 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
 // ----------------------------------------------------------------- runner --
 
 /**
- * Start long polling. Safe to call when the token is missing: it simply does
- * nothing, so prod and beta can share one code path and one env template.
+ * Start long polling. Safe to call when the token is missing, or when this
+ * channel does not own the bot: it simply does nothing, so prod and beta can
+ * share one code path and one env template.
  */
 export function startTelegramBot(logger: Logger = consoleLogger): void {
 	if (!telegramConfigured()) {
 		logger.info({}, "telegram_bot_disabled_no_token")
+		return
+	}
+	// ROUND 27: one token, one poller. Both channels used to start the same bot.
+	// Telegram answers the loser of that race with 409 and hands each update to
+	// whoever happens to win, so a large share of sign-ups and sign-ins were
+	// answered by a stack whose database had never seen the code - the whole
+	// story behind "Код не найден" and "Эта ссылка ... неизвестна".
+	if (!botOwnedHere()) {
+		logger.warn(
+			{ channel: config.CHANNEL, botChannel: botChannel() },
+			"telegram_bot_disabled_foreign_channel",
+		)
 		return
 	}
 	if (running) return
@@ -568,7 +630,7 @@ export function startTelegramBot(logger: Logger = consoleLogger): void {
 
 	void (async () => {
 		const username = await resolveBotUsername()
-		logger.info({ username }, "telegram_bot_started")
+		logger.info({ username, channel: config.CHANNEL }, "telegram_bot_started")
 
 		let offset = 0
 		// Back off on failure so a Telegram outage does not turn into a tight

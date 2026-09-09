@@ -79,14 +79,25 @@ export async function issueCode(params: {
 	 * and an attempted delivery would just be a wasted SMTP connection.
 	 */
 	deliver?: boolean
+	/**
+	 * Override the default TTL, in minutes.
+	 *
+	 * Five minutes is right for digits copied out of an inbox. It is too
+	 * short for a secret that lives in a deep link: "open Telegram, press
+	 * start, then press share contact" is three app switches on a phone, and
+	 * a code that dies halfway through reads as "Telegram linking is broken".
+	 */
+	ttlMinutes?: number
 }): Promise<IssuedCode> {
 	const destination = params.destination.trim()
 	if (destination.length === 0) throw badRequest("A destination is required")
 
 	const code = generateCode()
-	const expiresAt = new Date(
-		Date.now() + config.VERIFICATION_CODE_TTL_MIN * 60 * 1000,
-	)
+	const ttlMinutes =
+		params.ttlMinutes && params.ttlMinutes > 0
+			? params.ttlMinutes
+			: config.VERIFICATION_CODE_TTL_MIN
+	const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000)
 
 	await prisma.verificationCode.updateMany({
 		where: { purpose: params.purpose, destination, consumedAt: null },

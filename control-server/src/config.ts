@@ -181,6 +181,21 @@ const EnvSchema = z.object({
 	// Run the long-polling loop inside the API process. Turn it off to run
 	// `npm run bot` as its own unit, so a deploy restart does not drop the bot.
 	TELEGRAM_BOT_IN_PROCESS: envFlag("true"),
+	// Which channel owns this bot token.
+	//
+	// One token can be long-polled by exactly one process: Telegram hands a
+	// getUpdates race to whoever asked last and answers the loser with 409.
+	// prod (:8081) and beta (:8082) have separate databases, so when both
+	// polled the same token the bot kept answering with a database that did
+	// not contain the code the user had just been given - which is exactly
+	// what "Код не найден или уже истёк" and "Эта ссылка для входа
+	// неизвестна" looked like from the outside, on every platform, at random.
+	//
+	// Only the named channel starts the loop; the other one still keeps the
+	// token (it is needed to *send* messages) and simply never polls. Give
+	// beta its own @BotFather bot and set this to "beta" there to test the
+	// sign-up flow on beta.
+	TELEGRAM_BOT_CHANNEL: z.enum(["prod", "beta"]).default("prod"),
 	// Where operational alerts go (traffic budget, unexpected Oracle charges).
 	// A chat id, not a username: the bot can only message a chat it has seen.
 	// Empty means the alert is logged as a warning and not sent.
