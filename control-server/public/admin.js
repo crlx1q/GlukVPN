@@ -346,26 +346,51 @@ function policyStatus(node) {
 	return wrap
 }
 
+/**
+ * The same disclosure the clients show: collapsed by default, one line per
+ * restriction, each with the rules behind it and a comment saying why.
+ *
+ * Fifteen columns of node metadata leave no room for a wall of chips, and the
+ * chips used to repeat themselves whenever two router rules enforced one
+ * restriction (the two BitTorrent port rules produced "Known P2P ports
+ * blocked" twice). Grouping now happens on the server, in publicRestrictions.
+ */
 function restrictionBadges(restrictions) {
-	const wrap = document.createElement("div")
-	wrap.className = "restriction-list"
 	const items = Array.isArray(restrictions) ? restrictions : []
 	if (items.length === 0) {
 		const none = document.createElement("span")
 		none.className = "muted small"
 		none.textContent = "None"
-		wrap.appendChild(none)
-		return wrap
+		return none
 	}
+	const drop = document.createElement("details")
+	drop.className = "restriction-drop"
+	const summary = document.createElement("summary")
+	const count = document.createElement("strong")
+	count.textContent = `${items.length} blocked`
+	const hint = document.createElement("span")
+	hint.textContent = items.map((r) => r.label || r.code || r.kind || "rule").join(" · ")
+	summary.append(count, hint)
+	const list = document.createElement("div")
+	list.className = "restriction-list"
 	for (const restriction of items) {
+		const row = document.createElement("div")
+		row.className = `restriction-row is-${restriction.source === "builtin" ? "builtin" : "policy"}`
 		const badge = document.createElement("span")
-		badge.className = `restriction-badge is-${restriction.source === "builtin" ? "builtin" : "policy"}`
+		badge.className = "restriction-badge"
 		badge.textContent = restriction.label || restriction.code || restriction.kind || "Restriction"
-		const details = [restriction.kind, restriction.value, restriction.network, restriction.source].filter(Boolean)
-		badge.title = details.join(" · ")
-		wrap.appendChild(badge)
+		const rules = document.createElement("code")
+		rules.textContent = Array.isArray(restriction.rules) && restriction.rules.length
+			? restriction.rules.join(" · ")
+			: [restriction.kind, restriction.value, restriction.network].filter(Boolean).join(" · ")
+		const note = document.createElement("p")
+		// Admin-authored text: textContent keeps it literal, never HTML.
+		note.textContent = restriction.detail || ""
+		row.append(badge, rules, note)
+		list.appendChild(row)
 	}
-	return wrap
+	drop.append(summary, list)
+	return drop
 }
 
 function renderCards(overview) {

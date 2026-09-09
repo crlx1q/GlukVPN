@@ -204,14 +204,21 @@ class _ServersScreenState extends State<ServersScreen> {
                     for (final VpnNodeInfo node in recommended)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 9),
-                        child: _ServerTile(
-                          node: node,
-                          sample: _samples[node.id],
-                          selected: !vpn.autoSelectionEnabled &&
-                              vpn.selectedNode?.id == node.id,
-                          onTap: vpn.manualSelectionLocked
-                              ? null
-                              : () => _select(vpn, node),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            _ServerTile(
+                              node: node,
+                              sample: _samples[node.id],
+                              selected: !vpn.autoSelectionEnabled &&
+                                  vpn.selectedNode?.id == node.id,
+                              onTap: vpn.manualSelectionLocked
+                                  ? null
+                                  : () => _select(vpn, node),
+                            ),
+                            if (node.restrictions.isNotEmpty)
+                              _NodeLimits(node: node),
+                          ],
                         ),
                       ),
                   ],
@@ -222,12 +229,19 @@ class _ServersScreenState extends State<ServersScreen> {
                     for (final VpnNodeInfo node in others)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 9),
-                        child: _ServerTile(
-                          node: node,
-                          sample: _samples[node.id],
-                          selected: !vpn.autoSelectionEnabled &&
-                              vpn.selectedNode?.id == node.id,
-                          onTap: null,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            _ServerTile(
+                              node: node,
+                              sample: _samples[node.id],
+                              selected: !vpn.autoSelectionEnabled &&
+                                  vpn.selectedNode?.id == node.id,
+                              onTap: null,
+                            ),
+                            if (node.restrictions.isNotEmpty)
+                              _NodeLimits(node: node),
+                          ],
                         ),
                       ),
                   ],
@@ -286,7 +300,8 @@ class _ServerTile extends StatelessWidget {
       if (ms != null) parts.add('$ms ${s.ms}');
     }
     if (node.maintenance) parts.add(s.isRussian ? 'Технические работы' : 'Maintenance');
-    parts.addAll(node.restrictions.map((r) => r.localizedLabel(s.isRussian)).where((label) => label.isNotEmpty));
+    // Запреты больше не вытягивают эту строку в одно многоточие:
+    // их показывает _NodeLimits под строкой сервера, с комментариями.
     return parts.join('  \u00b7  ');
   }
 
@@ -368,6 +383,117 @@ class _ServerTile extends StatelessWidget {
             _Radio(selected: selected, enabled: node.connectable),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// «Что запрещено на этом сервере» — тот же сложенный список, что в
+/// расширении, на ПК и в админке: свёрнуто — одна строка со счётчиком,
+/// раскрыто — запрет, его правила и короткий комментарий почему.
+class _NodeLimits extends StatefulWidget {
+  const _NodeLimits({required this.node});
+
+  final VpnNodeInfo node;
+
+  @override
+  State<_NodeLimits> createState() => _NodeLimitsState();
+}
+
+class _NodeLimitsState extends State<_NodeLimits> {
+  /// Тот же акцент, что у плашек в расширении и в админке.
+  static const Color _accent = Color(0xFFF3C98B);
+
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppStrings s = context.strings;
+    final bool ru = s.isRussian;
+    final TextTheme text = Theme.of(context).textTheme;
+    final List<NodeRestriction> items = widget.node.restrictions;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, left: 12, right: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: () => setState(() => _open = !_open),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    ru
+                        ? 'Запрещено здесь \u00b7 ${items.length}'
+                        : 'Blocked here \u00b7 ${items.length}',
+                    style: text.bodySmall?.copyWith(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: _accent,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Icon(
+                    _open ? Icons.expand_less : Icons.expand_more,
+                    size: 15,
+                    color: _accent,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_open)
+            Container(
+              margin: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.fromLTRB(11, 9, 11, 3),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: _accent.withOpacity(0.18)),
+                color: _accent.withOpacity(0.04),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  for (final NodeRestriction r in items)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 9),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            r.localizedLabel(ru),
+                            style: text.bodySmall?.copyWith(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: _accent,
+                            ),
+                          ),
+                          if (r.rulesLine.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                r.rulesLine,
+                                style: text.bodySmall?.copyWith(fontSize: 9.5),
+                              ),
+                            ),
+                          if (r.localizedDetail(ru).isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 3),
+                              child: Text(
+                                r.localizedDetail(ru),
+                                style: text.bodySmall?.copyWith(fontSize: 10, height: 1.35),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }

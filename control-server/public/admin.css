@@ -886,18 +886,85 @@ summary:focus-visible {
 	color: var(--amber);
 }
 
-.restriction-list {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 5px;
+/* Скрытый список запретов — один в один с расширением, сайтом и Flutter:
+   свёрнуто показываем только счётчик, раскрыто — строку на запрет
+   с правилами и комментарием. Раньше здесь была стена плашек, причём
+   «Known P2P ports blocked» дважды: два правила на один запрет. */
+.restriction-drop {
 	max-width: 360px;
 	white-space: normal;
+}
+
+.restriction-drop > summary {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	padding: 3px 9px;
+	border: 1px solid rgba(240, 181, 103, 0.32);
+	border-radius: 999px;
+	background: rgba(240, 181, 103, 0.08);
+	color: var(--amber);
+	font-size: 10.5px;
+	cursor: pointer;
+	list-style: none;
+}
+
+.restriction-drop > summary::-webkit-details-marker {
+	display: none;
+}
+
+.restriction-drop > summary strong {
+	font-size: 10.5px;
+	font-weight: 700;
+	white-space: nowrap;
+}
+
+.restriction-drop > summary span {
+	max-width: 210px;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	color: rgba(226, 220, 240, 0.62);
+}
+
+.restriction-drop[open] > summary {
+	border-radius: 10px 10px 0 0;
+}
+
+.restriction-list {
+	display: grid;
+	gap: 7px;
+	max-width: 360px;
+	padding: 8px 9px;
+	border: 1px solid rgba(240, 181, 103, 0.2);
+	border-top: 0;
+	border-radius: 0 0 10px 10px;
+	background: rgba(240, 181, 103, 0.04);
+	white-space: normal;
+}
+
+.restriction-row {
+	display: grid;
+	gap: 3px;
+}
+
+.restriction-row code {
+	font-size: 10px;
+	color: rgba(226, 220, 240, 0.55);
+}
+
+.restriction-row p {
+	margin: 0;
+	font-size: 10.5px;
+	line-height: 1.38;
+	color: rgba(226, 220, 240, 0.72);
 }
 
 .restriction-badge {
 	display: inline-flex;
 	align-items: center;
-	min-height: 24px;
+	justify-self: start;
+	min-height: 22px;
 	padding: 2px 8px;
 	border: 1px solid rgba(240, 181, 103, 0.36);
 	border-radius: 999px;
@@ -907,7 +974,7 @@ summary:focus-visible {
 	font-weight: 600;
 }
 
-.restriction-badge.is-builtin {
+.restriction-row.is-builtin .restriction-badge {
 	border-color: rgba(139, 92, 246, 0.34);
 	background: rgba(139, 92, 246, 0.1);
 	color: var(--violet-light);

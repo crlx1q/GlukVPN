@@ -946,18 +946,10 @@ function renderServers() {
 			meta.appendChild(label)
 		}
 		text.appendChild(meta)
+		// Запреты больше не висят плашками в строке сервера: они живут
+		// в раскрывающемся блоке под ней — внутрь самой строки его не
+		// положить: строка сама кнопка, а кнопка в кнопке не работает.
 		const restrictions = Array.isArray(node?.restrictions) ? node.restrictions : []
-		if (restrictions.length) {
-			const holder = document.createElement('span')
-			holder.className = 's-restrictions'
-			for (const restriction of restrictions.slice(0, 4)) {
-				const chip = document.createElement('span')
-				chip.className = 'restriction'
-				chip.textContent = restrictionLabel(restriction)
-				holder.appendChild(chip)
-			}
-			text.appendChild(holder)
-		}
 		row.appendChild(text)
 
 		const sig = document.createElement('span')
@@ -974,6 +966,7 @@ function renderServers() {
 
 		row.addEventListener('click', () => chooseNode(id, offline))
 		list.appendChild(row)
+		if (restrictions.length) list.appendChild(nodeRestrictionsDrop(restrictions, id))
 	})
 }
 
@@ -2955,6 +2948,68 @@ function restrictionLabel(restriction) {
 	// Policy-provided custom text is untrusted content: textContent at the call
 	// site guarantees it is displayed literally and never interpreted as HTML.
 	return String(restriction?.label ?? restriction?.value ?? t('err.forbidden')).slice(0, 120)
+}
+
+
+/** Комментарий к запрету: что именно не работает и почему. */
+function restrictionDetail(restriction) {
+	const code = String(restriction?.code ?? '').toLowerCase()
+	const known = ['bittorrent', 'smtp25', 'p2p_ports']
+	if (known.includes(code)) return t(`restriction.${code}.detail`)
+	// Policy-provided custom text is untrusted content: textContent at the call
+	// site guarantees it is displayed literally and never interpreted as HTML.
+	return String(restriction?.detail ?? '').slice(0, 240)
+}
+
+
+/**
+ * «Что запрещено на этом сервере» — сложенный список под строкой
+ * сервера, такой же, как на сайте, в клиентах и в админке: свёрнуто
+ * — только счётчик, раскрыто — строка на запрет с правилами и
+ * коротким комментарием.
+ */
+function nodeRestrictionsDrop(restrictions, nodeId) {
+	const wrap = document.createElement('div')
+	wrap.className = 'srv-limits'
+	const bodyId = `srv-limits-${nodeId}`
+	const toggle = document.createElement('button')
+	toggle.type = 'button'
+	toggle.className = 'srv-limits-toggle'
+	toggle.setAttribute('aria-expanded', 'false')
+	toggle.setAttribute('aria-controls', bodyId)
+	const label = document.createElement('span')
+	label.textContent = t('node.limits', { n: restrictions.length })
+	const chev = document.createElement('i')
+	chev.className = 'srv-limits-chev'
+	toggle.append(label, chev)
+	const body = document.createElement('div')
+	body.className = 'srv-limits-body'
+	body.id = bodyId
+	body.hidden = true
+	for (const restriction of restrictions) {
+		const item = document.createElement('div')
+		item.className = 'srv-limit'
+		const chip = document.createElement('span')
+		chip.className = 'restriction'
+		chip.textContent = restrictionLabel(restriction)
+		const ruleTexts = Array.isArray(restriction?.rules) ? restriction.rules.filter(Boolean) : []
+		const rules = document.createElement('span')
+		rules.className = 'srv-limit-rules'
+		rules.textContent = ruleTexts.length ? ruleTexts.join(' · ') : String(restriction?.value ?? '')
+		const note = document.createElement('p')
+		note.className = 'srv-limit-note'
+		note.textContent = restrictionDetail(restriction)
+		item.append(chip, rules, note)
+		body.appendChild(item)
+	}
+	toggle.addEventListener('click', () => {
+		const open = body.hidden
+		body.hidden = !open
+		toggle.setAttribute('aria-expanded', open ? 'true' : 'false')
+		wrap.classList.toggle('is-open', open)
+	})
+	wrap.append(toggle, body)
+	return wrap
 }
 
 // Ready-made Material Icons (same glyphs as Flutter Icons.*), locally bundled PNG.

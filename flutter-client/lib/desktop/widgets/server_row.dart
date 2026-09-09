@@ -85,7 +85,12 @@ class _ServerRowState extends State<ServerRow> {
           ),
           child: Opacity(
             opacity: available ? 1 : 0.45,
-            child: GlassPanel(
+            // Строка сервера плюс сложенный список запретов под ней —
+            // тот же вид, что в расширении, на телефоне и в админке.
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+            GlassPanel(
               radius: GlukSizes.cellRadius,
               padding: const EdgeInsets.symmetric(
                 horizontal: 14,
@@ -161,6 +166,10 @@ class _ServerRowState extends State<ServerRow> {
                 ],
               ),
             ),
+                if (node.restrictions.isNotEmpty)
+                  _NodeLimitsPanel(node: node, russian: widget.russian),
+              ],
+            ),
           ),
         ),
       ),
@@ -177,7 +186,8 @@ class _ServerRowState extends State<ServerRow> {
     final parts = <String>[];
     parts.add('${widget.loadLabel ?? 'Load'} ${formatPercent(node.loadPercent.toDouble())}');
     if (node.maintenance) parts.add(widget.russian ? 'Технические работы' : 'Maintenance');
-    parts.addAll(node.restrictions.map((r) => r.localizedLabel(widget.russian)).where((label) => label.isNotEmpty));
+    // Запреты ушли из этой строки в раскрывающийся список ниже:
+    // в одну строку они не влезали и обрезались многоточием.
     return parts.where((String p) => p.isNotEmpty).join('  ·  ');
   }
 
@@ -192,6 +202,117 @@ class _ServerRowState extends State<ServerRow> {
       default:
         return GlukColors.text2;
     }
+  }
+}
+
+/// «Что запрещено на этом сервере» — сложенный список под строкой
+/// сервера. Свёрнуто — одна строка со счётчиком, раскрыто — запрет,
+/// правила за ним и короткий комментарий почему. Один и тот же вид
+/// в расширении, на телефоне и в админке.
+class _NodeLimitsPanel extends StatefulWidget {
+  const _NodeLimitsPanel({required this.node, required this.russian});
+
+  final VpnNodeInfo node;
+  final bool russian;
+
+  @override
+  State<_NodeLimitsPanel> createState() => _NodeLimitsPanelState();
+}
+
+class _NodeLimitsPanelState extends State<_NodeLimitsPanel> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<NodeRestriction> items = widget.node.restrictions;
+    final bool ru = widget.russian;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: () => setState(() => _open = !_open),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    ru
+                        ? 'Запрещено здесь \u00b7 ${items.length}'
+                        : 'Blocked here \u00b7 ${items.length}',
+                    style: const TextStyle(
+                      color: GlukColors.amber,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Icon(
+                    _open ? Icons.expand_less : Icons.expand_more,
+                    size: 16,
+                    color: GlukColors.amber,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_open)
+            Container(
+              margin: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(GlukSizes.cellRadius),
+                border: Border.all(color: GlukColors.amber.withOpacity(0.18)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  for (final NodeRestriction r in items)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            r.localizedLabel(ru),
+                            style: const TextStyle(
+                              color: GlukColors.amber,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          if (r.rulesLine.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                r.rulesLine,
+                                style: const TextStyle(color: GlukColors.text2, fontSize: 10),
+                              ),
+                            ),
+                          if (r.localizedDetail(ru).isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 3),
+                              child: Text(
+                                r.localizedDetail(ru),
+                                style: const TextStyle(
+                                  color: GlukColors.text2,
+                                  fontSize: 11,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 

@@ -400,15 +400,66 @@ class NodeLocation {
 }
 
 class NodeRestriction {
-  const NodeRestriction({required this.kind, required this.value, required this.network, required this.source, required this.code, required this.label});
-  factory NodeRestriction.fromJson(Map<String, dynamic> json) => NodeRestriction(kind: _asString(json['kind']), value: _asString(json['value']), network: _asString(json['network']), source: _asString(json['source']), code: _asString(json['code']), label: _asString(json['label']));
-  final String kind, value, network, source, code, label;
+  const NodeRestriction({
+    required this.kind,
+    required this.value,
+    required this.network,
+    required this.source,
+    required this.code,
+    required this.label,
+    this.detail = '',
+    this.rules = const <String>[],
+  });
+  factory NodeRestriction.fromJson(Map<String, dynamic> json) => NodeRestriction(
+        kind: _asString(json['kind']),
+        value: _asString(json['value']),
+        network: _asString(json['network']),
+        source: _asString(json['source']),
+        code: _asString(json['code']),
+        label: _asString(json['label']),
+        detail: _asString(json['detail']),
+        rules: json['rules'] is List
+            ? (json['rules'] as List).map((Object? e) => _asString(e)).where((String r) => r.isNotEmpty).toList()
+            : const <String>[],
+      );
+  final String kind, value, network, source, code, label, detail;
+
+  /// Правила фильтра, которые держат этот запрет: «6881-6999», «25/tcp».
+  /// Сервер сам склеивает однотипные правила, поэтому один запрет —
+  /// ровно одна строка списка, без дублей вроде двух «P2P-порты».
+  final List<String> rules;
+
   String localizedLabel(bool russian) {
     if (code == 'bittorrent') return russian ? 'BitTorrent ограничен' : 'BitTorrent restricted';
     if (code == 'smtp25') return russian ? 'SMTP порт 25 закрыт' : 'SMTP port 25 blocked';
     if (code == 'p2p_ports') return russian ? 'P2P-порты ограничены' : 'P2P ports restricted';
     return label.replaceAll(RegExp(r'[\x00-\x1F]'), '').trim();
   }
+
+  /// Комментарий «почему запрещено» — дословно тот же текст, что в
+  /// расширении и в админке. Свои правила админа приходят с сервера
+  /// в detail — его чистим от управляющих символов и показываем текстом.
+  String localizedDetail(bool russian) {
+    if (code == 'bittorrent') {
+      return russian
+          ? 'Узел узнаёт рукопожатие BitTorrent и рвёт его. За каждую жалобу правообладателей хостер выставляет счёт, поэтому раздача через этот выход не работает.'
+          : 'The node recognises the BitTorrent handshake and drops it. Rights holders bill the host for every abuse letter, so seeding never works through this exit.';
+    }
+    if (code == 'smtp25') {
+      return russian
+          ? 'Почта напрямую в порт 25 не уйдёт — именно это держит адрес узла вне спам-листов. Отправка через 465 и 587 работает как обычно.'
+          : 'Mail sent straight to port 25 is refused — that is what keeps the exit address out of spam blocklists. Submission over 465 and 587 still works.';
+    }
+    if (code == 'p2p_ports') {
+      return russian
+          ? 'Классические порты трекеров и DHT тоже закрыты: шифрованный рой проскакивает проверку по протоколу.'
+          : 'The classic BitTorrent tracker and DHT ports are refused as well, because an encrypted swarm slips past protocol sniffing.';
+    }
+    return detail.replaceAll(RegExp(r'[\x00-\x1F]'), '').trim();
+  }
+
+  /// Правила одной строкой: «6881-6999 · 6969».
+  String get rulesLine => rules.isNotEmpty ? rules.join('  \u00b7  ') : value;
 }
 
 /// Client-facing node projection returned by `GET /api/nodes`.

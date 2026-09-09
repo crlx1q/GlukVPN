@@ -322,6 +322,10 @@ const en = {
 	'restriction.bittorrent': 'BitTorrent blocked',
 	'restriction.smtp25': 'SMTP port 25 blocked',
 	'restriction.p2p_ports': 'P2P ports blocked',
+	'restriction.bittorrent.detail': 'The node recognises the BitTorrent handshake and drops it. Rights holders bill the host for every abuse letter, so seeding never works through this exit.',
+	'restriction.smtp25.detail': 'Mail sent straight to port 25 is refused — that is what keeps the exit address out of spam blocklists. Submission over 465 and 587 still works.',
+	'restriction.p2p_ports.detail': 'The classic BitTorrent tracker and DHT ports are refused as well, because an encrypted swarm slips past protocol sniffing.',
+	'node.limits': 'Blocked here · {n}',
 	'common.cancel': 'Cancel',
 }
 
@@ -556,6 +560,10 @@ const ru = {
 	'restriction.bittorrent': 'BitTorrent заблокирован',
 	'restriction.smtp25': 'SMTP-порт 25 заблокирован',
 	'restriction.p2p_ports': 'P2P-порты заблокированы',
+	'restriction.bittorrent.detail': 'Узел узнаёт рукопожатие BitTorrent и рвёт его. За каждую жалобу правообладателей хостер выставляет счёт, поэтому раздача через этот выход не работает.',
+	'restriction.smtp25.detail': 'Почта напрямую в порт 25 не уйдёт — именно это держит адрес узла вне спам-листов. Отправка через 465 и 587 работает как обычно.',
+	'restriction.p2p_ports.detail': 'Классические порты трекеров и DHT тоже закрыты: шифрованный рой проскакивает проверку по протоколу.',
+	'node.limits': 'Запрещено здесь · {n}',
 	'common.cancel': 'Отмена',
 }
 
