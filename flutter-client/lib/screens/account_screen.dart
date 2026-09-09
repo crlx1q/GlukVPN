@@ -11,6 +11,7 @@ import '../state/auth_controller.dart';
 import '../state/vpn_controller.dart';
 import '../theme/tokens.dart';
 import '../utils/format.dart' hide countryFlag;
+import '../widgets/account_security_card.dart';
 import '../widgets/glass.dart';
 import '../widgets/plan_badge.dart';
 import 'devices_screen.dart' show TonePill;
@@ -213,6 +214,12 @@ class _AccountScreenState extends State<AccountScreen> {
                 ],
               ],
             ),
+            const SizedBox(height: 12),
+
+            // --- security ---------------------------------------------------
+            // Те же три действия, что в кабинете на сайте и в ПК-версии:
+            // раньше с телефона пароль менялся только через сайт.
+            AccountSecurityCard(auth: auth, russian: s.isRussian),
             const SizedBox(height: 20),
 
             // ПУНКТ 12: список устройств отсюда убран. Экран

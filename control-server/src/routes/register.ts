@@ -393,6 +393,15 @@ export async function registrationRoutes(app: FastifyInstance): Promise<void> {
 		},
 	)
 
+	// The owner should recognise their own number at a glance; a stranger who
+	// reads the screen should not learn it. Country digit and last four, the rest
+	// is stars: "+7 *** *** 4729".
+	const maskedPhone = (raw: string | null | undefined): string | null => {
+		const digits = String(raw ?? "").replace(/\D+/g, "")
+		if (digits.length < 5) return null
+		return `+${digits.slice(0, 1)} *** *** ${digits.slice(-4)}`
+	}
+
 	app.get("/api/auth/telegram", { preHandler: requireUser }, async (request, reply) => {
 		const { user } = getAuthUser(request)
 		return reply.send({
@@ -401,6 +410,8 @@ export async function registrationRoutes(app: FastifyInstance): Promise<void> {
 			// Last four digits only. The full number is a stronger identifier than
 			// anything else on the account and never needs to be echoed back.
 			phoneTail: user.telegramPhone ? user.telegramPhone.slice(-4) : null,
+			// Ready-to-show form of the same fact, so every client masks it the same way.
+			phoneMask: maskedPhone(user.telegramPhone),
 			verifiedAt: user.telegramVerifiedAt?.toISOString() ?? null,
 			botUrl: telegramUsable() ? telegramDeepLink("") : null,
 		})

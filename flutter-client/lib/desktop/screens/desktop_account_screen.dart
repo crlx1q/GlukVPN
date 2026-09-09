@@ -7,6 +7,7 @@ import '../../state/auth_controller.dart';
 import '../../theme/tokens.dart';
 import '../../utils/format.dart';
 // Shared with the phone: one definition of what a device looks like.
+import '../../widgets/account_security_card.dart';
 import '../../widgets/device_icon.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/plan_badge.dart';
@@ -296,6 +297,11 @@ class _DesktopAccountScreenState extends State<DesktopAccountScreen> {
                 ),
               ],
             ),
+
+            const SizedBox(height: 12),
+            // Та же карточка безопасности, что на телефоне и на сайте:
+            // пароль, почта, перепривязка Telegram и замаскированный номер.
+            AccountSecurityCard(auth: widget.auth, russian: _ru),
 
             if (_notice != null) ...<Widget>[
               const SizedBox(height: 12),

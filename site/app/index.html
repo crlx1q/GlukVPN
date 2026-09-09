@@ -216,6 +216,10 @@
               <div class="dash-rows">
                 <div class="dash-row"><span>Почта</span><b data-d="sec-email">—</b></div>
                 <div class="dash-row"><span>Подтверждение почты</span><b data-d="sec-verified">—</b></div>
+                <!-- Телеграм и номер приходят из GET /api/auth/telegram и заполняются
+                     в account.js: номер сервер раздаёт уже замаскированным. -->
+                <div class="dash-row"><span>Telegram</span><b data-sec-info="telegram">—</b></div>
+                <div class="dash-row"><span>Номер из Telegram</span><b data-sec-info="phone">—</b></div>
                 <div class="dash-row"><span>Лимит устройств</span><b data-d="sec-max-dev">—</b></div>
                 <div class="dash-row"><span>Лимит сессий</span><b data-d="sec-max-ses">—</b></div>
                 <div class="dash-row"><span>Регион аккаунта</span><b data-d="sec-origin">—</b></div>
@@ -357,7 +361,7 @@
   <script src="/assets/js/account-map-ui.js?v=20260906.1" defer></script>
   <script src="/assets/js/sprint2.js?v=20260906.1" defer></script>
   <!-- РАУНД 9 (2.2): блок «Безопасность аккаунта» живёт в account.js. -->
-  <script src="/assets/js/account.js?v=0.9.0" defer></script>
+  <script src="/assets/js/account.js?v=0.9.1" defer></script>
 
   </main>
 

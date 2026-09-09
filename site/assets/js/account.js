@@ -281,6 +281,39 @@
     return window.GlukAuth.call(path, { method: "POST", body: body || {} });
   }
 
+  /* ------------------------------------------------------------ инфо */
+  /* Строки «Telegram» и «Номер» живут выше кнопок, в dash-rows, поэтому
+     ищем их по документу, а не внутри box. Номер приходит с сервера уже
+     замаскированным (+7 *** *** 4729): полный клиенту не отдают вообще. */
+  function get(path) {
+    if (!window.GlukAuth || !window.GlukAuth.call) {
+      return Promise.reject({ status: 401, code: "no_session" });
+    }
+    return window.GlukAuth.call(path, { method: "GET" });
+  }
+
+  function setInfo(name, text) {
+    var node = document.querySelector('[data-sec-info="' + name + '"]');
+    if (node) node.textContent = text || "\u2014";
+  }
+
+  function info() {
+    if (!window.GlukAuth || !window.GlukAuth.isAuthed || !window.GlukAuth.isAuthed()) return;
+    get("/api/auth/telegram").then(
+      function (res) {
+        var name = res && res.username ? "@" + String(res.username) : "";
+        setInfo("telegram", res && res.linked
+          ? (name || t("привязан", "linked"))
+          : t("не привязан", "not linked"));
+        setInfo("phone", (res && res.phoneMask)
+          || (res && res.phoneTail ? "*** " + res.phoneTail : t("нет номера", "no number")));
+      },
+      function () {
+        /* Молча: карточка без этих двух строк остаётся рабочей. */
+      }
+    );
+  }
+
   /* ----------------------------------------------------------- пароль */
   if (pwForm) {
     pwForm.addEventListener("submit", function (e) {
@@ -421,4 +454,10 @@
     b.setAttribute("aria-expanded", "false");
     b.addEventListener("click", function () { open(b.getAttribute("data-sec-open")); });
   });
+
+  info();
+  document.addEventListener("gluk:auth", function () { info(); });
+  /* Перепривязка заканчивается в боте, а не здесь. Человек возвращается в
+     вкладку — строки переспрашиваются сами, без кнопки «обновить». */
+  window.addEventListener("focus", function () { info(); });
 })();

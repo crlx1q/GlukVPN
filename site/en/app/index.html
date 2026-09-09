@@ -215,6 +215,10 @@
               <div class="dash-rows">
                 <div class="dash-row"><span>Email</span><b data-d="sec-email">—</b></div>
                 <div class="dash-row"><span>Email confirmation</span><b data-d="sec-verified">—</b></div>
+                <!-- Telegram and the phone come from GET /api/auth/telegram; the server
+                     hands the number over already masked. -->
+                <div class="dash-row"><span>Telegram</span><b data-sec-info="telegram">—</b></div>
+                <div class="dash-row"><span>Phone from Telegram</span><b data-sec-info="phone">—</b></div>
                 <div class="dash-row"><span>Device limit</span><b data-d="sec-max-dev">—</b></div>
                 <div class="dash-row"><span>Session limit</span><b data-d="sec-max-ses">—</b></div>
                 <div class="dash-row"><span>Account region</span><b data-d="sec-origin">—</b></div>
@@ -347,7 +351,7 @@
   <script src="/assets/js/account-map-ui.js?v=20260906.1" defer></script>
   <script src="/assets/js/sprint2.js?v=20260906.1" defer></script>
   <!-- Account security block lives in account.js (same script as the Russian page). -->
-  <script src="/assets/js/account.js?v=0.8.0" defer></script>
+  <script src="/assets/js/account.js?v=0.9.1" defer></script>
 
   </main>
 
