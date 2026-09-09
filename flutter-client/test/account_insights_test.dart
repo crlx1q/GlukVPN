@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:glukvpn/models/account_insights.dart';
-import 'package:glukvpn/widgets/usage_stats.dart';
 
 void main() {
   test('active map preserves unknown origin and real node coordinates', () {
