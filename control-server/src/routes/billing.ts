@@ -13,11 +13,12 @@ import {
 	minimumChargeMinor,
 	orderView,
 	planView,
+	reconcilePendingOrders,
 	settlementCurrency,
 	verifyStripeSignature,
 } from "../services/billing"
 import { normalizeCurrency, resolveMarket, resolvePlanPrice } from "../services/pricing"
-import { applyPromo } from "../services/promo"
+import { applyPromo, promoPlanCodes } from "../services/promo"
 import { verifyTabpaySignature } from "../services/tabpay"
 import { claimTrial, trialOffer } from "../services/trial"
 
@@ -119,6 +120,27 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 		return reply.send({ orders: orders.map(orderView) })
 	})
 
+	// Called when the browser comes back from the hosted payment page. The
+	// webhook is still what grants a plan; this asks the gateway directly, so a
+	// delivery that is late or lost cannot leave somebody who has paid looking
+	// at "no subscription", and a refused attempt cannot stand in the way of the
+	// next one.
+	app.post(
+		"/api/billing/orders/sync",
+		{ preHandler: requireUser, config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
+		async (request, reply) => {
+			const { user } = getAuthUser(request)
+			const synced = await reconcilePendingOrders(user)
+			const orders = await prisma.order.findMany({
+				where: { userId: user.id },
+				include: { plan: true },
+				orderBy: { createdAt: "desc" },
+				take: 10,
+			})
+			return reply.send({ synced, orders: orders.map(orderView) })
+		},
+	)
+
 	// -------------------------------------------------------------- trial ----
 
 	// Open to visitors on purpose: the home page banner and /trial are rendered
@@ -168,11 +190,15 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 	// "promo_already_used", ...) is what the site turns into a sentence.
 	app.post(
 		"/api/billing/promo/check",
-		{ preHandler: requireUser, config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
+		{ config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
 		async (request, reply) => {
 			const parsed = PromoCheckBody.safeParse(request.body)
 			if (!parsed.success) throw badRequest("code and planCode are required")
-			const { user } = getAuthUser(request)
+			// Open to visitors on purpose: somebody comparing tariffs should see
+			// what a code is worth before registering. The per-account limit is
+			// checked for the account that actually pays - here when there is one,
+			// and again in `createOrder`, which is the moment that counts.
+			const user = await optionalUser(request)
 
 			const plan = await prisma.plan.findFirst({
 				where: { code: parsed.data.planCode.toLowerCase(), active: true },
@@ -186,7 +212,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 			const price = resolvePlanPrice(plan, settlementCurrency() ?? wanted)
 			const applied = await applyPromo({
 				code: parsed.data.code,
-				userId: user.id,
+				userId: user?.id ?? null,
 				planCode: plan.code,
 				amountMinor: price.priceMinor,
 				currency: price.currency,
@@ -199,6 +225,10 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 				discountMinor: applied.discountMinor,
 				amountMinor: applied.amountMinor,
 				currency: price.currency,
+				// Which plans the code covers, so the pricing page can mark the cards
+				// it applies to instead of quietly discounting everything.
+				planCode: plan.code,
+				planCodes: promoPlanCodes(applied.promo),
 			})
 		},
 	)

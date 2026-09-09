@@ -33,7 +33,10 @@ import { type PromoApplication, applyPromo, redeemPromo } from "./promo"
 import {
 	TABPAY_CURRENCY,
 	TABPAY_MIN_KOPECKS,
+	type TabpayPayment,
 	type TabpayWebhookEvent,
+	findTabpayPaymentByOrderId,
+	getTabpayPayment,
 	tabpayProvider,
 } from "./tabpay"
 
@@ -453,18 +456,41 @@ export async function createOrder(params: {
 		include: { plan: true },
 	})
 	if (open && open.provider === gateway.name && (gateway.name === "manual" || open.paymentUrl)) {
-		return {
-			order: open,
-			checkout: {
-				paymentUrl: open.paymentUrl,
-				providerRef: open.providerRef,
-				manual: gateway.name === "manual",
-				instructions:
-					gateway.name === "manual"
-						? (await manualProvider.createCheckout(open, plan, params.user)).instructions
-						: null,
-			},
+		// ...but only while the gateway still considers that attempt payable. A
+		// declined payment stays PENDING here until its webhook lands, and
+		// handing back the same `paymentUrl` would drop the customer onto the
+		// page that already refused them instead of starting a new attempt.
+		const verdict = await openOrderVerdict(open, gateway.name)
+		if (verdict === "paid") {
+			// The money arrived while nobody was looking; `openOrderVerdict` has
+			// just granted the plan. Hand back the settled order without a link:
+			// there is nothing left to pay.
+			const settled = await prisma.order.findUnique({
+				where: { id: open.id },
+				include: { plan: true },
+			})
+			return {
+				order: settled ?? open,
+				checkout: { paymentUrl: null, providerRef: open.providerRef, manual: false, instructions: null },
+			}
 		}
+		if (verdict === "reuse") {
+			return {
+				order: open,
+				checkout: {
+					paymentUrl: open.paymentUrl,
+					providerRef: open.providerRef,
+					manual: gateway.name === "manual",
+					instructions:
+						gateway.name === "manual"
+							? (await manualProvider.createCheckout(open, plan, params.user)).instructions
+							: null,
+				},
+			}
+		}
+		// "dead": that attempt is over. Fall through and open a fresh payment
+		// under a fresh order id - TabPay answers a repeated one with 409, never
+		// with a second attempt.
 	}
 
 	const created = await prisma.order.create({
@@ -681,6 +707,96 @@ export async function markOrderRefunded(params: {
 		metadata: { orderId: params.orderId, reason: params.reason ?? null },
 	})
 	return true
+}
+
+// ----------------------------------------------------- reconciliation ----
+
+/**
+ * What to do with an open order somebody has come back to.
+ *
+ * Our own row is not the authority here - the gateway is. A declined payment
+ * leaves the order PENDING until its webhook lands, so a delivery that is
+ * late, lost, or aimed at a URL nobody has filled in yet would otherwise have
+ * us send the customer straight back to the page that refused them.
+ *
+ *   - "reuse": CREATED or PENDING. Nobody finished paying; the link still works.
+ *   - "paid": SUCCESS. The money did arrive - grant the plan now rather than
+ *     wait for a webhook that may never come, and never ask for it twice.
+ *   - "dead": FAILED, EXPIRED, CANCELED, REFUNDED. Close this attempt so the
+ *     caller opens a new payment under a new order id: TabPay answers a
+ *     repeated orderId with 409, not with a second attempt.
+ *
+ * A gateway we cannot reach counts as "reuse": the payment may well be alive,
+ * and inventing a second one for somebody who is mid-3DS is the worse of the
+ * two mistakes.
+ */
+type OpenOrderVerdict = "reuse" | "paid" | "dead"
+
+async function openOrderVerdict(order: Order, gatewayName: string): Promise<OpenOrderVerdict> {
+	if (gatewayName !== "tabpay") return "reuse"
+	let payment: TabpayPayment | null = null
+	try {
+		payment = order.providerRef
+			? await getTabpayPayment(order.providerRef)
+			: await findTabpayPaymentByOrderId(order.id)
+	} catch {
+		return "reuse"
+	}
+	if (!payment) return "reuse"
+	const status = String(payment.status ?? "").trim().toUpperCase()
+	if (!status || status === "CREATED" || status === "PENDING") return "reuse"
+	// Replaying the status through the webhook handler keeps a single code path
+	// for what a status means: the grant, the audit entry and the promo
+	// redemption are written identically whether the news arrived by webhook or
+	// by this lookup.
+	await handleTabpayEvent({
+		id: payment.id,
+		orderId: order.id,
+		status,
+		amountKopecks: payment.amountKopecks,
+		test: payment.isTest,
+	})
+	return status === "SUCCESS" ? "paid" : "dead"
+}
+
+export type OrderSyncResult = {
+	orderId: string
+	status: string
+	/** True when the gateway's answer moved the order. */
+	changed: boolean
+}
+
+/**
+ * Brings one account's open payments up to date with the gateway.
+ *
+ * The webhook remains the primary path; this is the belt. It runs when the
+ * browser comes back from the hosted page, so a delivery that never arrives
+ * cannot leave somebody who has paid looking at "no subscription", and a
+ * refused attempt cannot stand in the way of the next one.
+ */
+export async function reconcilePendingOrders(user: User, limit = 5): Promise<OrderSyncResult[]> {
+	const gateway = provider()
+	if (gateway.name !== "tabpay") return []
+	const open = await prisma.order.findMany({
+		where: {
+			userId: user.id,
+			status: "PENDING",
+			provider: gateway.name,
+			createdAt: { gt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+		},
+		orderBy: { createdAt: "desc" },
+		take: Math.max(1, Math.min(limit, 10)),
+	})
+	const results: OrderSyncResult[] = []
+	for (const order of open) {
+		const verdict = await openOrderVerdict(order, gateway.name)
+		const fresh = await prisma.order.findUnique({
+			where: { id: order.id },
+			select: { status: true },
+		})
+		results.push({ orderId: order.id, status: fresh?.status ?? order.status, changed: verdict !== "reuse" })
+	}
+	return results
 }
 
 export type TabpayEventOutcome = {

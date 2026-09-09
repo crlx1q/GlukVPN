@@ -93,7 +93,8 @@ export type PromoApplication = {
  */
 export async function applyPromo(params: {
 	code: string
-	userId: string
+	/** The account that will pay, when there is one: a guest may price a code. */
+	userId?: string | null
 	planCode: string
 	amountMinor: number
 	currency: string
@@ -121,7 +122,11 @@ export async function applyPromo(params: {
 		throw refuse("promo_limit_reached", "Promo code has been used up")
 	}
 
-	if (promo.perUserLimit > 0) {
+	// The per-account limit is checked for whoever is actually buying. Somebody
+	// comparing tariffs before signing up still gets an honest quote, and
+	// `createOrder` runs this again with a real account before a single kopeck
+	// is asked for.
+	if (promo.perUserLimit > 0 && params.userId) {
 		const mine = await prisma.promoRedemption.count({
 			where: { promoCodeId: promo.id, userId: params.userId },
 		})
