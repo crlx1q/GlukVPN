@@ -45,9 +45,10 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 | GET | `/api/vpn/sessions` | user | — |
 | GET | `/api/billing/plans` | открыто | 60/мин |
 | POST | `/api/billing/orders` | user | 10/мин |
+| POST | `/api/billing/orders/sync` | user | 20/мин |
 | GET | `/api/billing/trial` | открыто | 60/мин |
 | POST | `/api/billing/trial/claim` | user | 5/мин |
-| POST | `/api/billing/promo/check` | user | 20/мин |
+| POST | `/api/billing/promo/check` | открыто | 20/мин |
 | POST | `/api/billing/webhook/tabpay` | подпись TabPay | — |
 | POST | `/api/node/register` | enrollment-токен | 10 / 10 мин |
 | POST | `/api/node/heartbeat` | node-токен | 120/мин |
@@ -117,6 +118,35 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 
 `{ "refreshToken": "..." }` — выйти на одном устройстве;
 `{ "allDevices": true }` — аннулировать все refresh-токены пользователя.
+
+### Безопасность аккаунта
+
+Один и тот же набор ручек используют кабинет на сайте, телефон и ПК-версия —
+поэтому «безопасность» везде выглядит одинаково.
+
+| Действие | Запрос | Тело |
+| --- | --- | --- |
+| Смена пароля | `POST /api/auth/password` | `{ currentPassword, password }` → `{ ok, revokedTokens }` |
+| Смена почты | `POST /api/auth/email` и `POST /api/auth/email/confirm` | `{ email }`, затем `{ code }` |
+| Восстановление | `POST /api/auth/password/forgot` и `/reset` | `{ email }`, затем `{ code, password }` |
+| Привязка Telegram | `POST /api/auth/telegram/link` | — → `{ url, code, expiresAt }` |
+| Статус Telegram | `GET /api/auth/telegram` | — |
+
+```json
+{
+  "linked": true,
+  "username": "gluk_user",
+  "phoneTail": "4729",
+  "phoneMask": "+7 *** *** 4729",
+  "verifiedAt": "2026-09-01T10:00:00.000Z",
+  "botUrl": "https://t.me/…"
+}
+```
+
+Номер целиком клиентам не отдаётся никогда: `phoneMask` — первая цифра и
+последние четыре, остальное закрыто звёздочками. Этого хватает, чтобы владелец
+узнал свой номер, и недостаточно, чтобы его узнал сосед через плечо.
+`phoneTail` оставлен для старых сборок.
 
 ### POST /api/devices/register
 
@@ -332,10 +362,31 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 
 Подписка выдаётся не здесь, а после вебхука со статусом `SUCCESS`.
 
+### POST /api/billing/orders/sync
+
+Спрашивает у платёжного шлюза судьбу последних незакрытых заказов и приводит
+базу в соответствие с ним. Нужно ровно для одного случая: карта отклонена,
+вебхук ещё не дошёл, а человек уже жмёт «оплатить» снова. Без этого сервер
+вернул бы старую ссылку на уже отклонённый платёж.
+
+```json
+{
+  "synced": [{ "orderId": "…", "status": "FAILED", "changed": true }],
+  "orders": [{ "id": "…", "status": "FAILED", "amountMinor": 100, "currency": "RUB" }]
+}
+```
+
+Теперь `POST /api/billing/orders` переиспользует открытый заказ только тогда,
+когда шлюз подтверждает, что платёж жив. Отклонённый или истёкший — закрывается,
+и создаётся новый с новой ссылкой.
+
 ### POST /api/billing/promo/check
 
 Предварительная проверка кода — чтобы показать сумму до создания заказа.
-Ничего не списывает и не расходует лимит кода.
+Ничего не списывает и не расходует лимит кода. Работает и без входа: цена со
+скидкой нужна гостю раньше, чем он заведёт аккаунт. Лимит «один раз на
+аккаунт» проверяется только для вошедших и всегда — при создании заказа.
+В ответе есть `planCode` и `planCodes` — к каким тарифам код применим.
 
 ```json
 { "code": "TIKTOK", "planCode": "basic", "currency": "KZT" }
