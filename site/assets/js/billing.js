@@ -423,43 +423,85 @@
     return (featured || paid[0]).code;
   }
 
+  /* Что сервер ответил про код. Скидку показываем на самих карточках: строчка
+     под полем легко теряется, и работающий код выглядит как неработающий. */
+  var promoView = null;
+
+  function decoratePromo() {
+    var codes = (promoView && promoView.planCodes) || [];
+    Array.prototype.forEach.call(document.querySelectorAll("[data-plans] [data-plan-code]"), function (card) {
+      var old = card.querySelector(".plan__promo");
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      if (!promoView) return;
+      var code = String(card.getAttribute("data-plan-code") || "").toLowerCase();
+      /* Пустой список у сервера значит «код годится для любого тарифа». */
+      if (codes.length && codes.indexOf(code) < 0) return;
+      var chip = document.createElement("p");
+      chip.className = "plan__promo";
+      chip.textContent = code === promoView.planCode && promoView.total
+        ? L(promoView.code + " · \u2212" + promoView.percentOff + "% · " + promoView.total,
+            promoView.code + " · \u2212" + promoView.percentOff + "% · " + promoView.total)
+        : L(promoView.code + " · \u2212" + promoView.percentOff + "%", promoView.code + " · \u2212" + promoView.percentOff + "%");
+      var price = card.querySelector(".plan__price");
+      if (price) card.insertBefore(chip, price);
+      else card.insertBefore(chip, card.firstChild);
+    });
+  }
+
   function usePromo(raw, btn) {
     var code = String(raw || "").trim().toUpperCase();
     state.promoCode = code;
-    if (!code) { promoStatus("", ""); return; }
+    if (!code) {
+      promoView = null;
+      decoratePromo();
+      promoStatus("", "");
+      return;
+    }
     if (!state.enabled) {
       promoStatus(T("Оплата откроется вместе с запуском биллинга"), "");
       return;
     }
     var A = window.GlukAuth;
-    if (!A || !A.isAuthed || !A.isAuthed()) {
-      promoStatus(L("Код сохранён — скидка применится при оплате после входа.", "Saved: the discount is applied at checkout once you sign in."), "");
+    var planCode = promoPlanCode();
+    if (!A || !planCode) {
+      promoStatus(L("Код сохранён — скидка применится при оплате.", "Saved: the discount is applied at checkout."), "");
       return;
     }
-    var planCode = promoPlanCode();
-    if (!planCode) {
+    /* Проверка открыта и гостю: человек должен видеть цену со скидкой до
+       регистрации, а лимит «один раз на аккаунт» сервер всё равно пересчитает
+       при оплате. */
+    var authed = !!(A.isAuthed && A.isAuthed());
+    var opts = { method: "POST", body: { code: code, planCode: planCode, currency: state.currency } };
+    var ask = authed ? A.call("/api/billing/promo/check", opts) : (A.public ? A.public("/api/billing/promo/check", opts) : null);
+    if (!ask) {
       promoStatus(L("Код сохранён — скидка применится при оплате.", "Saved: the discount is applied at checkout."), "");
       return;
     }
     if (btn) btn.disabled = true;
-    A.call("/api/billing/promo/check", {
-      method: "POST",
-      body: { code: code, planCode: planCode, currency: state.currency }
-    }).then(
+    ask.then(
       function (res) {
         if (btn) btn.disabled = false;
         var pct = (res && res.percentOff) || 0;
         var sum = res && res.amountMinor != null ? money(res.amountMinor, res.currency) : "";
-        promoStatus(
-          L("Промокод " + code + ": \u2212" + pct + "%" + (sum ? ", к оплате " + sum : ""),
-            "Promo " + code + ": \u2212" + pct + "%" + (sum ? ", total " + sum : "")),
-          "ok"
-        );
+        promoView = {
+          code: code,
+          percentOff: pct,
+          planCode: String((res && res.planCode) || planCode).toLowerCase(),
+          planCodes: ((res && res.planCodes) || []).map(function (c) { return String(c).toLowerCase(); }),
+          total: sum
+        };
+        decoratePromo();
+        var text = L("Промокод " + code + ": \u2212" + pct + "%" + (sum ? ", к оплате " + sum : ""),
+                     "Promo " + code + ": \u2212" + pct + "%" + (sum ? ", total " + sum : ""));
+        if (!authed) text += L(" · войдите при оплате", " · sign in at checkout");
+        promoStatus(text, "ok");
       },
       function (e) {
         if (btn) btn.disabled = false;
         /* Забываем негодный код, чтобы он не уехал с заказом. */
         state.promoCode = "";
+        promoView = null;
+        decoratePromo();
         promoStatus(promoError(e), "err");
       }
     );
@@ -472,6 +514,10 @@
     var input = form.querySelector("[data-promo-input]");
     usePromo(input ? input.value : "", form.querySelector("[data-promo-apply]"));
   });
+
+  /* Карточки перерисовываются при смене периода или валюты — метку скидки
+     надо вешать заново. */
+  document.addEventListener("gluk:plans", function () { decoratePromo(); });
 
   /* ---------------------------------------------------------------- заказ */
   function human(e, fallback) {
