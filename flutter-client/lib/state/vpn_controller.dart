@@ -58,6 +58,15 @@ class VpnController extends ChangeNotifier {
   /// мгновенный реконнект выглядел бы как борьба с админом.
   DateTime? _autoReconnectAfter;
 
+  /// Сколько опросов статуса подряд должно не дойти, чтобы счесть
+  /// туннель мёртвым. При интервале в 10 секунд это около полминуты:
+  /// короткий провал сети (лифт, метро, переезд с Wi-Fi на LTE)
+  /// переживаем молча.
+  static const int deadTunnelStrikes = 3;
+
+  /// Опросы статуса, не дошедшие подряд.
+  int _statusFailures = 0;
+
   /// Авто-выбор сервера, как на ПК: на Free он единственно возможный,
   /// на платном тарифе его можно выключить, выбрав узел руками.
   bool _autoSelection = true;
@@ -591,6 +600,8 @@ class VpnController extends ChangeNotifier {
   Future<void> _syncWithServer({bool initial = false}) async {
     try {
       final VpnStatusInfo status = await _api.status();
+      // Ответ дошёл — значит туннель живой, счётчик обнуляем.
+      _statusFailures = 0;
       final TunnelStage stage = await _vpn.currentStage();
       _peerReady = status.peerReady;
       _serviceMaintenance = status.maintenance || status.nodeMaintenance;
@@ -690,6 +701,39 @@ class VpnController extends ChangeNotifier {
           _resetConnectionState();
           _state = VpnUiState.disconnected;
           _probeHomeIp(settle: const Duration(milliseconds: 1200)).ignore();
+        }
+      }
+      // Транспортный сбой на живом туннеле — это и есть удалённое
+      // отключение, а не «мигнула сеть».
+      //
+      // Весь трафик, включая запросы к API, идёт через туннель (AllowedIPs
+      // 0.0.0.0/0). Как только узел выкинул пира, опрос статуса перестаёт
+      // доходить вообще: приходит statusCode 0 (таймаут), а не 401 — то
+      // есть узнать причину телефон уже не может, и раньше он навсегда
+      // оставался «подключённым» без интернета — ровно то, что видно на
+      // телефоне при удалённом отключении. Ждём несколько опросов подряд
+      // (сеть иногда честно мигает) и гасим туннель сами: после этого
+      // трафик идёт напрямую, статус снова доходит и говорит настоящую
+      // причину закрытия сессии.
+      if (!rejected && error.isNetwork && !_disposed) {
+        _statusFailures++;
+        final TunnelStage stage = await _vpn.currentStage();
+        final bool believedUp = stage.isConnected || _state == VpnUiState.connected;
+        if (believedUp && _statusFailures >= deadTunnelStrikes) {
+          _statusFailures = 0;
+          _holdAutoReconnect(const Duration(seconds: 8));
+          _notice = _russian
+              ? 'Туннель перестал отвечать и был остановлен. Выясняем причину…'
+              : 'The tunnel stopped responding and was shut down. Checking why…';
+          await _vpn.stop();
+          _resetConnectionState();
+          _state = VpnUiState.disconnected;
+          _probeHomeIp(settle: const Duration(milliseconds: 1200)).ignore();
+          // Статус теперь уходит напрямую и через пару секунд расскажет,
+          // кто и почему закрыл сессию, подменив сообщение выше.
+          Timer(const Duration(seconds: 3), () {
+            if (!_disposed) unawaited(refreshStatus());
+          });
         }
       }
     }
