@@ -155,6 +155,8 @@
 .gluk-act--danger{color:#ff6b6b;background:rgba(255,107,107,.10);border-color:rgba(255,107,107,.32)}
 .gluk-act--danger:hover:not(:disabled){background:rgba(255,107,107,.18)}
 .gluk-act:disabled{opacity:.45;cursor:default}
+/* Та же кнопка, но в строке списка: ниже и мельче, чтобы не раздвигать ряд. */
+.gluk-act--row{height:28px;padding:0 9px;border-radius:9px;font-size:11px;white-space:nowrap}
 .gluk-detail__hint{margin:7px 0 0;font-size:10.5px;line-height:1.4;color:#5c5770}
 .gluk-detail__error{margin:6px 0 0;font-size:11px;font-weight:600;color:#ff6b6b}
 .s2-device-list .s2-off{margin-right:6px;color:#c4b5fd;background:rgba(139,92,246,.12);border-color:rgba(139,92,246,.32)}

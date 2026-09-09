@@ -246,6 +246,11 @@
    '</span>'+
    '<span class="gluk-dev__end">'+
     '<i class="gluk-live'+(d.status==='ACTIVE'?' is-on':'')+'"></i>'+
+    // «Отключить» прямо в строке, как в мобильном клиенте: раньше кнопка
+    // жила только внутри подробностей, и погасить туннель можно было лишь
+    // со второго экрана панели. Обработчик тот же — делегированный, по
+    // data-gluk-off.
+    '<button type="button" class="gluk-act gluk-act--row" data-gluk-off="'+esc(d.sessionId||'')+'" data-gluk-device="'+esc(d.id)+'"'+(d.sessionId||d.status==='ACTIVE'||d.connected?'':' disabled')+'>'+esc(tr('Отключить','Disconnect'))+'</button>'+
     // ЭТАП 2: стрелка — кнопка 34x34, а не картинка.
     '<button type="button" class="gluk-more" data-gluk-more="'+esc(d.id)+'" title="'+esc(tr('Подробнее об устройстве','Device details'))+'" aria-label="'+esc(tr('Подробнее об устройстве','Device details'))+'"><i class="gluk-chev gluk-chev--right" aria-hidden="true"></i></button>'+
    '</span>'+
@@ -336,7 +341,17 @@
    }
    e.stopPropagation();
   });
-  document.addEventListener('click',function(e){if(!top.contains(e.target))open(false);});
+  // Тот же баг, что был в расширении: содержимое панели пересобирается на
+  // каждый клик по «Подробнее», и к моменту этого слушателя узел, по
+  // которому щёлкнули, уже выброшен из DOM — top.contains() отвечал false, и
+  // панель закрывалась сама. pointerdown приходит до перерисовки, а путь
+  // события помнит настоящих родителей.
+  document.addEventListener('pointerdown',function(e){
+   if(panel.hidden)return;
+   var path=typeof e.composedPath==='function'?e.composedPath():null;
+   var inside=path?path.indexOf(top)>=0:top.contains(e.target);
+   if(!inside)open(false);
+  });
   document.addEventListener('keydown',function(e){
    if(e.key!=='Escape'||panel.hidden)return;
    if(panel.dataset.glukDetail){delete panel.dataset.glukDetail;D.drawAccountMap(D.lastAccountMap);return;}
