@@ -289,7 +289,7 @@
       if (a.closest(".platform") && a.closest(".platform").querySelector(".platform__name")?.textContent.trim().toLowerCase().indexOf("android") !== -1) {
         if (android.url) {
           a.setAttribute("href", android.url);
-          a.setAttribute("download", "GlukVPN-latest.apk");
+          a.setAttribute("download", "glukvpn-release-1.6.0.apk");
         }
         return;
       }

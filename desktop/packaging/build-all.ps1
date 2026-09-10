@@ -66,7 +66,7 @@ $DistDir      = Join-Path $RepoRoot 'dist'
 $NativeBuild  = Join-Path $NativeDir 'build'
 
 $FlutterPubspec = Join-Path $FlutterDir 'pubspec.yaml'
-$AppVersion = '1.5.0'
+$AppVersion = '1.6.0'
 if (Test-Path $FlutterPubspec) {
     $verMatch = Select-String -Path $FlutterPubspec -Pattern '^\s*version:\s*([^\+\s]+)'
     if ($verMatch -and $verMatch.Matches.Count -gt 0) {

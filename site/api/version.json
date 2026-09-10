@@ -1,11 +1,11 @@
 {
-  "version": "1.5.0",
-  "build": 5,
-  "releaseDate": "2026-09-06",
-  "changelog": "GlukVPN 1.5.0: Анимация нитей подключения, статистика трафика в расширении, исправление декодирования ping на Windows и стабильная работа карты.",
+  "version": "1.6.0",
+  "build": 6,
+  "releaseDate": "2026-09-11",
+  "changelog": "GlukVPN 1.6.0: Скелетоны на всю ширину, честный раздельный подсчёт трафика и пинга на Windows, ограничения серверов и настройки автоподключения на Android.",
   "downloads": {
-    "windows": "/downloads/GlukVPN-Setup-1.5.0.exe",
-    "android": "/downloads/GlukVPN-latest.apk"
+    "windows": "/downloads/GlukVPN-Setup-1.6.0.exe",
+    "android": "/downloads/glukvpn-release-1.6.0.apk"
   },
   "minSupportedVersion": "1.0.0",
   "_notes": [
