@@ -675,6 +675,16 @@ const GRANT_TERMS = [
 	{ value: 365, label: "12 мес" },
 ]
 
+/** Ручной потолок скорости. 0 — снять ручное значение и вернуть тарифное. */
+const SPEED_CAPS = [
+	{ value: 0, label: "По тарифу" },
+	{ value: 30, label: "30" },
+	{ value: 50, label: "50" },
+	{ value: 100, label: "100" },
+	{ value: 250, label: "250" },
+	{ value: 500, label: "500" },
+]
+
 const BADGE_LABELS = { free: "Free", basic: "Basic", pro: "Pro", beta: "\u03b2 Pro" }
 
 /**
@@ -737,6 +747,11 @@ function dateLabel(iso) {
 function gbLabel(bytes) {
 	if (bytes === null || bytes === undefined) return "без лимита"
 	return `${Math.round(Number(bytes) / 1024 ** 3)} ГБ / 30 дней`
+}
+
+function speedLabel(mbps) {
+	if (mbps === null || mbps === undefined) return "без ограничения"
+	return `${mbps} Мбит/с`
 }
 
 /** Ячейка «Подписка»: что действует сейчас, без «Free активна до 2028». */
@@ -825,6 +840,10 @@ function subscriptionPanel(user, close) {
 		kv("Осталось", ent.subscribed ? `${ent.daysLeft} дн.` : "\u2014"),
 		kv("Трафик", gbLabel(ent.trafficLimitBytes)),
 		kv("Устройства / сессии", `${ent.maxDevices ?? "?"} / ${ent.maxSessions ?? "?"}`),
+		kv(
+			"Скорость",
+			`${speedLabel(ent.speedLimitMbps)} · ${ent.speedLimitSource === "manual" ? "вручную" : "по тарифу"}`,
+		),
 	)
 
 	let plan =
@@ -847,6 +866,23 @@ function subscriptionPanel(user, close) {
 			"Срок",
 			chipRow(GRANT_TERMS, days, (value) => {
 				days = Number(value)
+			}),
+		),
+	)
+	// Ручной потолок скорости живёт рядом с тарифом: тариф задаёт значение по
+	// умолчанию, ручное — перебивает его. Значение вне пресетов (выставленное
+	// через API) показываем отдельной кнопкой, чтобы панель не врала.
+	const caps = SPEED_CAPS.slice()
+	let speed = ent.speedLimitSource === "manual" ? Number(ent.speedLimitMbps) || 0 : 0
+	if (speed && !caps.some((item) => item.value === speed)) {
+		caps.push({ value: speed, label: String(speed) })
+		caps.sort((a, b) => a.value - b.value)
+	}
+	form.appendChild(
+		subField(
+			"Скорость, Мбит/с",
+			chipRow(caps, speed, (value) => {
+				speed = Number(value)
 			}),
 		),
 	)
@@ -893,6 +929,22 @@ function subscriptionPanel(user, close) {
 			})
 		}),
 	)
+	actions.appendChild(
+		actionButton("Сохранить скорость", "small ghost", () =>
+			request(`/api/admin/users/${user.id}/speed-limit`, {
+				method: "POST",
+				body: { speedLimitMbps: speed || null },
+			}).then((result) => {
+				const applied = (result.entitlement || {}).speedLimitMbps
+				toast(
+					speed
+						? `Скорость ${speedLabel(speed)} \u2014 применится при следующем подключении`
+						: `Скорость по тарифу: ${speedLabel(applied)}`,
+				)
+				close()
+			}),
+		),
+	)
 	if (ent.subscribed) {
 		actions.appendChild(
 			actionButton("Отключить подписку", "small danger", () => {
@@ -915,7 +967,7 @@ function subscriptionPanel(user, close) {
 	const note = document.createElement("p")
 	note.className = "sub-panel__note"
 	note.textContent =
-		"Free выдать нельзя: это не тариф, а отсутствие подписки. Лимит трафика, число устройств и сессий задаёт сервер по тарифу — клиент их не выбирает."
+		"Free выдать нельзя: это не тариф, а отсутствие подписки. Лимит трафика, число устройств и сессий задаёт сервер по тарифу — клиент их не выбирает. Скорость тоже берётся из тарифа; ручное значение перебивает его и вступает в силу при следующем подключении."
 
 	wrap.append(head, facts, form, actions, note)
 	return wrap

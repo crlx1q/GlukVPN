@@ -45,7 +45,7 @@ export async function requireVpnAvailable(node?: { id: string; maintenance: bool
 export async function closeSessionsInTransaction(tx: Prisma.TransactionClient, scope: { nodeId?: string; deviceId?: string }, reason: string): Promise<number> {
 	const sessions = await tx.session.findMany({
 		where: { status: { in: [...LIVE] }, ...scope },
-		select: { id: true, nodeId: true, deviceId: true, peerPublicKey: true },
+		select: { id: true, nodeId: true, deviceId: true, peerPublicKey: true, assignedVpnIp: true },
 	})
 	if (!sessions.length) return 0
 	await tx.session.updateMany({
@@ -60,7 +60,8 @@ export async function closeSessionsInTransaction(tx: Prisma.TransactionClient, s
 	await tx.nodeCommand.createMany({
 		data: sessions.map((s) => ({
 			nodeId: s.nodeId, sessionId: s.id, type: "REMOVE_PEER" as const,
-			payload: { sessionId: s.id, publicKey: s.peerPublicKey, deviceId: s.deviceId },
+			// assignedVpnIp lets the agent release the peer's shaping class too.
+			payload: { sessionId: s.id, publicKey: s.peerPublicKey, deviceId: s.deviceId, assignedVpnIp: s.assignedVpnIp },
 		})),
 	})
 	return sessions.length

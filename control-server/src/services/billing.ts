@@ -54,6 +54,8 @@ export type PlanView = {
 	maxSessions: number
 	/** Monthly traffic cap in GB, or null when uncapped. */
 	trafficGb: number | null
+	/** Per-device link speed in Mbit/s, or null when unshaped. */
+	speedMbps: number | null
 	features: string[]
 	featured: boolean
 }
@@ -99,6 +101,7 @@ export function planView(plan: PlanWithPrices, currency?: string | null): PlanVi
 		maxDevices: plan.maxDevices,
 		maxSessions: plan.maxSessions,
 		trafficGb: plan.trafficGb,
+		speedMbps: plan.speedMbps,
 		features,
 		featured: plan.featured,
 	}

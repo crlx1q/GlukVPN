@@ -70,6 +70,11 @@ const BlockBody = z
 
 const TesterBody = z.object({ enabled: z.boolean() })
 
+// null means "no manual override": the account falls back to its plan speed.
+const SpeedLimitBody = z.object({
+	speedLimitMbps: z.coerce.number().int().min(1).max(10000).nullable(),
+})
+
 // The trial promotion as the panel edits it. Every field is optional: the form
 // sends what changed and the service keeps the rest.
 const TrialSettingsBody = z.object({
@@ -564,6 +569,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 				googleLinked: user.identityLinks.some((link) => link.provider === "GOOGLE"),
 				maxDevices: user.maxDevices,
 				maxSessions: user.maxSessions,
+				speedLimitMbps: user.speedLimitMbps,
 				origin: { country: user.lastCountry, countryCode: user.lastCountryCode, region: user.lastRegion },
 				createdAt: user.createdAt.toISOString(),
 			},
@@ -963,6 +969,43 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 			metadata: { targetUserId: target.id, enabled: body.data.enabled },
 		})
 		return reply.send({ ok: true, isTester: body.data.enabled })
+	})
+
+	/**
+	 * Manual speed cap for a single account.
+	 *
+	 * The override wins over the plan value; null hands the account back to its
+	 * plan. Shaping is installed when a peer is added, so a live tunnel keeps its
+	 * old cap until the client reconnects - the response says so instead of
+	 * pretending the change is instant.
+	 */
+	app.post("/api/admin/users/:id/speed-limit", async (request, reply) => {
+		const parsed = IdParams.safeParse(request.params)
+		if (!parsed.success) throw badRequest("Invalid user id")
+		const body = SpeedLimitBody.safeParse(request.body)
+		if (!body.success) throw badRequest("speedLimitMbps must be 1-10000 or null")
+		const { user: admin } = getAuthUser(request)
+		const target = await prisma.user.findUnique({ where: { id: parsed.data.id } })
+		if (!target) throw notFound("User not found")
+		await prisma.user.update({
+			where: { id: target.id },
+			data: { speedLimitMbps: body.data.speedLimitMbps },
+		})
+		await writeAudit({
+			action: "admin.user.speedLimit",
+			userId: admin.id,
+			ip: clientIp(request),
+			metadata: {
+				targetUserId: target.id,
+				before: target.speedLimitMbps,
+				after: body.data.speedLimitMbps,
+			},
+		})
+		return reply.send({
+			ok: true,
+			appliesOnNextConnect: true,
+			entitlement: entitlementPayload(await resolveEntitlement(target.id)),
+		})
 	})
 
 	/** Hand a plan to an account by hand (support, promo, cash payment). */

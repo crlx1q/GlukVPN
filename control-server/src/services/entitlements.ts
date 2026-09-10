@@ -35,6 +35,8 @@ export type PlanShape = {
 	maxSessions: number
 	/** Monthly cap in GB. `null` means uncapped. */
 	trafficGb: number | null
+	/** Per-device link speed in Mbit/s. `null` means unshaped. */
+	speedMbps: number | null
 }
 
 /**
@@ -49,23 +51,24 @@ export const FREE_PLAN: PlanShape = {
 	maxDevices: 1,
 	maxSessions: 1,
 	trafficGb: 5,
+	speedMbps: 30,
 }
 
 export const PLAN_MATRIX: Record<string, PlanShape> = {
 	free: FREE_PLAN,
-	basic: { code: "basic", name: "Basic", tier: 1, maxDevices: 3, maxSessions: 3, trafficGb: 50 },
-	pro: { code: "pro", name: "Pro", tier: 2, maxDevices: 5, maxSessions: 5, trafficGb: 150 },
-	basic_3m: { code: "basic_3m", name: "Basic", tier: 1, maxDevices: 3, maxSessions: 3, trafficGb: 50 },
-	pro_3m: { code: "pro_3m", name: "Pro", tier: 2, maxDevices: 5, maxSessions: 5, trafficGb: 150 },
+	basic: { code: "basic", name: "Basic", tier: 1, maxDevices: 3, maxSessions: 3, trafficGb: 50, speedMbps: 100 },
+	pro: { code: "pro", name: "Pro", tier: 2, maxDevices: 5, maxSessions: 5, trafficGb: 150, speedMbps: 250 },
+	basic_3m: { code: "basic_3m", name: "Basic", tier: 1, maxDevices: 3, maxSessions: 3, trafficGb: 50, speedMbps: 100 },
+	pro_3m: { code: "pro_3m", name: "Pro", tier: 2, maxDevices: 5, maxSessions: 5, trafficGb: 150, speedMbps: 250 },
 	// Trial tiers: the paid plan's limits for a few days, bought for a token
 	// rouble. Deliberately the same shape as the plan they preview, so nothing
 	// downstream has to special-case a trial - it simply expires.
-	basic_trial: { code: "basic_trial", name: "Basic", tier: 1, maxDevices: 3, maxSessions: 3, trafficGb: 50 },
-	pro_trial: { code: "pro_trial", name: "Pro", tier: 2, maxDevices: 5, maxSessions: 5, trafficGb: 150 },
+	basic_trial: { code: "basic_trial", name: "Basic", tier: 1, maxDevices: 3, maxSessions: 3, trafficGb: 50, speedMbps: 100 },
+	pro_trial: { code: "pro_trial", name: "Pro", tier: 2, maxDevices: 5, maxSessions: 5, trafficGb: 150, speedMbps: 250 },
 	// Internal test tier: never sold, never listed, but grantable by an admin.
-	beta_pro: { code: "beta_pro", name: "\u03b2 Pro", tier: 2, maxDevices: 5, maxSessions: 5, trafficGb: 150 },
+	beta_pro: { code: "beta_pro", name: "\u03b2 Pro", tier: 2, maxDevices: 5, maxSessions: 5, trafficGb: 150, speedMbps: 250 },
 	// Legacy: accounts created by the old admin form got plan "test".
-	test: { code: "test", name: "\u03b2 Pro", tier: 2, maxDevices: 5, maxSessions: 5, trafficGb: 150 },
+	test: { code: "test", name: "\u03b2 Pro", tier: 2, maxDevices: 5, maxSessions: 5, trafficGb: 150, speedMbps: 250 },
 }
 
 export function planShape(code: string | null | undefined): PlanShape {
@@ -89,6 +92,40 @@ export function planBadge(code: string | null | undefined): "free" | "basic" | "
 	if (key === "pro" || key === "pro_3m" || key === "pro_trial") return "pro"
 	if (key === "basic" || key === "basic_3m" || key === "basic_trial") return "basic"
 	return "free"
+}
+
+/**
+ * Priority when several devices share one node uplink: lower is served first.
+ *
+ * The shaper gives every peer a guaranteed share (`rate`) and its plan cap
+ * (`ceil`). Only when the uplink is actually congested does this order matter:
+ * the kernel drains the lowest class first, so a paid tier keeps its speed and
+ * Free gives way. Hierarchy: beta_pro > pro > basic > free.
+ */
+export function planSpeedPriority(code: string | null | undefined): number {
+	switch (planBadge(code)) {
+		case "beta":
+			return 1
+		case "pro":
+			return 2
+		case "basic":
+			return 3
+		default:
+			return 4
+	}
+}
+
+/**
+ * The cap a node must actually shape a peer with.
+ *
+ * A manual per-account value always wins over the plan default, in both
+ * directions; `null` on both sides means "do not shape this peer at all".
+ */
+export function effectiveSpeedLimit(
+	manual: number | null | undefined,
+	plan: number | null | undefined,
+): number | null {
+	return manual ?? plan ?? null
 }
 
 /** Free is not grantable: granting it is what produced "Free - active - 790 days". */
@@ -133,6 +170,12 @@ export type Entitlement = {
 	maxSessions: number
 	/** `null` = uncapped. */
 	trafficLimitBytes: number | null
+	/** Per-device link speed in Mbit/s. `null` = unshaped. */
+	speedLimitMbps: number | null
+	/** Whether that number comes from the plan or from an admin override. */
+	speedLimitSource: "plan" | "manual"
+	/** Lower is served first when devices compete for one uplink. */
+	speedPriority: number
 	period: QuotaPeriod
 }
 
@@ -175,7 +218,7 @@ export async function resolveEntitlement(
 	const [user, active] = await Promise.all([
 		prisma.user.findUnique({
 			where: { id: userId },
-			select: { createdAt: true },
+			select: { createdAt: true, speedLimitMbps: true },
 		}),
 		prisma.subscription.findFirst({
 			// Free rows are deliberately excluded: they are not subscriptions.
@@ -193,6 +236,11 @@ export async function resolveEntitlement(
 	const shape = planShape(code)
 	const row = await prisma.plan.findFirst({ where: { code: shape.code } })
 	const trafficGb = row ? row.trafficGb : shape.trafficGb
+	// A manual cap on the account always wins over the plan default, in both
+	// directions: support can slow one abusive Pro down, or hand a Free tester
+	// 500 Mbit/s, without inventing a plan for it.
+	const planSpeed = row ? row.speedMbps : shape.speedMbps
+	const manualSpeed = user?.speedLimitMbps ?? null
 	const anchor = active
 		? await chainStart(userId, active.plan, active.createdAt)
 		: (user?.createdAt ?? at)
@@ -213,6 +261,9 @@ export async function resolveEntitlement(
 		maxSessions: row?.maxSessions ?? shape.maxSessions,
 		trafficLimitBytes:
 			trafficGb === null || trafficGb === undefined ? null : trafficGb * 1024 * 1024 * 1024,
+		speedLimitMbps: effectiveSpeedLimit(manualSpeed, planSpeed),
+		speedLimitSource: manualSpeed === null ? "plan" : "manual",
+		speedPriority: planSpeedPriority(shape.code),
 		period: quotaPeriod(anchor, at),
 	}
 }
@@ -232,6 +283,8 @@ export function entitlementPayload(ent: Entitlement): Record<string, unknown> {
 		maxDevices: ent.maxDevices,
 		maxSessions: ent.maxSessions,
 		trafficLimitBytes: ent.trafficLimitBytes,
+		speedLimitMbps: ent.speedLimitMbps,
+		speedLimitSource: ent.speedLimitSource,
 		periodStart: ent.period.start.toISOString(),
 		periodEnd: ent.period.end.toISOString(),
 	}

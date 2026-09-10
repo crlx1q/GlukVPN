@@ -170,6 +170,7 @@ export async function ensureTrialPlan(settings: TrialSettings): Promise<Plan> {
 		maxDevices: base?.maxDevices ?? shape.maxDevices,
 		maxSessions: base?.maxSessions ?? shape.maxSessions,
 		trafficGb: base?.trafficGb ?? shape.trafficGb,
+		speedMbps: base?.speedMbps ?? shape.speedMbps,
 		features: (base?.features ?? []) as Prisma.InputJsonValue,
 		featured: false,
 		active: true,

@@ -221,7 +221,7 @@ async function createSessionWithLease(params: {
 	user: User
 	device: Device
 	node: VpnNode
-	plan: { tier: number; maxSessions: number }
+	plan: { tier: number; maxSessions: number; speedMbps: number | null; speedPriority: number }
 }): Promise<Session> {
 	for (let attempt = 0; attempt < 3; attempt += 1) {
 		try {
@@ -272,7 +272,16 @@ async function createSessionWithLease(params: {
 				// Queue inside the gate: a late ADD_PEER cannot follow maintenance's REMOVE_PEER.
 				await tx.nodeCommand.create({ data: {
 					nodeId: params.node.id, sessionId: session.id, type: "ADD_PEER",
-					payload: { sessionId: session.id, publicKey: params.device.publicKey, deviceId: params.device.id, allowedIps: [`${session.assignedVpnIp}/32`] },
+					payload: {
+						sessionId: session.id,
+						publicKey: params.device.publicKey,
+						deviceId: params.device.id,
+						allowedIps: [`${session.assignedVpnIp}/32`],
+						// What the node should shape this peer to. `null` travels as an
+						// explicit "unshaped" so the agent never has to guess a default,
+						// and an older agent simply ignores the field.
+						shaping: { speedMbps: params.plan.speedMbps, priority: params.plan.speedPriority },
+					},
 				} })
 				return session
 			})
@@ -357,7 +366,12 @@ export async function connectSession(params: {
 		user,
 		device,
 		node,
-		plan: { tier: entitlement.tier, maxSessions: entitlement.maxSessions },
+		plan: {
+			tier: entitlement.tier,
+			maxSessions: entitlement.maxSessions,
+			speedMbps: entitlement.speedLimitMbps,
+			speedPriority: entitlement.speedPriority,
+		},
 	})
 	const session = params.ip
 		? await prisma.session.update({
@@ -443,6 +457,10 @@ export async function closeSession(params: {
 				sessionId: session.id,
 				publicKey: session.peerPublicKey,
 				deviceId: session.deviceId,
+				// The agent needs the address to drop the traffic-shaping class it
+				// created for this peer; without it the class lingers until the same
+				// IP is leased again.
+				assignedVpnIp: session.assignedVpnIp,
 			},
 		})
 	}

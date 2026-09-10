@@ -160,6 +160,10 @@ model User {
   blockedReason   String?    @map("blocked_reason")
   maxDevices      Int        @default(3) @map("max_devices")
   maxSessions     Int        @default(1) @map("max_concurrent_sessions")
+  /// Manual line speed in Mbit/s, set by an admin. NULL = the plan decides.
+  /// This is a physical rate limit enforced on the node, the same idea as the
+  /// speed an ISP sells, and is unrelated to the monthly GB quota.
+  speedLimitMbps  Int?       @map("speed_limit_mbps")
   /// Approximate origin resolved from the login IP: country/region only.
   /// Never GPS coordinates — the map marker is drawn from the country centre.
   lastCountry     String?    @map("last_country")
@@ -543,6 +547,8 @@ model Plan {
   /// Monthly traffic cap in GB. NULL = uncapped, so an unmetered tier needs no
   /// sentinel value.
   trafficGb   Int?     @map("traffic_gb")
+  /// Line speed in Mbit/s every device on this plan gets. NULL = unshaped.
+  speedMbps   Int?     @map("speed_mbps")
   features    Json     @default("[]") @db.JsonB
   featured    Boolean  @default(false)
   active      Boolean  @default(true)

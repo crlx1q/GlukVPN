@@ -123,6 +123,24 @@ const Schema = z.object({
 		.default("true")
 		.transform((value) => value === "true" || value === "1"),
 
+	// Traffic shaping (ROUND 27).
+	//
+	// The control plane sends the plan's line speed with every ADD_PEER and the
+	// agent turns it into a tc/HTB class on the WireGuard interface. Set this to
+	// false on a node whose kernel has no HTB: it then forwards unshaped instead
+	// of logging a failed command on every connect.
+	SHAPING_ENABLED: z
+		.enum(["true", "false", "1", "0"])
+		.default("true")
+		.transform((value) => value === "true" || value === "1"),
+	// What this machine's uplink can actually do. HTB needs a ceiling for the
+	// root class. The per-peer ceilings are deliberately allowed to add up to
+	// more than this, which is what makes a quiet link fast.
+	SHAPING_UPLINK_MBIT: positiveInt(1000),
+	// How much of its plan speed a device keeps even on a congested link. The
+	// rest is borrowed, in plan-priority order.
+	SHAPING_GUARANTEE_PERCENT: z.coerce.number().int().min(1).max(100).default(25),
+
 	// Timings
 	HEARTBEAT_INTERVAL_SEC: positiveInt(10),
 	COMMAND_POLL_INTERVAL_SEC: positiveInt(3),

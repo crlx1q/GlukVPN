@@ -8,6 +8,7 @@
  *   - report host metrics (CPU / RAM / uptime / peer count)
  *   - add a WireGuard peer with exactly one /32 allowed-ip
  *   - remove a WireGuard peer
+ *   - shape a peer to the line speed its plan sells (tc/HTB), best effort
  *   - report per-peer byte counters and handshake times
  *   - ROUND 26: keep the sing-box gateway's *users* and *reject rules* equal
  *     to the control plane's policy, and read sing-box's Clash API to report
@@ -33,6 +34,7 @@ import {
 } from "./lib/api"
 import { errorMessage, log, shortKey } from "./lib/logger"
 import { collectHostMetrics } from "./lib/metrics"
+import { applyPeerShaping, clearPeerShaping, parseShaping } from "./lib/shaper"
 import {
 	addPeer,
 	dumpInterface,
@@ -117,6 +119,17 @@ async function runCommand(api: ControlApi, command: NodeCommand): Promise<string
 				publicKey,
 				assignedIp,
 			})
+			try {
+				await applyPeerShaping({
+					iface: config.WG_INTERFACE,
+					assignedIp,
+					shaping: parseShaping(command.payload),
+				})
+			} catch (error) {
+				// The tunnel is already up. A shaper that cannot reach tc must not
+				// turn a working connection into a failed command.
+				log.warn("peer shaping failed", { ip: assignedIp, reason: errorMessage(error) })
+			}
 			log.info("peer added", { peer: shortKey(publicKey), ip: assignedIp })
 			return null
 		}
@@ -125,6 +138,17 @@ async function runCommand(api: ControlApi, command: NodeCommand): Promise<string
 			if (!publicKey) return "invalid or missing peer public key"
 			// `wg set ... remove` is idempotent: a missing peer is not an error.
 			await removePeer({ iface: config.WG_INTERFACE, publicKey })
+			// A shaping class is keyed by the leased address, so it can only be
+			// dropped when the payload names one. When it does not, the class is
+			// left behind harmlessly: whoever leases that address next replaces it.
+			const releasedIp = parseAssignedIp(command.payload)
+			if (releasedIp) {
+				try {
+					await clearPeerShaping({ iface: config.WG_INTERFACE, assignedIp: releasedIp })
+				} catch (error) {
+					log.warn("peer unshaping failed", { ip: releasedIp, reason: errorMessage(error) })
+				}
+			}
 			log.info("peer removed", { peer: shortKey(publicKey) })
 			return null
 		}
