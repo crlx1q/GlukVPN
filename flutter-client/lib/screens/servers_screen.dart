@@ -11,7 +11,6 @@ import '../utils/geo.dart';
 import '../utils/geo_dictionary.dart';
 import '../utils/signal.dart';
 import '../widgets/glass.dart';
-import '../widgets/node_limits.dart';
 import '../widgets/signal_bars.dart';
 import '../widgets/skeleton.dart';
 
@@ -205,33 +204,14 @@ class _ServersScreenState extends State<ServersScreen> {
                     for (final VpnNodeInfo node in recommended)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 9),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: <Widget>[
-                            _ServerTile(
-                              node: node,
-                              sample: _samples[node.id],
-                              selected: !vpn.autoSelectionEnabled &&
-                                  vpn.selectedNode?.id == node.id,
-                              onTap: vpn.manualSelectionLocked
-                                  ? null
-                                  : () => _select(vpn, node),
-                            ),
-                            if (node.restrictions.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(
-                                  top: 6,
-                                  left: 12,
-                                  right: 12,
-                                ),
-                                child: NodeLimits(
-                                  restrictions: node.restrictions,
-                                  russian: s.isRussian,
-                                  compact: true,
-                                  reduceMotion: motion.reduceMotion,
-                                ),
-                              ),
-                          ],
+                        child: _ServerTile(
+                          node: node,
+                          sample: _samples[node.id],
+                          selected: !vpn.autoSelectionEnabled &&
+                              vpn.selectedNode?.id == node.id,
+                          onTap: vpn.manualSelectionLocked
+                              ? null
+                              : () => _select(vpn, node),
                         ),
                       ),
                   ],
@@ -242,31 +222,12 @@ class _ServersScreenState extends State<ServersScreen> {
                     for (final VpnNodeInfo node in others)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 9),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: <Widget>[
-                            _ServerTile(
-                              node: node,
-                              sample: _samples[node.id],
-                              selected: !vpn.autoSelectionEnabled &&
-                                  vpn.selectedNode?.id == node.id,
-                              onTap: null,
-                            ),
-                            if (node.restrictions.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(
-                                  top: 6,
-                                  left: 12,
-                                  right: 12,
-                                ),
-                                child: NodeLimits(
-                                  restrictions: node.restrictions,
-                                  russian: s.isRussian,
-                                  compact: true,
-                                  reduceMotion: motion.reduceMotion,
-                                ),
-                              ),
-                          ],
+                        child: _ServerTile(
+                          node: node,
+                          sample: _samples[node.id],
+                          selected: !vpn.autoSelectionEnabled &&
+                              vpn.selectedNode?.id == node.id,
+                          onTap: null,
                         ),
                       ),
                   ],
@@ -325,8 +286,8 @@ class _ServerTile extends StatelessWidget {
       if (ms != null) parts.add('$ms ${s.ms}');
     }
     if (node.maintenance) parts.add(s.isRussian ? 'Технические работы' : 'Maintenance');
-    // Запреты больше не вытягивают эту строку в одно многоточие:
-    // их показывает NodeLimits под строкой сервера, с комментариями.
+    // Запреты больше не вытягивают эту строку в одно многоточие: их свод
+    // теперь целиком в «Расширенных» настройках, а не под каждым сервером.
     return parts.join('  \u00b7  ');
   }
 

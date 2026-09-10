@@ -101,6 +101,21 @@ const EnvSchema = z.object({
 	VLESS_FLOW: z.string().default("xtls-rprx-vision"),
 	VLESS_LEGACY_USER_ENABLED: envFlag("true"),
 
+	// ROUND 27: the plan's speed cap used to be a promise the desktop client
+	// was trusted to keep, and it did not - the phone (tc) and the browser
+	// extension (proxy token bucket) throttled themselves while Windows ran at
+	// line rate. The node agent now runs one shaped VLESS relay per sold speed
+	// (SHAPING_GATEWAY_TIERS there); this maps a cap in Mbit/s to the port that
+	// enforces it and must list the same pairs:
+	//
+	//   VLESS_SHAPED_PORTS="30=2053,100=2083"
+	//
+	// A capped device is handed the port of its tier instead of the node's own
+	// gateway port; an uncapped plan is untouched. Empty (the default) = no
+	// client is redirected, which is also the correct behaviour on a node whose
+	// agent has no shaped listeners yet.
+	VLESS_SHAPED_PORTS: z.string().default(""),
+
 	// ------------------------- traffic attribution ---------------------------
 	// The node agent reads sing-box's sniffer (SNI / HTTP host / QUIC) and sends
 	// per-device domain totals. Only the host name and byte counters are kept -

@@ -426,15 +426,24 @@ class DesktopVpnController extends ChangeNotifier {
       // Deliberately concurrent. The node list comes from the control API and
       // has nothing to do with the local tunnel service, so it must not wait
       // for a pipe probe that can take seconds or fail outright.
+      // ROUND 27: подключение может быть уже в работе — обычный случай, когда
+      // bootstrap прилетел следом за восстановленной сессией и был поставлен в
+      // очередь. Трогать туннель в этот момент нельзя: adopt() затирает
+      // _activeSessionId снимком службы, где новой сессии ещё нет, и следом
+      // дёргает статус в обход защиты по _busy. Так автозапуск обрывал сам себя.
+      final bool connectInFlight = _busy;
       await Future.wait<void>(<Future<void>>[
         _guard('nodes', refreshNodes),
         _guard('service', () async {
           await _probeService();
-          await adopt();
+          if (!connectInFlight && !_busy) await adopt();
         }),
       ]);
 
-      _startStatusPolling();
+      // Пока идёт connect, таймеры только досоздаются: пересоздание
+      // Timer.periodic сбрасывает отсчёт и назначает лишний опрос статуса
+      // ровно на ту сессию, которую сервер ещё не успел подтвердить.
+      _installStatusPolling(restart: !connectInFlight && !_busy);
       unawaited(_guard('exit-ip', _refreshPublicIp));
 
       // Decided by the same pure helper the tests exercise. This runs only
@@ -484,6 +493,15 @@ class DesktopVpnController extends ChangeNotifier {
   /// Reads live state from the service and republishes it without changing
   /// anything. This is what makes reopening the window instant and correct.
   Future<void> adopt() async {
+    // ROUND 27: усыновлять состояние службы во время активного connect()
+    // нельзя. Снимок ещё не знает о создаваемой сессии, поэтому adopt()
+    // обнулил бы _activeSessionId и тут же сходил за статусом мимо
+    // защиты по _busy — это и есть гонка автозапуска.
+    if (_busy) {
+      dlog.write('vpn', 'adopt skipped: a connect is in flight');
+      return;
+    }
+
     // The engine's own counters are folded in before the baseline is taken,
     // or an adopted session would measure engine download bytes against an
     // interface total and never see data move again.
@@ -507,23 +525,37 @@ class DesktopVpnController extends ChangeNotifier {
     await _reevaluate(fetchServerStatus: true);
   }
 
-  void _startStatusPolling() {
-    _statusTimer?.cancel();
-    _statusTimer = Timer.periodic(AppConfig.serviceStatusInterval, (_) {
-      unawaited(_pollTunnel());
-    });
+  /// Поднимает периодический опрос службы, сервера и пинга.
+  ///
+  /// [restart] == false — режим «только досоздать недостающее»: уже
+  /// работающие таймеры остаются нетронутыми. Это нужно во время
+  /// подключения, когда полный перезапуск сдвигал бы окно опроса на
+  /// ещё не подтверждённую сессию.
+  void _installStatusPolling({required bool restart}) {
+    if (_disposed) return;
 
-    _serverTimer?.cancel();
-    _serverTimer = Timer.periodic(AppConfig.statusPollInterval, (_) {
-      if (_phase.isConnected || _phase == ConnectionPhase.connecting) {
-        unawaited(refreshServerStatus());
-      }
-    });
+    if (restart || _statusTimer == null) {
+      _statusTimer?.cancel();
+      _statusTimer = Timer.periodic(AppConfig.serviceStatusInterval, (_) {
+        unawaited(_pollTunnel());
+      });
+    }
 
-    _pingTimer?.cancel();
-    _pingTimer = Timer.periodic(AppConfig.pingInterval, (_) {
-      if (_phase.isConnected) unawaited(_measureLivePing());
-    });
+    if (restart || _serverTimer == null) {
+      _serverTimer?.cancel();
+      _serverTimer = Timer.periodic(AppConfig.statusPollInterval, (_) {
+        if (_phase.isConnected || _phase == ConnectionPhase.connecting) {
+          unawaited(refreshServerStatus());
+        }
+      });
+    }
+
+    if (restart || _pingTimer == null) {
+      _pingTimer?.cancel();
+      _pingTimer = Timer.periodic(AppConfig.pingInterval, (_) {
+        if (_phase.isConnected) unawaited(_measureLivePing());
+      });
+    }
   }
 
   // -------------------------------------------------------------------
@@ -1015,6 +1047,16 @@ class DesktopVpnController extends ChangeNotifier {
     await _reevaluate(fetchServerStatus: false);
   }
 
+  /// Причины, после которых переподключаться бессмысленно: сервер закрыл
+  /// сессию осознанно и сам её не вернёт. Всё прочее (`session_closed`,
+  /// пустая причина, обрыв связи) — повод подождать, а не рвать туннель.
+  static bool _isTerminalCloseReason(String? reason) =>
+      reason == 'admin_revoked' ||
+      reason == 'device_revoked' ||
+      reason == 'user_disabled' ||
+      reason == 'subscription_expired' ||
+      reason == 'traffic_limit';
+
   Future<void> refreshServerStatus({bool allowDuringConnect = false}) async {
     if (_disposed || _serverStatusBusy || (_busy && !allowDuringConnect)) return;
     _serverStatusBusy = true;
@@ -1023,7 +1065,10 @@ class DesktopVpnController extends ChangeNotifier {
     try {
       final VpnStatusInfo status = await _api.status();
       if (_disposed || revision != _connectRevision || scope != _api.authRevision.value) return;
-      if (status.maintenance || status.nodeMaintenance || (!status.connected && status.lastClosedReason == 'maintenance' && _activeSessionId != null)) {
+      // Третий признак — догадка по прошлой причине закрытия, а не факт.
+      // Во время connect() она относится к предыдущей сессии, поэтому под
+      // _busy её игнорируем: иначе новое подключение уходит в «обслуживание».
+      if (status.maintenance || status.nodeMaintenance || (!status.connected && !_busy && status.lastClosedReason == 'maintenance' && _activeSessionId != null)) {
         await _enterMaintenance(resume: _phase.isConnected || _phase == ConnectionPhase.connecting, seconds: status.retryAfterSec);
         return;
       }
@@ -1033,9 +1078,19 @@ class DesktopVpnController extends ChangeNotifier {
       // уходила в лестницу реконнектов — клиент не знал, что его
       // отключили, и сразу лез подключаться заново. Теперь честно
       // останавливаемся и ждём решения пользователя.
+      // ROUND 27: фаза `connecting` — это ещё не «сервер отказал». На
+      // автозапуске connect() и опрос статуса идут одновременно: сессия
+      // только создаётся, `connected` ещё false, и слепой снос убивал ровно
+      // ту сессию, которую клиент сам же и поднимал. Пока подключение в
+      // работе (_busy) не трогаем ничего вообще; после него сносим только по
+      // явной причине закрытия. Всё остальное — дело проверки туннеля,
+      // лестницы реконнектов и дедлайна подключения.
       if (!status.connected &&
           _activeSessionId != null &&
-          (_phase.isConnected || _phase == ConnectionPhase.connecting)) {
+          (_phase.isConnected ||
+              (_phase == ConnectionPhase.connecting &&
+                  !_busy &&
+                  _isTerminalCloseReason(status.lastClosedReason)))) {
         final String reason = status.lastClosedReason ?? 'session_closed';
         dlog.warn('status', 'session closed by control plane ($reason)');
         _cancelReconnect();
@@ -1247,7 +1302,12 @@ class DesktopVpnController extends ChangeNotifier {
 
   void _armConnectDeadline() {
     _cancelConnectDeadline();
+    // Таймер принадлежит конкретной попытке. Без этой отметки просроченный
+    // дедлайн старого connect() валил уже следующий, который в этот момент
+    // честно поднимался и тоже стоял в фазе `connecting`.
+    final int revision = _connectRevision;
     _connectDeadline = Timer(AppConfig.connectTimeout, () {
+      if (_disposed || revision != _connectRevision) return;
       if (_phase == ConnectionPhase.connecting) {
         dlog.error('connect', 'timed out waiting for a verified tunnel');
         _fail(
@@ -1668,8 +1728,10 @@ class DesktopVpnController extends ChangeNotifier {
     if (id == null) return;
     _activeSessionId = null;
     _pendingClose = id;
+    final int revision = _connectRevision;
     for (final Duration wait in _closeBackoff) {
       if (wait > Duration.zero) await Future<void>.delayed(wait);
+      if (_disposed) return;
       try {
         await _api.disconnect(sessionId: id);
         _pendingClose = null;
@@ -1680,6 +1742,19 @@ class DesktopVpnController extends ChangeNotifier {
     }
     // Последняя попытка — без sessionId: сервер сам найдёт живую сессию
     // этого устройства, даже если локальный id устарел.
+    //
+    // ROUND 27: именно этот вызов и убивал чужую, только что созданную
+    // сессию. Закрытие идёт с паузами до 1.6 с, за это время пользователь
+    // (или автозапуск) успевает начать новое подключение — и «найди живую
+    // сессию сам» находит уже её. Разрешаем только когда устройство ничем
+    // не занято и попытка подключения с тех пор не сменилась.
+    if (_busy || _activeSessionId != null || revision != _connectRevision) {
+      dlog.write(
+        'disconnect',
+        'session $id left open: a newer connect owns this device',
+      );
+      return;
+    }
     try {
       await _api.disconnect();
       _pendingClose = null;

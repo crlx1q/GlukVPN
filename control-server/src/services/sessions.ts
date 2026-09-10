@@ -177,19 +177,88 @@ export async function ensureDeviceVlessUuid(device: Device): Promise<Device> {
 	return updated
 }
 
+/** One sold speed and the node port whose token bucket enforces it. */
+export type ShapedGatewayTier = { mbps: number; port: number }
+
+/**
+ * Parses VLESS_SHAPED_PORTS ("30=2053,100=2083") into tiers sorted by speed.
+ *
+ * This is the control-plane half of the node agent's SHAPING_GATEWAY_TIERS and
+ * has to list the same pairs. A malformed entry is dropped rather than thrown
+ * on: a typo in .env must not stop the fleet from connecting, it only means
+ * that one tier is not enforced at the gateway.
+ */
+export function parseShapedGatewayPorts(spec: string): ShapedGatewayTier[] {
+	const seenSpeeds = new Set<number>()
+	const tiers: ShapedGatewayTier[] = []
+	for (const raw of spec.split(",")) {
+		const entry = raw.trim()
+		if (entry === "") continue
+		const match = /^(\d{1,6})\s*=\s*(\d{1,5})$/.exec(entry)
+		if (!match) continue
+		const mbps = Number(match[1])
+		const port = Number(match[2])
+		if (mbps <= 0 || port < 1 || port > 65535) continue
+		// Two ports for one speed would make this choice ambiguous. First wins,
+		// the same way the agent resolves it.
+		if (seenSpeeds.has(mbps)) continue
+		seenSpeeds.add(mbps)
+		tiers.push({ mbps, port })
+	}
+	return tiers.sort((a, b) => a.mbps - b.mbps)
+}
+
+/**
+ * The shaped port for a device capped at `mbps`, or `null` for "use the node's
+ * own gateway port".
+ *
+ * The fastest listener that still respects the cap wins. A cap below every
+ * configured tier falls back to the slowest listener instead of to the
+ * unshaped port: giving away more speed than was sold is the bug this exists
+ * to fix, while a little less than the plan is merely a slow tunnel. No cap,
+ * or no tiers configured, changes nothing.
+ */
+export function shapedGatewayPort(
+	mbps: number | null | undefined,
+	tiers: ShapedGatewayTier[],
+): number | null {
+	if (mbps == null || mbps <= 0) return null
+	let withinCap: ShapedGatewayTier | null = null
+	let slowest: ShapedGatewayTier | null = null
+	for (const tier of tiers) {
+		if (slowest === null || tier.mbps < slowest.mbps) slowest = tier
+		if (tier.mbps <= mbps && (withinCap === null || tier.mbps > withinCap.mbps)) withinCap = tier
+	}
+	const picked = withinCap ?? slowest
+	return picked === null ? null : picked.port
+}
+
 /**
  * The gateway clients should use on this node. Per-node values reported by the
  * agent win; the .env VLESS_* block is the fallback for a node whose agent
  * predates the heartbeat field. `null` = no gateway, the client uses WireGuard.
+ *
+ * ROUND 27: `speedLimitMbps` is the cap the caller already resolved. When the
+ * operator has wired up the shaped listeners, a capped device is pointed at
+ * the port that enforces its plan. Only the port moves - host, SNI, flow and
+ * credential all still belong to the same sing-box behind the relay.
  */
-export function gatewayFor(node: VpnNode, device: Device): ClientTunnelConfig["gateway"] | null {
+export function gatewayFor(
+	node: VpnNode,
+	device: Device,
+	speedLimitMbps?: number | null,
+): ClientTunnelConfig["gateway"] | null {
 	const uuid = (device.vlessUuid ?? config.VLESS_UUID).trim()
 	if (!uuid) return null
+	const shapedPort = shapedGatewayPort(
+		speedLimitMbps,
+		parseShapedGatewayPorts(config.VLESS_SHAPED_PORTS),
+	)
 	if (node.gatewayHost && node.gatewayPort) {
 		return {
 			type: "vless",
 			host: node.gatewayHost,
-			port: node.gatewayPort,
+			port: shapedPort ?? node.gatewayPort,
 			uuid,
 			sni: node.gatewaySni ?? undefined,
 			flow: (node.gatewayFlow ?? config.VLESS_FLOW).trim() || undefined,
@@ -201,7 +270,7 @@ export function gatewayFor(node: VpnNode, device: Device): ClientTunnelConfig["g
 	return {
 		type: "vless",
 		host: config.VLESS_HOST.trim() || nodeHost(node),
-		port: config.VLESS_PORT,
+		port: shapedPort ?? config.VLESS_PORT,
 		uuid,
 		sni: config.VLESS_SNI.trim() || undefined,
 		flow: config.VLESS_FLOW.trim() || undefined,
@@ -400,8 +469,9 @@ export async function connectSession(params: {
 	}
 
 	// The gateway is optional on purpose: a node that has not been migrated yet
-	// simply does not advertise one. The credential is the device's own.
-	const gateway = gatewayFor(node, device) ?? undefined
+	// simply does not advertise one. The credential is the device's own, and the
+	// port is the one that enforces this plan's speed once shaping is wired up.
+	const gateway = gatewayFor(node, device, entitlement.speedLimitMbps) ?? undefined
 	await requireVpnAvailable(await prisma.vpnNode.findUnique({ where: { id: node.id } }))
 	const current = await prisma.session.findUnique({ where: { id: session.id }, select: { status: true } })
 	if (!current || (current.status !== "PENDING" && current.status !== "ACTIVE")) throw forbidden("This session was closed. Connect again.")

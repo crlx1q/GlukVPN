@@ -141,6 +141,32 @@ const Schema = z.object({
 	// rest is borrowed, in plan-priority order.
 	SHAPING_GUARANTEE_PERCENT: z.coerce.number().int().min(1).max(100).default(25),
 
+	// Shaped VLESS front door (ROUND 27).
+	//
+	// tc above only ever sees the WireGuard interface, so it caps the phone and
+	// nothing else. The desktop client talks VLESS to sing-box, and until this
+	// existed a 30 Mbit/s account downloaded at line rate. These listeners sit
+	// in front of sing-box and cap the outer stream; the control plane hands a
+	// capped account the port matching its plan (VLESS_SHAPED_PORTS there) and
+	// everyone else the plain gateway port, so unlimited users never touch it.
+	SHAPING_GATEWAY_ENABLED: z
+		.enum(["true", "false", "1", "0"])
+		.default("true")
+		.transform((value) => value === "true" || value === "1"),
+	// "<mbit>=<port>" pairs, one per plan speed sold, e.g. "30=2053,100=2083".
+	// Empty (the default) means no listener is opened and nothing changes.
+	// Every port listed here must also be opened in the cloud security list and
+	// must be free on this machine: 443 is sing-box itself, 8443 and 8444 are
+	// the prod and beta browser proxies, 51820 is WireGuard.
+	SHAPING_GATEWAY_TIERS: z.string().trim().default(""),
+	// Where sing-box actually accepts VLESS. Loopback by default: the relay is
+	// the only thing in front of it, and the public port keeps working as is.
+	SHAPING_GATEWAY_TARGET_HOST: z.string().trim().default("127.0.0.1"),
+	SHAPING_GATEWAY_TARGET_PORT: positiveInt(443),
+	// Short burst, or the first chunk of every connection would wait for budget
+	// and the cap would read as latency instead of as a speed limit.
+	SHAPING_GATEWAY_BURST_SECONDS: z.coerce.number().min(0.05).max(2).default(0.25),
+
 	// Timings
 	HEARTBEAT_INTERVAL_SEC: positiveInt(10),
 	COMMAND_POLL_INTERVAL_SEC: positiveInt(3),

@@ -956,10 +956,6 @@ function renderServers() {
 			meta.appendChild(label)
 		}
 		text.appendChild(meta)
-		// Запреты больше не висят плашками в строке сервера: они живут
-		// в раскрывающемся блоке под ней — внутрь самой строки его не
-		// положить: строка сама кнопка, а кнопка в кнопке не работает.
-		const restrictions = Array.isArray(node?.restrictions) ? node.restrictions : []
 		row.appendChild(text)
 
 		const sig = document.createElement('span')
@@ -976,11 +972,11 @@ function renderServers() {
 
 		row.addEventListener('click', () => chooseNode(id, offline))
 		list.appendChild(row)
-		if (restrictions.length) list.appendChild(nodeRestrictionsDrop(restrictions, id))
 	})
-	// Свод в настройках живёт на тех же данных, что этот список, и
-	// обновляется вместе с ним — иначе после первого ответа сервера
-	// он остался бы пустым до следующего открытия попапа.
+	// Запреты ушли из самого списка в расширенные настройки, но свод
+	// там живёт на тех же данных, что этот список, и обновляется вместе
+	// с ним — иначе после первого ответа сервера он оставался бы пустым
+	// до следующего открытия попапа.
 	renderNodeLimits()
 }
 
@@ -2980,57 +2976,6 @@ function restrictionDetail(restriction) {
 	// Policy-provided custom text is untrusted content: textContent at the call
 	// site guarantees it is displayed literally and never interpreted as HTML.
 	return String(restriction?.detail ?? '').slice(0, 240)
-}
-
-
-/**
- * «Что запрещено на этом сервере» — сложенный список под строкой
- * сервера, такой же, как на сайте, в клиентах и в админке: свёрнуто
- * — только счётчик, раскрыто — строка на запрет с правилами и
- * коротким комментарием.
- */
-function nodeRestrictionsDrop(restrictions, nodeId) {
-	const wrap = document.createElement('div')
-	wrap.className = 'srv-limits'
-	const bodyId = `srv-limits-${nodeId}`
-	const toggle = document.createElement('button')
-	toggle.type = 'button'
-	toggle.className = 'srv-limits-toggle'
-	toggle.setAttribute('aria-expanded', 'false')
-	toggle.setAttribute('aria-controls', bodyId)
-	const label = document.createElement('span')
-	label.textContent = t('node.limits', { n: restrictions.length })
-	const chev = document.createElement('i')
-	chev.className = 'srv-limits-chev'
-	toggle.append(label, chev)
-	const body = document.createElement('div')
-	body.className = 'srv-limits-body'
-	body.id = bodyId
-	body.hidden = true
-	for (const restriction of restrictions) {
-		const item = document.createElement('div')
-		item.className = 'srv-limit'
-		const chip = document.createElement('span')
-		chip.className = 'restriction'
-		chip.textContent = restrictionLabel(restriction)
-		const ruleTexts = Array.isArray(restriction?.rules) ? restriction.rules.filter(Boolean) : []
-		const rules = document.createElement('span')
-		rules.className = 'srv-limit-rules'
-		rules.textContent = ruleTexts.length ? ruleTexts.join(' · ') : String(restriction?.value ?? '')
-		const note = document.createElement('p')
-		note.className = 'srv-limit-note'
-		note.textContent = restrictionDetail(restriction)
-		item.append(chip, rules, note)
-		body.appendChild(item)
-	}
-	toggle.addEventListener('click', () => {
-		const open = body.hidden
-		body.hidden = !open
-		toggle.setAttribute('aria-expanded', open ? 'true' : 'false')
-		wrap.classList.toggle('is-open', open)
-	})
-	wrap.append(toggle, body)
-	return wrap
 }
 
 

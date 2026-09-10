@@ -6,7 +6,6 @@ import '../../utils/format.dart';
 import '../../utils/signal.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
-import '../../widgets/node_limits.dart';
 import '../../widgets/signal_bars.dart';
 import '../logic/node_selector.dart';
 
@@ -86,99 +85,84 @@ class _ServerRowState extends State<ServerRow> {
           ),
           child: Opacity(
             opacity: available ? 1 : 0.45,
-            // Строка сервера плюс сложенный список запретов под ней —
-            // тот же вид, что в расширении, на телефоне и в админке.
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              // Плашка запретов начинается от левого края строки, а не
-              // висит по центру: Column без этого центрирует детей.
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                GlassPanel(
-                  radius: GlukSizes.cellRadius,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
+            // Только сама строка сервера: список запретов больше не висит
+            // под каждым сервером — его свод в «Расширенных» настройках,
+            // один раз на всю сеть, а не N раз в списке.
+            child: GlassPanel(
+              radius: GlukSizes.cellRadius,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 12,
+              ),
+              color: widget.selected ? GlukColors.violet.withOpacity(0.10) : Colors.transparent,
+              child: Row(
+                children: <Widget>[
+                  FlagCircle(flag: node.countryCode, size: GlukSizes.flagCircle),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          publicNodeLocation(node, russian: widget.russian),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: widget.selected
+                                ? GlukColors.text0
+                                : GlukColors.text0.withOpacity(0.92),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _subtitle(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: GlukColors.text2,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  color: widget.selected ? GlukColors.violet.withOpacity(0.10) : Colors.transparent,
-                  child: Row(
-                    children: <Widget>[
-                      FlagCircle(flag: node.countryCode, size: GlukSizes.flagCircle),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            Text(
-                              publicNodeLocation(node, russian: widget.russian),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: widget.selected
-                                    ? GlukColors.text0
-                                    : GlukColors.text0.withOpacity(0.92),
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _subtitle(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: GlukColors.text2,
-                                fontSize: 11,
-                              ),
-                            ),
+                  const SizedBox(width: 10),
+                  if (widget.pingMs != null)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 10),
+                      child: Text(
+                        formatPing(widget.pingMs!),
+                        style: TextStyle(
+                          color: _pingColor(widget.pingMs!),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          fontFeatures: const <FontFeature>[
+                            FontFeature.tabularFigures(),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      if (widget.pingMs != null)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 10),
-                          child: Text(
-                            formatPing(widget.pingMs!),
-                            style: TextStyle(
-                              color: _pingColor(widget.pingMs!),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              fontFeatures: const <FontFeature>[
-                                FontFeature.tabularFigures(),
-                              ],
-                            ),
-                          ),
-                        ),
-                      SignalBars(strength: strength, height: 16),
-                      if (widget.locked) ...<Widget>[
-                        const SizedBox(width: 10),
-                        const Icon(
-                          Icons.lock_outline_rounded,
-                          size: 15,
-                          color: GlukColors.text2,
-                        ),
-                      ] else if (widget.selected) ...<Widget>[
-                        const SizedBox(width: 10),
-                        const Icon(
-                          Icons.check_circle_rounded,
-                          size: 17,
-                          color: GlukColors.violetLight,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                if (node.restrictions.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-                    child: NodeLimits(
-                      restrictions: node.restrictions,
-                      russian: widget.russian,
                     ),
-                  ),
-              ],
+                  SignalBars(strength: strength, height: 16),
+                  if (widget.locked) ...<Widget>[
+                    const SizedBox(width: 10),
+                    const Icon(
+                      Icons.lock_outline_rounded,
+                      size: 15,
+                      color: GlukColors.text2,
+                    ),
+                  ] else if (widget.selected) ...<Widget>[
+                    const SizedBox(width: 10),
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      size: 17,
+                      color: GlukColors.violetLight,
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         ),
@@ -196,8 +180,8 @@ class _ServerRowState extends State<ServerRow> {
     final parts = <String>[];
     parts.add('${widget.loadLabel ?? 'Load'} ${formatPercent(node.loadPercent.toDouble())}');
     if (node.maintenance) parts.add(widget.russian ? 'Технические работы' : 'Maintenance');
-    // Запреты ушли из этой строки в раскрывающийся список ниже:
-    // в одну строку они не влезали и обрезались многоточием.
+    // Запретов здесь нет: в одну строку они не влезали, а их свод
+    // теперь целиком в «Расширенных» настройках.
     return parts.where((String p) => p.isNotEmpty).join('  ·  ');
   }
 

@@ -1,14 +1,22 @@
 /**
  * GlukVPN node agent.
  *
- * Pull model only: the node opens outbound HTTPS to the control plane and never
- * listens on an extra port. The heartbeat doubles as the command channel.
+ * Pull model only for control: the node opens outbound HTTPS to the control
+ * plane and never accepts an inbound control connection. The heartbeat doubles
+ * as the command channel.
+ *
+ * ROUND 27 adds the single listener this agent does own: a shaped VLESS relay
+ * in front of sing-box (see lib/gatewayShaper). It carries subscriber traffic
+ * only - it speaks no control protocol, accepts no commands, and does not bind
+ * at all unless SHAPING_GATEWAY_TIERS names a port.
  *
  * What this agent can do, and nothing more:
  *   - report host metrics (CPU / RAM / uptime / peer count)
  *   - add a WireGuard peer with exactly one /32 allowed-ip
  *   - remove a WireGuard peer
  *   - shape a peer to the line speed its plan sells (tc/HTB), best effort
+ *   - cap a desktop VLESS subscriber to the speed its plan sells, with a
+ *     token-bucket relay in front of sing-box (one listener per sold speed)
  *   - report per-peer byte counters and handshake times
  *   - ROUND 26: keep the sing-box gateway's *users* and *reject rules* equal
  *     to the control plane's policy, and read sing-box's Clash API to report
@@ -32,6 +40,7 @@ import {
 	type PeerReport,
 	type VlessUserReport,
 } from "./lib/api"
+import { GatewayShaper } from "./lib/gatewayShaper"
 import { errorMessage, log, shortKey } from "./lib/logger"
 import { collectHostMetrics } from "./lib/metrics"
 import { applyPeerShaping, clearPeerShaping, parseShaping } from "./lib/shaper"
@@ -58,6 +67,8 @@ type AgentState = {
 	backoffMs: number
 	nodePublicKey: string | null
 	singbox: SingboxManager | null
+	/** Shaped VLESS relay; null when the operator configured no tier. */
+	gatewayShaper: GatewayShaper | null
 	/** Desired policy version from the last heartbeat; null until known. */
 	desiredPolicyVersion: string | null
 }
@@ -71,6 +82,7 @@ const state: AgentState = {
 	backoffMs: 0,
 	nodePublicKey: null,
 	singbox: null,
+	gatewayShaper: null,
 	desiredPolicyVersion: null,
 }
 
@@ -360,6 +372,21 @@ async function main(): Promise<void> {
 
 	state.singbox = await SingboxManager.create()
 
+	// The shaped front door for desktop VLESS. `fromConfig` returns null unless
+	// the operator named at least one tier, so a node that was never configured
+	// for it binds nothing and behaves exactly as it did before.
+	state.gatewayShaper = GatewayShaper.fromConfig()
+	if (state.gatewayShaper) {
+		try {
+			await state.gatewayShaper.start()
+		} catch (error) {
+			// A relay that cannot bind must not stop the node from serving
+			// WireGuard and answering the control plane.
+			log.error("shaped gateway failed to start", { reason: errorMessage(error) })
+			state.gatewayShaper = null
+		}
+	}
+
 	log.info("agent started", {
 		controlApi: config.CONTROL_API_URL,
 		iface: config.WG_INTERFACE,
@@ -368,6 +395,7 @@ async function main(): Promise<void> {
 		pollSec: config.COMMAND_POLL_INTERVAL_SEC,
 		reportSec: config.STATS_REPORT_INTERVAL_SEC,
 		singbox: state.singbox ? "managed" : "off",
+		shapedPorts: state.gatewayShaper ? state.gatewayShaper.ports.join(",") : "off",
 	})
 
 	const shutdown = (signal: string) => {
@@ -376,6 +404,9 @@ async function main(): Promise<void> {
 		// Peers are intentionally left in place: restarting the agent must not
 		// drop live tunnels.
 		log.info("shutting down", { signal })
+		// Relayed sockets die with the process anyway; closing the listeners
+		// first keeps new connections from arriving mid-shutdown.
+		void state.gatewayShaper?.stop()
 	}
 	process.on("SIGTERM", () => shutdown("SIGTERM"))
 	process.on("SIGINT", () => shutdown("SIGINT"))
