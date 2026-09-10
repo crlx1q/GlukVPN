@@ -2,6 +2,28 @@ import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
 
+/// Placeholder widths, in characters.
+///
+/// A skeleton is not a preview of the value, it is "this cell is busy". Sizing
+/// every bar to the string it replaces turned a loading screen into a bar
+/// chart of string lengths: a 15-character IP next to a 5-character ping read
+/// as if the ping mattered less, and the four cells of the stats grid looked
+/// like four different kinds of waiting. One width per role instead - the
+/// cells themselves keep their own widths, so nothing moves when the values
+/// land.
+class GlukSkeleton {
+  GlukSkeleton._();
+
+  /// Any single value: an IP, a ping, a duration, a byte counter.
+  static const int valueChars = 10;
+
+  /// The title line of a list row - a server name, a place.
+  static const int titleChars = 16;
+
+  /// The muted line under such a title.
+  static const int subtitleChars = 22;
+}
+
 /// Shimmering placeholder for a value that is still loading.
 ///
 /// One skeleton for every platform: the phone, the Windows desktop and the
@@ -12,8 +34,9 @@ import '../theme/tokens.dart';
 ///
 /// Rules baked in:
 ///  * never animate when [animate] is false (reduce-motion, battery saver);
-///  * a skeleton is always the same size as the text it stands in for, so the
-///    layout does not jump when the value arrives;
+///  * placeholders of the same role share one width - see [GlukSkeleton];
+///  * the sweep is seamless: it begins and ends with the bar fully dim, so
+///    the loop closes on itself instead of jumping;
 ///  * the highlight sweeps once every 1.4 s - visible, never distracting.
 class SkeletonBox extends StatefulWidget {
   const SkeletonBox({
@@ -57,7 +80,9 @@ class _SkeletonBoxState extends State<SkeletonBox>
       if (!_controller.isAnimating) _controller.repeat();
     } else {
       _controller.stop();
-      _controller.value = 0.35;
+      // Half-way through the travel below is the middle of the bar, so a
+      // still skeleton still reads as lit rather than as an empty slot.
+      _controller.value = 0.5;
     }
   }
 
@@ -74,9 +99,13 @@ class _SkeletonBoxState extends State<SkeletonBox>
       child: AnimatedBuilder(
         animation: _controller,
         builder: (BuildContext context, Widget? child) {
-          // The highlight travels from -1 (off the left edge) to +2 (off the
-          // right edge) so it enters and leaves the bar completely.
-          final double t = _controller.value * 3 - 1;
+          // The gradient is exactly one bar wide and centred on t, so the bar
+          // is uniformly dim at t = -2 and again at t = +2. Travelling between
+          // those two points makes the last frame identical to the first and
+          // the loop closes silently. It used to start at t = -1, where the
+          // left half of the bar is already lit while the end of the previous
+          // pass was dark - that mismatch was the visible pop every 1.4 s.
+          final double t = _controller.value * 4 - 2;
           return Container(
             width: widget.width,
             height: widget.height,
@@ -102,9 +131,10 @@ class _SkeletonBoxState extends State<SkeletonBox>
 
 /// A skeleton sized like one line of text in [style].
 ///
-/// `characters` is the expected length of the value ("000.000.000.000" is 15,
-/// "00:00:00" is 8). The bar is a touch shorter than the full string would be,
-/// which reads as a placeholder rather than a censored value.
+/// `characters` is a width measured in characters of that style. Take it from
+/// [GlukSkeleton] instead of counting the string that is on its way, so a ping
+/// and an IP wait behind bars of the same length. The height always follows
+/// [style], so the row keeps its shape when the value lands.
 class SkeletonText extends StatelessWidget {
   const SkeletonText({
     super.key,
@@ -155,7 +185,7 @@ class ValueOrSkeleton extends StatelessWidget {
     super.key,
     required this.value,
     required this.loading,
-    this.characters = 12,
+    this.characters = GlukSkeleton.valueChars,
     this.style,
     this.emptyLabel = '\u2014',
     this.animate = true,

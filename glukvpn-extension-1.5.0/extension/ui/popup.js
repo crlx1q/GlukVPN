@@ -91,6 +91,13 @@ const DEFAULTS = {
 // forever. Past this age the value is treated as unavailable and an em dash
 // takes over (the exit-IP probe can legitimately be blocked, for instance).
 const METRIC_SKELETON_MAX_MS = 75000
+// One width for every placeholder in the grid. A skeleton is not a preview of
+// the value, it is "this cell is busy", and sizing each bar to its own text
+// turned the grid into a bar chart of string lengths - a long IP next to a
+// stubby ping read as if the ping were less important. Equal bars, one
+// meaning. The cell itself keeps its column width, so nothing shifts when the
+// real value lands.
+const SKELETON_CHARS = 10
 const DASH = '\u2014'
 
 // Chrome's own "Allow in Incognito" switch: null = not asked yet / unknown.
@@ -737,18 +744,16 @@ function renderVpn() {
 	renderMetric($('st-public-ip'), {
 		value: live && publicIp ? String(publicIp) : DASH,
 		loading: dialing || stillLoading(publicIp),
-		chars: 15,
 	})
 	// The VPN address arrives with the connect result itself, so once the
 	// tunnel is up there is nothing left to wait for: value or dash.
 	const vpnIp = session.vpnIp ?? state?.runtime?.vpnIp ?? null
-	renderMetric($('st-vpn-ip'), { value: live && vpnIp ? String(vpnIp) : DASH, loading: dialing, chars: 15 })
+	renderMetric($('st-vpn-ip'), { value: live && vpnIp ? String(vpnIp) : DASH, loading: dialing })
 	const ping = Number(stats.ping)
 	const pingKnown = Number.isFinite(ping) && ping > 0
 	renderMetric($('st-ping'), {
 		value: live && pingKnown ? pingLabel(ping) : DASH,
 		loading: dialing || stillLoading(pingKnown ? ping : null),
-		chars: 6,
 	})
 	renderMetric($('st-rx'), { value: bytesLabel(live ? stats.bytesRx : 0) })
 	renderMetric($('st-tx'), { value: bytesLabel(live ? stats.bytesTx : 0) })
@@ -789,7 +794,7 @@ function tickDuration() {
 		return
 	}
 	if (phase === 'connecting') {
-		renderMetric(node, { loading: true, chars: 8 })
+		renderMetric(node, { loading: true })
 		return
 	}
 	const since = Number(state?.runtime?.since ?? state?.runtime?.connectedAt ?? 0)
@@ -801,17 +806,21 @@ function tickDuration() {
 }
 
 /**
- * One metric cell. `loading` paints a shimmering bar about `chars` characters
- * wide instead of a placeholder string; otherwise the value is written as text.
+ * One metric cell. `loading` paints a shimmering bar instead of a placeholder
+ * string; otherwise the value is written as text.
+ *
+ * Every bar is SKELETON_CHARS wide unless a caller has a real reason to differ,
+ * so the loading grid looks like one state and not like four values of
+ * different importance.
  *
  * The bar is only rebuilt when its size changes. renderVpn runs on every poll
  * and every runtime broadcast, and replacing the node each time restarted the
  * shimmer from zero - a visible stutter every few seconds.
  */
-function renderMetric(el, { value = DASH, loading = false, chars = 6 } = {}) {
+function renderMetric(el, { value = DASH, loading = false, chars = SKELETON_CHARS } = {}) {
 	if (!el) return
 	if (loading) {
-		const width = String(Math.max(2, Math.round(Number(chars) || 6)))
+		const width = String(Math.max(2, Math.round(Number(chars) || SKELETON_CHARS)))
 		if (el.dataset.skel !== width) {
 			const bar = document.createElement('span')
 			bar.className = 'skel'

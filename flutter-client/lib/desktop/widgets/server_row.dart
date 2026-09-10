@@ -6,6 +6,7 @@ import '../../utils/format.dart';
 import '../../utils/signal.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/node_limits.dart';
 import '../../widgets/signal_bars.dart';
 import '../logic/node_selector.dart';
 
@@ -89,85 +90,94 @@ class _ServerRowState extends State<ServerRow> {
             // тот же вид, что в расширении, на телефоне и в админке.
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              // Плашка запретов начинается от левого края строки, а не
+              // висит по центру: Column без этого центрирует детей.
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-            GlassPanel(
-              radius: GlukSizes.cellRadius,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 12,
-              ),
-              color: widget.selected ? GlukColors.violet.withOpacity(0.10) : Colors.transparent,
-              child: Row(
-                children: <Widget>[
-                  FlagCircle(flag: node.countryCode, size: GlukSizes.flagCircle),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Text(
-                          publicNodeLocation(node, russian: widget.russian),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: widget.selected
-                                ? GlukColors.text0
-                                : GlukColors.text0.withOpacity(0.92),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _subtitle(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: GlukColors.text2,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
+                GlassPanel(
+                  radius: GlukSizes.cellRadius,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
                   ),
-                  const SizedBox(width: 10),
-                  if (widget.pingMs != null)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: Text(
-                        formatPing(widget.pingMs!),
-                        style: TextStyle(
-                          color: _pingColor(widget.pingMs!),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          fontFeatures: const <FontFeature>[
-                            FontFeature.tabularFigures(),
+                  color: widget.selected ? GlukColors.violet.withOpacity(0.10) : Colors.transparent,
+                  child: Row(
+                    children: <Widget>[
+                      FlagCircle(flag: node.countryCode, size: GlukSizes.flagCircle),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Text(
+                              publicNodeLocation(node, russian: widget.russian),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: widget.selected
+                                    ? GlukColors.text0
+                                    : GlukColors.text0.withOpacity(0.92),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _subtitle(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: GlukColors.text2,
+                                fontSize: 11,
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                    ),
-                  SignalBars(strength: strength, height: 16),
-                  if (widget.locked) ...<Widget>[
-                    const SizedBox(width: 10),
-                    const Icon(
-                      Icons.lock_outline_rounded,
-                      size: 15,
-                      color: GlukColors.text2,
-                    ),
-                  ] else if (widget.selected) ...<Widget>[
-                    const SizedBox(width: 10),
-                    const Icon(
-                      Icons.check_circle_rounded,
-                      size: 17,
-                      color: GlukColors.violetLight,
-                    ),
-                  ],
-                ],
-              ),
-            ),
+                      const SizedBox(width: 10),
+                      if (widget.pingMs != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 10),
+                          child: Text(
+                            formatPing(widget.pingMs!),
+                            style: TextStyle(
+                              color: _pingColor(widget.pingMs!),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              fontFeatures: const <FontFeature>[
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                        ),
+                      SignalBars(strength: strength, height: 16),
+                      if (widget.locked) ...<Widget>[
+                        const SizedBox(width: 10),
+                        const Icon(
+                          Icons.lock_outline_rounded,
+                          size: 15,
+                          color: GlukColors.text2,
+                        ),
+                      ] else if (widget.selected) ...<Widget>[
+                        const SizedBox(width: 10),
+                        const Icon(
+                          Icons.check_circle_rounded,
+                          size: 17,
+                          color: GlukColors.violetLight,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
                 if (node.restrictions.isNotEmpty)
-                  _NodeLimitsPanel(node: node, russian: widget.russian),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+                    child: NodeLimits(
+                      restrictions: node.restrictions,
+                      russian: widget.russian,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -204,116 +214,3 @@ class _ServerRowState extends State<ServerRow> {
     }
   }
 }
-
-/// «Что запрещено на этом сервере» — сложенный список под строкой
-/// сервера. Свёрнуто — одна строка со счётчиком, раскрыто — запрет,
-/// правила за ним и короткий комментарий почему. Один и тот же вид
-/// в расширении, на телефоне и в админке.
-class _NodeLimitsPanel extends StatefulWidget {
-  const _NodeLimitsPanel({required this.node, required this.russian});
-
-  final VpnNodeInfo node;
-  final bool russian;
-
-  @override
-  State<_NodeLimitsPanel> createState() => _NodeLimitsPanelState();
-}
-
-class _NodeLimitsPanelState extends State<_NodeLimitsPanel> {
-  bool _open = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final List<NodeRestriction> items = widget.node.restrictions;
-    final bool ru = widget.russian;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          InkWell(
-            borderRadius: BorderRadius.circular(999),
-            onTap: () => setState(() => _open = !_open),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    ru
-                        ? 'Запрещено здесь \u00b7 ${items.length}'
-                        : 'Blocked here \u00b7 ${items.length}',
-                    style: const TextStyle(
-                      color: GlukColors.amber,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  Icon(
-                    _open ? Icons.expand_less : Icons.expand_more,
-                    size: 16,
-                    color: GlukColors.amber,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (_open)
-            Container(
-              margin: const EdgeInsets.only(top: 4),
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(GlukSizes.cellRadius),
-                border: Border.all(color: GlukColors.amber.withOpacity(0.18)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  for (final NodeRestriction r in items)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            r.localizedLabel(ru),
-                            style: const TextStyle(
-                              color: GlukColors.amber,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          if (r.rulesLine.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Text(
-                                r.rulesLine,
-                                style: const TextStyle(color: GlukColors.text2, fontSize: 10),
-                              ),
-                            ),
-                          if (r.localizedDetail(ru).isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 3),
-                              child: Text(
-                                r.localizedDetail(ru),
-                                style: const TextStyle(
-                                  color: GlukColors.text2,
-                                  fontSize: 11,
-                                  height: 1.35,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-

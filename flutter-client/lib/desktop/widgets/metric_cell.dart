@@ -23,7 +23,7 @@ class MetricCell extends StatelessWidget {
     this.monospace = false,
     this.compact = false,
     this.loading = false,
-    this.skeletonCharacters = 8,
+    this.skeletonCharacters = GlukSkeleton.valueChars,
     this.animate = true,
   });
 
@@ -42,7 +42,8 @@ class MetricCell extends StatelessWidget {
   /// Draw a skeleton in place of [value].
   final bool loading;
 
-  /// Width of the skeleton, in characters of the value's font.
+  /// Width of the skeleton, in characters of the value's font. The shared
+  /// value width by default: every busy cell looks equally busy.
   final int skeletonCharacters;
 
   /// False under reduce-motion: the skeleton then holds still.

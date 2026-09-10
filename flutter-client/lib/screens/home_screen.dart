@@ -240,7 +240,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 value: vpn.publicIp,
                                 loading: transitioning ||
                                     (connected && vpn.exitIp == null),
-                                characters: 15,
                                 animate: animate,
                                 style: StatCell.valueStyle(
                                   context,
@@ -260,7 +259,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 value: connected ? vpn.assignedIp : null,
                                 loading: transitioning ||
                                     (connected && vpn.assignedIp == null),
-                                characters: 15,
                                 animate: animate,
                                 style: StatCell.valueStyle(context),
                               ),
@@ -279,7 +277,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     ? formatDuration(vpn.connectedFor)
                                     : null,
                                 loading: transitioning,
-                                characters: 8,
                                 emptyLabel: '00:00:00',
                                 animate: animate,
                                 style: StatCell.valueStyle(context),
@@ -294,7 +291,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 value: pingText,
                                 loading: transitioning ||
                                     (connected && pingText == null),
-                                characters: 5,
                                 animate: animate,
                                 style: StatCell.valueStyle(context),
                               ),
@@ -915,7 +911,7 @@ class _ServerRow extends StatelessWidget {
             // keeps its shape and nothing has to be read and then unread.
             if (loading)
               SkeletonText(
-                characters: 14,
+                characters: GlukSkeleton.titleChars,
                 style: text.titleMedium,
                 animate: animate,
               )

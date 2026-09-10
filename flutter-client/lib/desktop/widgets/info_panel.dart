@@ -24,7 +24,7 @@ class InfoRow extends StatelessWidget {
     this.iconColor,
     this.compact = false,
     this.loading = false,
-    this.skeletonCharacters = 12,
+    this.skeletonCharacters = GlukSkeleton.valueChars,
     this.animate = true,
     this.emptyLabel = '\u2014',
   });
@@ -47,8 +47,9 @@ class InfoRow extends StatelessWidget {
   /// Show a skeleton instead of the value.
   final bool loading;
 
-  /// Expected length of the value, so the skeleton matches ("000.000.000.000"
-  /// is 15, "00:00:00" is 8).
+  /// Width of the placeholder. Defaults to the shared value width, so an IP
+  /// and a ping wait behind bars of the same length; override only when a row
+  /// genuinely holds something else.
   final int skeletonCharacters;
 
   /// False under reduce-motion: the skeleton then holds still.
