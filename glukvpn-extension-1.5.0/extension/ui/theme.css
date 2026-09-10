@@ -1594,6 +1594,10 @@ button.account-device-off.is-busy{opacity:.55}
 .stats-quota.is-over .stats-quota__ring .val{stroke:#f87171}
 .stats-quota__txt{min-width:0;flex:1;display:flex;flex-direction:column;gap:1px}
 .stats-quota__k{font-size:9.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#5c5770}
+/* Скорость тарифа под цифрами расхода: два класса в селекторе —
+   чтобы перебить более раннее правило .stats-budget small. */
+.stats-quota .stats-quota__speed{font-size:10px;line-height:1.35;font-weight:700;color:#3ddc97}
+.stats-quota.is-over .stats-quota__speed{color:#fca5a5}
 .stats-skeleton{height:170px;border-radius:16px;background:linear-gradient(120deg,rgba(139,92,246,.14),rgba(139,92,246,.04),rgba(139,92,246,.12))}
 
 /* --------------------------------------------- device detail actions ---

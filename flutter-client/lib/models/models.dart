@@ -314,6 +314,7 @@ class QuotaInfo {
     this.exceeded = false,
     this.periodStart,
     this.periodEnd,
+    this.speedLimitMbps,
   });
 
   factory QuotaInfo.fromJson(Map<String, dynamic> json) => QuotaInfo(
@@ -327,6 +328,11 @@ class QuotaInfo {
         exceeded: _asBool(json['exceeded']),
         periodStart: _asDate(json['periodStart']),
         periodEnd: _asDate(json['periodEnd'] ?? json['resetAt']),
+        // Ширина канала приходит в той же квоте, что и гигабайты: это
+        // одно ограничение тарифа, просто в двух измерениях.
+        speedLimitMbps: json['speedLimitMbps'] == null
+            ? null
+            : _asInt(json['speedLimitMbps']),
       );
 
   final int usedBytes;
@@ -342,7 +348,13 @@ class QuotaInfo {
   /// Когда окно закроется и лимит обнулится.
   final DateTime? periodEnd;
 
+  /// Скорость канала тарифа, Мбит/с. `null` — скорость не ограничивают.
+  final int? speedLimitMbps;
+
   bool get hasLimit => (limitBytes ?? 0) > 0;
+
+  /// Ноль и `null` значат одно и то же — показывать нечего.
+  bool get hasSpeedLimit => (speedLimitMbps ?? 0) > 0;
 
   /// 0..1 для шкалы. Без лимита — 0, чтобы виджет не делил на ноль.
   double get fraction {

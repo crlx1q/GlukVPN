@@ -99,6 +99,13 @@ export function quotaPayload(status: QuotaStatus): Record<string, unknown> {
 		usedPercent: Math.round(status.usedFraction * 1000) / 10,
 		unlimited: status.limitBytes === null,
 		exceeded: status.exceeded,
+		// A plan caps two different things - how many bytes and how fast - and
+		// until now only the bytes reached the clients, so "Pro is faster" was a
+		// promise nothing on screen backed up. The cap rides along with the quota
+		// because that is exactly where every client draws it: next to
+		// "234 MB of 5 GB". `null` means this account is not shaped at all.
+		speedLimitMbps: status.entitlement.speedLimitMbps,
+		speedLimitSource: status.entitlement.speedLimitSource,
 		periodStart: status.period.start.toISOString(),
 		periodEnd: status.period.end.toISOString(),
 		resetAt: status.period.end.toISOString(),

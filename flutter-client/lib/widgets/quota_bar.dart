@@ -4,7 +4,7 @@ import '../models/models.dart';
 import '../theme/tokens.dart';
 import '../utils/format.dart';
 
-/// Шкала месячного лимита тарифа — «234 МБ из 5 ГБ».
+/// Шкала месячного лимита тарифа — «234 МБ из 5 ГБ» и ширина канала.
 ///
 /// ОДИН виджет на телефон и на Windows, и такая же шкала на сайте и в
 /// расширении: если каждая площадка будет считать проценты по-своему,
@@ -136,6 +136,23 @@ class QuotaBar extends StatelessWidget {
 							height: 1.35,
 						),
 					),
+					// Второе измерение того же тарифа: гигабайты говорят «сколько»,
+					// Мбит/с — «как быстро». Цифра серверная: её же получает узел,
+					// когда ставит ограничение на пира, поэтому обещанное и реальное совпадают.
+					if (quota.hasSpeedLimit) ...<Widget>[
+						SizedBox(height: compact ? 3 : 4),
+						Text(
+							russian
+									? 'Скорость до ${quota.speedLimitMbps} Мбит/с'
+									: 'Up to ${quota.speedLimitMbps} Mbit/s',
+							style: TextStyle(
+								color: over ? tone : GlukColors.connected,
+								fontSize: compact ? 10.5 : 11.5,
+								fontWeight: FontWeight.w700,
+								height: 1.35,
+							),
+						),
+					],
 				],
 			),
 		);

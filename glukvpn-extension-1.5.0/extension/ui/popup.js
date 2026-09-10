@@ -3153,6 +3153,16 @@ function renderStats() {
 		const headText = statsNode('div', 'stats-quota__txt')
 		headText.appendChild(statsNode('span', 'stats-quota__k', ru ? 'Лимит тарифа' : 'Plan allowance'))
 		headText.appendChild(statsNode('b', '', `${statsBytes(quota.usedBytes)} ${ru ? 'из' : 'of'} ${statsBytes(quota.limitBytes)}`))
+		// Тариф ограничивает не только гигабайты, но и ширину канала. Цифра
+		// приходит с сервера (quota.speedLimitMbps) и стоит рядом с объёмом:
+		// «сколько осталось» и «как быстро» — это один и тот же тариф.
+		// null — аккаунт не шейпится, тогда строки просто нет.
+		const speedMbps = Math.round(Number(quota.speedLimitMbps) || 0)
+		if (speedMbps > 0) {
+			headText.appendChild(statsNode('small', 'stats-quota__speed', ru
+				? `Скорость до ${speedMbps} Мбит/с`
+				: `Up to ${speedMbps} Mbit/s`))
+		}
 		head.appendChild(headText)
 		head.appendChild(statsNode('span', '', `${(Number(quota.usedPercent) || 0).toFixed(1)}%`))
 		card.appendChild(head)

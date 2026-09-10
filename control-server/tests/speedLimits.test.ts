@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest"
 import {
 	effectiveSpeedLimit,
+	type Entitlement,
 	planShape,
 	planSpeedPriority,
+	quotaPeriod,
 	PLAN_MATRIX,
 } from "../src/services/entitlements"
+import { quotaPayload, type QuotaStatus } from "../src/services/quota"
 
 // The speed cap is a server decision, exactly like the traffic quota and the
 // device count: the client renders the number, the node enforces it. These
@@ -94,5 +97,65 @@ describe("effectiveSpeedLimit", () => {
 
 	it("caps an unshaped plan when the override says so", () => {
 		expect(effectiveSpeedLimit(100, null)).toBe(100)
+	})
+})
+
+// The four clients render the cap and none of them may compute it - the plan
+// matrix lives here. The quota payload is the only place that number crosses
+// the wire, so a refactor there must not silently drop it again.
+describe("quotaPayload speed", () => {
+	const period = quotaPeriod(
+		new Date("2026-01-01T00:00:00.000Z"),
+		new Date("2026-01-10T00:00:00.000Z"),
+	)
+
+	function statusWith(
+		speedLimitMbps: number | null,
+		speedLimitSource: "plan" | "manual" = "plan",
+	): QuotaStatus {
+		const entitlement: Entitlement = {
+			planCode: "pro",
+			planName: "Pro",
+			badge: "pro",
+			tier: 2,
+			subscribed: true,
+			subscriptionId: null,
+			source: null,
+			expiresAt: null,
+			daysLeft: null,
+			maxDevices: 5,
+			maxSessions: 5,
+			trafficLimitBytes: 1024,
+			speedLimitMbps,
+			speedLimitSource,
+			speedPriority: planSpeedPriority("pro"),
+			period,
+		}
+		return {
+			entitlement,
+			period,
+			usedBytes: 256,
+			limitBytes: 1024,
+			remainingBytes: 768,
+			usedFraction: 0.25,
+			exceeded: false,
+		}
+	}
+
+	it("sends the cap next to the bytes, where every client draws it", () => {
+		const payload = quotaPayload(statusWith(planShape("pro").speedMbps ?? null))
+		expect(payload.speedLimitMbps).toBe(250)
+		expect(payload.speedLimitSource).toBe("plan")
+		// The traffic half of the same answer must survive the addition.
+		expect(payload.limitBytes).toBe(1024)
+	})
+
+	it("tells the client when support set the number by hand", () => {
+		expect(quotaPayload(statusWith(500, "manual")).speedLimitSource).toBe("manual")
+	})
+
+	it("keeps null for an unshaped account instead of inventing a zero", () => {
+		// A 0 in that field would read as "no traffic allowed" on every client.
+		expect(quotaPayload(statusWith(null)).speedLimitMbps).toBeNull()
 	})
 })
