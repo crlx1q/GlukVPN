@@ -31,6 +31,22 @@ namespace gluk {
 constexpr char kSingBoxTunPrefix[] = "172.19.0.1/30";
 constexpr char kSingBoxTunAddress[] = "172.19.0.1";
 
+// MTU used when the caller does not ask for one.
+//
+// ROUND 27. Leaving the key out of the config does not mean "let Windows
+// decide", it means sing-box's own default of 9000 - and with stack "mixed"
+// the Windows TCP stack believes it. It then advertises an MSS the real path
+// cannot carry, the node fragments every answer, the receive window collapses
+// and Windows acknowledges each out-of-order segment. That is how a link with
+// 400 Mbit/s of upload ended up serving 4.5 Mbit/s of download with a send
+// counter that grew 1:1 with the receive counter.
+//
+// 1420 is the number the control plane already hands out for the WireGuard
+// engine (node.mtu, and go/glukvpn-wg falls back to the same value), so both
+// engines now agree, and it is what the settings screen has always promised
+// for an empty MTU field.
+constexpr int kSingBoxDefaultMtu = 1420;
+
 // The outbound side of the tunnel, handed over by the UI with "up".
 struct GatewayConfig {
     std::string type;      // "vless", the only protocol the service configures
@@ -50,7 +66,7 @@ struct GatewayConfig {
 struct SingBoxOptions {
     std::string adapter = "GlukVPN";
     std::string tunAddress = kSingBoxTunPrefix;
-    int mtu = 0; // 0 leaves sing-box's own default in place
+    int mtu = 0; // 0 selects kSingBoxDefaultMtu, never sing-box's own 9000
 
     // Resolvers queried through the tunnel. Defaults are used when empty.
     std::vector<std::string> dns;

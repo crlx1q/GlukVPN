@@ -768,7 +768,11 @@ class DesktopVpnController extends ChangeNotifier {
         adapterName: AppConfig.desktopAdapterName,
         killSwitch: settings.killSwitch,
         dns: settings.dns.isNotEmpty ? settings.dns : result.tunnel.dns,
-        mtu: settings.mtu,
+        // Empty in settings means "whatever the server hands us", exactly like
+        // the DNS line above: the session carries the node's MTU (1420). A null
+        // here made the service leave the key out of the sing-box config, and
+        // the TUN came up with sing-box's own default of 9000 instead.
+        mtu: settings.mtu ?? result.tunnel.mtu,
         splitMode: settings.splitMode,
         splitApps: settings.splitApps,
         // "Always direct" from the browser extension: hosts and subnets that
@@ -1418,19 +1422,26 @@ class DesktopVpnController extends ChangeNotifier {
     _notify();
   }
 
+  /// One live latency sample for the header, the tray and the mini panel.
+  ///
+  /// Never _snapshot.vpnIp. On the sing-box engine that is 172.19.0.1, the
+  /// address of our own Wintun adapter, so the echo never left the machine and
+  /// the UI reported "1 ms" for every connection. The connected node's own
+  /// latency host is the target that answers with the number the user is
+  /// after; when ICMP to it goes unanswered - VLESS carries TCP and UDP, not
+  /// ICMP - the sample falls back to the control API and is labelled "api"
+  /// instead of being passed off as tunnel latency.
   Future<void> _measureLivePing() async {
-    final String? gateway = _snapshot.vpnIp;
     final PingSample sample = await _ping.measure(
-      gatewayIp: gateway,
+      host: _selectedNode?.latencyHost,
       apiBaseUrl: AppConfig.activeBaseUrl,
     );
     _currentPingMs = sample.milliseconds;
     _pingSource = sample.source;
-    // Reaching the gateway is independent proof the tunnel carries traffic.
-    if (sample.source == PingSource.tunnelGateway &&
-        sample.milliseconds != null) {
-      _dataObserved = true;
-    }
+    // _dataObserved is deliberately not set here. A reply proves the node is
+    // reachable, not that our tunnel carries packets, and the old self-ping
+    // satisfied condition 4 of the verifier for every tunnel including a dead
+    // one. Growing rxBytes in _pollStatus is the honest proof.
     _notify();
   }
 

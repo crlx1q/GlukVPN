@@ -13,7 +13,8 @@ import '../config.dart';
 /// an ICMP round-trip through the tunnel and an HTTPS round-trip to the control
 /// plane are very different measurements.
 enum PingSource {
-  /// ICMP echo to the node's address inside the tunnel: real tunnel latency.
+  /// ICMP echo to the node itself - its in-tunnel gateway on the WireGuard
+  /// engine, its own latency host on the desktop: real network latency.
   tunnelGateway,
 
   /// HTTPS round-trip to the control API: used when ICMP is filtered.
@@ -55,18 +56,24 @@ class PingService {
 
   final http.Client _http;
 
-  /// Takes one sample, preferring the real tunnel round-trip.
+  /// Takes one sample, preferring the real round-trip to the node.
   ///
-  /// [gatewayIp] is the node's WireGuard address (e.g. 10.8.0.1). Note that the
-  /// node's firewall must accept ICMP on the wg interface for this to answer;
-  /// otherwise the HTTPS fallback is used and labelled as such.
+  /// [host] has to be the far end of the tunnel: the node's WireGuard address
+  /// (e.g. 10.8.0.1) on the phone, the node's own latency host on the desktop.
+  /// It must never be the address of our own TUN adapter - the desktop passed
+  /// 172.19.0.1 here, and every connection, healthy or dead, reported 1 ms
+  /// because the echo never left the machine.
+  ///
+  /// The node still has to answer ICMP, and a VLESS tunnel carries TCP and UDP
+  /// but not ICMP; whenever the echo goes unanswered the HTTPS fallback is used
+  /// and labelled as such instead of inventing a tunnel number.
   ///
   /// [apiBaseUrl] overrides the host used by that fallback. The app can be
   /// pointed at either control plane at runtime, so the fallback has to follow
   /// the active channel instead of the compile-time default.
-  Future<PingSample> measure({String? gatewayIp, String? apiBaseUrl}) async {
-    if (gatewayIp != null && gatewayIp.isNotEmpty) {
-      final int? icmp = await _icmpRtt(gatewayIp);
+  Future<PingSample> measure({String? host, String? apiBaseUrl}) async {
+    if (host != null && host.isNotEmpty) {
+      final int? icmp = await _icmpRtt(host);
       if (icmp != null) {
         return PingSample(source: PingSource.tunnelGateway, milliseconds: icmp);
       }

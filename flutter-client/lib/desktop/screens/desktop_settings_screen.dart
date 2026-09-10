@@ -379,8 +379,8 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
             _TextTile(
               label: s.mtu,
               subtitle: ru
-                  ? 'Пусто — как отдаёт сервер. Допустимо 1280–1500.'
-                  : 'Empty means whatever the server hands us. 1280-1500.',
+                  ? 'Пусто — как отдаёт сервер (1420). Допустимо 1280–1500.'
+                  : 'Empty means whatever the server hands us (1420). 1280-1500.',
               value: _value.mtu?.toString() ?? '',
               hint: '1420',
               onSubmitted: (String raw) {

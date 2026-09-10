@@ -40,12 +40,23 @@ json::Object TunInbound(const SingBoxOptions& options) {
                 json::Value(options.adapter.empty() ? std::string("GlukVPN")
                                                     : options.adapter));
     tun.emplace("address", json::Value(StringArray(address)));
-    if (options.mtu > 0) tun.emplace("mtu", json::Value(options.mtu));
+    // Always explicit: an omitted key is not "the system default", it is
+    // sing-box's 9000, which the Windows TCP stack takes at face value and
+    // pays for in fragmentation (see kSingBoxDefaultMtu). Values that come
+    // from the user are already clamped to 1280-1500 by the settings screen.
+    tun.emplace("mtu",
+                json::Value(options.mtu > 0 ? options.mtu
+                                            : kSingBoxDefaultMtu));
     tun.emplace("auto_route", json::Value(true));
     tun.emplace("strict_route", json::Value(options.strictRoute));
     // system TCP with a gvisor UDP stack: the combination the official
     // Windows builds default to, and the only one that keeps UDP latency
     // predictable for games.
+    //
+    // Kept on purpose. The throttled download that made this line look guilty
+    // was caused by the missing MTU above: a system stack that is told the
+    // truth about the path behaves. Moving to a gvisor-only stack would trade
+    // that for an extra copy on every packet and worse UDP latency.
     tun.emplace("stack", json::Value(std::string("mixed")));
     return tun;
 }

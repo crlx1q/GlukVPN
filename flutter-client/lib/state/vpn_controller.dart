@@ -912,7 +912,7 @@ class VpnController extends ChangeNotifier {
     if (_state != VpnUiState.connected) return;
     // The HTTPS fallback must hit the channel we are actually signed in to.
     final PingSample sample = await _pingService.measure(
-      gatewayIp: _tunnel?.gatewayIp,
+      host: _tunnel?.gatewayIp,
       apiBaseUrl: _api.baseUrl,
     );
     _pingSample = sample;
