@@ -1420,6 +1420,13 @@ button.srv-limits-toggle:hover { border-color:rgba(240,181,103,.46); background:
 .srv-limit-note { margin:0; font-size:9.5px; line-height:1.42; color:var(--text-2); }
 .restriction { align-self:flex-start; font-size:8.5px; padding:2px 6px; border-radius:999px; color:#f3c98b; background:rgba(240,181,103,.1); border:1px solid rgba(240,181,103,.3); }
 @media (prefers-reduced-motion:reduce) { .srv-limits-chev { transition:none; } .srv-limits-body { animation:none; } }
+/* Тот же список, но сводом в «Расширенных»: раздел сам уже
+   раскрывается, поэтому бейджик-счётчик внутри не нужен — сразу
+   строка-итог и группы по узлам. */
+.node-limits { display:flex; flex-direction:column; gap:9px; }
+.node-limits-summary { margin:0; font-size:9.5px; line-height:1.42; font-weight:700; color:var(--text-2); }
+.node-limits-group { display:flex; flex-direction:column; gap:7px; padding:8px 10px; border:1px solid rgba(240,181,103,.18); border-radius:12px; background:rgba(240,181,103,.04); }
+.node-limits-node { font-size:10px; font-weight:800; letter-spacing:.01em; color:#f3c98b; }
 .srv-row.maintenance { opacity:.62; cursor:not-allowed; border-color:rgba(240,181,103,.35); }
 /* «Авто · Лучший сервер» и замок ручного выбора — как в версии для ПК. */
 .srv-row--auto .auto-mark { display:grid; place-items:center; background:linear-gradient(135deg, rgba(139,92,246,.92), rgba(90,160,255,.92)); box-shadow:none; }

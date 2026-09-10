@@ -13,6 +13,7 @@ import 'services/secure_store.dart';
 import 'services/telemetry_service.dart';
 import 'services/update_checker.dart';
 import 'services/vpn_service.dart';
+import 'state/app_settings.dart';
 import 'state/auth_controller.dart';
 import 'state/channel_controller.dart';
 import 'state/vpn_controller.dart';
@@ -81,6 +82,17 @@ Future<void> main() async {
   void applyLanguage() => vpn.russian = locale.strings.isRussian;
   locale.addListener(applyLanguage);
 
+  // ROUND 27: телефонные настройки — то же место и тот же приём, что и язык:
+  // не привязаны к сессии и к каналу, а контроллер туннеля получает их
+  // пушем, а не через provider.
+  final AppSettings settings = AppSettings(store: store);
+  void applySettings() {
+    vpn.haptics = settings.haptics;
+    vpn.autoConnectOnLaunch = settings.autoConnectOnLaunch;
+  }
+
+  settings.addListener(applySettings);
+
   final ChannelController channel = ChannelController(
     api: api,
     store: store,
@@ -116,6 +128,12 @@ Future<void> main() async {
   await locale.restore();
   applyLanguage();
 
+  // До первого кадра и до VpnController.init(): автоподключение читается
+  // там ровно один раз, и прочитать его позже значило бы «включается через
+  // раз».
+  await settings.restore();
+  applySettings();
+
   runApp(
     GlukVpnApp(
       auth: auth,
@@ -125,6 +143,7 @@ Future<void> main() async {
       connectivity: connectivity,
       updates: updates,
       locale: locale,
+      settings: settings,
     ),
   );
 }

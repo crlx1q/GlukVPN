@@ -87,6 +87,26 @@ struct SingBoxOptions {
     // traffic while the tunnel is being torn down, which a user who did not
     // ask for a kill switch reads as "the VPN broke my internet".
     bool strictRoute = false;
+
+    // ROUND 28: sing-box's own Clash API, bound to loopback.
+    //
+    // The Windows interface counters cannot answer "how much did I download".
+    // With stack "mixed" the TCP half runs on the system stack, so every
+    // payload byte crosses the TUN adapter twice - once leaving the
+    // application, once when sing-box re-injects it for the OS to pick up -
+    // and GetIfEntry2 ends up reporting InOctets == OutOctets == total. That
+    // is exactly the 855 KB / 854 KB the stats panel kept showing: not an
+    // inverted mapping, a source that cannot tell the directions apart.
+    // sing-box can, and its Clash API is the only place it says so. The same
+    // API also measures latency *through* the proxy outbound, which is the
+    // number the "ping - tunnel" cell always claimed to be showing.
+    //
+    // 0 leaves the block out of the configuration entirely. The controller
+    // listens on 127.0.0.1 only and is closed by a per-session secret, so
+    // nothing off the machine can reach it and nothing on the machine can use
+    // it without the secret the service hands to the app over its pipe.
+    int clashPort = 0;
+    std::string clashSecret;
 };
 
 // Renders the configuration file. Never fails: an unusable gateway is

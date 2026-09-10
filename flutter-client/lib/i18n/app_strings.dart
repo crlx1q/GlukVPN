@@ -131,6 +131,16 @@ class AppStrings {
 		required this.fullMotion,
 		required this.full,
 		required this.reduced,
+		required this.sectionVpn,
+		required this.sectionAdvanced,
+		required this.autoConnectOnLaunch,
+		required this.autoConnectOnLaunchBody,
+		required this.vibration,
+		required this.vibrationBody,
+		required this.splitTunneling,
+		required this.splitTunnelingBody,
+		required this.toggleOn,
+		required this.toggleOff,
 		required this.appearance,
 		required this.language,
 		required this.languageAuto,
@@ -395,6 +405,18 @@ class AppStrings {
 	final String fullMotion;
 	final String full;
 	final String reduced;
+
+	// --- settings: VPN and Advanced (ROUND 27) ---
+	final String sectionVpn;
+	final String sectionAdvanced;
+	final String autoConnectOnLaunch;
+	final String autoConnectOnLaunchBody;
+	final String vibration;
+	final String vibrationBody;
+	final String splitTunneling;
+	final String splitTunnelingBody;
+	final String toggleOn;
+	final String toggleOff;
 	final String appearance;
 	final String language;
 	final String languageAuto;
@@ -820,6 +842,18 @@ class AppStrings {
 		fullMotion: 'Full motion',
 		full: 'full',
 		reduced: 'reduced',
+		sectionVpn: 'VPN',
+		sectionAdvanced: 'Advanced',
+		autoConnectOnLaunch: 'Connect on launch',
+		autoConnectOnLaunchBody:
+				'The tunnel comes up on its own as soon as the app opens.',
+		vibration: 'Vibration',
+		vibrationBody: 'A short buzz on the button and when the tunnel comes up.',
+		splitTunneling: 'App tunneling',
+		splitTunnelingBody: 'Every app goes through the tunnel. Choosing them one '
+				'by one is not available on Android yet.',
+		toggleOn: 'on',
+		toggleOff: 'off',
 		appearance: 'Appearance',
 		language: 'Language',
 		languageAuto: 'Automatic',
@@ -1115,6 +1149,18 @@ class AppStrings {
 		fullMotion: 'Полные',
 		full: 'полные',
 		reduced: 'сокращённые',
+		sectionVpn: 'VPN',
+		sectionAdvanced: 'Расширенные',
+		autoConnectOnLaunch: 'Включать при старте',
+		autoConnectOnLaunchBody:
+				'Туннель поднимается сам, как только приложение открылось.',
+		vibration: 'Вибрация',
+		vibrationBody: 'Короткая отдача на кнопку и в момент подключения.',
+		splitTunneling: 'Туннелирование приложений',
+		splitTunnelingBody: 'Через туннель идут все приложения. Выбор по '
+				'одному на Android пока недоступен.',
+		toggleOn: 'вкл',
+		toggleOff: 'выкл',
 		appearance: 'Оформление',
 		language: 'Язык',
 		languageAuto: 'Как в системе',

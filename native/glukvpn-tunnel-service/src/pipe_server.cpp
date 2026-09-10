@@ -52,6 +52,15 @@ void FillStatus(json::Object& root, const TunnelStatus& status) {
     // does not know the key ignores it; one that does can word its status
     // texts for the engine that is actually running.
     root.emplace("engine", json::Value(status.engine));
+    // ROUND 28: also additive. The loopback Clash controller of the running
+    // sing-box session plus the secret that opens it, so the UI can ask the
+    // engine how many bytes went each way and how long a round trip through
+    // the proxy really takes. Zero and empty mean "not available, use the
+    // interface counters" - the WireGuard engine, or a session where no port
+    // could be reserved.
+    root.emplace("clashPort",
+                 json::Value(static_cast<double>(status.clashPort)));
+    root.emplace("clashSecret", json::Value(status.clashSecret));
 
     if (!status.errorCode.empty()) {
         root.emplace("errorCode", json::Value(status.errorCode));

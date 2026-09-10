@@ -87,6 +87,14 @@ struct TunnelStatus {
     bool killSwitchActive = false;
     std::string splitEngine;
 
+    // ROUND 28: the loopback port of sing-box's Clash API for this session and
+    // the secret that opens it. Zero and empty on the WireGuard engine and
+    // whenever no tunnel is up. The app reads the honest per-direction byte
+    // counters and the real in-tunnel latency from there, because the
+    // interface table cannot supply either (see SingBoxOptions::clashPort).
+    int clashPort = 0;
+    std::string clashSecret;
+
     // ROUND 26: "sing-box" or "wireguard", decided in Up(). Reported to the
     // UI so its status texts can stop talking about WireGuard handshakes when
     // the data plane is sing-box. Empty while no tunnel has been requested.

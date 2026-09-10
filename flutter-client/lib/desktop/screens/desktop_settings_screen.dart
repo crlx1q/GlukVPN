@@ -13,6 +13,7 @@ import '../../theme/tokens.dart';
 import '../../utils/format.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/node_limits.dart';
 import '../../widgets/plan_badge.dart';
 import '../i18n/desktop_strings.dart';
 import '../logic/connection_phase.dart';
@@ -440,6 +441,18 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
                 value: AppConfig.tunnelServiceName,
               ),
             ],
+            // ROUND 27: «что именно запрещено на каждом сервере» живёт здесь,
+            // а не только в списке серверов. Свёрнут по умолчанию: в
+            // настройках это справка, а не ежедневный инструмент. Тот же блок
+            // и те же тексты на телефоне и в расширении.
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: NodeLimitsDigest(
+                nodes: widget.vpn.userVisibleNodes,
+                russian: ru,
+                reduceMotion: _value.motionDisabled(),
+              ),
+            ),
             _ActionTile(
               label: ru ? 'Проверить сервер' : 'Test the server',
               subtitle: ru

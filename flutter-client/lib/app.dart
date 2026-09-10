@@ -10,6 +10,7 @@ import 'screens/settings_screen.dart';
 import 'screens/stats_screen.dart';
 import 'services/connectivity_service.dart';
 import 'services/update_checker.dart';
+import 'state/app_settings.dart';
 import 'state/auth_controller.dart';
 import 'state/channel_controller.dart';
 import 'state/vpn_controller.dart';
@@ -32,6 +33,7 @@ class GlukVpnApp extends StatefulWidget {
     required this.connectivity,
     required this.updates,
     required this.locale,
+    required this.settings,
   });
 
   final AuthController auth;
@@ -41,6 +43,7 @@ class GlukVpnApp extends StatefulWidget {
   final ConnectivityService connectivity;
   final UpdateChecker updates;
   final LocaleController locale;
+  final AppSettings settings;
 
   @override
   State<GlukVpnApp> createState() => _GlukVpnAppState();
@@ -75,6 +78,7 @@ class _GlukVpnAppState extends State<GlukVpnApp> {
         ),
         ChangeNotifierProvider<UpdateChecker>.value(value: widget.updates),
         ChangeNotifierProvider<LocaleController>.value(value: widget.locale),
+        ChangeNotifierProvider<AppSettings>.value(value: widget.settings),
       ],
       // Watched here rather than inside MaterialApp so that changing the
       // language rebuilds every route at once, including the ones already on

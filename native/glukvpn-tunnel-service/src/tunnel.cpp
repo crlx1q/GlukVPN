@@ -3,6 +3,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <iphlpapi.h>
+#include <rpc.h>
 
 #include <chrono>
 #include <sstream>
@@ -344,6 +345,69 @@ std::string PrepareConfig(const UpRequest& request) {
     }
 
     return interfaceSection + extras + "\r\n" + rest;
+}
+
+// ROUND 28: a free loopback port for this session's Clash controller.
+//
+// Binding port 0 and reading back what the OS chose is the standard way to
+// reserve one; a hard-coded number would collide with a second copy of the
+// app, with a leftover controller from a session that did not exit cleanly,
+// or with anything else that happened to be listening. The probe socket is
+// closed again right away, so there is a small window in which something else
+// could grab the port - sing-box would then fail to bind it and the app keeps
+// using the interface counters, which is exactly what a port of 0 means.
+//
+// WSAStartup is reference-counted per process, so the matching WSACleanup
+// here only drops the reference this function took.
+int PickLoopbackPort() {
+    WSADATA wsa{};
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return 0;
+
+    int port = 0;
+    const SOCKET probe = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (probe != INVALID_SOCKET) {
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_port = 0;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        if (bind(probe, reinterpret_cast<sockaddr*>(&address),
+                 sizeof(address)) == 0) {
+            sockaddr_in bound{};
+            int length = static_cast<int>(sizeof(bound));
+            if (getsockname(probe, reinterpret_cast<sockaddr*>(&bound),
+                            &length) == 0) {
+                port = ntohs(bound.sin_port);
+            }
+        }
+        closesocket(probe);
+    }
+
+    WSACleanup();
+    return port;
+}
+
+// A bearer token for that controller, fresh for every session.
+//
+// Loopback on its own is not a boundary on a shared machine: any process of
+// any user can connect to 127.0.0.1, and the Clash API can enumerate live
+// connections and switch outbounds. The secret keeps it to the one client the
+// service handed it to over its own ACL'd pipe. UuidCreate is already linked
+// for the WFP filter keys.
+std::string NewApiSecret() {
+    UUID id{};
+    const RPC_STATUS created = UuidCreate(&id);
+    // A machine with no network card returns a locally-unique UUID instead of
+    // a globally-unique one. It is just as unguessable, which is all this is.
+    if (created != RPC_S_OK && created != RPC_S_UUID_LOCAL_ONLY) {
+        return std::string();
+    }
+
+    RPC_CSTR text = nullptr;
+    if (UuidToStringA(&id, &text) != RPC_S_OK || !text) return std::string();
+
+    std::string secret(reinterpret_cast<const char*>(text));
+    RpcStringFreeA(&text);
+    return secret;
 }
 
 } // namespace
@@ -719,8 +783,24 @@ bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
 
     const bool singBox = engine_.load() == Engine::SingBox;
 
+    // ROUND 28: reserved before the configuration is rendered, because the
+    // port and the secret have to be written into it, and published in the
+    // status afterwards so the app can read per-direction byte counters and a
+    // real in-tunnel latency from the controller. Both stay zero and empty on
+    // the WireGuard engine, which has no such API.
+    int clashPort = 0;
+    std::string clashSecret;
+
     std::string prepared;
     if (singBox) {
+        clashPort = PickLoopbackPort();
+        if (clashPort > 0) {
+            clashSecret = NewApiSecret();
+        } else {
+            Log::Warn("No loopback port could be reserved for the sing-box "
+                      "Clash API; the app falls back to interface counters");
+        }
+
         SingBoxOptions options;
         options.adapter = AppData::ToUtf8(adapter_);
         options.mtu = request.mtu;
@@ -730,6 +810,8 @@ bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
         // on this engine - the WFP block-all filters armed below and sing-box's
         // own strict_route. Both follow the same flag from the "up" request.
         options.strictRoute = request.killSwitch;
+        options.clashPort = clashPort;
+        options.clashSecret = clashSecret;
         prepared = BuildSingBoxConfig(request.gateway, options);
         configPath_ = AppData::RunDir() + L"\\singbox.json";
     } else {
@@ -751,6 +833,8 @@ bool Tunnel::Up(const UpRequest& request, std::string& errorCode,
     status_.sessionId = request.sessionId;
     status_.adapter = AppData::ToUtf8(adapter_);
     status_.engine = singBox ? "sing-box" : "wireguard";
+    status_.clashPort = clashPort;
+    status_.clashSecret = clashSecret;
     // In sing-box mode the interface address is ours rather than the node's,
     // so it is a constant; the address the outside world sees is measured
     // separately by the app and shown as the external IP.
@@ -837,6 +921,10 @@ void Tunnel::Down() {
         status_.killSwitchActive = false;
         status_.rxBytes = 0;
         status_.txBytes = 0;
+        // The controller died with the data plane, and a stale port plus a
+        // stale secret would send the app polling something it no longer owns.
+        status_.clashPort = 0;
+        status_.clashSecret.clear();
         status_.lastHandshakeUnix = 0;
         status_.sessionId.clear();
         // ROUND 26: the address belonged to the tunnel that is going away.

@@ -220,6 +220,26 @@ std::string BuildSingBoxConfig(const GatewayConfig& gateway,
     root.emplace("inbounds", json::Value(std::move(inbounds)));
     root.emplace("outbounds", json::Value(std::move(outbounds)));
     root.emplace("route", json::Value(RouteBlock(gateway, options)));
+
+    // The Clash API is the only place sing-box separates upload from download
+    // and the only place it will measure a round trip that actually goes
+    // through the proxy outbound. See SingBoxOptions::clashPort for why the
+    // interface counters cannot do either. Loopback plus a per-session secret;
+    // omitted entirely when the service could not reserve a port, in which
+    // case the app falls back to the adapter counters it used before.
+    if (options.clashPort > 0) {
+        json::Object clash;
+        clash.emplace(
+            "external_controller",
+            json::Value("127.0.0.1:" + std::to_string(options.clashPort)));
+        if (!options.clashSecret.empty()) {
+            clash.emplace("secret", json::Value(options.clashSecret));
+        }
+        json::Object experimental;
+        experimental.emplace("clash_api", json::Value(std::move(clash)));
+        root.emplace("experimental", json::Value(std::move(experimental)));
+    }
+
     return json::Write(json::Value(std::move(root)));
 }
 

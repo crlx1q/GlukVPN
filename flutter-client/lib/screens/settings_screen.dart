@@ -8,6 +8,7 @@ import '../config.dart';
 import '../i18n/app_strings.dart';
 import '../models/models.dart';
 import '../services/api_client.dart';
+import '../state/app_settings.dart';
 import '../state/auth_controller.dart';
 import '../state/channel_controller.dart';
 import '../state/vpn_controller.dart';
@@ -16,6 +17,7 @@ import '../theme/tokens.dart';
 import '../utils/format.dart' hide countryFlag;
 import '../widgets/glass.dart';
 import '../widgets/language_pill.dart';
+import '../widgets/node_limits.dart';
 import '../widgets/plan_badge.dart';
 import 'account_screen.dart';
 import 'devices_screen.dart';
@@ -75,6 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final ChannelController channel = context.watch<ChannelController>();
     final MotionController motion = context.watch<MotionController>();
     final VpnController vpn = context.watch<VpnController>();
+    final AppSettings settings = context.watch<AppSettings>();
     final AuthUser? user = auth.user;
     final SubscriptionInfo? subscription = auth.subscription;
 
@@ -171,6 +174,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             onTap: () => _pickLanguage(locale),
           ),
+
+          // ROUND 27: базовые настройки самого туннеля. Их на телефоне не
+          // было вовсе: экран был про аккаунт, а не про VPN. Порядок и
+          // формулировки — как в разделе VPN на Windows.
+          const SizedBox(height: 20),
+          _SectionLabel(s.sectionVpn),
+          const SizedBox(height: 8),
+          _ActionTile(
+            icon: Icons.rocket_launch_rounded,
+            title: s.autoConnectOnLaunch,
+            subtitle: s.autoConnectOnLaunchBody,
+            trailing: Switch.adaptive(
+              value: settings.autoConnectOnLaunch,
+              onChanged: (bool value) =>
+                  settings.setAutoConnectOnLaunch(value),
+            ),
+            onTap: () =>
+                settings.setAutoConnectOnLaunch(!settings.autoConnectOnLaunch),
+          ),
+          const SizedBox(height: 8),
+          _ActionTile(
+            icon: Icons.vibration_rounded,
+            title: s.vibration,
+            subtitle: s.vibrationBody,
+            trailing: Switch.adaptive(
+              value: settings.haptics,
+              onChanged: (bool value) => settings.setHaptics(value),
+            ),
+            onTap: () => settings.setHaptics(!settings.haptics),
+          ),
+          const SizedBox(height: 8),
+          // Честная строка вместо переключателя, который нечем было бы
+          // обеспечить: туннель на Android держит плагин wireguard_flutter,
+          // и списка разрешённых/запрещённых приложений он наружу не
+          // отдаёт. Переключатель, который ничего не меняет, в VPN-клиенте
+          // опаснее его отсутствия.
+          _ActionTile(
+            icon: Icons.apps_rounded,
+            title: s.splitTunneling,
+            subtitle: s.splitTunnelingBody,
+          ),
+
+          // ROUND 27: «что запрещено на каждом сервере» — тот же блок и те
+          // же тексты, что в Расширенных на Windows и в расширении.
+          // Свёрнут по умолчанию. Раздела нет, пока не загрузился список
+          // серверов: пустая панель ничего не объясняет.
+          if (vpn.nodes.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 20),
+            _SectionLabel(s.sectionAdvanced),
+            const SizedBox(height: 8),
+            GlassPanel(
+              radius: GlukSizes.cellRadius,
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+              child: NodeLimitsDigest(
+                nodes: vpn.nodes,
+                russian: s.isRussian,
+                compact: true,
+                reduceMotion: motion.reduceMotion,
+              ),
+            ),
+          ],
+
           // Admins, beta testers and internal builds, on every client - and
           // only when this build can switch at all. A normal account sees PROD
           // and nothing about channels, because that is all it may use.

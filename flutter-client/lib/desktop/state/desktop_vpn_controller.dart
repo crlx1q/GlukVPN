@@ -14,6 +14,7 @@ import '../logic/connection_phase.dart';
 import '../logic/node_selector.dart';
 import '../logic/startup_plan.dart';
 import '../services/app_paths.dart';
+import '../services/clash_metrics.dart';
 import '../services/desktop_log.dart';
 import '../services/service_bootstrap.dart';
 import 'desktop_settings.dart';
@@ -67,6 +68,11 @@ class DesktopVpnController extends ChangeNotifier {
   final UsageStore _usage;
   final PingService _ping;
   final TunnelVerifier _verifier;
+
+  /// Reads per-direction byte counters and an in-tunnel latency out of the
+  /// running engine. Best-effort: when it says nothing, the adapter counters
+  /// and the ICMP/HTTPS ladder stand exactly as before.
+  final ClashMetricsClient _metrics = ClashMetricsClient();
 
   /// Optional: only present on Windows builds that can talk to the SCM.
   final ServiceBootstrap? _service;
@@ -123,6 +129,11 @@ class DesktopVpnController extends ChangeNotifier {
   bool _disposed = false;
   int _baselineRx = 0;
   bool _dataObserved = false;
+
+  /// True while the byte counters on show come from the engine rather than
+  /// from the Windows interface table. Tracked only so the switch is logged
+  /// once and the "data is moving" baseline can be rebased when it happens.
+  bool _engineTrafficActive = false;
   /// Reconnect ladder. 0 means "not reconnecting"; every failed attempt raises
   /// it and the wait doubles - 1s, 2s, 4s, 8s, 16s, 30s. A backend that is
   /// being redeployed is back within one or two steps, and the user never has
@@ -473,7 +484,11 @@ class DesktopVpnController extends ChangeNotifier {
   /// Reads live state from the service and republishes it without changing
   /// anything. This is what makes reopening the window instant and correct.
   Future<void> adopt() async {
-    final TunnelSnapshot snap = await _tunnel.status();
+    // The engine's own counters are folded in before the baseline is taken,
+    // or an adopted session would measure engine download bytes against an
+    // interface total and never see data move again.
+    final TunnelSnapshot snap =
+        await _withEngineTraffic(await _tunnel.status());
     _snapshot = snap;
     _activeSessionId = snap.sessionId;
     _syncEngineFromService();
@@ -602,6 +617,7 @@ class DesktopVpnController extends ChangeNotifier {
       _snapshot = TunnelSnapshot.unknown;
       _currentPingMs = null;
       _pingSource = PingSource.none;
+      _engineTrafficActive = false;
       _setPhase(ConnectionPhase.connecting, detail: 'preparing');
       _userMessage = null;
       dlog.write(
@@ -980,7 +996,7 @@ class DesktopVpnController extends ChangeNotifier {
     if (_disposed || _busy || _maintenance || _maintenanceStopping) return;
 
     try {
-      _snapshot = await _tunnel.status();
+      _snapshot = await _withEngineTraffic(await _tunnel.status());
     } catch (e) {
       dlog.error('poll', 'status failed', e);
       return;
@@ -1424,14 +1440,33 @@ class DesktopVpnController extends ChangeNotifier {
 
   /// One live latency sample for the header, the tray and the mini panel.
   ///
+  /// Three sources, in descending order of honesty.
+  ///
+  /// 1. The engine's own delay probe. sing-box dials a 204 endpoint on the
+  ///    `proxy` outbound, so the round trip provably went through the tunnel -
+  ///    which is what this cell has always claimed to show.
+  /// 2. ICMP to the connected node's latency host. Reaches the node, but on
+  ///    the sing-box engine it leaves the machine outside the tunnel, because
+  ///    VLESS carries TCP and UDP and not ICMP.
+  /// 3. An HTTPS round trip to the control API, labelled "api" so it is never
+  ///    passed off as tunnel latency.
+  ///
   /// Never _snapshot.vpnIp. On the sing-box engine that is 172.19.0.1, the
   /// address of our own Wintun adapter, so the echo never left the machine and
-  /// the UI reported "1 ms" for every connection. The connected node's own
-  /// latency host is the target that answers with the number the user is
-  /// after; when ICMP to it goes unanswered - VLESS carries TCP and UDP, not
-  /// ICMP - the sample falls back to the control API and is labelled "api"
-  /// instead of being passed off as tunnel latency.
+  /// the UI reported "1 ms" for every connection, healthy or dead.
   Future<void> _measureLivePing() async {
+    final TunnelMetricsEndpoint? endpoint = _metricsEndpoint;
+    if (endpoint != null) {
+      final int? viaEngine = await _metrics.proxyDelay(endpoint);
+      if (_disposed) return;
+      if (viaEngine != null) {
+        _currentPingMs = viaEngine;
+        _pingSource = PingSource.tunnelGateway;
+        _notify();
+        return;
+      }
+    }
+
     final PingSample sample = await _ping.measure(
       host: _selectedNode?.latencyHost,
       apiBaseUrl: AppConfig.activeBaseUrl,
@@ -1528,6 +1563,57 @@ class DesktopVpnController extends ChangeNotifier {
       dlog.write('vpn', 'engine reported by the service: ${reported.wireName}');
       _engine = reported;
     }
+  }
+
+  /// The loopback metrics API of the running engine, when it has one.
+  TunnelMetricsEndpoint? get _metricsEndpoint {
+    final backend = _tunnel;
+    if (backend is! TunnelMetricsReporter) return null;
+    return (backend as TunnelMetricsReporter).reportedMetricsEndpoint;
+  }
+
+  /// [snap] with its byte counters replaced by the engine's own.
+  ///
+  /// The Windows interface table cannot separate upload from download on the
+  /// sing-box engine - `clash_metrics.dart` explains why - so it reported
+  /// rx == tx == total and the panel showed 855 KB in both directions.
+  /// Correcting the snapshot here rather than in the widgets means the
+  /// verifier, the usage store that meters the plan, the tray and the panel
+  /// all read one set of numbers.
+  ///
+  /// Returns [snap] untouched whenever there is nothing better: the WireGuard
+  /// engine, a service from before round 28, a tunnel that is not up, or a
+  /// controller that did not answer.
+  Future<TunnelSnapshot> _withEngineTraffic(TunnelSnapshot snap) async {
+    final TunnelMetricsEndpoint? endpoint = _metricsEndpoint;
+    if (endpoint == null || snap.state != TunnelState.connected) return snap;
+
+    final TunnelTraffic? traffic = await _metrics.traffic(endpoint);
+    if (traffic == null) {
+      if (_engineTrafficActive) {
+        dlog.warn('vpn',
+            'engine byte counters stopped answering; using the adapter again');
+        _engineTrafficActive = false;
+      }
+      return snap;
+    }
+
+    if (!_engineTrafficActive) {
+      _engineTrafficActive = true;
+      dlog.write('vpn', 'byte counters now come from the engine ($traffic)');
+      // The two sources disagree by construction, and the baseline the "data
+      // is moving" check compares against may have been taken from the other
+      // one. An adopted session would otherwise carry a baseline far above
+      // anything the engine reports and never be verified again.
+      if (_baselineRx > traffic.downloadBytes) {
+        _baselineRx = traffic.downloadBytes;
+      }
+    }
+
+    return snap.copyWith(
+      rxBytes: traffic.downloadBytes,
+      txBytes: traffic.uploadBytes,
+    );
   }
 
   /// A copy of [snap] without the tunnel address.
@@ -1805,6 +1891,7 @@ class DesktopVpnController extends ChangeNotifier {
     _pingTimer?.cancel();
     _nodeRetryTimer?.cancel();
     _cancelConnectDeadline();
+    _metrics.close();
     super.dispose();
   }
 }

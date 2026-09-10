@@ -82,8 +82,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (vpn.busy) return;
     // Короткая отдача на само нажатие: палец получает ответ раньше,
     // чем сеть. Вторая, более заметная — в контроллере, когда ключ
-    // реально заработал.
-    HapticFeedback.lightImpact().ignore();
+    // реально заработал. Обе гасятся одним и тем же переключателем в
+    // настройках.
+    if (vpn.haptics) HapticFeedback.lightImpact().ignore();
     if (vpn.isConnected || vpn.state == VpnUiState.connecting) {
       await vpn.disconnect();
       return;
@@ -907,17 +908,24 @@ class _ServerRow extends StatelessWidget {
           children: <Widget>[
             const FlagCircle(flag: '\u{1F310}'),
             const SizedBox(width: 10),
-            // A bar the size of a place name while the list loads: the row
+            // A bar across the rest of the row while the list loads: the row
             // keeps its shape and nothing has to be read and then unread.
-            if (loading)
-              SkeletonText(
-                characters: GlukSkeleton.titleChars,
-                style: text.titleMedium,
-                animate: animate,
-              )
-            else
-              Text(context.strings.noServerAvailable, style: text.titleMedium),
-            const Spacer(),
+            // Expanded rather than a bare child plus Spacer, so the skeleton
+            // is offered the whole block instead of a name-sized stub.
+            Expanded(
+              child: loading
+                  ? SkeletonText(
+                      characters: GlukSkeleton.titleChars,
+                      style: text.titleMedium,
+                      animate: animate,
+                    )
+                  : Text(
+                      context.strings.noServerAvailable,
+                      style: text.titleMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+            ),
             const Icon(Icons.chevron_right_rounded, color: GlukColors.text2),
           ],
         ),

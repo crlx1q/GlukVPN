@@ -21,6 +21,7 @@ const net = require('node:net')
 const http = require('node:http')
 const https = require('node:https')
 const crypto = require('node:crypto')
+const { Transform } = require('node:stream')
 const dns = require('node:dns').promises
 
 const VERSION = '1.0.0'
@@ -92,7 +93,7 @@ function extractUserId(token) {
 
 /* -------------------------------------------------------------------- auth */
 
-const authCache = new Map() // sha256(token) -> { ok, until, reason, deviceId }
+const authCache = new Map() // sha256(token) -> { ok, until, reason, deviceId, speedLimitMbps }
 const maintenanceByApi = new Map() // channel URL -> confirmed service-wide cutoff expiry
 
 function parseBasic(req) {
@@ -126,7 +127,9 @@ async function verifyWith(apiBase, credentials, requireSession = REQUIRE_SESSION
 			}
 			if (body.subscriptionActive === false) return answer({ ok: false, reason: 'subscription-inactive', explicit: true, until: Date.now() + AUTH_TTL_MS })
 			if (requireSession && body.connected !== true) return answer({ ok: false, reason: 'no-active-session', explicit: true, until: Date.now() + 10_000 })
-			return answer({ ok: true, userId: extractUserId(credentials.token), deviceId: credentials.username || body.session?.deviceId || 'browser', until: Date.now() + AUTH_TTL_MS })
+			// Лимит скорости едет вместе с ответом об авторизации: гейту не
+			// нужен ни отдельный запрос, ни своя копия тарифов.
+			return answer({ ok: true, userId: extractUserId(credentials.token), deviceId: credentials.username || body.session?.deviceId || 'browser', speedLimitMbps: planSpeedLimit(body.quota), until: Date.now() + AUTH_TTL_MS })
 		}
 		if (response.status === 401 || response.status === 403) return answer({ ok: false, reason: 'token-rejected', explicit: true, until: Date.now() })
 		if (response.status === 503 && body?.error?.code === 'maintenance') return answer({ ok: false, reason: 'maintenance', maintenanceScope: body.error.details?.nodeId ? 'node' : 'service', explicit: true, until: Date.now() + 5_000 })
@@ -239,6 +242,131 @@ async function flushStatsToControlPlane() {
 
 const statsFlushTimer = setInterval(flushStatsToControlPlane, 10_000)
 statsFlushTimer.unref()
+
+/* ---------------------------------------------------------------- shaping */
+
+/*
+ * Лимит скорости для браузерного трафика.
+ *
+ * На телефоне ограничение держит tc на wg0 (node-agent/src/lib/shaper.ts).
+ * Трафик расширения через wg0 не идёт — он приходит сюда, в CONNECT-
+ * прокси, поэтому в браузере скорость была безлимитной, хотя в плане
+ * лимит есть. tc здесь не поможет: гейт не владеет публичным
+ * интерфейсом и делит его с чужим трафиком, а правило на интерфейсе
+ * режет всех сразу. Значит, режем на уровне потока: токен-бакет на
+ * устройство, общий для всех его соединений (иначе десять вкладок
+ * получили бы десять лимитов), отдельно на приём и на отдачу — как
+ * HTB на скачивание и полисер на отдачу у tc.
+ *
+ * Само число приходит из control plane (`quota.speedLimitMbps` в
+ * /api/vpn/status) — то же, что рисуют все клиенты, так что второго
+ * источника правды не появляется. null означает «не ограничивать».
+ */
+const SHAPING_ENABLED = String(process.env.SHAPING_ENABLED ?? 'true') !== 'false'
+// Короткий всплеск: без него каждый первый кусок ждал бы бюджета,
+// и лимит превратился бы в задержку на каждом запросе.
+const SHAPING_BURST_SECONDS = Math.min(2, Math.max(0.05, Number(process.env.SHAPING_BURST_SECONDS || 0.25)))
+const shapers = new Map() // deviceId -> { mbps, rx, tx }
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** Лимит плана из ответа /api/vpn/status. null = не ограничивать. */
+function planSpeedLimit(quota) {
+	const mbps = Number(quota?.speedLimitMbps)
+	return Number.isFinite(mbps) && mbps > 0 ? mbps : null
+}
+
+class TokenBucket {
+	constructor(bytesPerSecond) {
+		this.rate = bytesPerSecond
+		this.capacity = Math.max(16 * 1024, Math.floor(bytesPerSecond * SHAPING_BURST_SECONDS))
+		this.tokens = this.capacity
+		this.updatedAt = Date.now()
+	}
+
+	setRate(bytesPerSecond) {
+		if (bytesPerSecond === this.rate) return
+		this.rate = bytesPerSecond
+		this.capacity = Math.max(16 * 1024, Math.floor(bytesPerSecond * SHAPING_BURST_SECONDS))
+		if (this.tokens > this.capacity) this.tokens = this.capacity
+	}
+
+	/** Держит вызывающего, пока на `bytes` не набежит бюджет. */
+	async take(bytes) {
+		let left = bytes
+		while (left > 0) {
+			const now = Date.now()
+			const elapsed = (now - this.updatedAt) / 1000
+			if (elapsed > 0) {
+				this.updatedAt = now
+				this.tokens = Math.min(this.capacity, this.tokens + elapsed * this.rate)
+			}
+			if (this.tokens >= 1) {
+				const spend = Math.min(this.tokens, left)
+				this.tokens -= spend
+				left -= spend
+				if (left <= 0) return
+			}
+			// Ждём ровно столько, сколько нужно на остаток, но не дольше
+			// секунды: иначе смена лимита применялась бы с большой задержкой.
+			await sleep(Math.min(1_000, Math.max(5, Math.ceil((left / this.rate) * 1_000))))
+		}
+	}
+}
+
+function shaperFor(auth) {
+	if (!SHAPING_ENABLED) return null
+	const mbps = Number(auth?.speedLimitMbps)
+	if (!Number.isFinite(mbps) || mbps <= 0) return null
+	const key = String(auth.deviceId || auth.userId || 'browser')
+	// 32 КБ/с — нижняя граница: лимит должен тормозить, а не
+	// превращать страницу в намертво зависшую вкладку.
+	const bytesPerSecond = Math.max(32 * 1024, Math.floor((mbps * 1_000_000) / 8))
+	let entry = shapers.get(key)
+	if (!entry) {
+		entry = { mbps, rx: new TokenBucket(bytesPerSecond), tx: new TokenBucket(bytesPerSecond) }
+		shapers.set(key, entry)
+		log('debug', `shaping device ${key} at ${mbps} Mbit/s`)
+	} else if (entry.mbps !== mbps) {
+		// Лимит поменяли в админке — подхватываем, не разрывая туннели.
+		entry.mbps = mbps
+		entry.rx.setRate(bytesPerSecond)
+		entry.tx.setRate(bytesPerSecond)
+		log('info', `shaping updated for device ${key}: ${mbps} Mbit/s`)
+	}
+	return entry
+}
+
+/*
+ * Тот же `source.pipe(destination)`, но каждый кусок сначала оплачивается
+ * из бакета. Пока бюджета нет, кусок лежит в гейте, источник не
+ * читается дальше и TCP-окно сжимается само: отправитель замедляется
+ * вместо того, чтобы гейт копил байты в памяти.
+ */
+function pipeThrottled(source, destination, bucket) {
+	const gate = new Transform({
+		highWaterMark: 64 * 1024,
+		transform(chunk, _encoding, callback) {
+			bucket.take(chunk.length).then(() => callback(null, chunk), (error) => callback(error))
+		},
+	})
+	// Кусок мог ждать бюджета дольше, чем жил сокет: закрытая труба —
+	// обычное завершение туннеля, а не причина ронять процесс.
+	gate.on('error', () => gate.destroy())
+	source.pipe(gate).pipe(destination)
+	return gate
+}
+
+// Устройства приходят и уходят; бакеты не должны копиться навсегда.
+const shaperCleanupTimer = setInterval(() => {
+	const now = Date.now()
+	for (const key of [...shapers.keys()]) {
+		const stat = stats.get(key)
+		if (stat && (stat.active > 0 || now - stat.tokenTouchedAt < TOKEN_RETENTION_MS)) continue
+		shapers.delete(key)
+	}
+}, 60_000)
+shaperCleanupTimer.unref()
 
 /* ------------------------------------------------------------ target rules */
 
@@ -408,6 +536,8 @@ async function handleRequest(req, res) {
 			uStat.tokenTouchedAt = Date.now()
 		}
 	}
+	// Лимит скорости плана: для http:// он такой же, как для CONNECT.
+	const shaper = shaperFor(auth)
 	const headers = { ...req.headers }
 	delete headers['proxy-authorization']
 	delete headers['proxy-connection']
@@ -422,7 +552,8 @@ async function handleRequest(req, res) {
 				if (uStat) uStat.bytesRx += chunk.length
 				totals.bytesRx += chunk.length
 			})
-			upstreamRes.pipe(res)
+			if (shaper) pipeThrottled(upstreamRes, res, shaper.rx)
+			else upstreamRes.pipe(res)
 		},
 	)
 	upstream.setTimeout(IDLE_TIMEOUT_MS, () => upstream.destroy())
@@ -435,7 +566,8 @@ async function handleRequest(req, res) {
 		if (uStat) uStat.bytesTx += chunk.length
 		totals.bytesTx += chunk.length
 	})
-	req.pipe(upstream)
+	if (shaper) pipeThrottled(req, upstream, shaper.tx)
+	else req.pipe(upstream)
 }
 
 /* ----------------------------------------------------------- CONNECT proxy */
@@ -548,8 +680,16 @@ async function handleConnect(req, clientSocket, head) {
 			if (uStat) uStat.bytesRx += chunk.length
 			totals.bytesRx += chunk.length
 		})
-		clientSocket.pipe(upstream)
-		upstream.pipe(clientSocket)
+		// Тот же лимит, что tc держит на телефоне: без него расширение
+		// единственное из трёх клиентов качало без ограничений.
+		const shaper = shaperFor(auth)
+		if (shaper) {
+			pipeThrottled(clientSocket, upstream, shaper.tx)
+			pipeThrottled(upstream, clientSocket, shaper.rx)
+		} else {
+			clientSocket.pipe(upstream)
+			upstream.pipe(clientSocket)
+		}
 	})
 
 	let closed = false

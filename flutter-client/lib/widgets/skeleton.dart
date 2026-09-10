@@ -131,10 +131,16 @@ class _SkeletonBoxState extends State<SkeletonBox>
 
 /// A skeleton sized like one line of text in [style].
 ///
-/// `characters` is a width measured in characters of that style. Take it from
-/// [GlukSkeleton] instead of counting the string that is on its way, so a ping
-/// and an IP wait behind bars of the same length. The height always follows
-/// [style], so the row keeps its shape when the value lands.
+/// By default the bar takes the whole width its parent offers, so a
+/// placeholder fills the block it sits in: the stats grid reads as four cells
+/// waiting together instead of four ragged stubs of different lengths, which
+/// is what a short bar floating in a wide cell looked like. Only when the
+/// parent offers no bound - a [Row] child without [Expanded], the main axis of
+/// a scroll view - does the bar fall back to [characters], a width measured in
+/// characters of [style]; take that fallback from [GlukSkeleton] rather than
+/// counting the string that is on its way. Pass `fill: false` for the rare bar
+/// that has to stay glyph-sized. The height always follows [style], so the row
+/// keeps its shape when the value lands.
 class SkeletonText extends StatelessWidget {
   const SkeletonText({
     super.key,
@@ -142,12 +148,16 @@ class SkeletonText extends StatelessWidget {
     this.style,
     this.animate = true,
     this.alignment = Alignment.centerLeft,
+    this.fill = true,
   });
 
   final int characters;
   final TextStyle? style;
   final bool animate;
   final AlignmentGeometry alignment;
+
+  /// Stretch to the width the parent offers whenever that width is bounded.
+  final bool fill;
 
   @override
   Widget build(BuildContext context) {
@@ -156,19 +166,26 @@ class SkeletonText extends StatelessWidget {
     final double height = (resolved.height ?? 1.2) * fontSize;
     // ~0.56 em per character is the average advance of a proportional font;
     // the bar deliberately lands a little under the real width.
-    final double width = (characters * fontSize * 0.56).clamp(16.0, 320.0);
-    return Align(
-      alignment: alignment,
-      child: SizedBox(
-        height: height,
-        child: Center(
-          child: SkeletonBox(
-            width: width,
-            height: (fontSize * 0.72).clamp(8.0, 40.0),
-            animate: animate,
+    final double fallback = (characters * fontSize * 0.56).clamp(16.0, 320.0);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool bounded =
+            constraints.hasBoundedWidth && constraints.maxWidth > 0;
+        final double width = fill && bounded ? constraints.maxWidth : fallback;
+        return Align(
+          alignment: alignment,
+          child: SizedBox(
+            height: height,
+            child: Center(
+              child: SkeletonBox(
+                width: width,
+                height: (fontSize * 0.72).clamp(8.0, 40.0),
+                animate: animate,
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

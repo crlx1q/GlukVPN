@@ -334,6 +334,21 @@
 						<span class="hint" data-i18n="settings.bypassHint">Эти адреса всегда идут мимо VPN. По одному в строке.</span>
 					</div>
 
+					<!-- Ограничения серверов — тот же свод, что в «Расширенных» на
+					     телефоне и на ПК. По умолчанию сложен: пока человек сам не
+					     спросил, ему не нужно читать про закрытый torrent и порт 25.
+					     Содержимое рисует renderNodeLimits() в popup.js. -->
+					<button class="disclosure sub" id="btn-node-limits" type="button" aria-expanded="false">
+						<span class="dc-ic" data-icon="shield"></span>
+						<span class="dc-text" data-i18n="settings.nodeLimits">Ограничения серверов</span>
+						<span class="chev" data-icon="chevron"></span>
+					</button>
+
+					<div class="disclosure-body hidden" id="node-limits-body" hidden>
+						<div class="node-limits" id="node-limits-list"></div>
+						<span class="hint" data-i18n="settings.nodeLimitsHint">Что запрещено на каждом сервере. Тот же список, что на телефоне и ПК.</span>
+					</div>
+
 					<!-- everything below is genuinely internal, so it hides one level deeper -->
 					<button class="disclosure sub" id="btn-devmode" type="button" aria-expanded="false">
 						<span class="dc-ic" data-icon="code"></span>

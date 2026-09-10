@@ -83,6 +83,13 @@ class SecureStore {
   /// must survive a sign-out. That is also why it is not in [_allKeys].
   static const String _kLanguage = 'language';
 
+  /// ROUND 27: the phone's own preferences - connect on launch, vibration.
+  /// Same reasoning as the language: they belong to the person holding the
+  /// phone, not to a control plane, so they are not channel-scoped and not in
+  /// [_allKeys]. Signing out must not silently re-enable auto-connect.
+  static const String _kAutoConnectOnLaunch = 'auto_connect_on_launch';
+  static const String _kHaptics = 'haptics';
+
   /// All base keys, used by the per-channel [wipe].
   static const List<String> _allKeys = <String>[
     _kRefreshToken,
@@ -130,6 +137,28 @@ class SecureStore {
 
   Future<void> writeLanguage(String id) =>
       _storage.write(key: _kLanguage, value: id);
+
+  // --- app preferences -----------------------------------------------------
+
+  /// `null` means "never chosen", so the caller keeps its own default rather
+  /// than reading an unset key as `false`.
+  Future<bool?> _readFlag(String key) async {
+    final String? value = await _storage.read(key: key);
+    if (value == null || value.isEmpty) return null;
+    return value == '1';
+  }
+
+  Future<void> _writeFlag(String key, bool value) =>
+      _storage.write(key: key, value: value ? '1' : '0');
+
+  Future<bool?> readAutoConnectOnLaunch() => _readFlag(_kAutoConnectOnLaunch);
+
+  Future<void> writeAutoConnectOnLaunch(bool value) =>
+      _writeFlag(_kAutoConnectOnLaunch, value);
+
+  Future<bool?> readHaptics() => _readFlag(_kHaptics);
+
+  Future<void> writeHaptics(bool value) => _writeFlag(_kHaptics, value);
 
   // --- session -------------------------------------------------------------
 

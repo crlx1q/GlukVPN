@@ -1,5 +1,6 @@
 import '../../platform/tunnel_backend.dart';
 import '../logic/connection_phase.dart';
+import 'clash_metrics.dart';
 import 'tunnel_ipc.dart';
 
 /// What the service told us about itself during the handshake.
@@ -37,7 +38,8 @@ class TunnelServiceInfo {
 /// Talks to GlukVpnTunnelService.exe over a named pipe. All privileged work
 /// (adapter creation, routing, WFP filters) happens in that service, so the
 /// Flutter process never needs to be elevated after install.
-class WindowsTunnelClient implements TunnelBackend, TunnelEngineReporter {
+class WindowsTunnelClient
+    implements TunnelBackend, TunnelEngineReporter, TunnelMetricsReporter {
   WindowsTunnelClient({
     TunnelPipe? pipe,
     String pipeName = 'GlukVPN.tunnel',
@@ -48,6 +50,8 @@ class WindowsTunnelClient implements TunnelBackend, TunnelEngineReporter {
   TunnelServiceInfo? _info;
   String? _lastError;
   String? _engine;
+  int _clashPort = 0;
+  String _clashSecret = '';
 
   TunnelServiceInfo? get info => _info;
   String? get lastError => _lastError;
@@ -60,10 +64,32 @@ class WindowsTunnelClient implements TunnelBackend, TunnelEngineReporter {
   @override
   String? get reportedEngine => _engine;
 
+  /// ROUND 28: the loopback Clash controller of the live sing-box session.
+  ///
+  /// Null on the WireGuard engine, on a service older than round 28, and once
+  /// the tunnel is down - the service zeroes the port in its `down` handling,
+  /// so a caller can never be left polling a controller that has gone away.
+  @override
+  TunnelMetricsEndpoint? get reportedMetricsEndpoint {
+    if (_clashPort <= 0) return null;
+    return TunnelMetricsEndpoint(port: _clashPort, secret: _clashSecret);
+  }
+
   /// Remembers the engine named in [payload], if any.
   void _noteEngine(Map<String, dynamic>? payload) {
     final Object? raw = payload?['engine'];
     if (raw is String && raw.isNotEmpty) _engine = raw;
+
+    // The metrics endpoint travels in the same replies. Unlike the engine name
+    // it is *not* sticky: a reply that omits it, or reports 0, means there is
+    // no controller to talk to right now, and remembering the last one would
+    // send the caller at a dead port for the rest of the process.
+    final Object? port = payload?['clashPort'];
+    final Object? secret = payload?['clashSecret'];
+    if (payload != null && payload.containsKey('clashPort')) {
+      _clashPort = port is num ? port.toInt() : 0;
+      _clashSecret = secret is String ? secret : '';
+    }
   }
 
   @override

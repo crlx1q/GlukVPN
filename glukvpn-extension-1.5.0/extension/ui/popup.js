@@ -127,6 +127,7 @@ let tickTimer = null
 let pollTimer = null
 let advancedOpen = false
 let devModeOpen = false
+let nodeLimitsOpen = false
 let savePending = false
 let saveTimer = null
 let saveStateTimer = null
@@ -977,6 +978,10 @@ function renderServers() {
 		list.appendChild(row)
 		if (restrictions.length) list.appendChild(nodeRestrictionsDrop(restrictions, id))
 	})
+	// Свод в настройках живёт на тех же данных, что этот список, и
+	// обновляется вместе с ним — иначе после первого ответа сервера
+	// он остался бы пустым до следующего открытия попапа.
+	renderNodeLimits()
 }
 
 /** True while the user is mid-edit, so a poll must not rewrite the box. */
@@ -1036,6 +1041,7 @@ function renderSettings() {
 		devBody.classList.toggle('hidden', !showDev)
 		devBody.hidden = !showDev
 	}
+	renderNodeLimits()
 	renderChannelCard()
 	if (channelVisible && view === 'settings') ensureChannelVersions()
 	setValue('s-api-base', settings.apiBase?.[settings.channel ?? 'prod'] ?? '')
@@ -2360,6 +2366,11 @@ function wire() {
 		devModeOpen = !devModeOpen
 		setDisclosure('btn-devmode', 'dev-body', devModeOpen)
 	})
+	$('btn-node-limits')?.addEventListener('click', () => {
+		nodeLimitsOpen = !nodeLimitsOpen
+		setDisclosure('btn-node-limits', 'node-limits-body', nodeLimitsOpen)
+		if (nodeLimitsOpen) renderNodeLimits()
+	})
 
 	$('btn-test-gw')?.addEventListener('click', testGateway)
 	$('btn-reset')?.addEventListener('click', resetSettings)
@@ -2445,6 +2456,7 @@ async function boot() {
 	setView('vpn')
 	setDisclosure('btn-advanced', 'advanced-body', false)
 	setDisclosure('btn-devmode', 'dev-body', false)
+	setDisclosure('btn-node-limits', 'node-limits-body', false)
 	syncGlide()
 	// Show the cached list immediately so the servers tab is never empty while
 	// the worker wakes up.
@@ -3019,6 +3031,74 @@ function nodeRestrictionsDrop(restrictions, nodeId) {
 	})
 	wrap.append(toggle, body)
 	return wrap
+}
+
+
+/**
+ * «Ограничения серверов» в расширенных настройках: один свод по
+ * всем узлам вместо плашки под каждой строкой. Текст и порядок —
+ * те же, что на телефоне и на ПК: на один вопрос «что здесь
+ * запрещено» человек не должен получать три разных ответа.
+ *
+ * Сам раздел уже сложен (disclosure в popup.html), поэтому группы
+ * внутри сразу раскрыты: иначе до текста пришлось бы добираться
+ * двумя кликами.
+ */
+function renderNodeLimits() {
+	const host = $('node-limits-list')
+	if (!host) return
+	host.textContent = ''
+	const lang = resolveLanguage(settings.language, state?.runtime?.geo?.countryCode)
+	const all = Array.isArray(nodes) ? nodes : []
+	// Пока список узлов не пришёл, раздела нет вовсе: «ничего не
+	// ограничено» без данных — не ответ, а обещание, которое может
+	// оказаться ложью.
+	const button = $('btn-node-limits')
+	if (button) {
+		button.classList.toggle('hidden', all.length === 0)
+		button.hidden = all.length === 0
+	}
+	if (all.length === 0) {
+		nodeLimitsOpen = false
+		setDisclosure('btn-node-limits', 'node-limits-body', false)
+		return
+	}
+	const restricted = all.filter((node) => Array.isArray(node?.restrictions) && node.restrictions.length > 0)
+	const summary = document.createElement('p')
+	summary.className = 'node-limits-summary'
+	summary.textContent = restricted.length
+		? t('settings.nodeLimitsSummary', { n: restricted.length, m: all.length })
+		: t('settings.nodeLimitsNone')
+	host.appendChild(summary)
+	restricted.forEach((node, index) => {
+		const id = String(node?.id ?? node?.nodeId ?? index)
+		const group = document.createElement('div')
+		group.className = 'node-limits-group'
+		const head = document.createElement('div')
+		head.className = 'node-limits-node'
+		// Заголовок группы — та же подпись, что в списке серверов:
+		// город и страна, а не внутреннее имя узла.
+		head.textContent = formatNodeLocation(node, lang) || String(node?.city ?? node?.name ?? id)
+		group.appendChild(head)
+		for (const restriction of node.restrictions) {
+			const item = document.createElement('div')
+			item.className = 'srv-limit'
+			const chip = document.createElement('span')
+			chip.className = 'restriction'
+			// Текст запретов приходит с сервера, поэтому только textContent.
+			chip.textContent = restrictionLabel(restriction)
+			const ruleTexts = Array.isArray(restriction?.rules) ? restriction.rules.filter(Boolean) : []
+			const rules = document.createElement('span')
+			rules.className = 'srv-limit-rules'
+			rules.textContent = ruleTexts.length ? ruleTexts.join(' · ') : String(restriction?.value ?? '')
+			const note = document.createElement('p')
+			note.className = 'srv-limit-note'
+			note.textContent = restrictionDetail(restriction)
+			item.append(chip, rules, note)
+			group.appendChild(item)
+		}
+		host.appendChild(group)
+	})
 }
 
 // Ready-made Material Icons (same glyphs as Flutter Icons.*), locally bundled PNG.

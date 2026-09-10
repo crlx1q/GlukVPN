@@ -326,6 +326,10 @@ const en = {
 	'restriction.smtp25.detail': 'Mail sent straight to port 25 is refused — that is what keeps the exit address out of spam blocklists. Submission over 465 and 587 still works.',
 	'restriction.p2p_ports.detail': 'The classic BitTorrent tracker and DHT ports are refused as well, because an encrypted swarm slips past protocol sniffing.',
 	'node.limits': 'Blocked here · {n}',
+	'settings.nodeLimits': 'Server restrictions',
+	'settings.nodeLimitsHint': 'What each server blocks. The same list the phone and desktop apps show.',
+	'settings.nodeLimitsSummary': '{n} of {m} servers restrict something',
+	'settings.nodeLimitsNone': 'Nothing is restricted on any server',
 	'common.cancel': 'Cancel',
 }
 
@@ -564,6 +568,10 @@ const ru = {
 	'restriction.smtp25.detail': 'Почта напрямую в порт 25 не уйдёт — именно это держит адрес узла вне спам-листов. Отправка через 465 и 587 работает как обычно.',
 	'restriction.p2p_ports.detail': 'Классические порты трекеров и DHT тоже закрыты: шифрованный рой проскакивает проверку по протоколу.',
 	'node.limits': 'Запрещено здесь · {n}',
+	'settings.nodeLimits': 'Ограничения серверов',
+	'settings.nodeLimitsHint': 'Что запрещено на каждом сервере. Тот же список, что на телефоне и ПК.',
+	'settings.nodeLimitsSummary': 'Ограничения есть на {n} из {m}',
+	'settings.nodeLimitsNone': 'Ни на одном сервере ничего не ограничено',
 	'common.cancel': 'Отмена',
 }
 

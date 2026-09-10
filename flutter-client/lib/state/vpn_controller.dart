@@ -179,6 +179,21 @@ class VpnController extends ChangeNotifier {
     if (_notificationShown) _showTunnelNotification(force: true);
   }
 
+  // ROUND 27: две настройки телефона, которые контроллер обязан знать.
+  //
+  // Пушатся из AppSettings тем же приёмом, что и язык: контроллер создаётся
+  // в main() и живёт дольше любого экрана, так что читать provider отсюда
+  // он не может и не должен.
+
+  /// Короткая вибрация на момент, когда туннель реально заработал.
+  bool haptics = true;
+
+  /// Поднять туннель сразу после запуска приложения.
+  bool autoConnectOnLaunch = false;
+
+  /// Автоподключение — ровно один раз за запуск процесса, как на Windows.
+  bool _autoConnectAttempted = false;
+
   bool get isConnected => _state == VpnUiState.connected;
   bool get isTransitioning =>
       _state == VpnUiState.connecting || _state == VpnUiState.disconnecting;
@@ -235,6 +250,21 @@ class VpnController extends ChangeNotifier {
     // served here - before the first frame can claim the tunnel is still up.
     await syncShadeStop();
     if (_state == VpnUiState.disconnected) _probeHomeIp().ignore();
+
+    // ROUND 27: «включать VPN при старте приложения», как на Windows.
+    //
+    // Стоит последним осознанно: список узлов уже загружен, статус сверен
+    // с сервером, а Disconnect из шторки уже обработан — иначе можно было
+    // бы поднять туннель, который человек только что выключил. Один раз за
+    // запуск процесса: init() вызывается заново после повторного входа и
+    // смены канала, а туннель, встающий на каждый чих, — это потеря
+    // контроля, а не удобство.
+    if (autoConnectOnLaunch && !_autoConnectAttempted) {
+      _autoConnectAttempted = true;
+      if (_state == VpnUiState.disconnected && _selectedNode != null) {
+        await connect(automatic: true);
+      }
+    }
   }
 
   @override
@@ -1004,7 +1034,7 @@ class VpnController extends ChangeNotifier {
         _watchdog = null;
         // Ключ заработал — вторая, более заметная отдача. Только на
         // переходе, чтобы повторные события платформы не тараторили в руке.
-        if (_state != VpnUiState.connected) {
+        if (_state != VpnUiState.connected && haptics) {
           HapticFeedback.mediumImpact().ignore();
         }
         _state = VpnUiState.connected;
