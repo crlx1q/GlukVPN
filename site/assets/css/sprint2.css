@@ -54,5 +54,42 @@
 .s2-analytics .s2-wave__legend i.is-up{background:#5ee7a3}
 @media(max-width:720px){.s2-analytics .s2-graph{grid-template-columns:1fr}.s2-analytics .s2-graph .s2-total{grid-template-columns:1fr 1fr}.s2-analytics .s2-wave svg{height:170px}}
 
+/* ==========================================================================
+   Аналитика: подзаголовок, тренды, спарклайны, тултипы
+   ========================================================================== */
+.s2-subhead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:-2px 0 13px}
+.s2-subhead p{margin:0;color:var(--text-2);font-size:12.5px}
+.s2-range{padding:5px 11px;border:1px solid var(--stroke-soft);border-radius:999px;background:rgba(255,255,255,.04);color:var(--text-1);font-size:11.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.s2-note{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;align-items:start;padding:11px 13px;margin-bottom:15px;border:1px solid rgba(234,194,107,.34);border-radius:13px;background:linear-gradient(180deg,rgba(234,194,107,.12),rgba(234,194,107,.03))}
+.s2-note>span{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:rgba(234,194,107,.22);color:#f0d69b;font-size:12px;font-weight:800}
+.s2-note p{margin:0;color:#f0dcb4;font-size:12px;line-height:1.5}
+.s2-metric{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-weight:400}
+.s2-trend{font-style:normal;font-size:11.5px;font-weight:700;padding:2px 7px;border-radius:999px;white-space:nowrap}
+.s2-trend.is-up{color:#9ceec4;background:rgba(94,231,163,.14)}
+.s2-trend.is-down{color:#ffc9c9;background:rgba(229,100,88,.14)}
+.s2-trend.is-flat{color:var(--text-2);background:rgba(255,255,255,.06)}
+.s2-spark{display:block;width:100%;height:30px;margin-top:3px}
+.s2-spark path{fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.s2-spark.is-dn path{stroke:#8b7cf6}
+.s2-spark.is-up path{stroke:#5ee7a3}
+.s2-spark.is-all path{stroke:rgba(255,255,255,.42)}
+/* Оверлей ровно по коробке svg, иначе точки уедут от линий. */
+.s2-analytics .s2-wave__stage{position:relative}
+.s2-band{position:absolute;top:0;bottom:0;outline-offset:-2px}
+.s2-band__x{position:absolute;top:7%;bottom:13%;width:1px;margin-left:-.5px;background:rgba(255,255,255,.24);opacity:0;transition:opacity .12s ease}
+.s2-dot{position:absolute;width:9px;height:9px;margin:-4.5px 0 0 -4.5px;border-radius:50%;border:2px solid rgba(16,12,30,.92);opacity:0;transition:opacity .12s ease}
+.s2-dot.is-dn{background:#8b7cf6}
+.s2-dot.is-up{background:#5ee7a3}
+.s2-tip{position:absolute;top:8px;transform:translateX(-50%);display:grid;gap:2px;padding:7px 10px;border-radius:11px;border:1px solid rgba(196,181,253,.24);background:rgba(23,18,42,.96);box-shadow:0 14px 34px rgba(0,0,0,.55);white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .12s ease;z-index:2}
+.s2-tip.is-start{left:0!important;transform:none}
+.s2-tip.is-end{left:auto!important;right:0;transform:none}
+.s2-tip span{font-size:11px;color:var(--text-2)}
+.s2-tip em{font-style:normal;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+.s2-tip em.is-dn{color:#c9bffb}
+.s2-tip em.is-up{color:#9ceec4}
+.s2-band:hover .s2-band__x,.s2-band:hover .s2-dot,.s2-band:hover .s2-tip,.s2-band:focus-visible .s2-band__x,.s2-band:focus-visible .s2-dot,.s2-band:focus-visible .s2-tip{opacity:1}
+.s2-peak{display:inline-block;margin-top:9px;padding:4px 10px;border-radius:999px;background:rgba(139,124,246,.14);color:#d7cffd;font-size:12px;font-variant-numeric:tabular-nums}
+@media(prefers-reduced-motion:reduce){.s2-band__x,.s2-dot,.s2-tip{transition:none}}
+
 /* Склеенные двойники устройств: метка «×2» тише основного тега. */
 .dev .dev__tag--dup{border-color:rgba(148,163,184,.32);background:rgba(148,163,184,.16);color:#d7dbe4}
