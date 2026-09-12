@@ -3127,6 +3127,36 @@ function statsTick(iso) {
 		: `${pad(date.getUTCDate())}.${pad(date.getUTCMonth() + 1)}`
 }
 
+/* Тренд период-к-периоду. Проценты считает сервер (trend.*Percent) по
+   прошлому окну той же длины — клиент только ставит знак и подписывает,
+   с чем сравнили. trend.comparable === false значит, что история короче
+   прошлого окна: бейджа тогда нет вообще, иначе «−100 %» из отсутствия
+   замеров читалось бы как обвал трафика. */
+function statsSignedPercent(value) {
+	if (value === null || value === undefined) return null
+	const n = Number(value)
+	if (!Number.isFinite(n)) return null
+	const rounded = Math.round(n)
+	return `${rounded > 0 ? '+' : rounded < 0 ? '−' : '±'}${Math.abs(rounded)}%`
+}
+
+function statsPreviousHint(ru) {
+	if (statsPeriod === 'week') return ru ? 'к прошлой неделе' : 'vs previous week'
+	if (statsPeriod === 'month') return ru ? 'к прошлому месяцу' : 'vs previous month'
+	return ru ? 'к прошлым суткам' : 'vs previous day'
+}
+
+function statsTrendBadge(percent, ru) {
+	const label = statsSignedPercent(percent)
+	if (!label) return null
+	const rounded = Math.round(Number(percent))
+	const tone = rounded > 0 ? ' is-rise' : rounded < 0 ? ' is-fall' : ' is-flat'
+	const badge = statsNode('span', `stats-trend${tone}`)
+	badge.appendChild(statsNode('b', '', label))
+	badge.appendChild(statsNode('span', '', statsPreviousHint(ru)))
+	return badge
+}
+
 async function loadStats(force = false) {
 	const body = $('stats-body')
 	if (!body) return
@@ -3225,19 +3255,30 @@ function renderStats() {
 			: `Measurements start at ${statsUtc(data.coverage.since)}. Earlier days have no data — that is missing history, not zero traffic.`))
 	}
 
+	const trend = data.trend || {}
+	const comparable = trend.comparable === true
 	const cards = statsNode('div', 'stats-cards')
 	for (const card of [
-		{ tone: 'is-down', label: ru ? 'Загружено' : 'Downloaded', value: statsBytes(totals.downloadBytes) },
-		{ tone: 'is-up', label: ru ? 'Отправлено' : 'Uploaded', value: statsBytes(totals.uploadBytes) },
+		{ tone: 'is-down', label: ru ? 'Загружено' : 'Downloaded', value: statsBytes(totals.downloadBytes), trend: comparable ? trend.downloadPercent : null },
+		{ tone: 'is-up', label: ru ? 'Отправлено' : 'Uploaded', value: statsBytes(totals.uploadBytes), trend: comparable ? trend.uploadPercent : null },
 	]) {
 		const cell = statsNode('div', `stats-card ${card.tone}`)
 		cell.appendChild(statsNode('span', 'stats-card-k', card.label))
 		cell.appendChild(statsNode('b', 'stats-card-v', card.value))
+		const badge = statsTrendBadge(card.trend, ru)
+		if (badge) cell.appendChild(badge)
 		cards.appendChild(cell)
 	}
 	frag.appendChild(cards)
 
-	const peak = series.reduce((max, point) => Math.max(max, Number(point.downloadBytes) || 0, Number(point.uploadBytes) || 0), 0)
+	// Пик ищем вместе с индексом: подпись должна отвечать не только
+	// «сколько», но и «когда» — цифра без часа или дня ни о чём.
+	let peak = 0
+	let peakIndex = -1
+	series.forEach((point, index) => {
+		const value = Math.max(Number(point.downloadBytes) || 0, Number(point.uploadBytes) || 0)
+		if (value > peak) { peak = value; peakIndex = index }
+	})
 	if (peak > 0) {
 		// ФОТО 5: две плавные волны вместо частокола столбиков — один и тот же
 		// вид на сайте, пк, телефоне и здесь. Цифры серверные, подписи UTC.
@@ -3290,16 +3331,45 @@ function renderStats() {
 		svg.appendChild(mkSvg('path', { class: 'stats-area is-up', d: waveArea('uploadBytes') }))
 		svg.appendChild(mkSvg('path', { class: 'stats-line is-down', d: wavePath('downloadBytes') }))
 		svg.appendChild(mkSvg('path', { class: 'stats-line is-up', d: wavePath('uploadBytes') }))
+		// Точки и тултип — HTML поверх svg, а не внутри него: график растянут
+		// preserveAspectRatio="none", и всё нарисованное в svg тянулось бы
+		// вместе с сеткой — кружки стали бы овалами, текст поехал бы. Полосы
+		// получают tabindex и aria-label, поэтому цифры доступны с клавиатуры.
+		const stage = statsNode('div', 'stats-chart__stage')
+		stage.appendChild(svg)
 		series.forEach((point, index) => {
 			const width = points < 2 ? innerW : innerW / (points - 1)
-			const x = Math.max(padX, bucketX(index) - width / 2)
-			const hit = mkSvg('rect', { class: 'stats-hit', x: x.toFixed(1), y: padY, width: Math.min(width, chartW - padX - x).toFixed(1), height: innerH })
-			const title = document.createElementNS(svgNS, 'title')
-			title.textContent = `${statsUtc(point.start)}\n↓ ${statsBytes(point.downloadBytes)}\n↑ ${statsBytes(point.uploadBytes)}`
-			hit.appendChild(title)
-			svg.appendChild(hit)
+			const left = Math.max(0, bucketX(index) - width / 2)
+			const band = statsNode('div', 'stats-band')
+			band.style.left = `${((left / chartW) * 100).toFixed(3)}%`
+			band.style.width = `${((Math.min(width, chartW - left) / chartW) * 100).toFixed(3)}%`
+			band.tabIndex = 0
+			band.setAttribute('aria-label', `${statsUtc(point.start)} · ${ru ? 'получено' : 'downloaded'} ${statsBytes(point.downloadBytes)} · ${ru ? 'отправлено' : 'uploaded'} ${statsBytes(point.uploadBytes)}`)
+			band.appendChild(statsNode('i', 'stats-rule'))
+			for (const dot of [
+				{ tone: 'is-down', value: point.downloadBytes },
+				{ tone: 'is-up', value: point.uploadBytes },
+			]) {
+				const mark = statsNode('i', `stats-dot ${dot.tone}`)
+				mark.style.top = `${((bucketY(dot.value) / chartH) * 100).toFixed(3)}%`
+				band.appendChild(mark)
+			}
+			// Попап узкий: у крайних точек тултип прижимается к краю графика,
+			// иначе он уезжает за границу окна и обрезается.
+			const tip = statsNode('div', `stats-tip${index === 0 ? ' is-start' : ''}${index === points - 1 ? ' is-end' : ''}`)
+			tip.appendChild(statsNode('span', 'stats-tip__t', statsUtc(point.start)))
+			for (const row of [
+				{ tone: 'is-down', label: ru ? 'Получено' : 'Downloaded', value: point.downloadBytes },
+				{ tone: 'is-up', label: ru ? 'Отправлено' : 'Uploaded', value: point.uploadBytes },
+			]) {
+				const line = statsNode('span', `stats-tip__r ${row.tone}`)
+				line.append(statsNode('i', ''), statsNode('span', '', row.label), statsNode('b', '', statsBytes(row.value)))
+				tip.appendChild(line)
+			}
+			band.appendChild(tip)
+			stage.appendChild(band)
 		})
-		chart.appendChild(svg)
+		chart.appendChild(stage)
 		frag.appendChild(chart)
 		const legend = statsNode('div', 'stats-legend')
 		for (const item of [
@@ -3319,7 +3389,9 @@ function renderStats() {
 			statsNode('span', '', statsTick(series[series.length - 1]?.start)),
 		)
 		frag.appendChild(axis)
-		frag.appendChild(statsNode('div', 'stats-note', `${ru ? 'Пик' : 'Peak'}: ${statsBytes(peak)} · ${statsPeriod === 'day' ? (ru ? 'по часам' : 'by hour') : (ru ? 'по дням' : 'by day')}`))
+		const bucketHint = statsPeriod === 'day' ? (ru ? 'по часам' : 'by hour') : (ru ? 'по дням' : 'by day')
+		const peakAt = peakIndex >= 0 ? statsTick(series[peakIndex]?.start) : null
+		frag.appendChild(statsNode('div', 'stats-note', `${ru ? 'Пик' : 'Peak'}: ${statsBytes(peak)}${peakAt ? ` — ${peakAt}` : ''} · ${bucketHint}`))
 	} else {
 		frag.appendChild(statsNode('div', 'stats-empty', ru ? 'За этот период трафик не записан' : 'No traffic recorded for this period'))
 	}
