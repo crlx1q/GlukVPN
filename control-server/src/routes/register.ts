@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify"
+import type { FastifyInstance, FastifyRequest } from "fastify"
 import { z } from "zod"
 import { config } from "../config"
 import { requireRegistrationEnabled, serviceStatus } from "../services/serviceControl"
@@ -37,6 +37,39 @@ import {
  * recovery flow leaks by default, and it is worth spending a little UX
  * awkwardness to avoid.
  */
+
+/**
+ * Which client a sign-up came from (#091).
+ *
+ * The apps send `X-Client-Platform`; a browser sends nothing, so the
+ * User-Agent is the only hint left - and it stays a hint, which is why the
+ * value is only ever shown in an administration notification and never used
+ * to decide anything.
+ */
+function clientPlatform(request: FastifyRequest): string | null {
+	const header = request.headers["x-client-platform"]
+	const declared = (typeof header === "string" ? header : "").trim().toLowerCase()
+	if (declared) return declared.slice(0, 24)
+	const agent = String(request.headers["user-agent"] ?? "").toLowerCase()
+	if (!agent) return null
+	if (agent.includes("android")) return "android"
+	if (agent.includes("iphone") || agent.includes("ipad")) return "ios"
+	if (agent.includes("windows")) return "windows"
+	if (agent.includes("mac os") || agent.includes("macintosh")) return "macos"
+	if (agent.includes("linux")) return "linux"
+	return null
+}
+
+/** Entry point for #091: the site, one of the apps, or the extension. */
+function clientSource(request: FastifyRequest): string {
+	const header = request.headers["x-client-source"]
+	const declared = (typeof header === "string" ? header : "").trim().toLowerCase()
+	if (declared) return declared.slice(0, 24)
+	// Dart's HTTP client names itself; every browser claims to be Mozilla.
+	const agent = String(request.headers["user-agent"] ?? "").toLowerCase()
+	if (agent.startsWith("dart") || agent.includes("flutter")) return "app"
+	return "site"
+}
 
 const StartBody = z.object({
 	email: z.string().trim().min(5).max(190).email(),
@@ -161,7 +194,15 @@ export async function registrationRoutes(app: FastifyInstance): Promise<void> {
 				throw serviceUnavailable("Sign-up is temporarily unavailable")
 			}
 
-			const started = await startRegistration({ email, password, ip })
+			// Platform and entry point are recorded now because the sign-up ends
+			// in Telegram, where nothing knows which client began it (#091).
+			const started = await startRegistration({
+				email,
+				password,
+				ip,
+				platform: clientPlatform(request),
+				source: clientSource(request),
+			})
 			await writeAudit({
 				action: "auth.register.started",
 				ip,

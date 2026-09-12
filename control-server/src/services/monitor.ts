@@ -11,6 +11,11 @@ import { TRAFFIC_LIMIT_REASON, usersOverQuota } from "./quota"
 import { sweepExpiredRegistrations } from "./registration"
 import { closeSession } from "./sessions"
 import { serviceStatus } from "./serviceControl"
+import {
+	noteAbandonedRegistrations,
+	notifyAdminWarning,
+	runDailyDigestTick,
+} from "./telegramAdmin"
 import { purgeOldClientErrors } from "./telemetry"
 import { purgeExpiredCodes } from "./verification"
 import { purgeOldDomainStats } from "./vlessStats"
@@ -59,6 +64,11 @@ export async function runMonitorTick(): Promise<MonitorTickResult> {
 				metadata: { name: node.name, offlineAfterSec: config.NODE_OFFLINE_AFTER_SEC },
 			})
 		}
+		// #095: the one event worth waking the admin group for - every tunnel on
+		// that node is about to be torn down.
+		void notifyAdminWarning(
+			`Нода не отвечает: <b>${offlineNodes.map((node) => node.name).join(", ")}</b>\nНет heartbeat дольше ${config.NODE_OFFLINE_AFTER_SEC} с.`,
+		).catch(() => 0)
 	}
 
 	// 2. Expire subscriptions that ran out.
@@ -219,6 +229,9 @@ export function startMonitor(app: FastifyInstance): MonitorHandle {
 				const registrations = await sweepExpiredRegistrations()
 				if (registrations > 0) {
 					app.log.debug({ registrations }, "pending_registrations_swept")
+					// #090: sign-ups nobody finished are counted, not announced -
+					// one line in tomorrow's digest instead of a message each.
+					await noteAbandonedRegistrations(registrations)
 				}
 				const codes = await purgeExpiredCodes(7)
 				if (codes > 0) app.log.debug({ codes }, "verification_codes_purged")
@@ -265,6 +278,13 @@ export function startMonitor(app: FastifyInstance): MonitorHandle {
 				}
 				const orders = await expireStaleOrders()
 				if (orders > 0) app.log.debug({ orders }, "stale_orders_cancelled")
+
+				// #093: the daily summary. Checked here rather than on its own timer
+				// so there is one scheduler in the process; the day is claimed in the
+				// database before the numbers are collected, so the API and a
+				// standalone bot cannot both send it.
+				const digest = await runDailyDigestTick()
+				if (digest) app.log.info({}, "telegram_digest_sent")
 			}
 		} catch (error) {
 			app.log.error({ err: error }, "monitor_tick_failed")

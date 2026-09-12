@@ -602,7 +602,63 @@ export async function markOrderPaid(params: {
 			expiresAt: granted.expiresAt.toISOString(),
 		},
 	})
+	// #092 for the administration channel, #097 for the buyer. Fire-and-forget
+	// on purpose: the plan is already granted above, so a Telegram outage may
+	// cost a message but can never cost a subscription.
+	void notifyPaidOrder({ order, granted, by: params.by, meta }).catch(() => undefined)
 	return prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { plan: true } })
+}
+
+/**
+ * Tell the admins a purchase happened (#092) and the buyer that the plan is
+ * already on (#097).
+ *
+ * The Telegram modules are required lazily because both of them import this
+ * one for price formatting - a static import here would be a cycle.
+ */
+async function notifyPaidOrder(params: {
+	order: Order & { plan: Plan }
+	granted: { expiresAt: Date }
+	by: string
+	meta: ReturnType<typeof orderMetadata>
+}): Promise<void> {
+	const user = await prisma.user
+		.findUnique({
+			where: { id: params.order.userId },
+			select: { username: true, publicId: true, telegramId: true },
+		})
+		.catch(() => null)
+	if (!user) return
+	const admin = require("./telegramAdmin") as typeof import("./telegramAdmin")
+	const account = require("./telegramAccount") as typeof import("./telegramAccount")
+	await admin
+		.notifyPurchase({
+			username: user.username,
+			publicId: user.publicId,
+			planName: params.order.plan.name,
+			planCode: params.order.plan.code,
+			days: params.order.plan.days,
+			amountMinor: params.order.amountMinor,
+			currency: params.order.currency,
+			provider: params.order.provider,
+			source: typeof params.meta.source === "string" ? params.meta.source : null,
+			promoCode: typeof params.meta.promoCode === "string" ? params.meta.promoCode : null,
+			discountMinor: Number(params.meta.discountMinor) || 0,
+			expiresAt: params.granted.expiresAt,
+			confirmedBy: params.by,
+		})
+		.catch(() => undefined)
+	if (!user.telegramId) return
+	await account
+		.notifySubscriptionActivated({
+			telegramId: user.telegramId,
+			planName: params.order.plan.name,
+			days: params.order.plan.days,
+			amountMinor: params.order.amountMinor,
+			currency: params.order.currency,
+			expiresAt: params.granted.expiresAt,
+		})
+		.catch(() => undefined)
 }
 
 export async function cancelOrder(orderId: string, adminId: string): Promise<void> {

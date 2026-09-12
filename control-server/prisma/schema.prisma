@@ -143,13 +143,24 @@ model User {
   email           String?    @unique
   emailVerifiedAt DateTime?  @map("email_verified_at")
   /// Telegram is the second step of the signup funnel, not a login method.
-  /// The bot only ever learns the numeric id, the @handle and - once the user
-  /// presses "Share contact" - the phone number. The phone is what makes one
-  /// human one account, which is the whole reason this step exists.
-  telegramId         String?   @unique @map("telegram_id")
-  telegramUsername   String?   @map("telegram_username")
-  telegramPhone      String?   @unique @map("telegram_phone")
-  telegramVerifiedAt DateTime? @map("telegram_verified_at")
+  /// The bot only ever learns the numeric id, the @handle, the display name and
+  /// avatar Telegram itself hands it, and - once the user presses "Share
+  /// contact" - the phone number. The phone is what makes one human one
+  /// account, which is the whole reason this step exists.
+  telegramId              String?   @unique @map("telegram_id")
+  telegramUsername        String?   @map("telegram_username")
+  telegramPhone           String?   @unique @map("telegram_phone")
+  telegramVerifiedAt      DateTime? @map("telegram_verified_at")
+  telegramFirstName       String?   @map("telegram_first_name")
+  telegramLastName        String?   @map("telegram_last_name")
+  /// `file_id` of the current avatar. Worthless without our bot token, which
+  /// is the point: it names the photo without copying anybody's picture into
+  /// our storage, and a changed value is how "the avatar changed" is detected.
+  telegramPhotoId         String?   @map("telegram_photo_id")
+  /// When the fields above were last refreshed. The bot never polls on its
+  /// own: it asks Telegram again only while the owner is writing to it and
+  /// this is older than a day, and a bare /start refreshes immediately.
+  telegramProfileSyncedAt DateTime? @map("telegram_profile_synced_at")
   passwordHash    String     @map("password_hash")
   status          UserStatus @default(ACTIVE)
   isAdmin         Boolean    @default(false) @map("is_admin")
@@ -827,6 +838,11 @@ model PendingRegistration {
   createdIp          String?   @map("created_ip")
   expiresAt          DateTime  @map("expires_at")
   createdAt          DateTime  @default(now()) @map("created_at")
+  /// Where the sign-up started, kept only to be shown in the administration
+  /// notification: client platform ("android", "windows", "web", ...) and
+  /// entry point ("site", "google", "app"). Free-form, never authorises.
+  createdPlatform    String?   @map("created_platform")
+  createdSource      String?   @map("created_source")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
   @@index([expiresAt])
@@ -929,4 +945,28 @@ enum VerificationChannel {
 enum IdentityProvider {
   GOOGLE
   TELEGRAM
+}
+
+/// Bookkeeping for the administration side of the bot: how far the daily
+/// digest has got, plus the two counters that only make sense once a day.
+///
+/// One row ("global"), like service_settings. On disk rather than in memory
+/// because a deploy must not send a second digest for a day already reported,
+/// and because a counter that resets on restart under-reports exactly when
+/// something is wrong.
+model TelegramAdminState {
+  id                     String    @id @default("global")
+  /// Local calendar day (YYYY-MM-DD in TELEGRAM_ADMIN_TZ_OFFSET_MIN) of the
+  /// last digest. Claimed with a conditional update, so two workers polling on
+  /// the same minute still produce exactly one message.
+  lastDigestDay          String?   @map("last_digest_day")
+  lastDigestAt           DateTime? @map("last_digest_at")
+  /// Sign-ups that expired before Telegram/email confirmation, since the last
+  /// digest: the funnel loss no success notification can show.
+  abandonedRegistrations Int       @default(0) @map("abandoned_registrations")
+  /// Attempts refused (phone or Telegram already in use, sign-up closed).
+  failedRegistrations    Int       @default(0) @map("failed_registrations")
+  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@map("telegram_admin_state")
 }

@@ -279,6 +279,32 @@ const EnvSchema = z.object({
 	// A chat id, not a username: the bot can only message a chat it has seen.
 	// Empty means the alert is logged as a warning and not sent.
 	TELEGRAM_ALERT_CHAT_ID: z.string().default(""),
+	// Administration: where registrations, purchases, warnings and the daily
+	// digest go. Comma-separated chat ids (a personal chat with the bot, or
+	// several). TELEGRAM_ALERT_CHAT_ID is always included as well, so an
+	// existing deployment keeps receiving everything it already received.
+	TELEGRAM_ADMIN_CHAT_IDS: z.string().default(""),
+	// The one group the bot is allowed to work in (negative id, e.g.
+	// -1001234567890). Inside it the bot posts the same notifications and
+	// answers /status and /digest; anywhere else it leaves immediately, which
+	// is what stops a random user from dragging the bot into their own chat.
+	// Also turn "Allow Groups?" off in @BotFather: this is the server-side half
+	// of that restriction, not a replacement for it.
+	TELEGRAM_ADMIN_GROUP_ID: z.string().default(""),
+	// Escape hatch: let the bot stay in any group it is added to. Off by
+	// design - a bot that silently accepts every invite is a support channel
+	// nobody is reading and a place for strangers to type account codes.
+	TELEGRAM_ALLOW_GROUPS: envFlag("false"),
+	// The account menus (plan, traffic, devices, VPN, purchase) inside the bot.
+	// Turn off to leave the bot as a pure sign-up/sign-in confirmation surface.
+	TELEGRAM_ACCOUNT_MENU_ENABLED: envFlag("true"),
+	// Local time for every bot message and for the daily digest, as an offset in
+	// minutes from UTC. Minutes rather than an IANA name: no timezone database
+	// is needed, and "12.09 10:00 (UTC+5)" is unambiguous for whoever reads it.
+	TELEGRAM_TZ_OFFSET_MIN: z.coerce.number().int().min(-720).max(840).default(300),
+	// Hour (in that local time) after which the digest for the previous day is
+	// sent. One per day: the day is recorded, so a restart cannot send a second.
+	TELEGRAM_DIGEST_HOUR: z.coerce.number().int().min(0).max(23).default(10),
 
 	// ------------------------------- captcha ---------------------------------
 	// Cloudflare Turnstile guards sign-up and password reset: both are cheap for

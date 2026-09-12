@@ -1,16 +1,21 @@
 /**
- * The GlukVPN Telegram bot. One file, no framework, no webhook.
+ * The GlukVPN Telegram bot. No framework, no webhook.
  *
- * It does exactly three things:
+ * It started as three things and now does five; the first three are unchanged,
+ * because they are what sign-up and sign-in depend on:
  *
  *   1. `/start <token>` - the deep link from the sign-up page. The bot answers
  *      with a "Share my contact" button.
  *   2. the shared contact - the bot checks the contact really belongs to the
  *      person sending it, then hands the phone number to the registration
  *      service, which finishes the account.
- *   3. **ROUND 11:** `/start login-<CODE>` - confirming a sign-in started by a
- *      client (see `services/linkAuth.ts`). The bot shows what is asking, and
- *      the user allows or refuses it in the chat.
+ *   3. `/start login-<CODE>` - confirming a sign-in started by a client (see
+ *      `services/linkAuth.ts`). The bot shows what is asking, and the user
+ *      allows or refuses it in the chat.
+ *   4. the account menu - tariff, term, traffic, devices, VPN state and buying
+ *      a subscription, in the chat (`telegramAccount.ts`).
+ *   5. the administration side - registrations, purchases, warnings and the
+ *      daily digest, in one allowed group (`telegramAdmin.ts`).
  *
  * Point 3 is worth a word on why it is safe. The chat is already bound to an
  * account: sign-up only completes when this exact Telegram user shares their
@@ -19,8 +24,11 @@
  * approving requires the person to hold the phone that owns the account, and
  * the code in the deep link authorises nothing on its own.
  *
+ * The same fact is what makes points 4 and 5 possible at all: a chat maps to
+ * exactly one account, so no menu here ever has to ask who is talking.
+ *
  * It also delivers verification codes (password reset over Telegram), which is
- * why `sendTelegramMessage` is exported.
+ * why `sendTelegramMessage` is re-exported.
  *
  * Long polling, not a webhook: a webhook needs a public HTTPS route, a secret
  * path and an Nginx rule, and it breaks silently whenever the certificate or
@@ -28,33 +36,63 @@
  * it works identically on the server, on a laptop and on beta - and if the
  * process dies, Telegram simply queues the updates until it comes back.
  *
- * The one security rule worth stating out loud: `contact.user_id` must equal
- * `message.from.id`. Telegram lets anyone forward a contact from their address
- * book, so without that check a user could register an account against someone
- * else's phone number - which would defeat the entire point of this step.
+ * Two security rules worth stating out loud:
+ *
+ *   - `contact.user_id` must equal `message.from.id`. Telegram lets anyone
+ *     forward a contact from their address book, so without that check a user
+ *     could register an account against someone else's phone number - which
+ *     would defeat the entire point of that step.
+ *   - group chats are refused (#094). The bot answers in private, plus one
+ *     configured administration group, and leaves anything else on sight.
  */
 
 import { config } from "../config"
 import { HttpError } from "../lib/errors"
 import { attachTelegram, normalizePhone } from "./registration"
+import {
+	type BotView,
+	accountMenuEnabled,
+	findUserByTelegramId,
+	handleAccountCallback,
+	helpView,
+	notLinkedView,
+	renderView,
+	syncTelegramProfile,
+} from "./telegramAccount"
+import { handleAdminCommand, isAdminGroup } from "./telegramAdmin"
+import {
+	type Logger,
+	type ReplyMarkup,
+	type TelegramCallbackQuery,
+	type TelegramChat,
+	type TelegramChatMemberUpdated,
+	type TelegramMessage,
+	type TelegramUpdate,
+	answerCallbackQuery,
+	callTelegram,
+	consoleLogger,
+	leaveChat,
+	resolveBotUsername,
+	sendTelegramMessage,
+} from "./telegramApi"
 import type { ReleaseChannel } from "./telegramLinks"
 import {
+	LOGIN_PREFIX,
 	botChannel,
 	botOwnedHere,
-	botUsername,
 	channelLabel,
-	LOGIN_PREFIX,
 	parseStartPayload,
-	rememberBotUsername,
 	telegramConfigured,
 } from "./telegramLinks"
 
-// The link builders moved to `telegramLinks.ts`, which also owns the channel
+// The link builders live in `telegramLinks.ts`, which also owns the channel
 // tag: the registration service needs them too, and importing this file from
-// there would be a cycle. Re-exported so `routes/link.ts` keeps its import.
+// there would be a cycle. The HTTP calls live in `telegramApi.ts` for the same
+// reason - the admin and account modules send messages and are imported here.
+// Both are re-exported so existing importers keep working untouched.
 export { botUsername, telegramLoginLink } from "./telegramLinks"
-
-const API_BASE = "https://api.telegram.org"
+export { resolveBotUsername, sendTelegramMessage } from "./telegramApi"
+export type { ReplyMarkup } from "./telegramApi"
 
 /** Telegram holds the request open; 50s is comfortably inside its limit. */
 const POLL_TIMEOUT_SEC = 50
@@ -62,44 +100,8 @@ const POLL_TIMEOUT_SEC = 50
 /** How long a `/start <token>` stays valid inside a chat, in ms. */
 const CHAT_TOKEN_TTL_MS = 10 * 60 * 1000
 
-type TelegramUser = {
-	id: number
-	is_bot?: boolean
-	first_name?: string
-	username?: string
-}
-
-type TelegramContact = {
-	phone_number: string
-	user_id?: number
-	first_name?: string
-}
-
-type TelegramMessage = {
-	message_id: number
-	from?: TelegramUser
-	chat: { id: number; type: string }
-	text?: string
-	contact?: TelegramContact
-}
-
-type TelegramUpdate = {
-	update_id: number
-	message?: TelegramMessage
-	edited_message?: TelegramMessage
-}
-
-type Logger = {
-	info: (obj: unknown, msg?: string) => void
-	warn: (obj: unknown, msg?: string) => void
-	error: (obj: unknown, msg?: string) => void
-}
-
-const consoleLogger: Logger = {
-	info: (obj, msg) => console.log(msg ?? "", obj ?? ""),
-	warn: (obj, msg) => console.warn(msg ?? "", obj ?? ""),
-	error: (obj, msg) => console.error(msg ?? "", obj ?? ""),
-}
+/** Chat kinds that are not one person talking to the bot. */
+const GROUP_TYPES = new Set(["group", "supergroup", "channel"])
 
 /** Which token a chat is currently answering for. */
 const chatTokens = new Map<number, { token: string; at: number }>()
@@ -139,95 +141,9 @@ export function setTelegramLoginBridge(bridge: TelegramLoginBridge | null): void
 	loginBridge = bridge
 }
 
-// `botUsername()` and `telegramLoginLink()` live in `telegramLinks.ts` now.
-// That module keeps assembling the host from parts for the same reason as the
-// note below, and adds the channel tag to the payload.
-
-// Editor artefact of that corruption, left as a comment: `https://t.me/${name?start=login-${userCode}
-
 let running = false
 
-function token(): string {
-	return config.TELEGRAM_BOT_TOKEN.trim()
-}
-
-async function call<T>(method: string, payload: unknown): Promise<T | null> {
-	if (!token()) return null
-	try {
-		const response = await fetch(`${API_BASE}/bot${token()}/${method}`, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify(payload),
-		})
-		const body = (await response.json()) as { ok: boolean; result?: T; description?: string }
-		if (!body.ok) {
-			// 409 means another process is long-polling this same bot token. It
-			// deserves its own loud line, because the symptom users report is not
-			// an error at all: the updates that do get through land in whichever
-			// process won the race, and if that is the other channel, its database
-			// has never seen the code - so the bot answers "код не найден".
-			if (response.status === 409 || /conflict/i.test(body.description ?? "")) {
-				consoleLogger.error(
-					{
-						method,
-						channel: config.CHANNEL,
-						botChannel: botChannel(),
-						description: body.description,
-					},
-					"telegram_getupdates_conflict",
-				)
-				return null
-			}
-			// The token is in the URL, never in the body, so this is safe to log.
-			consoleLogger.warn({ method, description: body.description }, "telegram_api_error")
-			return null
-		}
-		return body.result ?? null
-	} catch (error) {
-		consoleLogger.warn({ method, error: String(error) }, "telegram_api_unreachable")
-		return null
-	}
-}
-
-// ------------------------------------------------------------- outbound ----
-
-export type ReplyMarkup =
-	| {
-			keyboard: Array<Array<{ text: string; request_contact?: boolean }>>
-			resize_keyboard?: boolean
-			one_time_keyboard?: boolean
-	  }
-	| { remove_keyboard: true }
-
-export async function sendTelegramMessage(
-	chatId: string | number,
-	text: string,
-	replyMarkup?: ReplyMarkup,
-): Promise<boolean> {
-	const result = await call<unknown>("sendMessage", {
-		chat_id: chatId,
-		text,
-		parse_mode: "HTML",
-		disable_web_page_preview: true,
-		...(replyMarkup ? { reply_markup: replyMarkup } : {}),
-	})
-	return result !== null
-}
-
-/** Resolve @username once, so deep links keep working if config is left blank. */
-export async function resolveBotUsername(): Promise<string> {
-	const configured = botUsername()
-	if (configured) return configured
-	const me = await call<{ username?: string }>("getMe", {})
-	const name = me?.username ?? ""
-	// Cached, so every link built afterwards carries a real bot name instead of
-	// `t.me/?start=CODE` - a link that opens Telegram search and looks, to the
-	// person tapping it, exactly like a broken bot.
-	if (name) rememberBotUsername(name)
-	return name
-}
-
-// -------------------------------------------------------------- handlers ---
+// -------------------------------------------------------------- keyboards --
 
 const SHARE_KEYBOARD: ReplyMarkup = {
 	keyboard: [[{ text: "📱 Поделиться контактом", request_contact: true }]],
@@ -237,8 +153,8 @@ const SHARE_KEYBOARD: ReplyMarkup = {
 
 const HIDE_KEYBOARD: ReplyMarkup = { remove_keyboard: true }
 
-/** ROUND 11. Plain reply buttons, not an inline keyboard, so that the poller
- * can keep `allowed_updates: ["message"]` and no callback plumbing is needed. */
+/** ROUND 11. Plain reply buttons rather than an inline keyboard, so a sign-in
+ * confirmation cannot be mistaken for - or replayed from - a menu card. */
 const ALLOW_TEXT = "✅ Разрешить вход"
 const DENY_TEXT = "❌ Отклонить"
 const LOGIN_KEYBOARD: ReplyMarkup = {
@@ -254,6 +170,23 @@ const CLIENT_NAMES: Record<string, string> = {
 	extension: "расширение для браузера",
 	web: "сайт",
 }
+
+/** Which menu each private command opens. */
+const MENU_COMMANDS: Record<string, string> = {
+	"/menu": "menu",
+	"/account": "account",
+	"/traffic": "traffic",
+	"/devices": "devices",
+	"/vpn": "vpn",
+	"/buy": "buy",
+	"/subscription": "buy",
+}
+
+async function sendView(chatId: number, view: BotView): Promise<void> {
+	await sendTelegramMessage(chatId, view.text, view.markup)
+}
+
+// ----------------------------------------------------------- chat memory ---
 
 function rememberToken(chatId: number, value: string): void {
 	chatTokens.set(chatId, { token: value, at: Date.now() })
@@ -421,7 +354,7 @@ async function handleStart(message: TelegramMessage, argument: string): Promise<
 		await sendTelegramMessage(
 			chatId,
 			`Привет${name ? ", " + name : ""}! Это бот <b>GlukVPN</b>.\n\n` +
-				"Он подтверждает, что аккаунт заводит живой человек.\n\n" +
+				"Он подтверждает, что аккаунт заводит живой человек, а потом становится вашим личным кабинетом.\n\n" +
 				"Начните регистрацию на <b>vpn.gluk.tech</b> — на шаге «Телеграм» " +
 				"там будет кнопка, которая откроет этот чат уже с кодом.",
 			HIDE_KEYBOARD,
@@ -508,13 +441,19 @@ async function handleContact(message: TelegramMessage): Promise<void> {
 
 	if (outcome.ok) {
 		chatTokens.delete(chatId)
+		// #100: the account exists as of this second, so the name, @username and
+		// avatar are stored while the person is right here - not on some later
+		// background sweep.
+		const account = await findUserByTelegramId(from.id)
+		if (account) await syncTelegramProfile({ user: account, from, force: true }).catch(() => false)
 		await sendTelegramMessage(
 			chatId,
 			outcome.kind === "registered"
 				? "✅ Готово, аккаунт создан.\n\n" +
 					`Логин: <b>${outcome.username}</b>\n\n` +
-					"Возвращайтесь на сайт или в приложение и входите с почтой и паролем."
-				: "✅ Telegram привязан к аккаунту " + `<b>${outcome.username}</b>.`,
+					"Возвращайтесь на сайт или в приложение и входите с почтой и паролем.\n\n" +
+					"А здесь теперь работает /menu — тариф, трафик, устройства и оплата."
+				: "✅ Telegram привязан к аккаунту " + `<b>${outcome.username}</b>.\n\n` + "Наберите /menu — в боте есть тариф, трафик, устройства и оплата.",
 			HIDE_KEYBOARD,
 		)
 		return
@@ -549,37 +488,134 @@ async function handleContact(message: TelegramMessage): Promise<void> {
 	await sendTelegramMessage(chatId, text, HIDE_KEYBOARD)
 }
 
-async function handleMessage(message: TelegramMessage): Promise<void> {
+// --------------------------------------------------------------- groups ----
+
+/**
+ * #094: the bot is a private-chat bot.
+ *
+ * "Allow Groups?" in @BotFather is the front door and should stay off; this is
+ * the lock behind it, because the setting can be flipped back by anybody with
+ * the token and says nothing about groups the bot is already in. Leaving on
+ * sight also means a group can never become an unattended surface where one
+ * member watches another member's confirmation codes go by.
+ */
+async function refuseGroup(chat: TelegramChat, logger: Logger): Promise<void> {
+	await sendTelegramMessage(
+		chat.id,
+		"Этот бот работает только в личных сообщениях — там подтверждения и данные аккаунта видны только вам.\n\n" +
+			"Напишите мне напрямую: тариф, трафик, устройства и оплата — всё там.",
+	)
+	await leaveChat(chat.id)
+	logger.warn({ chatId: chat.id, type: chat.type, title: chat.title }, "telegram_group_refused")
+}
+
+async function handleChatMember(update: TelegramChatMemberUpdated, logger: Logger): Promise<void> {
+	const chat = update.chat
+	if (!GROUP_TYPES.has(chat.type)) return
+	const status = update.new_chat_member.status
+	// "left" / "kicked" mean the bot is already out; nothing to do.
+	if (status !== "member" && status !== "administrator" && status !== "restricted") return
+	if (isAdminGroup(chat.id) || config.TELEGRAM_ALLOW_GROUPS) {
+		logger.info({ chatId: chat.id, title: chat.title }, "telegram_group_allowed")
+		return
+	}
+	await refuseGroup(chat, logger)
+}
+
+// -------------------------------------------------------------- messages ---
+
+async function handleMessage(message: TelegramMessage, logger: Logger): Promise<void> {
+	const chat = message.chat
+	const text = (message.text ?? "").trim()
+
+	if (GROUP_TYPES.has(chat.type)) {
+		// #095: the one allowed group. Commands are answered, the rest of the
+		// conversation is none of the bot's business.
+		if (isAdminGroup(chat.id)) {
+			if (text.startsWith("/")) await handleAdminCommand(text, chat.id)
+			return
+		}
+		if (config.TELEGRAM_ALLOW_GROUPS) return
+		await refuseGroup(chat, logger)
+		return
+	}
+
 	if (message.contact) {
 		await handleContact(message)
 		return
 	}
-
-	const text = (message.text ?? "").trim()
 	if (!text) return
 
 	// ROUND 11: the two sign-in buttons. Matched first, and only while this chat
 	// actually has a pending request, so the words are inert the rest of the time.
-	if (chatLogins.has(message.chat.id) && (text === ALLOW_TEXT || text === DENY_TEXT)) {
+	if (chatLogins.has(chat.id) && (text === ALLOW_TEXT || text === DENY_TEXT)) {
 		await handleLoginDecision(message, text === ALLOW_TEXT)
 		return
 	}
 
-	if (text.startsWith("/start")) {
-		await handleStart(message, text.slice("/start".length).trim())
+	const command = text.startsWith("/")
+		? (text.split(/\s+/)[0] ?? "").toLowerCase().replace(/@.*$/, "")
+		: ""
+	const startArgument = command === "/start" ? text.slice("/start".length).trim() : ""
+	const bareStart = command === "/start" && startArgument === ""
+
+	// #100: the only place a profile is refreshed - while the person is already
+	// talking to the bot. `syncTelegramProfile` keeps its own 24-hour window,
+	// and a bare /start skips it, which is exactly what somebody who has just
+	// changed their picture will send. Nothing polls in the background: an
+	// account silent for three weeks costs zero requests.
+	let account = message.from ? await findUserByTelegramId(message.from.id) : null
+	if (account && message.from) {
+		const changed = await syncTelegramProfile({
+			user: account,
+			from: message.from,
+			force: bareStart,
+		}).catch(() => false)
+		if (changed) account = (await findUserByTelegramId(message.from.id)) ?? account
+	}
+	const menus = accountMenuEnabled()
+
+	if (command === "/start") {
+		// A linked subscriber pressing /start wants their account, not the
+		// sign-up instructions they finished weeks ago.
+		if (bareStart && account && menus) {
+			await sendView(chat.id, await renderView("menu", account))
+			return
+		}
+		await handleStart(message, startArgument)
 		return
 	}
-	if (text.startsWith("/cancel")) {
-		chatTokens.delete(message.chat.id)
-		const pendingLogin = chatLogins.get(message.chat.id)
+
+	if (command === "/cancel") {
+		chatTokens.delete(chat.id)
+		const pendingLogin = chatLogins.get(chat.id)
 		if (pendingLogin && loginBridge) await loginBridge.deny(pendingLogin.code)
-		chatLogins.delete(message.chat.id)
-		await sendTelegramMessage(message.chat.id, "Отменил. Ничего не сохранено.", HIDE_KEYBOARD)
+		chatLogins.delete(chat.id)
+		await sendTelegramMessage(chat.id, "Отменил. Ничего не сохранено.", HIDE_KEYBOARD)
 		return
 	}
-	if (text.startsWith("/help")) {
+
+	const view = MENU_COMMANDS[command]
+	if (view) {
+		if (!menus) {
+			await sendTelegramMessage(
+				chat.id,
+				"Управление аккаунтом в боте отключено. Откройте личный кабинет на vpn.gluk.tech.",
+				HIDE_KEYBOARD,
+			)
+			return
+		}
+		await sendView(chat.id, account ? await renderView(view, account) : notLinkedView())
+		return
+	}
+
+	if (command === "/help") {
+		if (account && menus) {
+			await sendView(chat.id, helpView())
+			return
+		}
 		await sendTelegramMessage(
-			message.chat.id,
+			chat.id,
 			"Бот подтверждает аккаунт <b>GlukVPN</b> и вход в него.\n\n" +
 				"/start — начать заново\n/cancel — отменить\n\n" +
 				"Поддержка: <b>vpn.gluk.tech</b>",
@@ -594,11 +630,52 @@ async function handleMessage(message: TelegramMessage): Promise<void> {
 		return
 	}
 
+	if (account && menus) {
+		await sendView(chat.id, await renderView("menu", account))
+		return
+	}
 	await sendTelegramMessage(
-		message.chat.id,
+		chat.id,
 		"Не понял. Откройте ссылку со страницы регистрации — она передаёт код сама. " +
 			"Или отправьте /help.",
 	)
+}
+
+// ------------------------------------------------------------- callbacks ---
+
+async function handleCallback(query: TelegramCallbackQuery): Promise<void> {
+	const chat = query.message?.chat
+	const data = (query.data ?? "").trim()
+	if (!chat || chat.type !== "private" || !data) {
+		await answerCallbackQuery({ id: query.id })
+		return
+	}
+	if (!accountMenuEnabled()) {
+		await answerCallbackQuery({ id: query.id, text: "Меню отключено", showAlert: true })
+		return
+	}
+	const account = await findUserByTelegramId(query.from.id)
+	if (!account) {
+		await answerCallbackQuery({
+			id: query.id,
+			text: "Этот Telegram не привязан к аккаунту",
+			showAlert: true,
+		})
+		return
+	}
+	const outcome = await handleAccountCallback({
+		data,
+		user: account,
+		chatId: chat.id,
+		messageId: query.message?.message_id,
+		from: query.from,
+	})
+	// A callback must always be answered, or the button spins in the client for
+	// a minute and the person taps it again.
+	await answerCallbackQuery({
+		id: query.id,
+		...(typeof outcome === "string" ? { text: outcome } : {}),
+	})
 }
 
 // ----------------------------------------------------------------- runner --
@@ -638,11 +715,17 @@ export function startTelegramBot(logger: Logger = consoleLogger): void {
 		let backoffMs = 1000
 
 		while (running) {
-			const updates = await call<TelegramUpdate[]>("getUpdates", {
-				offset,
-				timeout: POLL_TIMEOUT_SEC,
-				allowed_updates: ["message"],
-			})
+			const updates = await callTelegram<TelegramUpdate[]>(
+				"getUpdates",
+				{
+					offset,
+					timeout: POLL_TIMEOUT_SEC,
+					// `callback_query` for the menus, `my_chat_member` so a group the
+					// bot is dragged into is left immediately (#094).
+					allowed_updates: ["message", "callback_query", "my_chat_member"],
+				},
+				logger,
+			)
 
 			if (updates === null) {
 				await new Promise((resolve) => setTimeout(resolve, backoffMs))
@@ -655,10 +738,18 @@ export function startTelegramBot(logger: Logger = consoleLogger): void {
 				// Advance the offset even if handling throws: a message that
 				// crashes the handler would otherwise be redelivered forever.
 				offset = Math.max(offset, update.update_id + 1)
-				const message = update.message ?? update.edited_message
-				if (!message) continue
 				try {
-					await handleMessage(message)
+					if (update.my_chat_member) {
+						await handleChatMember(update.my_chat_member, logger)
+						continue
+					}
+					if (update.callback_query) {
+						await handleCallback(update.callback_query)
+						continue
+					}
+					const message = update.message ?? update.edited_message
+					if (!message) continue
+					await handleMessage(message, logger)
 				} catch (error) {
 					logger.error({ error: String(error) }, "telegram_handler_failed")
 				}

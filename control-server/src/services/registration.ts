@@ -129,6 +129,10 @@ export async function startRegistration(params: {
 	email: string
 	password: string
 	ip?: string | null
+	/** Client the sign-up started from: "web", "android", "windows", ... (#091) */
+	platform?: string | null
+	/** Entry point: "site", "app", "extension", ... (#091) */
+	source?: string | null
 }): Promise<StartedRegistration> {
 	await requireRegistrationEnabled()
 	const email = normalizeEmail(params.email)
@@ -153,6 +157,11 @@ export async function startRegistration(params: {
 			passwordHash,
 			telegramCode: newToken(),
 			createdIp: params.ip ?? null,
+			// Remembered here because step 3 happens in Telegram, hours later and
+			// from another device: by then nothing else knows where this sign-up
+			// began (#091).
+			createdPlatform: params.platform ?? null,
+			createdSource: params.source ?? null,
 			expiresAt,
 		},
 		update: {
@@ -165,6 +174,8 @@ export async function startRegistration(params: {
 			telegramVerifiedAt: null,
 			googleSub: null,
 			createdIp: params.ip ?? null,
+			createdPlatform: params.platform ?? null,
+			createdSource: params.source ?? null,
 			expiresAt,
 		},
 	})
@@ -393,6 +404,36 @@ export type TelegramAttachOutcome =
 	  }
 
 /**
+ * #090: the admin channel is reached lazily, on purpose.
+ *
+ * `telegramAdmin` needs billing for price formatting, and a sign-up must never
+ * fail - or even wait - because a notification could not be delivered. Loading
+ * it on use also keeps this service importable by the bot without a cycle.
+ */
+function adminNotices(): typeof import("./telegramAdmin") | null {
+	try {
+		return require("./telegramAdmin") as typeof import("./telegramAdmin")
+	} catch {
+		return null
+	}
+}
+
+/**
+ * One place to refuse, so a failed attempt is counted exactly once (#090).
+ *
+ * Failures are counted rather than announced: a wrong or stale code is normal
+ * traffic, and a message per attempt would train the admins to ignore the
+ * channel. The number shows up in the next daily digest instead.
+ */
+function attachFailed(
+	reason: "unknown" | "email_pending" | "phone_taken" | "telegram_taken",
+): TelegramAttachOutcome {
+	const notices = adminNotices()
+	if (notices) void notices.noteFailedRegistration().catch(() => undefined)
+	return { ok: false, reason }
+}
+
+/**
  * The only entry point the bot needs. Takes a token and a *verified* contact,
  * and either finishes a sign-up or re-binds an existing account.
  */
@@ -404,7 +445,7 @@ export async function attachTelegram(params: {
 }): Promise<TelegramAttachOutcome> {
 	const token = params.token.trim().toUpperCase()
 	const phone = normalizePhone(params.phone)
-	if (!token || !phone) return { ok: false, reason: "unknown" }
+	if (!token || !phone) return attachFailed("unknown")
 
 	// --- re-bind on an existing account ------------------------------------
 	const rebind = await prisma.verificationCode.findFirst({
@@ -421,13 +462,13 @@ export async function attachTelegram(params: {
 			where: { telegramId: params.telegramId, NOT: { id: rebind.userId } },
 			select: { id: true },
 		})
-		if (clash) return { ok: false, reason: "telegram_taken" }
+		if (clash) return attachFailed("telegram_taken")
 
 		const phoneClash = await prisma.user.findFirst({
 			where: { telegramPhone: phone, NOT: { id: rebind.userId } },
 			select: { id: true },
 		})
-		if (phoneClash) return { ok: false, reason: "phone_taken" }
+		if (phoneClash) return attachFailed("phone_taken")
 
 		const updated = await prisma.user.update({
 			where: { id: rebind.userId },
@@ -471,21 +512,21 @@ export async function attachTelegram(params: {
 		where: { telegramCode: token },
 	})
 	if (!pending || pending.expiresAt.getTime() <= Date.now()) {
-		return { ok: false, reason: "unknown" }
+		return attachFailed("unknown")
 	}
-	if (!pending.emailVerifiedAt) return { ok: false, reason: "email_pending" }
+	if (!pending.emailVerifiedAt) return attachFailed("email_pending")
 
 	const phoneTaken = await prisma.user.findFirst({
 		where: { telegramPhone: phone },
 		select: { id: true },
 	})
-	if (phoneTaken) return { ok: false, reason: "phone_taken" }
+	if (phoneTaken) return attachFailed("phone_taken")
 
 	const telegramTaken = await prisma.user.findFirst({
 		where: { telegramId: params.telegramId },
 		select: { id: true },
 	})
-	if (telegramTaken) return { ok: false, reason: "telegram_taken" }
+	if (telegramTaken) return attachFailed("telegram_taken")
 
 	const username = await uniqueUsername(pending.email)
 	const identityLinks: Prisma.IdentityLinkCreateWithoutUserInput[] = [
@@ -518,7 +559,7 @@ export async function attachTelegram(params: {
 			telegramVerifiedAt: new Date(),
 			identityLinks: { create: identityLinks },
 		},
-		select: { id: true, username: true },
+		select: { id: true, publicId: true, username: true },
 	}))
 	// Every new account starts on the Free plan, so "connect" works right away
 	// instead of answering "No active subscription" until an admin intervenes.
@@ -530,6 +571,32 @@ export async function attachTelegram(params: {
 	await prisma.pendingRegistration
 		.delete({ where: { id: pending.id } })
 		.catch(() => undefined)
+
+	// #090 + #091: the admin channel hears about the new account, with the safe
+	// facts only - masked address, masked phone, platform, method, entry point
+	// and an approximate region. Fire-and-forget: the account exists either way.
+	const notices = adminNotices()
+	if (notices) {
+		void (async () => {
+			// Region comes from the address the sign-up was started from, and only
+			// when GEOIP is configured. The address itself is never sent to a chat.
+			const geo = require("./geo") as typeof import("./geo")
+			const origin = pending.createdIp
+				? await geo.lookupOrigin(pending.createdIp).catch(() => null)
+				: null
+			await notices.notifyRegistration({
+				username: created.username,
+				publicId: created.publicId,
+				email: pending.email,
+				method: pending.googleSub ? "google" : "email",
+				platform: pending.createdPlatform,
+				source: pending.createdSource ?? (pending.googleSub ? "google" : null),
+				region: [origin?.country, origin?.region].filter(Boolean).join(", ") || null,
+				telegramUsername: params.telegramUsername ?? null,
+				telegramPhone: phone,
+			})
+		})().catch(() => undefined)
+	}
 
 	return { ok: true, kind: "registered", username: created.username }
 }
