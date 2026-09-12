@@ -268,6 +268,25 @@
     return "other";
   }
 
+  /* Ставит ссылку на постоянный эндпоинт скачивания (/download/windows,
+     /download/android). Имя файла НЕ хардкодим: атрибут download оставляем
+     пустым, чтобы браузер взял его из заголовка Content-Disposition или из
+     имени версионного файла, на который отвечает редирект Nginx.          */
+  function setDownloadLink(a, url) {
+    if (!a || !url) return;
+    a.setAttribute("href", url);
+    a.setAttribute("download", "");
+  }
+
+  /* Проверяет, что ссылка лежит внутри карточки платформы с нужным именем. */
+  function isPlatformCard(a, name) {
+    var card = a && a.closest ? a.closest(".platform") : null;
+    if (!card) return false;
+    var title = card.querySelector(".platform__name");
+    var text = title && title.textContent ? title.textContent : "";
+    return text.trim().toLowerCase().indexOf(name) !== -1;
+  }
+
   /* --------------------------------------------------- ссылки на загрузку */
   function downloads() {
     var d = CFG.downloads || {};
@@ -285,19 +304,15 @@
         : (isEn ? "Download GlukVPN" : "Скачать GlukVPN"));
 
     $$("[data-download-android]").forEach(function (a) {
-      /* Если это карточка Android на странице /download/ - оставляем ссылку на APK */
-      if (a.closest(".platform") && a.closest(".platform").querySelector(".platform__name")?.textContent.trim().toLowerCase().indexOf("android") !== -1) {
-        if (android.url) {
-          a.setAttribute("href", android.url);
-          a.setAttribute("download", "glukvpn-release-1.6.0.apk");
-        }
+      /* Карточка Android на странице /download/ всегда ведёт на APK-эндпоинт */
+      if (isPlatformCard(a, "android")) {
+        setDownloadLink(a, android.url || "/download/android");
         return;
       }
 
       /* Главные CTA-кнопки (в шапке, на главном экране, в меню) ведут на софт под ОС клиента */
       if (primaryUrl && primaryUrl !== "/download/") {
-        a.setAttribute("href", primaryUrl);
-        a.setAttribute("download", "");
+        setDownloadLink(a, primaryUrl);
       }
       /* Текст обновляем только у больших кнопок с текстом, не трогая иконки */
       if (a.childNodes.length > 0) {
@@ -311,10 +326,7 @@
     });
 
     $$("[data-download-windows]").forEach(function (a) {
-      if (windows.url) {
-        a.setAttribute("href", windows.url);
-        a.setAttribute("download", "GlukVPN-Setup-1.5.0.exe");
-      }
+      setDownloadLink(a, windows.url || "/download/windows");
     });
 
     $$("[data-android-note]").forEach(function (n) {

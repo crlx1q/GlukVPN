@@ -77,22 +77,24 @@ window.GLUK_CONFIG = {
 
   /* ---------------------------------------------------------- загрузки ---
      status: "available" | "soon"
-     url: прямая ссылка на сборку. Пока пусто -> кнопка ведёт на /download/
-     и показывает честный статус, ничего не обещая.                       */
+     url: ПОСТОЯННЫЙ эндпоинт (/download/windows, /download/android). Номер
+     версии здесь не указывается: Nginx редиректит эндпоинт на актуальный
+     файл в /downloads/, а имя файла браузер берёт из ответа сервера.
+     Источник версии для клиентов — /api/version.json (его генерирует
+     скрипт site/deploy/sync-downloads.sh). Пусто -> кнопка ведёт на
+     /download/ и показывает честный статус, ничего не обещая.            */
   downloads: {
     android: {
       status: "available",
       label: "Android",
-      version: "1.6.0",
-      url: "/downloads/glukvpn-release-1.6.0.apk",
+      url: "/download/android",
       note: "Android 8.0 и новее",
     },
     googlePlay: { status: "soon", label: "Google Play", url: "", note: "Публикация готовится" },
     windows: {
       status: "available",
       label: "Windows",
-      version: "1.6.0",
-      url: "/downloads/GlukVPN-Setup-1.6.0.exe",
+      url: "/download/windows",
       note: "Windows 10, 11 (64-bit)",
     },
     ios: { status: "soon", label: "iOS", url: "", note: "В разработке" },
