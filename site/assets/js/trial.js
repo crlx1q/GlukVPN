@@ -42,7 +42,10 @@
      тоже «может»: ему и адресован призыв зарегистрироваться. */
   var PROMO_REASONS = { ok: 1, sign_in_required: 1, telegram_required: 1 };
 
-  var state = { offer: null, enabled: false, authStatus: "", busy: false };
+  /* currency — валюта, в которой сервер выдал карточки тарифов (приходит
+     с событием gluk:plans). Акция обязана быть в ней же: «$0.10» рядом
+     с «790 ₸» — это и была рассинхронизация на странице тарифов. */
+  var state = { offer: null, enabled: false, authStatus: "", busy: false, currency: "" };
 
   /* ------------------------------------------------------------- утилиты */
   function list(sel) {
@@ -104,8 +107,34 @@
      рубли, Казахстан — тенге, остальной мир — доллар). Приписку «(≈ 100 ₸ ·
      $0.10)» рядом с суммой не пишем: она ничего не добавляет тому, кто и так
      видит цену в своих деньгах. */
+  /* Валюта страницы — та, в которой сервер отдал тарифы. Своей догадки
+     до ответа не выдумываем и GlukPrice.currency не берём: она считается
+     из языка страницы и на английской версии всегда даёт USD. */
+  function pageCurrency() {
+    return String(state.currency || "").toUpperCase();
+  }
+
+  /* Та же сумма в нужной валюте: сервер присылает все эквиваленты по
+     матрице цен (100 ₸ / 10 ₽ / $0.10), поэтому пересчёты на клиенте
+     не нужны — достаточно выбрать готовую строку. */
+  function equivalent(offer, currency) {
+    var list = (offer && offer.equivalents) || [];
+    for (var i = 0; i < list.length; i++) {
+      if (String(list[i].currency || "").toUpperCase() === currency) return list[i];
+    }
+    return null;
+  }
+
   function priceLabel(offer) {
     var price = (offer && offer.price) || {};
+    var wanted = pageCurrency();
+    /* Валюта страницы важнее валюты оффера: запрос акции может уйти
+       раньше, чем придут тарифы, и тогда сервер ответил по своему
+       определению страны. На экране двух валют быть не должно. */
+    if (wanted && price.currency && String(price.currency).toUpperCase() !== wanted) {
+      var same = equivalent(offer, wanted);
+      if (same && same.label) return same.label;
+    }
     return price.label || (offer && offer.charge && offer.charge.label) || "";
   }
 
@@ -119,10 +148,14 @@
   function chargeNote(offer) {
     var price = (offer && offer.price) || {};
     var charge = (offer && offer.charge) || {};
-    if (!charge.label || !price.currency || price.currency === charge.currency) return "";
+    /* Сравниваем с валютой страницы: именно в ней человек видит цену. */
+    var shown = pageCurrency() || String(price.currency || "").toUpperCase();
+    if (!charge.label || !shown || shown === String(charge.currency || "").toUpperCase()) return "";
     return L(
-      "Списание пройдёт в рублях: " + charge.label + " через СБП или картой.",
-      "The charge itself settles in roubles: " + charge.label + " by SBP or card."
+      "Списание пройдёт в рублях: " + charge.label +
+        " через СБП или картой по курсу вашего банка.",
+      "The charge settles in roubles: " + charge.label +
+        " by SBP or card, at your bank's rate."
     );
   }
 
@@ -601,13 +634,36 @@
     if (offer) pages.forEach(function (host) { renderPage(host, offer); });
   }
 
+  /* Рынок сервер определяет сам, но api.gluk.tech открыт напрямую, без
+     Cloudflare — значит cf-ipcountry там нет. Подсказываем таймзону, валюту,
+     уже подтверждённую сервером для карточек, и язык — только если его
+     выбрали руками. Без этого акция приходила в дефолтных долларах.
+     Для денег это безопасно: сумма списания всё равно считается на сервере
+     и всегда в рублях. */
+  function marketQuery() {
+    var parts = [];
+    var tz = "";
+    try {
+      tz = (Intl.DateTimeFormat().resolvedOptions() || {}).timeZone || "";
+    } catch (e) {
+      tz = "";
+    }
+    if (tz) parts.push("tz=" + encodeURIComponent(tz));
+    var cur = pageCurrency();
+    if (cur) parts.push("currency=" + encodeURIComponent(cur));
+    var chosen = window.GlukI18n && window.GlukI18n.chosen;
+    if (chosen === "ru" || chosen === "en") parts.push("lang=" + chosen);
+    return parts.length ? "?" + parts.join("&") : "";
+  }
+
   function load() {
     var A = window.GlukAuth;
     if (!A || !A.public) return;
     state.authStatus = A.state ? A.state.status : "";
     /* Вошедшему нужен токен: без него сервер ответит "sign_in_required" и
        страница предложит регистрацию тому, кто уже зарегистрирован. */
-    var req = A.isAuthed && A.isAuthed() ? A.call("/api/billing/trial") : A.public("/api/billing/trial");
+    var url = "/api/billing/trial" + marketQuery();
+    var req = A.isAuthed && A.isAuthed() ? A.call(url) : A.public(url);
     req.then(
       function (json) {
         state.enabled = !!(json && json.billingEnabled);
@@ -637,8 +693,19 @@
     load();
   });
 
-  /* billing.js перерисовал карточки тарифов — метку надо повесить заново. */
-  document.addEventListener("gluk:plans", function () {
+  /* billing.js перерисовал карточки тарифов — метку надо повесить заново.
+     Он же — единственный надёжный источник валюты: её вернул сервер в
+     ответе /api/billing/plans. Если валюта пришла впервые или сменилась,
+     сразу перерисовываем акцию по эквивалентам и перезапрашиваем её уже
+     с правильным ?currency=. Цикла нет: событие рассылает billing.js. */
+  document.addEventListener("gluk:plans", function (e) {
+    var next = String(((e && e.detail) || {}).currency || "").toUpperCase();
+    if (next && next !== state.currency) {
+      state.currency = next;
+      apply();
+      load();
+      return;
+    }
     var offer = state.offer;
     var show = !!offer && state.enabled && !!offer.enabled &&
       !!PROMO_REASONS[String(((offer || {}).eligibility || {}).reason || "")];

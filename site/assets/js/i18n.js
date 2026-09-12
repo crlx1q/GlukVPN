@@ -7,7 +7,12 @@
   var html = document.documentElement;
   var LANG = (html.getAttribute("data-lang") || html.lang || "ru").toLowerCase();
   if (LANG !== "en") LANG = "ru";
-  var KEY = "gluk.lang";
+  /* Ключ сменён намеренно: в старом (gluk.lang) у части людей навсегда
+     залип английский — автоопределение записывало туда язык при включённом
+     VPN. Старое значение один раз чистим, иначе такие посетители так и
+     останутся на английской версии с долларовыми ценами. */
+  var KEY = "gluk.lang.v2";
+  try { localStorage.removeItem("gluk.lang"); } catch (e) {}
 
   /* ---------------------------------------------------- словарь для JS-строк */
   var EN = {
@@ -250,8 +255,12 @@
     var choice = stored();
     if (!choice) {
       choice = guess();
-      remember(choice);
-      /* автоперевод только один раз и только если язык отличается */
+      /* Результат угадывания НЕ запоминаем: в localStorage попадает
+         только явный клик по переключателю. Иначе один заход с VPN
+         (сервер в Германии) фиксировал en навсегда, и после его
+         отключения сайт оставался английским с ценами в долларах.
+         Редирект при этом не циклится: после перехода guess() даёт
+         тот же язык, что и у страницы. */
       if (choice !== LANG) {
         location.replace(pathFor(choice, location.pathname) + location.search + location.hash);
         return;
@@ -276,6 +285,10 @@
 
   window.GlukI18n = {
     lang: LANG,
+    /* Язык, выбранный руками, или null. Биллинг передаёт его на сервер:
+       выбранный вручную ru на американском IP означает цены в рублях,
+       а автоопределённый язык на валюту не влияет. */
+    chosen: stored(),
     locale: LOCALE,
     t: T,
     dateLong: dateLong,

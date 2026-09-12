@@ -53,6 +53,9 @@
   var state = {
     periodId: PRICING.defaultPeriod || "monthly",
     currency: (PRICE && PRICE.currency) || (EN ? "USD" : PRICING.defaultCurrency || "KZT"),
+    /* Валюта фактического списания. Витрина говорит на валюте страны, а
+       TabPay принимает только рубли, поэтому сервер присылает её отдельно. */
+    settlement: "",
     plans: [],
     enabled: false,
     /* Промокод: клиент его только запоминает и передаёт с заказом. Скидку
@@ -373,9 +376,46 @@
     try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (e) {}
   }
 
+  /* Цены на экране — в валюте посетителя, списание у шлюза — в рублях.
+     Молчать об этом нельзя: иначе сумма в банковском приложении выглядит
+     чужой. Пустая строка значит, что валюты совпадают и примечание не нужно. */
+  function chargeNote(sum) {
+    var settle = String(state.settlement || "").toUpperCase();
+    if (!settle || settle === String(state.currency || "").toUpperCase()) return "";
+    var tail = sum ? ": " + sum : "";
+    if (settle === "RUB") {
+      return L("Списание пройдёт в рублях" + tail + " через СБП или картой по курсу вашего банка.",
+               "The charge settles in roubles" + tail + " by SBP or card, at your bank rate.");
+    }
+    return L("Списание пройдёт в " + settle + tail + " по курсу вашего банка.",
+             "The charge settles in " + settle + tail + " at your bank rate.");
+  }
+
+  function planByCode(code) {
+    var want = String(code || "").toLowerCase();
+    var plans = state.plans || [];
+    for (var i = 0; i < plans.length; i++) {
+      if (String(plans[i].code || "").toLowerCase() === want) return plans[i];
+    }
+    return null;
+  }
+
+  /* Сумму списания считает сервер в валюте шлюза — клиент только показывает
+     присланную подпись, чтобы курс не появился в двух местах сразу. */
+  function planCharge(code) {
+    var p = planByCode(code);
+    if (!p || !p.settlementCurrency) return "";
+    if (p.settlementLabel) return String(p.settlementLabel);
+    if (p.settlementMinor != null) return money(p.settlementMinor, p.settlementCurrency);
+    return "";
+  }
+
   function setPricingNote(text) {
+    var note = String(text == null ? "" : text);
+    var extra = chargeNote("");
+    if (extra) note += (note ? " " : "") + extra;
     Array.prototype.forEach.call(document.querySelectorAll("[data-pricing-note]"), function (n) {
-      n.textContent = text;
+      n.textContent = note;
     });
   }
 
@@ -483,6 +523,15 @@
         if (btn) btn.disabled = false;
         var pct = (res && res.percentOff) || 0;
         var sum = res && res.amountMinor != null ? money(res.amountMinor, res.currency) : "";
+        /* Скидка считается от цены витрины, а списывается рублёвый эквивалент:
+           сервер присылает его отдельной подписью. */
+        var settle = (res && res.settlement) || null;
+        var charged = "";
+        if (settle) {
+          charged = settle.label
+            ? String(settle.label)
+            : settle.amountMinor != null ? money(settle.amountMinor, settle.currency) : "";
+        }
         promoView = {
           code: code,
           percentOff: pct,
@@ -493,6 +542,7 @@
         decoratePromo();
         var text = L("Промокод " + code + ": \u2212" + pct + "%" + (sum ? ", к оплате " + sum : ""),
                      "Promo " + code + ": \u2212" + pct + "%" + (sum ? ", total " + sum : ""));
+        if (charged) text += L(" \u00b7 списание " + charged, " \u00b7 charged " + charged);
         if (!authed) text += L(" · войдите при оплате", " · sign in at checkout");
         promoStatus(text, "ok");
       },
@@ -554,7 +604,9 @@
     var label = btn.textContent;
     btn.disabled = true;
     btn.textContent = T("Создаём заказ…");
-    notice("");
+    /* Перед переходом к оплате говорим, в какой валюте уйдут деньги. */
+    var hint = chargeNote(planCharge(code));
+    notice(hint ? '<p class="billing-notice__text">' + esc(hint) + "</p>" : "");
     var body = { planCode: code, currency: state.currency };
     if (state.promoCode) body.promoCode = state.promoCode;
     A.call("/api/billing/orders", { method: "POST", body: body })
@@ -627,12 +679,21 @@
     /* Часовой пояс — подсказка о стране: Cloudflare стоит перед сайтом, но не
        перед API, поэтому CF-IPCountry здесь отсутствует и без подсказки
        казахстанский посетитель получал цену в долларах. */
+    var q = [];
     var tz = ""; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) { tz = ""; }
-    A.public("/api/billing/plans" + (tz ? "?tz=" + encodeURIComponent(tz) : "")).then(function (json) {
+    if (tz) q.push("tz=" + encodeURIComponent(tz));
+    /* Язык передаём только выбранный руками: автоугадывание по IP не должно
+       переучивать сервер на чужую валюту, а явный выбор ru — должен. */
+    var chosen = window.GlukI18n && window.GlukI18n.chosen ? String(window.GlukI18n.chosen) : "";
+    if (chosen === "ru" || chosen === "en") q.push("lang=" + encodeURIComponent(chosen));
+    A.public("/api/billing/plans" + (q.length ? "?" + q.join("&") : "")).then(function (json) {
       var plans = json && Array.isArray(json.plans)
         ? json.plans.filter(function (p) { return p && p.code; })
         : [];
       var currency = (json && (json.currency || (json.market && json.market.currency))) || null;
+      state.settlement = json && json.settlement && json.settlement.currency
+        ? String(json.settlement.currency).toUpperCase()
+        : "";
       if (json && json.billingEnabled) {
         state.plans = plans;
         if (currency) state.currency = String(currency).toUpperCase();
