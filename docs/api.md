@@ -61,6 +61,7 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 | POST | `/api/vpn/disconnect` | device-scoped | 30/мин |
 | GET | `/api/vpn/status` | device-scoped | — |
 | GET | `/api/vpn/sessions` | user | — |
+| GET | `/api/user/analytics` | user | 30/мин |
 | GET | `/api/billing/plans` | открыто | 60/мин |
 | POST | `/api/billing/orders` | user | 10/мин |
 | POST | `/api/billing/orders/sync` | user | 20/мин |
@@ -290,6 +291,52 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 они молча игнорируются, а `countersAccepted: false` показывает, что счётчики
 не учтены (поле additive — старые клиенты не ломаются). Подробности и
 проверочные curl-команды — в `docs/traffic-integrity.md`.
+
+### GET /api/user/analytics
+
+Статистика аккаунта для экранов «Статистика» и «Аналитика трафика».
+Параметр один: `period=day|week|month` (по умолчанию `day`). Окна считаются
+в UTC: сутки — с начала дня, неделя — с понедельника, месяц — с первого числа.
+Шаг бакетов выбирает сервер, не клиент: `hour` для дня, `day` для недели и месяца.
+
+```json
+{
+  "period": "week",
+  "start": "2026-09-07T00:00:00.000Z",
+  "end": "2026-09-14T00:00:00.000Z",
+  "bucketSize": "day",
+  "quota": { "...": "тот же блок, что в /api/vpn/status" },
+  "coverage": { "since": "2026-09-05T15:30:00.000Z", "partial": true, "source": "server", "timezone": "UTC" },
+  "totals": { "downloadBytes": 7400000000, "uploadBytes": 172000000 },
+  "previous": { "start": "2026-08-31T00:00:00.000Z", "end": "2026-09-07T00:00:00.000Z", "downloadBytes": 6600000000, "uploadBytes": 159000000 },
+  "trend": { "comparable": true, "downloadPercent": 12, "uploadPercent": 8, "totalPercent": 12 },
+  "series": [{ "start": "2026-09-07T00:00:00.000Z", "downloadBytes": 0, "uploadBytes": 0 }],
+  "devices": [{ "deviceName": "...", "platform": "windows", "downloadBytes": 0, "uploadBytes": 0 }],
+  "domains": { "enabled": true, "windowDays": 7, "items": [] },
+  "categories": [],
+  "budget": null
+}
+```
+
+`previous` — прошлое окно той же длины. Его конец обрезан по прошедшей
+части текущего — `min(previous.start + elapsed, start)`, где `elapsed = now - start`.
+Иначе два часа сегодняшних суток сравнивались бы с полными вчерашними
+и любое утро выглядело бы катастрофой.
+
+`trend` — уже посчитанные сервером целые проценты к `previous`
+(`downloadPercent`, `uploadPercent`, `totalPercent`). Клиенты проценты не считают —
+только ставят знак и подпись. Процент равен `null`, если в прошлом окне
+был ноль байт (деление на ноль — не «+100 %»).
+
+`trend.comparable` — главный флаг честности: `true` только когда история
+замеров (`coverage.since`) началась не позже `previous.start`. Если `false`,
+все три процента приходят `null`, а клиенты не рисуют бейдж вовсе:
+отсутствие истории не есть падение трафика на 100 %.
+
+`previous` и `trend` — additive-поля: старые клиенты их просто игнорируют.
+Все цифры расхода — из серверных бакетов `TrafficUsageBucket` (пишет нода),
+см. `docs/traffic-integrity.md`. `budget` отдаётся только админам и по решению
+сервера (`isAdmin`), обычный пользователь получает `null`.
 
 ### DELETE /api/devices/:id
 

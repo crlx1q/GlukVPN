@@ -51,6 +51,7 @@
 1. **Календарный выбор диапазона (Custom date picker) в аналитике:**
    - Сейчас API `/api/user/analytics` принимает только `period=day|week|month`.
    - Нужно расширить бэкенд (`services/accountInsights.ts`, `routes/insights.ts`) поддержкой произвольных `from` и `to` (ISO даты) и добавить UI выбора диапазона.
+   - После #025 UI честно подписывает фактическое окно (чип `start → end · шаг · UTC`) вместо неработающего календаря; при добавлении `from`/`to` сохранить поля `previous` / `trend` и флаг `trend.comparable` (контракт в `docs/api.md`).
 2. **Обход цензуры в РФ (см. `docs/ru-blocking.md`):**
    - ТСПУ глушит стандартный WireGuard handshake.
    - В планах: внедрение обфусцированного **AmneziaWG** на узлах (сохраняет архитектуру WG) либо **VLESS+Reality (XHTTP/gRPC на порту 443)**.
