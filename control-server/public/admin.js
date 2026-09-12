@@ -1027,6 +1027,68 @@ function testerButton(user) {
 	return button
 }
 
+/**
+ * Блокировка и разблокировка. От Disable отличается тем, что владельцу на
+ * входе говорят «аккаунт заблокирован», а не «временно отключён», причина
+ * сохраняется в карточке, а VLESS-доступ снимается со всех узлов.
+ */
+function blockButton(user) {
+	if (user.status === "BLOCKED") {
+		const unblock = actionButton("Unblock", "small ghost", () =>
+			request(`/api/admin/users/${user.id}/unblock`, { method: "POST" }),
+		)
+		unblock.title = user.blockedReason
+			? `Blocked: ${user.blockedReason}`
+			: "Let this account back in"
+		return unblock
+	}
+	const button = actionButton("Block", "small warn", () => {
+		const reason = prompt(
+			`Block ${user.username} (ID ${user.publicId})? Tunnels close, tokens die and the VLESS credential is pulled from every node.\n\nReason (optional, shown in the account card):`,
+			"",
+		)
+		// Cancel gives null; an empty string is a legitimate "no reason given".
+		if (reason === null) return null
+		return request(`/api/admin/users/${user.id}/block`, {
+			method: "POST",
+			body: { reason: reason.trim() },
+		})
+	})
+	button.title = "Ban for abuse: the owner is told the account is blocked"
+	return button
+}
+
+/**
+ * Удаление аккаунта. Кнопка требует ввести публичный ID: для необратимого
+ * действия одного «ОК» мало, а ID стоит в той же строке таблицы.
+ */
+function deleteUserButton(user) {
+	const button = actionButton("Delete", "small danger", () => {
+		// Сервер откажет всё равно; здесь это просто честный ответ сразу.
+		if (user.isAdmin) {
+			toast("Remove the admin flag before deleting this account", true)
+			return null
+		}
+		const typed = prompt(
+			`Delete ${user.username}?\n\nDevices, tunnels, email and Telegram are erased for good. Account number ${user.publicId} stays reserved and the payment history remains.\n\nType ${user.publicId} to confirm:`,
+			"",
+		)
+		if (typed === null) return null
+		if (typed.trim() !== String(user.publicId)) {
+			toast("The ID does not match \u2014 nothing was deleted", true)
+			return null
+		}
+		const reason = prompt("Reason (optional, kept on the tombstone):", "")
+		if (reason === null) return null
+		return request(`/api/admin/users/${user.id}`, {
+			method: "DELETE",
+			body: { reason: reason.trim() },
+		})
+	})
+	button.title = "Erase every personal detail; the account number stays reserved"
+	return button
+}
+
 function renderUsers(users) {
 	const body = el("users-body")
 	body.replaceChildren()
@@ -1043,6 +1105,19 @@ function renderUsers(users) {
 
 		const actions = document.createElement("td")
 		actions.className = "actions"
+		// Надгробие: ни туннелей, ни подписки, ни владельца — любая кнопка тут
+		// обманывала бы админа, поэтому остаётся только дата удаления.
+		if (user.status === "DELETED") {
+			const note = document.createElement("span")
+			note.className = "muted"
+			note.textContent = user.deletedAt
+				? `deleted ${new Date(user.deletedAt).toLocaleDateString()}`
+				: "deleted"
+			actions.appendChild(note)
+			row.appendChild(actions)
+			body.appendChild(row)
+			continue
+		}
 		if (user.status === "ACTIVE") {
 			actions.appendChild(
 				actionButton("Disable", "small danger", () => {
@@ -1055,16 +1130,19 @@ function renderUsers(users) {
 					return request(`/api/admin/users/${user.id}/disable`, { method: "POST" })
 				}),
 			)
-		} else {
+		} else if (user.status !== "BLOCKED") {
+			// У заблокированного своя кнопка Unblock: Enable сняло бы бан молча.
 			actions.appendChild(
 				actionButton("Enable", "small ghost", () =>
 					request(`/api/admin/users/${user.id}/enable`, { method: "POST" }),
 				),
 			)
 		}
+		actions.appendChild(blockButton(user))
 		actions.appendChild(testerButton(user))
 		const subToggle = subscriptionToggle(user, row)
 		actions.appendChild(subToggle)
+		actions.appendChild(deleteUserButton(user))
 		row.appendChild(actions)
 		body.appendChild(row)
 		// Раскрытый блок переживает любую перерисовку списка: после неё он

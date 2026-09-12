@@ -747,12 +747,21 @@ td.actions {
 
 .pill.offline,
 .pill.disabled,
+.pill.blocked,
 .pill.revoked,
 .pill.failed,
 .pill.closed {
 	color: var(--danger);
 	border-color: rgba(255, 107, 107, 0.42);
 	background: rgba(255, 107, 107, 0.12);
+}
+
+/* Надгробие удалённого аккаунта: это не авария, а факт, поэтому
+   серый, а не красный: в списке он не должен требовать внимания. */
+.pill.deleted {
+	color: var(--text-1);
+	border-color: rgba(153, 148, 171, 0.32);
+	background: rgba(153, 148, 171, 0.1);
 }
 
 /* ---------- service controls and node policy ---------- */
