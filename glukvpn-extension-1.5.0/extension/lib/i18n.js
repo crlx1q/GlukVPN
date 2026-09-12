@@ -304,6 +304,8 @@ const en = {
 	'err.maintenance': 'The service is briefly unavailable. Try again shortly.',
 	'err.badCredentials': 'Wrong username or password.',
 	'err.accountDisabled': 'This account is disabled. Contact support.',
+	'err.accountBlocked': 'This account is blocked. Contact support.',
+	'err.accountDeleted': 'This account was deleted. It cannot be restored, so please register a new one.',
 	'err.emailNotVerified': 'Confirm your email address first.',
 	'err.noSubscription': 'This account has no active subscription.',
 	'err.trafficLimit': 'The monthly traffic allowance is spent. Connecting works again after the allowance resets.',
@@ -544,6 +546,8 @@ const ru = {
 	'err.maintenance': 'Сервис кратковременно недоступен. Повторите чуть позже.',
 	'err.badCredentials': 'Неверный логин или пароль.',
 	'err.accountDisabled': 'Аккаунт отключён. Напишите в поддержку.',
+	'err.accountBlocked': 'Аккаунт заблокирован. Напишите в поддержку.',
+	'err.accountDeleted': 'Аккаунт удалён. Восстановить его нельзя — зарегистрируйте новый.',
 	'err.emailNotVerified': 'Сначала подтвердите адрес электронной почты.',
 	'err.noSubscription': 'На аккаунте нет активной подписки.',
 	'err.trafficLimit': 'Месячный лимит трафика исчерпан. Подключение заработает снова после сброса лимита.',
@@ -618,6 +622,10 @@ export function errorKeyFor(error) {
 	if (/invalid_credentials|bad credentials|wrong password/.test(text)) {
 		return 'err.badCredentials'
 	}
+	// Удаление и блокировка идут раньше «отключён»: это разные новости, и
+	// совет «напишите в поддержку» удалённому аккаунту ничего не даст.
+	if (/account_deleted|user_deleted/.test(text)) return 'err.accountDeleted'
+	if (/account_blocked|user_blocked/.test(text)) return 'err.accountBlocked'
 	if (/account_disabled|user_disabled|suspended/.test(text)) return 'err.accountDisabled'
 	if (/email_not_verified|verify your email/.test(text)) return 'err.emailNotVerified'
 	if (/no_subscription|subscription_required|no active subscription/.test(text)) {
