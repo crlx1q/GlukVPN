@@ -13,11 +13,12 @@ import {
 	minimumChargeMinor,
 	orderView,
 	planView,
+	priceLabel,
 	reconcilePendingOrders,
 	settlementCurrency,
 	verifyStripeSignature,
 } from "../services/billing"
-import { normalizeCurrency, resolveMarket, resolvePlanPrice } from "../services/pricing"
+import { normalizeCurrency, resolveMarketByIp, resolvePlanPrice } from "../services/pricing"
 import { applyPromo, promoPlanCodes } from "../services/promo"
 import { verifyTabpaySignature } from "../services/tabpay"
 import { claimTrial, trialOffer } from "../services/trial"
@@ -66,20 +67,39 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 		"/api/billing/plans",
 		{ config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
 		async (request, reply) => {
-			// Price follows the visitor, not the server. Cloudflare adds
-			// CF-IPCountry at the edge; ?currency= lets a client override it.
-			// `market` is in the reply so the site and the apps can also pick
-			// their language from the same answer instead of guessing twice.
-			const market = resolveMarket(request)
+			// Price follows the visitor, not the server: the edge header when the
+			// request came through Cloudflare, otherwise GeoIP on the connecting
+			// address, and only then the self-reported zone. ?currency= lets a
+			// client override it. `market` is in the reply so the site and the
+			// apps can pick their language from the same answer instead of
+			// guessing it a second time and disagreeing with the price.
+			const market = await resolveMarketByIp(request)
 			const asked = (request.query as { currency?: string } | undefined)?.currency
 			const currency = normalizeCurrency(asked) ?? market.currency
 			const plans = await listPlans()
+			// TabPay settles in roubles only, so a visitor quoted in tenge or
+			// dollars still sees a rouble amount on their statement. The exact
+			// figure travels with every plan, so the page can name it up front
+			// instead of leaving it as a surprise on the gateway's own screen.
+			const settle = settlementCurrency()
 			return reply.send({
 				billingEnabled: config.billingEnabled,
 				provider: config.billingEnabled ? config.BILLING_PROVIDER : null,
 				currency,
 				market,
-				plans: plans.map((plan) => planView(plan, currency)),
+				settlement: settle ? { currency: settle } : null,
+				plans: plans.map((plan) => {
+					const view = planView(plan, currency)
+					const settled = settle && settle !== view.currency.toUpperCase()
+					if (!settled || view.priceMinor === 0) return view
+					const charged = resolvePlanPrice(plan, settle)
+					return {
+						...view,
+						settlementCurrency: charged.currency,
+						settlementMinor: charged.priceMinor,
+						settlementLabel: priceLabel(charged.priceMinor, charged.currency),
+					}
+				}),
 			})
 		},
 	)
@@ -97,7 +117,8 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 				ip: clientIp(request),
 				// Charge in the currency the visitor was actually quoted.
 				currency:
-					normalizeCurrency(parsed.data.currency) ?? resolveMarket(request).currency,
+					normalizeCurrency(parsed.data.currency) ??
+					(await resolveMarketByIp(request)).currency,
 				promoCode: parsed.data.promoCode ?? null,
 			})
 			return reply.code(201).send({
@@ -154,7 +175,8 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 		async (request, reply) => {
 			const user = await optionalUser(request)
 			const asked = (request.query as { currency?: string } | undefined)?.currency
-			const currency = normalizeCurrency(asked) ?? resolveMarket(request).currency
+			const currency =
+				normalizeCurrency(asked) ?? (await resolveMarketByIp(request)).currency
 			const trial = await trialOffer({ user, currency })
 			return reply.send({
 				billingEnabled: config.billingEnabled,
@@ -206,25 +228,55 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 			})
 			if (!plan) throw badRequest("Unknown plan")
 
-			// Price the code against the amount that would really be charged,
-			// gateway settlement currency included.
-			const wanted = normalizeCurrency(parsed.data.currency) ?? resolveMarket(request).currency
-			const price = resolvePlanPrice(plan, settlementCurrency() ?? wanted)
+			// Two amounts are in play and they are not always in the same
+			// currency: the one on the visitor's screen and the one the gateway
+			// settles. Quoting the discount in the settlement currency is what
+			// put "-25%, к оплате 284 ₽" under a card priced at 790 ₸, so the
+			// code is validated against the amount that is really charged and
+			// the answer is returned in the currency that was asked for.
+			const askedCurrency = normalizeCurrency(parsed.data.currency)
+			const wanted = askedCurrency ?? (await resolveMarketByIp(request)).currency
+			const shown = resolvePlanPrice(plan, wanted)
+			const settle = settlementCurrency()
+			const charged = settle ? resolvePlanPrice(plan, settle) : shown
 			const applied = await applyPromo({
 				code: parsed.data.code,
 				userId: user?.id ?? null,
 				planCode: plan.code,
-				amountMinor: price.priceMinor,
-				currency: price.currency,
+				amountMinor: charged.priceMinor,
+				currency: charged.currency,
+				// The gateway's floor is a rouble figure, so it only means anything
+				// against the amount that is actually settled.
 				minimumMinor: minimumChargeMinor(),
 			})
+
+			// One currency on both sides: the validated figures are the ones to
+			// show. Otherwise the percentage is applied to the displayed price,
+			// leaving at least one minor unit so the card never reads "0 ₸".
+			const same = shown.currency.toUpperCase() === charged.currency.toUpperCase()
+			const discountMinor = same
+				? applied.discountMinor
+				: Math.min(
+						Math.max(0, shown.priceMinor - 1),
+						Math.round((shown.priceMinor * applied.percentOff) / 100),
+					)
 			return reply.send({
 				ok: true,
 				code: applied.promo.code,
 				percentOff: applied.percentOff,
-				discountMinor: applied.discountMinor,
-				amountMinor: applied.amountMinor,
-				currency: price.currency,
+				discountMinor,
+				amountMinor: shown.priceMinor - discountMinor,
+				currency: shown.currency,
+				// What the bank will really debit, when that is another currency.
+				// The pricing page prints it next to the discounted price so the
+				// two figures cannot look like a mistake.
+				settlement: same
+					? null
+					: {
+							currency: charged.currency,
+							amountMinor: applied.amountMinor,
+							label: priceLabel(applied.amountMinor, charged.currency),
+						},
 				// Which plans the code covers, so the pricing page can mark the cards
 				// it applies to instead of quietly discounting everything.
 				planCode: plan.code,

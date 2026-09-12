@@ -50,9 +50,9 @@ describe("resolveCountry", () => {
 		expect(resolveCountry(request({ "accept-language": "ru,en-US;q=0.9" }))).toBe("")
 	})
 
-	// The API is not behind Cloudflare and a browser that asks for plain "ru"
-	// carries no region, so the zone the client reports is the only thing left
-	// to place a visitor with. It is checked last, after both better sources.
+	// The API is not behind Cloudflare, so the zone the client reports is
+	// usually the only thing left to place a visitor with - and it outranks the
+	// language subtag, which says nothing reliable about the country.
 	it("falls back to the time zone the client reports", () => {
 		expect(resolveCountry(request({ "x-client-timezone": "Asia/Almaty" }))).toBe("KZ")
 		expect(resolveCountry(request({ "x-client-timezone": "asia/qyzylorda" }))).toBe("KZ")
@@ -60,13 +60,22 @@ describe("resolveCountry", () => {
 		expect(resolveCountry(request({ "x-client-timezone": "Europe/Berlin" }))).toBe("")
 	})
 
-	it("prefers a real signal over the reported zone", () => {
+	// The edge resolves the country from the connecting address, so it wins
+	// over everything the client says about itself.
+	it("prefers the edge header over the reported zone", () => {
 		expect(
 			resolveCountry(request({ "cf-ipcountry": "DE", "x-client-timezone": "Asia/Almaty" })),
 		).toBe("DE")
-		expect(
-			resolveCountry(request({ "accept-language": "ru-RU", "x-client-timezone": "Asia/Almaty" })),
-		).toBe("RU")
+	})
+
+	// A Russian-language Windows or Android in Almaty sends "ru-RU": that is the
+	// language of the interface, not the country of the device. Reading a
+	// country out of it is what quoted a visitor in Kazakhstan in roubles.
+	it("does not read the country off a ru-RU interface", () => {
+		const headers = { "accept-language": "ru-RU", "x-client-timezone": "Asia/Almaty" }
+		expect(resolveCountry(request(headers))).toBe("KZ")
+		// Still the last resort: with no zone to go on, the subtag is all there is.
+		expect(resolveCountry(request({ "accept-language": "ru-RU" }))).toBe("RU")
 	})
 
 	it("reads the zone from the query string too", () => {
@@ -151,6 +160,38 @@ describe("resolveMarket", () => {
 				request({ "accept-language": "ru", "x-client-timezone": "Asia/Almaty" }),
 			),
 		).toMatchObject({ country: "KZ", currency: "KZT", locale: "ru", source: "timezone" })
+	})
+
+	// A language the visitor picked by hand is the one thing allowed to override
+	// the market: an emigrant on a US address who switched the site to Russian
+	// is quoted in roubles, which is a currency they can actually pay in.
+	it("honours a language the visitor picked by hand", () => {
+		expect(resolveMarket(request({ "cf-ipcountry": "US", "x-client-lang": "ru" }))).toMatchObject({
+			currency: "RUB",
+			locale: "ru",
+		})
+		expect(resolveMarket(request({ "cf-ipcountry": "DE", "x-client-lang": "ru" }))).toMatchObject({
+			currency: "RUB",
+			locale: "ru",
+		})
+	})
+
+	// ...but never the currency of a market we do price: Kazakhstan is quoted in
+	// tenge whichever language the visitor reads the site in.
+	it("keeps the country's own currency when the language changes", () => {
+		expect(resolveMarket(request({ "cf-ipcountry": "KZ", "x-client-lang": "en" }))).toMatchObject({
+			country: "KZ",
+			currency: "KZT",
+			locale: "en",
+		})
+		expect(resolveMarket(request({ "cf-ipcountry": "RU", "x-client-lang": "en" })).currency).toBe(
+			"RUB",
+		)
+	})
+
+	it("reads the chosen language from the query string too", () => {
+		const withQuery = { headers: {}, query: { lang: "ru" } } as unknown as FastifyRequest
+		expect(resolveMarket(withQuery)).toMatchObject({ country: "", currency: "RUB", locale: "ru" })
 	})
 })
 

@@ -1,16 +1,20 @@
 /**
  * Which market a visitor belongs to: country, currency and language.
  *
- * Cloudflare sits in front of the site and adds CF-IPCountry to every request,
- * which is both cheaper and more accurate than a GeoIP lookup of our own - it
- * is resolved at the edge from the connecting address. When the header is
- * absent (a client talking to the API directly, or a dev checkout) the region
- * subtag of Accept-Language is the next best guess, and after that we fall back
- * to the default market rather than guessing wrongly.
+ * Where the visitor is, in order of trust: the Cloudflare edge header, a GeoIP
+ * lookup of the connecting address (`resolveMarketByIp`), the time zone the
+ * client reports, and only then the region subtag of Accept-Language. That
+ * order is deliberate: Cloudflare fronts the site but not the API, so
+ * CF-IPCountry is missing on every direct API call, and a Russian-language
+ * Windows in Almaty sends `ru-RU`, which says what the interface is translated
+ * into and not where the device is. Believing that subtag is exactly how a
+ * visitor in Kazakhstan ended up being quoted in roubles.
  *
  * Currency follows country, not language: a Russian-speaking visitor in
  * Kazakhstan pays in tenge, and someone reading the English site from Russia
- * still pays in roubles.
+ * still pays in roubles. The single exception is a country we hold no currency
+ * for whose visitor switched the language by hand - somebody on a US address
+ * reading the Russian site is quoted in roubles rather than dollars.
  */
 import type { FastifyRequest } from "fastify"
 import type { Plan, PlanPrice } from "@prisma/client"
@@ -141,32 +145,111 @@ function countryForTimeZone(zone: string): string {
 }
 
 /**
+ * Country from the Cloudflare edge header, or "" when it says nothing usable.
+ *
+ * "XX" is "could not place this client" and "T1" is Tor. Both are worse than no
+ * answer: they would pin such a visitor to a market instead of letting a
+ * weaker signal, or the default, apply.
+ */
+function edgeCountry(request: FastifyRequest): string {
+	const edge = headerValue(request, "cf-ipcountry").toUpperCase()
+	return /^[A-Z]{2}$/.test(edge) && edge !== "XX" && edge !== "T1" ? edge : ""
+}
+
+/**
+ * Region subtag of the *first* Accept-Language tag: "ru-KZ,ru;q=0.9" -> "KZ".
+ *
+ * The weakest signal we have and the one that used to misplace people: a
+ * Russian-language Windows or Android in Almaty reports `ru-RU`, which is a
+ * statement about the interface rather than about the country, so it is only
+ * consulted once the edge, GeoIP and the time zone have all stayed silent.
+ * Later tags are ignored on purpose - "ru,en-US;q=0.9" is a Russian speaker
+ * who would also accept English, not somebody in the United States.
+ */
+function languageCountry(request: FastifyRequest): string {
+	const firstTag = headerValue(request, "accept-language").split(",")[0] ?? ""
+	const region = /[-_]([A-Za-z]{2})(?:$|[-_;])/.exec(firstTag)
+	return region && region[1] ? region[1].toUpperCase() : ""
+}
+
+/**
+ * The language the visitor picked by hand: `X-Client-Lang` or `?lang=`.
+ *
+ * Only a click on the language switch reaches this - the site never sends it
+ * for a language it guessed itself. It overrides the language of the market,
+ * and for a country we hold no currency for it also decides the currency: an
+ * emigrant on a US address who switched to Russian is quoted in roubles.
+ */
+function clientLocaleChoice(request: FastifyRequest): "ru" | "en" | "" {
+	const header = headerValue(request, "x-client-lang").toLowerCase()
+	const query = request.query as { lang?: unknown } | undefined
+	const asked =
+		header || (typeof query?.lang === "string" ? query.lang.trim().toLowerCase() : "")
+	return asked === "ru" || asked === "en" ? asked : ""
+}
+
+/** The connecting address, as close to the real client as the proxies allow. */
+function clientAddress(request: FastifyRequest): string {
+	const forwarded = (headerValue(request, "x-forwarded-for").split(",")[0] ?? "").trim()
+	const raw = forwarded || headerValue(request, "x-real-ip") || request.ip || ""
+	return raw.replace(/^::ffff:/i, "").trim()
+}
+
+/**
+ * GeoIP answers, remembered for six hours.
+ *
+ * The provider is rate limited and every page of a session asks the same
+ * question about the same address, so repeating the lookup would be both slow
+ * and wasteful. Empty answers are cached too: when GeoIP is switched off or
+ * down, the next request should fall through to the time zone at once instead
+ * of waiting for another timeout.
+ */
+const GEOIP_TTL_MS = 6 * 60 * 60 * 1000
+const GEOIP_CACHE_MAX = 2000
+const geoipCache = new Map<string, { country: string; at: number }>()
+
+/**
+ * Country for an IP address, or "" when GeoIP is disabled, the address is
+ * private, or the provider says nothing usable. Never throws: a market decided
+ * by the time zone is far better than a page that cannot price itself.
+ */
+async function countryForAddress(ip: string): Promise<string> {
+	if (!ip) return ""
+	const cached = geoipCache.get(ip)
+	if (cached && Date.now() - cached.at < GEOIP_TTL_MS) return cached.country
+
+	let country = ""
+	try {
+		// Imported lazily: services/geo pulls in Prisma and the config, which a
+		// unit test of the pricing rules has no business loading.
+		const { lookupOrigin } = await import("./geo")
+		const origin = await lookupOrigin(ip)
+		const code = (origin?.countryCode ?? "").toUpperCase()
+		if (/^[A-Z]{2}$/.test(code)) country = code
+	} catch {
+		country = ""
+	}
+
+	if (geoipCache.size >= GEOIP_CACHE_MAX) geoipCache.clear()
+	geoipCache.set(ip, { country, at: Date.now() })
+	return country
+}
+
+/**
  * Two-letter country code, uppercased, or "" when nothing usable was sent.
  *
- * Tried in order: the Cloudflare edge header, the region of the first
- * Accept-Language tag, then the client's own time zone. The last one is a
- * self-reported hint, so it is only consulted when both better sources are
- * silent - but it is the one that actually works here: Cloudflare fronts the
- * site, not the API, so CF-IPCountry is absent on every direct API call, and a
- * browser that asks for plain "ru" carries no region either. That combination
- * is exactly how a visitor in Kazakhstan ended up being quoted $1.99.
- *
- * Cloudflare uses "XX" for a client it cannot place and "T1" for Tor, both of
- * which are worse than no answer: they would pin such a visitor to a market
- * instead of letting the default apply.
+ * Synchronous, so no GeoIP: the edge header, then the zone the client reports,
+ * then the region of Accept-Language. The zone outranks the language subtag
+ * because a device in Almaty is far more likely to lie about `ru-RU` than
+ * about `Asia/Almaty`. `resolveMarketByIp` is the variant that also asks
+ * GeoIP; this one stays cheap for callers that only need a guess.
  */
 export function resolveCountry(request: FastifyRequest): string {
-	const edge = headerValue(request, "cf-ipcountry").toUpperCase()
-	if (/^[A-Z]{2}$/.test(edge) && edge !== "XX" && edge !== "T1") return edge
-
-	// "ru-KZ,ru;q=0.9,en;q=0.8" -> KZ. Only the first tag is considered: the
-	// rest are fallbacks the browser would accept, not where the user is.
-	const language = headerValue(request, "accept-language")
-	const firstTag = language.split(",")[0] ?? ""
-	const region = /[-_]([A-Za-z]{2})(?:$|[-_;])/.exec(firstTag)
-	if (region && region[1]) return region[1].toUpperCase()
-
-	return countryForTimeZone(clientTimeZone(request))
+	return (
+		edgeCountry(request) ||
+		countryForTimeZone(clientTimeZone(request)) ||
+		languageCountry(request)
+	)
 }
 
 export type Market = {
@@ -176,33 +259,50 @@ export type Market = {
 	/** UI language to open with: "ru" or "en". */
 	locale: string
 	/** Where the country came from, for debugging a wrong price. */
-	source: "cloudflare" | "language" | "timezone" | "default"
+	source: "cloudflare" | "geoip" | "timezone" | "language" | "default"
 }
 
-/** Country, currency and language for one request. Never throws. */
-export function resolveMarket(request: FastifyRequest): Market {
-	const edge = headerValue(request, "cf-ipcountry").toUpperCase()
-	const edgeKnown = /^[A-Z]{2}$/.test(edge) && edge !== "XX" && edge !== "T1"
-	const firstTag = headerValue(request, "accept-language").split(",")[0] ?? ""
-	const languageKnown = /[-_]([A-Za-z]{2})(?:$|[-_;])/.test(firstTag)
-	const country = resolveCountry(request)
-	const source: Market["source"] = !country
-		? "default"
-		: edgeKnown
-			? "cloudflare"
-			: languageKnown
-				? "language"
-				: "timezone"
-
+/** Currency and language for a country, honouring a hand-picked language. */
+function marketFor(country: string, chosen: "ru" | "en" | "", source: Market["source"]): Market {
 	return {
 		country,
-		// A country we price -> its currency. Anything else, including a visitor
-		// we could not place at all, is quoted in dollars: tenge for an unknown
-		// country would be a price most of the world cannot pay.
-		currency: COUNTRY_CURRENCY[country] ?? DEFAULT_CURRENCY,
-		locale: RUSSIAN_SPEAKING.has(country) ? "ru" : DEFAULT_LOCALE,
+		// A country we price -> its currency. Anything else is quoted in dollars
+		// unless the visitor asked for Russian by hand: tenge for an unknown
+		// country would be a price most of the world cannot pay, but somebody
+		// who chose the Russian site can pay in roubles.
+		currency: COUNTRY_CURRENCY[country] ?? (chosen === "ru" ? "RUB" : DEFAULT_CURRENCY),
+		locale: chosen || (RUSSIAN_SPEAKING.has(country) ? "ru" : DEFAULT_LOCALE),
 		source,
 	}
+}
+
+/** Country, currency and language for one request, without GeoIP. Never throws. */
+export function resolveMarket(request: FastifyRequest): Market {
+	const chosen = clientLocaleChoice(request)
+	const edge = edgeCountry(request)
+	if (edge) return marketFor(edge, chosen, "cloudflare")
+	const zone = countryForTimeZone(clientTimeZone(request))
+	if (zone) return marketFor(zone, chosen, "timezone")
+	const language = languageCountry(request)
+	if (language) return marketFor(language, chosen, "language")
+	return marketFor("", chosen, "default")
+}
+
+/**
+ * The same answer, but allowed to ask GeoIP about the connecting address.
+ *
+ * This is what the billing routes use. api.gluk.tech is reached directly, so
+ * CF-IPCountry is absent there and the address is the only signal that a VPN
+ * cannot fake by hand - the time zone and the language are both self-reported.
+ * Requires GEOIP_ENABLED; without it the answer is the synchronous one.
+ */
+export async function resolveMarketByIp(request: FastifyRequest): Promise<Market> {
+	const chosen = clientLocaleChoice(request)
+	const edge = edgeCountry(request)
+	if (edge) return marketFor(edge, chosen, "cloudflare")
+	const byIp = await countryForAddress(clientAddress(request))
+	if (byIp) return marketFor(byIp, chosen, "geoip")
+	return resolveMarket(request)
 }
 
 /** Normalise anything a client sends as `?currency=` onto a currency we hold. */
