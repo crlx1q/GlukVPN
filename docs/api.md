@@ -9,14 +9,14 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 Единый формат:
 
 ```json
-{ "error": { "code": "FORBIDDEN", "message": "User is disabled" } }
+{ "error": { "code": "account_deleted", "message": "This account has been deleted." } }
 ```
 
 | Код | Когда |
 | --- | --- |
-| 400 | валидация не прошла (`details` содержит поля) |
+| 400 | валидация не прошла (`details` содержит поля), неверный пароль при удалении аккаунта |
 | 401 | нет токена, токен истёк, подпись неверна, неверный логин/пароль |
-| 403 | пользователь отключён, устройство отозвано, нет прав админа, нет подписки |
+| 403 | аккаунт отключён, заблокирован или удалён, устройство отозвано, нет прав админа, нет подписки |
 | 404 | объект не найден или не принадлежит вызывающему |
 | 409 | конфликт: лимит устройств, ключ уже занят, лимит сессий |
 | 429 | rate limit или троттлинг логина (`retryAfterSec`) |
@@ -24,6 +24,23 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 
 Общий rate limit: 120 запросов/мин на IP. Ниже указаны только переопределённые
 лимиты.
+
+### Коды отказа аккаунта
+
+Три статуса отказывают в обслуживании, и говорить о них клиент должен
+по-разному. Сообщения сервера всегда английские, поэтому текст выбирается
+по коду, а не по сообщению:
+
+| Код (403) | Статус | О чём это |
+| --- | --- | --- |
+| `account_disabled` | `DISABLED` | аккаунт выключен, поможет поддержка |
+| `account_blocked` | `BLOCKED` | аккаунт заблокирован за нарушение |
+| `account_deleted` | `DELETED` | аккаунт удалён, восстановить нельзя |
+
+Тот же набор приходит как причина закрытия сессии и в `lastClosedReason`
+(`GET /api/vpn/status`), но с префиксом `user_`: `user_disabled`,
+`user_blocked`, `user_deleted`. Задано всё это в одном месте —
+`src/lib/accountState.ts`.
 
 ## Сводная таблица
 
@@ -34,6 +51,7 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 | POST | `/api/auth/refresh` | refresh-токен | 60/мин |
 | POST | `/api/auth/logout` | user | — |
 | GET | `/api/auth/me` | user | — |
+| DELETE | `/api/account` | user | 3/час |
 | POST | `/api/devices/register` | user | 20/мин |
 | GET | `/api/devices` | user | — |
 | DELETE | `/api/devices/:id` | user | — |
@@ -65,7 +83,13 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 | POST | `/api/admin/users` | admin | — |
 | POST | `/api/admin/users/:id/disable` | admin | — |
 | POST | `/api/admin/users/:id/enable` | admin | — |
+| POST | `/api/admin/users/:id/block` | admin | — |
+| POST | `/api/admin/users/:id/unblock` | admin | — |
+| DELETE | `/api/admin/users/:id` | admin | — |
 | POST | `/api/admin/users/:id/tester` | admin | — |
+| POST | `/api/admin/users/:id/speed-limit` | admin | — |
+| POST | `/api/admin/users/:id/subscription` | admin | — |
+| DELETE | `/api/admin/users/:id/subscription` | admin | — |
 | GET | `/api/admin/devices` | admin | — |
 | POST | `/api/admin/devices/:id/revoke` | admin | — |
 | GET | `/api/admin/sessions` | admin | — |
@@ -148,6 +172,29 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 последние четыре, остальное закрыто звёздочками. Этого хватает, чтобы владелец
 узнал свой номер, и недостаточно, чтобы его узнал сосед через плечо.
 `phoneTail` оставлен для старых сборок.
+
+### DELETE /api/account
+
+Владелец удаляет свой аккаунт сам. Тело: `{ "password": "...", "reason": "..." }`,
+`reason` необязателен. Лимит — 3 запроса в час: на одну опечатку хватает, на
+перебор пароля — нет.
+
+```json
+{ "ok": true, "publicId": "10758930", "closedSessions": 1,
+  "removedDevices": 2, "revokedTokens": 3 }
+```
+
+Неверный пароль — `400`, а не `401`: сессия жива, ошибся только человек.
+На `401` сайт и мобильный клиент ротируют токены и повторяют запрос, так что
+одна опечатка стоила бы двух попыток из трёх. У аккаунтов, заведённых
+через Google, пароля нет — в базе случайный хеш; такому владельцу нужно
+сначала задать пароль через восстановление, и текст ошибки об этом
+говорит.
+
+Админ себя так не удалит — `409`; админский аккаунт удаляет другой
+администратор. Оплаченное время не возвращается, история платежей
+остаётся: ручка закрывает доступ, а не проводит возврат. Что именно
+стирается — в `docs/security.md`, раздел «Удаление аккаунта».
 
 ### POST /api/devices/register
 
@@ -509,6 +556,22 @@ offlineAfterSec, wireguard: { ... } }`. `nodeToken` показывается е�
 
 `POST /api/admin/users` — создаёт пользователя и возвращает сгенерированный пароль
 один раз. `disable` закрывает сессии и аннулирует токены.
+
+`POST /api/admin/users/:id/block` (`{ "reason": "..." }`) — мгновенная
+блокировка: сессии закрываются с `user_blocked`, refresh-токены
+аннулируются, VLESS-доступ снимается с нод следующей синхронизацией
+политики, а логин отвечает `account_blocked`. Ответ —
+`{ ok, closedSessions, revokedTokens }`. `unblock` возвращает статус `ACTIVE`.
+Себя заблокировать нельзя (409).
+
+`DELETE /api/admin/users/:id` (`{ "reason": "..." }`) — удаление аккаунта
+надгробием: строка пользователя остаётся со статусом `DELETED`, всё личное
+стирается. Ответ — `{ ok, userId, publicId, alreadyDeleted, closedSessions,
+removedDevices, revokedTokens }`; вызов идемпотентен и при повторе
+отвечает `alreadyDeleted: true`. Себя удалить нельзя — для этого есть
+`DELETE /api/account` с паролем; у админа сначала снимают флаг.
+Аудит: `admin.user.block`, `admin.user.unblock`, `admin.user.delete`,
+`account.delete` и `account.delete.rejected` для самоудаления.
 
 `POST /api/admin/users/:id/tester` (`{ "enabled": true | false }`) — флаг
 бета-тестера. Клиенты (Android, Windows, расширение) показывают переключатель
