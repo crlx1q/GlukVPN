@@ -4,7 +4,7 @@ import { effectiveDeviceLimit } from "../lib/deviceLimit"
 import { bytesToNumber, prisma } from "../prisma"
 import { egressBudgetView } from "./egressBudget"
 import { lookupOrigin } from "./geo"
-import { countryPoint, usageBucket, usageWindow, type UsagePeriod } from "./insightMath"
+import { countryPoint, previousWindow, trendPercent, usageBucket, usageWindow, type UsagePeriod } from "./insightMath"
 import { loadPublicNodes } from "./nodes"
 import { quotaPayload, quotaStatus } from "./quota"
 import { serviceSettings, serviceStatus } from "./serviceControl"
@@ -86,9 +86,11 @@ const emptyCounters = (): Counters => ({ downloadBytes: 0, uploadBytes: 0 })
 const totalBytes = (v: Counters) => v.downloadBytes + v.uploadBytes
 export async function accountAnalytics(userId: string, period: UsagePeriod, now = new Date(), includeBudget = false) {
 	const window = usageWindow(period, now)
+	// Один запрос на два окна: второй findMany ради бейджа «+12 %» не оправдан.
+	const previous = previousWindow(period, now)
 	const domainCutoff = new Date(now.getTime() - config.DOMAIN_STATS_RETENTION_DAYS * 86400000)
 	const [rows, domains, budget, settings] = await Promise.all([
-		prisma.trafficUsageBucket.findMany({ where: { userId, bucketStart: { gte: window.start, lte: now } }, orderBy: { bucketStart: "asc" } }),
+		prisma.trafficUsageBucket.findMany({ where: { userId, bucketStart: { gte: previous.start, lte: now } }, orderBy: { bucketStart: "asc" } }),
 		config.DOMAIN_STATS_ENABLED ? prisma.trafficDomainStat.groupBy({
 			by: ["domain", "category"], where: { userId, lastSeenAt: { gte: domainCutoff } },
 			_sum: { bytesRx: true, bytesTx: true, connections: true }, _max: { lastSeenAt: true },
@@ -107,9 +109,18 @@ export async function accountAnalytics(userId: string, period: UsagePeriod, now 
 		series.set(start, { start, ...emptyCounters() })
 	}
 	const devices = new Map<string, { deviceId: string; deviceName: string; platform: string | null } & Counters>()
+	const earlier = emptyCounters()
 	for (const row of rows) {
 		const downloadBytes = bytesToNumber(row.downloadBytes)
 		const uploadBytes = bytesToNumber(row.uploadBytes)
+		// Бакеты прошлого окна идут только в сравнение: ни график, ни итоги,
+		// ни разбивка по устройствам их не видят.
+		if (row.bucketStart < window.start) {
+			if (row.bucketStart >= previous.start && row.bucketStart < previous.end) {
+				earlier.downloadBytes += downloadBytes; earlier.uploadBytes += uploadBytes
+			}
+			continue
+		}
 		totals.downloadBytes += downloadBytes; totals.uploadBytes += uploadBytes
 		const key = usageBucket(row.bucketStart, window.bucketSize)
 		const bucket = series.get(key) ?? { start: key, ...emptyCounters() }
@@ -137,6 +148,19 @@ export async function accountAnalytics(userId: string, period: UsagePeriod, now 
 		period, start: window.start.toISOString(), end: now.toISOString(), bucketSize: window.bucketSize,
 		quota: quotaPayload(quota),
 		coverage: { since: settings.analyticsSince, partial: !settings.analyticsSince || since > window.start, source: "session-counter-deltas", timezone: "UTC" },
+		// Сравнение честно только тогда, когда наблюдения начались до прошлого
+		// окна. Иначе comparable:false — клиенты прячут бейдж, а не показывают рост
+		// на фоне несуществующего нуля.
+		previous: { start: previous.start.toISOString(), end: previous.end.toISOString(), ...earlier },
+		trend: (() => {
+			const comparable = Boolean(settings.analyticsSince) && since.getTime() <= previous.start.getTime()
+			return {
+				comparable,
+				downloadPercent: comparable ? trendPercent(totals.downloadBytes, earlier.downloadBytes) : null,
+				uploadPercent: comparable ? trendPercent(totals.uploadBytes, earlier.uploadBytes) : null,
+				totalPercent: comparable ? trendPercent(totalBytes(totals), totalBytes(earlier)) : null,
+			}
+		})(),
 		totals, series: [...series.values()].sort((a, b) => a.start.localeCompare(b.start)),
 		devices: [...devices.values()].sort((a, b) => totalBytes(b) - totalBytes(a)),
 		domains: { enabled: config.DOMAIN_STATS_ENABLED, windowDays: config.DOMAIN_STATS_RETENTION_DAYS, scope: "retained-session-totals", items: domainItems },

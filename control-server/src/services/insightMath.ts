@@ -37,6 +37,27 @@ export function usageWindow(period: UsagePeriod, now = new Date()) {
 	if (period === "month") start.setUTCDate(1)
 	return { start, end: now, bucketSize: period === "day" ? "hour" as const : "day" as const }
 }
+/**
+ * Предыдущее окно той же длины, обрезанное по прожитой части текущего.
+ * Сравнивать целые прошлые сутки с ещё не закончившимися текущими нельзя:
+ * бейдж «−80 %» в обед сообщал бы только о том, что день не кончился.
+ * Конец обрезан началом текущего окна, иначе короткий февраль заполз бы
+ * в текущий месяц.
+ */
+export function previousWindow(period: UsagePeriod, now = new Date()) {
+	const current = usageWindow(period, now)
+	const start = new Date(current.start)
+	if (period === "day") start.setUTCDate(start.getUTCDate() - 1)
+	if (period === "week") start.setUTCDate(start.getUTCDate() - 7)
+	if (period === "month") start.setUTCMonth(start.getUTCMonth() - 1)
+	const elapsed = now.getTime() - current.start.getTime()
+	return { start, end: new Date(Math.min(start.getTime() + elapsed, current.start.getTime())) }
+}
+/** Проценты округляет сервер: четыре клиента не должны округлять по-разному. */
+export function trendPercent(current: number, previous: number): number | null {
+	if (!(previous > 0)) return null
+	return Math.round(((current - previous) / previous) * 100)
+}
 export function usageBucket(date: Date, unit: "hour" | "day"): string {
 	return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), unit === "hour" ? date.getUTCHours() : 0)).toISOString()
 }
