@@ -591,10 +591,14 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 					ip,
 					metadata: { reason: "bad_password" },
 				})
+				// Deliberately 400 and not 401: the session is valid, only the
+				// typed password is wrong. Clients rotate their tokens and replay
+				// the request after a 401 (site auth.js, flutter api_client), so
+				// one typo would spend two of the three hourly tries.
 				// Accounts created through Google carry a random password nobody
 				// knows, so their owner has to set one first - the hint saves a
 				// support ticket.
-				throw unauthorized(
+				throw badRequest(
 					"Wrong password. If you only ever signed in with Google, set a password first via password recovery.",
 				)
 			}
