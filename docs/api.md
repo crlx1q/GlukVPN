@@ -65,6 +65,7 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 | POST | `/api/admin/users` | admin | — |
 | POST | `/api/admin/users/:id/disable` | admin | — |
 | POST | `/api/admin/users/:id/enable` | admin | — |
+| POST | `/api/admin/users/:id/tester` | admin | — |
 | GET | `/api/admin/devices` | admin | — |
 | POST | `/api/admin/devices/:id/revoke` | admin | — |
 | GET | `/api/admin/sessions` | admin | — |
@@ -508,6 +509,12 @@ offlineAfterSec, wireguard: { ... } }`. `nodeToken` показывается е�
 
 `POST /api/admin/users` — создаёт пользователя и возвращает сгенерированный пароль
 один раз. `disable` закрывает сессии и аннулирует токены.
+
+`POST /api/admin/users/:id/tester` (`{ "enabled": true | false }`) — флаг
+бета-тестера. Клиенты (Android, Windows, расширение) показывают переключатель
+PROD/BETA только при `isAdmin || isTester`, поэтому этот endpoint — единственный
+способ пустить тестера на бету. В панели это колонка «Tester» и кнопка
+«Make tester» / «Revoke tester».
 
 `GET /api/admin/audit` — хвост аудит-лога с пагинацией.
 

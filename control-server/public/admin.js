@@ -996,7 +996,7 @@ function subscriptionToggle(user, row) {
 		panel = document.createElement("tr")
 		panel.className = "sub-row"
 		const holder = document.createElement("td")
-		holder.colSpan = 8
+		holder.colSpan = 9
 		holder.appendChild(subscriptionPanel(user, close))
 		panel.appendChild(holder)
 		row.after(panel)
@@ -1005,6 +1005,25 @@ function subscriptionToggle(user, row) {
 		state.subPanelUserId = user.id
 		button.setAttribute("aria-expanded", "true")
 	})
+	return button
+}
+
+/**
+ * Флаг бета-тестера. Это единственный способ выдать доступ к переключателю
+ * PROD/BETA из панели: клиенты (Android, Windows, расширение) показывают карточку
+ * каналов, только если аккаунт админ или тестер.
+ */
+function testerButton(user) {
+	const enabled = Boolean(user.isTester)
+	const button = actionButton(enabled ? "Revoke tester" : "Make tester", "small ghost", () =>
+		request(`/api/admin/users/${user.id}/tester`, {
+			method: "POST",
+			body: { enabled: !enabled },
+		}),
+	)
+	button.title = enabled
+		? "Hide the PROD/BETA channel switch on every client of this account"
+		: "Show the PROD/BETA channel switch on Android, desktop and the extension"
 	return button
 }
 
@@ -1017,6 +1036,7 @@ function renderUsers(users) {
 		cell(row, user.username)
 		cell(row, statusPill(user.status))
 		cell(row, user.isAdmin ? "yes" : "no")
+		cell(row, user.isTester ? "yes" : "no")
 		cell(row, `${user.devices} / ${user.maxDevices}`)
 		cell(row, `${user.liveSessions} / ${user.maxSessions}`)
 		cell(row, subscriptionCell(user))
@@ -1042,6 +1062,7 @@ function renderUsers(users) {
 				),
 			)
 		}
+		actions.appendChild(testerButton(user))
 		const subToggle = subscriptionToggle(user, row)
 		actions.appendChild(subToggle)
 		row.appendChild(actions)
@@ -1053,7 +1074,7 @@ function renderUsers(users) {
 	if (users.length === 0) {
 		const row = document.createElement("tr")
 		const td = cell(row, state.userQuery ? "No user matches that ID or nickname." : "No users yet.")
-		td.colSpan = 8
+		td.colSpan = 9
 		td.className = "muted"
 		body.appendChild(row)
 	}
