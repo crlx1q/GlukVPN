@@ -244,6 +244,23 @@ jobs:
           ls -lh glukvpn-*.apk
           sha256sum glukvpn-*.apk
 
+      - name: Name the APK the way the server expects
+        if: env.HAS_KEYSTORE == 'true'
+        run: |
+          set -euo pipefail
+          # site/deploy/sync-downloads.sh derives the published version from the
+          # file name and refuses a versionless glukvpn-release.apk, so the name
+          # is produced here instead of by hand during the release. pubspec
+          # carries "X.Y.Z+build"; the build number belongs in the manifest.
+          VERSION="$(grep '^version:' pubspec.yaml | sed 's/^version:[[:space:]]*//' | cut -d+ -f1 | tr -d '[:space:]')"
+          case "$VERSION" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::pubspec.yaml version is not X.Y.Z: '$VERSION'"; exit 1 ;;
+          esac
+          mv glukvpn-release.apk "glukvpn-release-$VERSION.apk"
+          echo "APK_NAME=glukvpn-release-$VERSION.apk" >> "$GITHUB_ENV"
+          ls -lh glukvpn-*.apk
+
       - uses: actions/upload-artifact@v4
         with:
           name: glukvpn-apk
@@ -274,7 +291,7 @@ jobs:
           tag_name: android-v${{ env.APP_VERSION }}-build${{ github.run_number }}
           name: GlukVPN Android v${{ env.APP_VERSION }} - Build ${{ github.run_number }}
           prerelease: true
-          files: flutter-client/glukvpn-release.apk
+          files: flutter-client/${{ env.APK_NAME }}
           body: |
             GlukVPN Android Client - v${{ env.APP_VERSION }} (${{ env.CHANNEL }})
 

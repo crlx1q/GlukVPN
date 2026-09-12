@@ -140,16 +140,32 @@ jobs:
           name: GlukVPN-Windows-Setup
           path: dist/*.exe
 
+      # The installer file name already carries the version: build-all.ps1 passes
+      # AppVersion into installer.iss and Inno writes GlukVPN-Setup-<version>.exe.
+      # Read it back here so the release tag, title and body never have to be
+      # bumped by hand again.
+      - name: Parse the installer version
+        run: |
+          $installer = Get-ChildItem -Path dist\GlukVPN-Setup-*.exe -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1
+          if (-not $installer) { throw "No dist\GlukVPN-Setup-*.exe was produced by the build" }
+          $parsed = [regex]::Match($installer.Name, '^GlukVPN-Setup-(\d+\.\d+\.\d+)\.exe$')
+          if (-not $parsed.Success) { throw "Unexpected installer name: $($installer.Name)" }
+          $version = $parsed.Groups[1].Value
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "INSTALLER_NAME=$($installer.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Publishing $($installer.Name) as v$version"
+        shell: pwsh
+
       - name: Publish Windows Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: windows-v1.6.0-build${{ github.run_number }}
-          name: GlukVPN Windows v1.6.0 - Build ${{ github.run_number }}
+          tag_name: windows-v${{ env.APP_VERSION }}-build${{ github.run_number }}
+          name: GlukVPN Windows v${{ env.APP_VERSION }} - Build ${{ github.run_number }}
           prerelease: true
-          files: dist/GlukVPN-Setup-*.exe
+          files: dist/${{ env.INSTALLER_NAME }}
           body: |
-            GlukVPN Windows Desktop Client - v1.6.0
+            GlukVPN Windows Desktop Client - v${{ env.APP_VERSION }}
             
-            * Installer: `GlukVPN-Setup-1.6.0.exe`
+            * Installer: `${{ env.INSTALLER_NAME }}`
             * Commit: ${{ github.sha }}
             * Channel: Production
