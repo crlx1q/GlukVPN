@@ -5,10 +5,11 @@
  * plane and never accepts an inbound control connection. The heartbeat doubles
  * as the command channel.
  *
- * ROUND 27 adds the single listener this agent does own: a shaped VLESS relay
- * in front of sing-box (see lib/gatewayShaper). It carries subscriber traffic
- * only - it speaks no control protocol, accepts no commands, and does not bind
- * at all unless SHAPING_GATEWAY_TIERS names a port.
+ * ROUND 27 adds the only listeners this agent owns: shaped VLESS relays in
+ * front of sing-box (see lib/gatewayShaper). They carry subscriber traffic
+ * only - they speak no control protocol and accept no commands - and since
+ * ROUND 28 they bind loopback, reachable solely through the nginx `stream`
+ * SNI map on port 443.
  *
  * What this agent can do, and nothing more:
  *   - report host metrics (CPU / RAM / uptime / peer count)
@@ -372,9 +373,10 @@ async function main(): Promise<void> {
 
 	state.singbox = await SingboxManager.create()
 
-	// The shaped front door for desktop VLESS. `fromConfig` returns null unless
-	// the operator named at least one tier, so a node that was never configured
-	// for it binds nothing and behaves exactly as it did before.
+	// The shaped front door for desktop VLESS. `fromConfig` returns null when
+	// the operator emptied the speed list or flipped the kill switch, so a node
+	// that wants no shaping binds nothing. The listeners are loopback-only, so
+	// binding them changes nothing about this node's external surface.
 	state.gatewayShaper = GatewayShaper.fromConfig()
 	if (state.gatewayShaper) {
 		try {
@@ -396,6 +398,8 @@ async function main(): Promise<void> {
 		reportSec: config.STATS_REPORT_INTERVAL_SEC,
 		singbox: state.singbox ? "managed" : "off",
 		shapedPorts: state.gatewayShaper ? state.gatewayShaper.ports.join(",") : "off",
+		// mbit=port, what the nginx SNI map must forward each speed subdomain to.
+		shapedGateways: state.gatewayShaper ? state.gatewayShaper.tierMap : "off",
 	})
 
 	const shutdown = (signal: string) => {

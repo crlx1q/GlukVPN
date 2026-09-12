@@ -46,8 +46,13 @@ export function bytesPerSecond(mbps: number): number {
 }
 
 /**
- * Parses SHAPING_GATEWAY_TIERS, e.g. "30=2053,100=2083" (8443 and 8444 are
- * already the browser proxies on this node, 443 is sing-box itself).
+ * Parses SHAPING_GATEWAY_TIERS, the ROUND 27 format: "<mbit>=<port>" pairs
+ * such as "30=2053,100=2083".
+ *
+ * Kept for nodes that were configured before the SNI front door existed, and
+ * for pinning a port by hand. New deployments use SHAPING_GATEWAY_SPEEDS and
+ * `parseSpeedTiers` below, because one external port per tier is exactly what
+ * broke in Oracle Cloud.
  *
  * A malformed entry is dropped, never guessed at: inventing a cap for a typo
  * would throttle a plan nobody sold. The result is sorted by speed so the log
@@ -75,6 +80,68 @@ export function parseTiers(spec: string): GatewayTier[] {
 	}
 
 	return tiers.sort((a, b) => a.mbps - b.mbps)
+}
+
+/** First loopback port handed to a shaped relay when none is pinned. */
+export const DEFAULT_SPEED_BASE_PORT = 8460
+
+/**
+ * Parses SHAPING_GATEWAY_SPEEDS, e.g. "30,50,100,250,500": the speeds sold in
+ * the admin panel, with no port in sight.
+ *
+ * That absence is the point. The pairs format needed one *externally
+ * reachable* port per tier, and this node lives in Oracle Cloud, where the VCN
+ * closes everything except 443 - a capped desktop client got connect_timeout
+ * instead of a slow tunnel. Non-standard ports are also the first thing an ISP
+ * or a hotel Wi-Fi drops. Now nginx `stream` splits the single open port by
+ * SNI (`speed30.<node>` here, `<node>` straight to sing-box) and these relays
+ * bind loopback, where no firewall and no client can reach them.
+ *
+ * Ports are therefore an internal detail, assigned as `basePort + index` over
+ * the sorted, de-duplicated speeds. The rule is deterministic so the generated
+ * nginx map and these listeners agree without either side storing it; a tier
+ * may still pin its own port as "<mbps>=<port>" on a node where the default
+ * range is taken.
+ */
+export function parseSpeedTiers(spec: string, basePort = DEFAULT_SPEED_BASE_PORT): GatewayTier[] {
+	const pinned = new Map<number, number>()
+	const speeds: number[] = []
+
+	for (const raw of spec.split(",")) {
+		const entry = raw.trim()
+		if (entry === "") continue
+		const match = /^(\d{1,6})(?:\s*=\s*(\d{1,5}))?$/.exec(entry)
+		if (!match) continue
+		const mbps = Number(match[1])
+		if (mbps <= 0) continue
+		// Two ports for one speed leave the control plane no way to choose, so
+		// the first spelling of a speed wins - as in parseTiers above.
+		if (speeds.includes(mbps)) continue
+		if (match[2] !== undefined) {
+			const port = Number(match[2])
+			if (port < 1 || port > 65535) continue
+			pinned.set(mbps, port)
+		}
+		speeds.push(mbps)
+	}
+
+	speeds.sort((a, b) => a - b)
+	const used = new Set<number>(pinned.values())
+	const tiers: GatewayTier[] = []
+	let next = basePort
+	for (const mbps of speeds) {
+		const port = pinned.get(mbps)
+		if (port !== undefined) {
+			tiers.push({ mbps, port })
+			continue
+		}
+		while (used.has(next)) next += 1
+		if (next > 65535) break
+		used.add(next)
+		tiers.push({ mbps, port: next })
+		next += 1
+	}
+	return tiers
 }
 
 const defaultSleep = (ms: number): Promise<void> =>
@@ -211,16 +278,34 @@ export class GatewayShaper {
 		this.idleMs = options.idleMs ?? DEFAULT_IDLE_MS
 	}
 
-	/** `null` when the operator has not configured any shaped port. */
+	/** `null` when the operator has not configured any shaped speed. */
 	static fromConfig(): GatewayShaper | null {
 		if (!config.SHAPING_GATEWAY_ENABLED) return null
-		const tiers = parseTiers(config.SHAPING_GATEWAY_TIERS ?? "")
+		const targetPort = config.SHAPING_GATEWAY_TARGET_PORT
+		// Legacy pairs win when a node still has them, so an operator who has not
+		// installed the nginx SNI map yet keeps the behaviour they deployed.
+		const legacy = parseTiers(config.SHAPING_GATEWAY_TIERS ?? "")
+		const configured =
+			legacy.length > 0
+				? legacy
+				: parseSpeedTiers(
+						config.SHAPING_GATEWAY_SPEEDS ?? "",
+						config.SHAPING_GATEWAY_BASE_PORT ?? DEFAULT_SPEED_BASE_PORT,
+					)
+		// A relay pointed at its own listener - or at the nginx port that routes
+		// back to it - would forward the stream into itself until the node ran
+		// out of sockets.
+		const tiers = configured.filter((tier) => tier.port !== targetPort)
 		if (tiers.length === 0) return null
 		return new GatewayShaper({
 			tiers,
 			targetHost: config.SHAPING_GATEWAY_TARGET_HOST,
-			targetPort: config.SHAPING_GATEWAY_TARGET_PORT,
+			targetPort,
 			burstSeconds: config.SHAPING_GATEWAY_BURST_SECONDS,
+			// Loopback only: nginx stream is the sole path to a shaped relay, so
+			// no cloud port has to be opened and no client can dial the faster
+			// tier's listener directly.
+			host: config.SHAPING_GATEWAY_BIND_HOST ?? "127.0.0.1",
 		})
 	}
 
@@ -230,6 +315,19 @@ export class GatewayShaper {
 			const address = server.address()
 			return address && typeof address === "object" ? address.port : 0
 		})
+	}
+
+	/**
+	 * "30=8460,50=8461" - the speed-to-port map the nginx SNI router has to
+	 * point at. Logged at startup so a mismatch between the generated map and
+	 * what is really listening is one `journalctl` away instead of a silent
+	 * connection refused for one tier.
+	 */
+	get tierMap(): string {
+		const bound = this.ports
+		return this.options.tiers
+			.map((tier, index) => `${tier.mbps}=${bound[index] || tier.port}`)
+			.join(",")
 	}
 
 	private shaperFor(key: string, capBytesPerSecond: number): Shaper {

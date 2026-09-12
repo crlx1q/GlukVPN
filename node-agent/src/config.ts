@@ -141,28 +141,52 @@ const Schema = z.object({
 	// rest is borrowed, in plan-priority order.
 	SHAPING_GUARANTEE_PERCENT: z.coerce.number().int().min(1).max(100).default(25),
 
-	// Shaped VLESS front door (ROUND 27).
+	// Shaped VLESS front door (ROUND 27, re-architected in ROUND 28).
 	//
 	// tc above only ever sees the WireGuard interface, so it caps the phone and
 	// nothing else. The desktop client talks VLESS to sing-box, and until this
 	// existed a 30 Mbit/s account downloaded at line rate. These listeners sit
-	// in front of sing-box and cap the outer stream; the control plane hands a
-	// capped account the port matching its plan (VLESS_SHAPED_PORTS there) and
-	// everyone else the plain gateway port, so unlimited users never touch it.
+	// in front of sing-box and cap the outer stream.
+	//
+	// ROUND 27 gave every tier its own *external* port (2053, 2083, ...), which
+	// cannot work here: this node lives in Oracle Cloud, where the VCN closes
+	// every port except 443, so a capped client got connect_timeout instead of a
+	// slow tunnel - and a non-standard port is the first thing an ISP or a hotel
+	// Wi-Fi drops. ROUND 28 keeps exactly one port open to the world:
+	//
+	//   client -> 443 (nginx stream, ssl_preread)
+	//              |- SNI de-01.gluk.tech         -> sing-box        (unlimited)
+	//              `- SNI speed30.de-01.gluk.tech -> 127.0.0.1:8460 -> sing-box
+	//
+	// So the relays bind loopback and their ports are an internal detail; the
+	// control plane hands a capped account the SNI of its tier
+	// (VLESS_SPEED_TIERS there), never a port.
 	SHAPING_GATEWAY_ENABLED: z
 		.enum(["true", "false", "1", "0"])
 		.default("true")
 		.transform((value) => value === "true" || value === "1"),
-	// "<mbit>=<port>" pairs, one per plan speed sold, e.g. "30=2053,100=2083".
-	// Empty (the default) means no listener is opened and nothing changes.
-	// Every port listed here must also be opened in the cloud security list and
-	// must be free on this machine: 443 is sing-box itself, 8443 and 8444 are
-	// the prod and beta browser proxies, 51820 is WireGuard.
+	// The speeds sold in the admin panel, port-less: "30,50,100,250,500".
+	// Ports are assigned from SHAPING_GATEWAY_BASE_PORT in ascending speed
+	// order, and the generated nginx map uses the same rule. A tier may pin its
+	// own port as "<mbit>=<port>" on a node where that range is taken.
+	SHAPING_GATEWAY_SPEEDS: z.string().trim().default("30,50,100,250,500"),
+	// First loopback port for the shaped relays. The range must be free: 443 is
+	// nginx, 8445 is sing-box, 8443 and 8444 are the prod and beta browser
+	// proxies, 51820 is WireGuard.
+	SHAPING_GATEWAY_BASE_PORT: positiveInt(8460),
+	// Where the relays listen. Loopback, and not negotiable in practice: a
+	// shaped port reachable from outside is a way to pick your own speed.
+	SHAPING_GATEWAY_BIND_HOST: z.string().trim().default("127.0.0.1"),
+	// Legacy ROUND 27 pairs, e.g. "30=2053,100=2083". Empty (the default) means
+	// the speed list above is used instead. When set it wins, so a node that
+	// still has external shaped ports keeps working unchanged.
 	SHAPING_GATEWAY_TIERS: z.string().trim().default(""),
-	// Where sing-box actually accepts VLESS. Loopback by default: the relay is
-	// the only thing in front of it, and the public port keeps working as is.
+	// Where sing-box actually accepts VLESS. This must be sing-box's own
+	// listen_port and NOT the public 443: nginx stream owns 443 and routes by
+	// SNI, so forwarding a shaped stream back to 443 would send it through the
+	// same map and straight back into this relay.
 	SHAPING_GATEWAY_TARGET_HOST: z.string().trim().default("127.0.0.1"),
-	SHAPING_GATEWAY_TARGET_PORT: positiveInt(443),
+	SHAPING_GATEWAY_TARGET_PORT: positiveInt(8445),
 	// Short burst, or the first chunk of every connection would wait for budget
 	// and the cap would read as latency instead of as a speed limit.
 	SHAPING_GATEWAY_BURST_SECONDS: z.coerce.number().min(0.05).max(2).default(0.25),
