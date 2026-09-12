@@ -1,4 +1,4 @@
-﻿import { config } from "../config"
+import { config } from "../config"
 
 /**
  * Hard ceiling on how many concurrent VPN sessions one account can hold.
