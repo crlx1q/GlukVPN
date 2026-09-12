@@ -40,7 +40,7 @@ export function accountRefusedError(status: string): HttpError {
 /** Narrows away null/undefined as well, so callers keep their type info. */
 export function isAccountActive<T extends AccountStatusHolder>(
 	user: T | null | undefined,
-): user is T {
+): user is T & { status: "ACTIVE" } {
 	return !!user && user.status === "ACTIVE"
 }
 
