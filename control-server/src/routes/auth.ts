@@ -15,6 +15,7 @@ import { clientIp, getAuthUser, requireUser } from "../middleware/auth"
 import { prisma } from "../prisma"
 import { config } from "../config"
 import { requireRegistrationEnabled } from "../services/serviceControl"
+import { deleteAccount } from "../services/accountDeletion"
 import { latestSubscription, subscriptionPayload, userPayload } from "../services/accountView"
 import { refreshUserOrigin } from "../services/geo"
 import { googleConfigured, verifyGoogleIdToken } from "../services/googleAuth"
@@ -80,6 +81,15 @@ const LogoutBody = z
 		allDevices: z.boolean().optional(),
 	})
 	.optional()
+
+// Deleting your own account is irreversible, so it costs the password even
+// though the request is already authenticated: an access token left on a
+// borrowed laptop must not be enough to destroy the account.
+const DeleteAccountBody = z.object({
+	password: z.string().min(8).max(256),
+	// Free-form "why are you leaving", kept on the tombstone. Never required.
+	reason: z.string().trim().max(300).optional(),
+})
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
 	app.post(
@@ -541,4 +551,82 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 			subscription: subscriptionPayload(subscription),
 		})
 	})
+
+	/**
+	 * "Delete my account" from the website.
+	 *
+	 * The row survives as a tombstone (status DELETED) so the public account
+	 * number is never reused and the owner gets `account_deleted` on the next
+	 * login instead of "invalid username or password"; everything personal is
+	 * erased. See services/accountDeletion.ts.
+	 *
+	 * Paid time is not refunded here and the subscription history stays: this
+	 * route ends access, it is not a billing operation.
+	 */
+	app.delete(
+		"/api/account",
+		{
+			preHandler: requireUser,
+			// Three tries an hour: room for one mistyped password, none for
+			// guessing it through this route.
+			config: { rateLimit: { max: 3, timeWindow: "1 hour" } },
+		},
+		async (request, reply) => {
+			const { user } = getAuthUser(request)
+			const parsed = DeleteAccountBody.safeParse(request.body)
+			if (!parsed.success) throw badRequest("Your current password is required")
+			const ip = clientIp(request)
+
+			// An administrator is a key to the whole service; losing the last one
+			// to a self-service button would lock everybody out of the panel.
+			if (user.isAdmin) {
+				throw conflict("Admin accounts cannot be deleted here. Ask another administrator.")
+			}
+
+			const passwordOk = await verifyPassword(user.passwordHash, parsed.data.password)
+			if (!passwordOk) {
+				await writeAudit({
+					action: "account.delete.rejected",
+					userId: user.id,
+					ip,
+					metadata: { reason: "bad_password" },
+				})
+				// Accounts created through Google carry a random password nobody
+				// knows, so their owner has to set one first - the hint saves a
+				// support ticket.
+				throw unauthorized(
+					"Wrong password. If you only ever signed in with Google, set a password first via password recovery.",
+				)
+			}
+
+			const reason = parsed.data.reason?.trim() || null
+			// actorId stays null: nobody did this to the person, they did it
+			// themselves, and that difference is what the audit trail is for.
+			const result = await deleteAccount({
+				userId: user.id,
+				actorId: null,
+				reason: reason ? `self_service: ${reason}` : "self_service",
+			})
+			await writeAudit({
+				action: "account.delete",
+				userId: user.id,
+				ip,
+				metadata: {
+					publicId: result.publicId,
+					reason,
+					closedSessions: result.closedSessions,
+					removedDevices: result.removedDevices,
+					revokedTokens: result.revokedTokens,
+				},
+			})
+
+			return reply.send({
+				ok: true,
+				publicId: result.publicId,
+				closedSessions: result.closedSessions,
+				removedDevices: result.removedDevices,
+				revokedTokens: result.revokedTokens,
+			})
+		},
+	)
 }

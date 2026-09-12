@@ -7,6 +7,7 @@ import { generateSecret, hashPassword, hashSecret } from "../lib/crypto"
 import { badRequest, conflict, notFound } from "../lib/errors"
 import { clientIp, getAuthUser, requireAdmin } from "../middleware/auth"
 import { bytesToNumber, prisma } from "../prisma"
+import { deleteAccount } from "../services/accountDeletion"
 import { cancelOrder, grantPlan, markOrderPaid, orderView } from "../services/billing"
 import { downgradeToPlanAllowance, purgeStaleDevices } from "../services/deviceAccess"
 import { categoryLabel } from "../services/domainCategories"
@@ -69,6 +70,11 @@ const BlockBody = z
 	.optional()
 
 const TesterBody = z.object({ enabled: z.boolean() })
+
+// Deletion cannot be undone; the optional reason is kept on the tombstone.
+const DeleteUserBody = z
+	.object({ reason: z.string().trim().max(300).optional() })
+	.optional()
 
 // null means "no manual override": the account falls back to its plan speed.
 const SpeedLimitBody = z.object({
@@ -564,6 +570,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 				isTester: user.isTester,
 				blockedAt: user.blockedAt?.toISOString() ?? null,
 				blockedReason: user.blockedReason,
+				deletedAt: user.deletedAt?.toISOString() ?? null,
+				deletedReason: user.deletedReason,
 				telegramUsername: user.telegramUsername,
 				telegramLinked: Boolean(user.telegramId),
 				googleLinked: user.identityLinks.some((link) => link.provider === "GOOGLE"),
@@ -777,6 +785,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 					isAdmin: user.isAdmin,
 					isTester: user.isTester,
 					blockedReason: user.blockedReason,
+					deletedAt: user.deletedAt?.toISOString() ?? null,
 					maxDevices: user.maxDevices,
 					maxSessions: user.maxSessions,
 					devices: activeDevices,
@@ -947,6 +956,57 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 			metadata: { targetUserId: target.id },
 		})
 		return reply.send({ ok: true })
+	})
+
+	/**
+	 * Delete an account (tombstone).
+	 *
+	 * The `users` row stays behind with `status = DELETED`, so the public
+	 * account number is never handed to somebody else and support can still
+	 * answer "what happened to this account"; every personal detail, device,
+	 * tunnel and token is erased in the same call. The full policy - and why
+	 * username and password hash survive - lives in services/accountDeletion.
+	 *
+	 * Idempotent: deleting a tombstone reports `alreadyDeleted` instead of
+	 * failing, so a double click is harmless.
+	 */
+	app.delete("/api/admin/users/:id", async (request, reply) => {
+		const parsed = IdParams.safeParse(request.params)
+		if (!parsed.success) throw badRequest("Invalid user id")
+		const body = DeleteUserBody.safeParse(request.body ?? {})
+		if (!body.success) throw badRequest("Invalid payload")
+		const { user: admin } = getAuthUser(request)
+
+		const target = await prisma.user.findUnique({ where: { id: parsed.data.id } })
+		if (!target) throw notFound("User not found")
+		// Self-deletion goes through DELETE /api/account, which asks for the
+		// password: an admin session alone must not be able to erase itself.
+		if (target.id === admin.id) throw conflict("You cannot delete your own account here")
+		// An admin row is a key to the whole service. Demoting first makes the
+		// intent explicit and costs one extra click.
+		if (target.isAdmin) throw conflict("Remove the admin flag before deleting this account")
+
+		const reason = body.data?.reason?.trim() || null
+		const result = await deleteAccount({
+			userId: target.id,
+			actorId: admin.id,
+			reason,
+		})
+		await writeAudit({
+			action: "admin.user.delete",
+			userId: admin.id,
+			ip: clientIp(request),
+			metadata: {
+				targetUserId: target.id,
+				targetPublicId: result.publicId,
+				reason,
+				alreadyDeleted: result.alreadyDeleted,
+				closedSessions: result.closedSessions,
+				removedDevices: result.removedDevices,
+				revokedTokens: result.revokedTokens,
+			},
+		})
+		return reply.send({ ok: true, ...result })
 	})
 
 	/** Beta-tester flag: shows the PROD/BETA switch in every client. */
