@@ -24,6 +24,11 @@ enum UserStatus {
   /// no tunnels, tokens revoked) but kept apart so support can tell "switched
   /// off" from "banned", and so the block reason has somewhere to live.
   BLOCKED
+  /// Tombstone of a deleted account. The row stays so the public account
+  /// number is never handed to somebody else and support can still answer
+  /// "what happened to 10758930"; every personal field is wiped at the moment
+  /// of deletion. Nothing about it can be signed in to, ever.
+  DELETED
 }
 
 enum DeviceStatus {
@@ -169,6 +174,17 @@ model User {
   isTester        Boolean    @default(false) @map("is_tester")
   blockedAt       DateTime?  @map("blocked_at")
   blockedReason   String?    @map("blocked_reason")
+  /// Deletion tombstone. `status = DELETED` plus these three columns is all
+  /// that survives: name, email, Telegram identity, devices, sessions and
+  /// tokens are gone. `username` and `passwordHash` are deliberately kept —
+  /// login verifies the password before it looks at the status, so without
+  /// them the owner of a deleted account would be told "invalid username or
+  /// password" instead of "this account was deleted", and a stranger could
+  /// probe which names once existed.
+  deletedAt       DateTime?  @map("deleted_at")
+  deletedReason   String?    @map("deleted_reason")
+  /// The administrator who deleted the account; NULL when the owner did it.
+  deletedBy       String?    @map("deleted_by") @db.Uuid
   maxDevices      Int        @default(3) @map("max_devices")
   maxSessions     Int        @default(1) @map("max_concurrent_sessions")
   /// Manual line speed in Mbit/s, set by an admin. NULL = the plan decides.

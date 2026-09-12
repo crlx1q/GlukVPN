@@ -1,6 +1,7 @@
 import type { Device, RefreshToken, User } from "@prisma/client"
 import type { FastifyInstance } from "fastify"
 import { config } from "../config"
+import { accountRefusedError, isAccountActive } from "../lib/accountState"
 import { generateSecret, hashSecret } from "../lib/crypto"
 import { forbidden, unauthorized } from "../lib/errors"
 import { prisma } from "../prisma"
@@ -80,7 +81,7 @@ export async function rotateRefreshToken(
 	// Reject already-invalid device credentials before theft escalation: a signed-out
 	// device must not be able to revoke every other device by replaying its old token.
 	if (existing.expiresAt.getTime() <= Date.now()) throw unauthorized("Refresh token expired")
-	if (existing.user.status !== "ACTIVE") throw forbidden("User is disabled")
+	if (!isAccountActive(existing.user)) throw accountRefusedError(existing.user.status)
 	if (existing.device && (existing.deviceTokenVersion ?? 0) !== (existing.device.tokenVersion ?? 0)) throw unauthorized("Device credentials revoked")
 	if (existing.device && existing.device.status !== "ACTIVE") throw forbidden("Device is revoked")
 

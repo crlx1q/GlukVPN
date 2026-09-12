@@ -27,6 +27,17 @@ export const unauthorized = (message = "Unauthorized"): HttpError =>
 export const forbidden = (message = "Forbidden"): HttpError =>
 	new HttpError(403, "forbidden", message)
 
+/**
+ * 403 with a machine-readable code instead of the generic "forbidden".
+ *
+ * The error handler puts `code` into the response body, so this is what lets a
+ * client tell "blocked" from "deleted" from "switched off" and say it in the
+ * user's own language. The English `message` stays as the fallback for
+ * anything that only logs the error.
+ */
+export const forbiddenWithCode = (code: string, message: string): HttpError =>
+	new HttpError(403, code, message)
+
 export const notFound = (message = "Not found"): HttpError =>
 	new HttpError(404, "not_found", message)
 

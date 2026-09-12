@@ -1,12 +1,12 @@
 import type { User } from "@prisma/client"
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
+import { accountRefusedError } from "../lib/accountState"
 import { writeAudit } from "../lib/audit"
 import { verifyPassword } from "../lib/crypto"
 import {
 	badRequest,
 	conflict,
-	forbidden,
 	serviceUnavailable,
 	tooManyRequests,
 	unauthorized,
@@ -74,13 +74,6 @@ const GoogleBody = z.object({
 	mode: z.enum(["login", "register"]).optional(),
 })
 
-/** Wording for a refused account: blocked is said out loud, disabled stays neutral. */
-export function accountRefusedMessage(status: string): string {
-	return status === "BLOCKED"
-		? "This account has been blocked. Contact support."
-		: "User is disabled"
-}
-
 const LogoutBody = z
 	.object({
 		refreshToken: z.string().min(20).max(512).optional(),
@@ -143,10 +136,19 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 				throw unauthorized("Invalid username or password")
 			}
 
+			// The password is verified above, before the status, so the owner of a
+			// blocked or deleted account is told what actually happened instead of
+			// "invalid username or password" - and a stranger guessing names still
+			// learns nothing, because a wrong password never reaches this line.
 			if (user.status !== "ACTIVE") {
 				await recordLoginAttempt(throttleKey, ip, false)
-				await writeAudit({ action: "auth.login.disabled_user", userId: user.id, ip })
-				throw forbidden(accountRefusedMessage(user.status))
+				await writeAudit({
+					action: "auth.login.disabled_user",
+					userId: user.id,
+					ip,
+					metadata: { status: user.status },
+				})
+				throw accountRefusedError(user.status)
 			}
 
 			await recordLoginAttempt(throttleKey, ip, true)
@@ -208,7 +210,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 			}
 
 			const signIn = async (user: User) => {
-				if (user.status !== "ACTIVE") throw forbidden(accountRefusedMessage(user.status))
+				if (user.status !== "ACTIVE") throw accountRefusedError(user.status)
 				const tokens = await issueTokens(app, user, null)
 				void refreshUserOrigin({
 					userId: user.id,

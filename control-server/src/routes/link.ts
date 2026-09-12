@@ -2,8 +2,9 @@ import type { User } from "@prisma/client"
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 import { config } from "../config"
+import { accountRefusedError, isAccountActive } from "../lib/accountState"
 import { writeAudit } from "../lib/audit"
-import { badRequest, forbidden, notFound } from "../lib/errors"
+import { badRequest, notFound } from "../lib/errors"
 import { clientIp, getAuthUser, requireUser } from "../middleware/auth"
 import { prisma } from "../prisma"
 import { latestSubscription, subscriptionPayload, userPayload } from "../services/accountView"
@@ -92,7 +93,7 @@ async function mintLinkTokens(
  */
 async function mintForUserId(app: FastifyInstance, userId: string): Promise<LinkTokenPayload | null> {
 	const user = await prisma.user.findUnique({ where: { id: userId } })
-	if (!user || user.status !== "ACTIVE") return null
+	if (!isAccountActive(user)) return null
 	return mintLinkTokens(app, user)
 }
 
@@ -122,7 +123,7 @@ export async function linkAuthRoutes(app: FastifyInstance): Promise<void> {
 		approve: async ({ userCode, telegramId }) => {
 			const user = await prisma.user.findFirst({ where: { telegramId } })
 			if (!user) return { ok: false, reason: "not_linked" }
-			if (user.status !== "ACTIVE") return { ok: false, reason: "disabled" }
+			if (!isAccountActive(user)) return { ok: false, reason: "disabled" }
 
 			const outcome = await approveLink({
 				userCode,
@@ -242,7 +243,7 @@ export async function linkAuthRoutes(app: FastifyInstance): Promise<void> {
 			const { user } = getAuthUser(request)
 			const ip = clientIp(request)
 
-			if (user.status !== "ACTIVE") throw forbidden("User is disabled")
+			if (!isAccountActive(user)) throw accountRefusedError(user.status)
 
 			const code = normalizeCode(parsed.data.code)
 			const pending = await describeLink(code)

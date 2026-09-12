@@ -1,4 +1,5 @@
 import type { FastifyRequest } from "fastify"
+import { accountRefusedError, isAccountActive } from "../lib/accountState"
 import { hashSecret } from "../lib/crypto"
 import { forbidden, unauthorized } from "../lib/errors"
 import { prisma } from "../prisma"
@@ -40,13 +41,9 @@ export async function requireUser(request: FastifyRequest): Promise<void> {
 
 	const user = await prisma.user.findUnique({ where: { id: payload.sub } })
 	if (!user) throw unauthorized("Unknown user")
-	if (user.status !== "ACTIVE") {
-		throw forbidden(
-			user.status === "BLOCKED"
-				? "This account has been blocked. Contact support."
-				: "User is disabled",
-		)
-	}
+	// One helper for all refused statuses: the 403 carries a machine code so the
+	// client can say "blocked" / "deleted" / "switched off" in its own words.
+	if (!isAccountActive(user)) throw accountRefusedError(user.status)
 
 	let device = null
 	if (payload.did) {

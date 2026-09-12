@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
+import { accountRefusedError, isAccountActive } from "../lib/accountState"
 import { deviceLimitReached, effectiveDeviceLimit } from "../lib/deviceLimit"
-import { badRequest, conflict, forbidden, notFound } from "../lib/errors"
+import { badRequest, conflict, notFound } from "../lib/errors"
 import { prisma } from "../prisma"
 import { FREE_PLAN_CODE, planShape } from "./entitlements"
 import { closeSessionsInTransaction, SERVICE_GATE_LOCK } from "./serviceControl"
@@ -11,7 +12,7 @@ export async function registerDeviceSlot(userId: string, input: { deviceName: st
 	return prisma.$transaction(async (tx) => {
 		await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId}::uuid FOR UPDATE`
 		const user = await tx.user.findUnique({ where: { id: userId } })
-		if (!user || user.status !== "ACTIVE") throw forbidden("User is disabled")
+		if (!isAccountActive(user)) throw accountRefusedError(user?.status ?? "DISABLED")
 		if (await tx.vpnNode.findFirst({ where: { wireguardPublicKey: input.publicKey }, select: { id: true } })) throw badRequest("This public key belongs to a VPN node")
 		const existing = await tx.device.findUnique({ where: { publicKey: input.publicKey } })
 		if (existing && existing.userId !== userId) throw conflict("This public key is already registered")

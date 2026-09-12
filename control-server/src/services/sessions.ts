@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import type { Device, Session, Subscription, User, VpnNode } from "@prisma/client"
 import { config } from "../config"
+import { accountRefusedError, isAccountActive } from "../lib/accountState"
 import { writeAudit } from "../lib/audit"
 import { conflict, forbidden, notFound, serviceUnavailable } from "../lib/errors"
 import { usableHostIps } from "../lib/ip"
@@ -398,7 +399,7 @@ async function createSessionWithLease(params: {
 					tx.device.findUnique({ where: { id: params.device.id } }),
 					tx.vpnNode.findUnique({ where: { id: params.node.id } }),
 				])
-				if (!currentUser || currentUser.status !== "ACTIVE") throw forbidden("User is disabled")
+				if (!isAccountActive(currentUser)) throw accountRefusedError(currentUser?.status ?? "DISABLED")
 				if (!currentDevice || currentDevice.status !== "ACTIVE" || currentDevice.tokenVersion !== params.device.tokenVersion) throw forbidden("Device is revoked")
 				if (!currentNode) throw serviceUnavailable("Node is unavailable")
 				// Tier gate only. There is no subscription to re-check here: a Free
@@ -478,7 +479,7 @@ export async function connectSession(params: {
 	const { user } = params
 	await requireVpnAvailable()
 
-	if (user.status !== "ACTIVE") throw forbidden("User is disabled")
+	if (!isAccountActive(user)) throw accountRefusedError(user.status)
 	if (params.device.status !== "ACTIVE") throw forbidden("Device is revoked")
 	// Free is not a subscription: an account without one still connects, at tier 0
 	// and with the Free device/session limits. The server resolves the plan, the

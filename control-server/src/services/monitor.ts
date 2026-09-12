@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify"
 import { config } from "../config"
+import { accountSessionCloseReason, isAccountActive } from "../lib/accountState"
 import { writeAudit } from "../lib/audit"
 import { prisma } from "../prisma"
 import { expireStaleOrders } from "./billing"
@@ -131,7 +132,8 @@ export async function runMonitorTick(): Promise<MonitorTickResult> {
 	for (const session of liveSessions) {
 		let reason: string | null = null
 		if (service.maintenance || session.node.maintenance) reason = "maintenance"
-		else if (session.user.status !== "ACTIVE") reason = "user_disabled"
+		else if (!isAccountActive(session.user))
+			reason = accountSessionCloseReason(session.user.status)
 		else if (session.device.status !== "ACTIVE") reason = "device_revoked"
 		// A missing subscription is not a reason on its own: Free has no row, and
 		// Free accounts are allowed on tier-0 nodes. Only a paid-tier node needs one.
