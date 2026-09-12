@@ -66,6 +66,19 @@ class ApiException implements Exception {
       isForbidden &&
       (code == 'traffic_limit' || message.toLowerCase().contains('traffic limit'));
 
+  /// Отказ уровня аккаунта, а не этого устройства. Коды приходят из
+  /// `lib/accountState.ts` на сервере и различают три разные новости:
+  /// аккаунт выключен, заблокирован или удалён безвозвратно. Текст сервера
+  /// всегда по-английски, поэтому решение принимается по коду.
+  bool get isAccountDisabled => isForbidden && code == 'account_disabled';
+  bool get isAccountBlocked => isForbidden && code == 'account_blocked';
+  bool get isAccountDeleted => isForbidden && code == 'account_deleted';
+
+  /// Любой из трёх: сессию продолжать бессмысленно, помогает только другой
+  /// аккаунт или поддержка.
+  bool get isAccountRefused =>
+      isAccountDisabled || isAccountBlocked || isAccountDeleted;
+
   @override
   String toString() => message;
 }

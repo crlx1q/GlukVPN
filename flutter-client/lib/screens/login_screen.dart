@@ -66,6 +66,31 @@ class _LoginViewState extends State<LoginView> {
     );
   }
 
+  /// Текст отказа для человека.
+  ///
+  /// Отказ уровня аккаунта узнаётся по машинному коду, а не по словам:
+  /// сообщение сервера всегда по-английски, а «аккаунт удалён» и
+  /// «аккаунт заблокирован» — разные новости и разные действия. Всё
+  /// остальное показываем так, как пришло.
+  String _errorText(AuthController auth, AppStrings s) {
+    final bool ru = s.isRussian;
+    switch (auth.errorCode) {
+      case 'account_deleted':
+        return ru
+            ? 'Этот аккаунт удалён. Восстановить его нельзя — зарегистрируйте новый.'
+            : 'This account was deleted. It cannot be restored, so please register a new one.';
+      case 'account_blocked':
+        return ru
+            ? 'Аккаунт заблокирован. Напишите в поддержку.'
+            : 'This account is blocked. Contact support.';
+      case 'account_disabled':
+        return ru
+            ? 'Аккаунт отключён. Напишите в поддержку.'
+            : 'This account is disabled. Contact support.';
+    }
+    return auth.error ?? '';
+  }
+
   /// ROUND 11: sign in through the Telegram bot.
   ///
   /// The sheet is not decoration - it is the only place the user can see the
@@ -265,7 +290,7 @@ class _LoginViewState extends State<LoginView> {
             ),
             if (auth.error != null) ...<Widget>[
               const SizedBox(height: 16),
-              InlineNotice(message: auth.error!),
+              InlineNotice(message: _errorText(auth, s)),
             ],
             const SizedBox(height: 22),
             PrimaryPillButton(

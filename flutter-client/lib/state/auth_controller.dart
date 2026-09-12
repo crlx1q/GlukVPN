@@ -38,6 +38,11 @@ class AuthController extends ChangeNotifier {
   AuthUser? _user;
   SubscriptionInfo? _subscription;
   String? _error;
+
+  /// Машинный код последнего отказа (`ApiException.code`). Сообщение
+  /// сервера всегда по-английски, поэтому экраны локализуют текст сами —
+  /// по коду, а не по словам в нём.
+  String? _errorCode;
   bool _busy = false;
   bool _explicitLogout = false;
 
@@ -60,6 +65,9 @@ class AuthController extends ChangeNotifier {
   AuthUser? get user => _user;
   SubscriptionInfo? get subscription => _subscription;
   String? get error => _error;
+
+  /// Код последнего отказа, если он пришёл от сервера.
+  String? get errorCode => _errorCode;
   bool get busy => _busy;
   String? get deviceId => _deviceId;
   String? get deviceName => _deviceName;
@@ -80,8 +88,9 @@ class AuthController extends ChangeNotifier {
   bool get sessionUnconfirmed => _unconfirmed;
 
   void clearError() {
-    if (_error == null) return;
+    if (_error == null && _errorCode == null) return;
     _error = null;
+    _errorCode = null;
     notifyListeners();
   }
 
@@ -95,6 +104,7 @@ class AuthController extends ChangeNotifier {
         _subscription = null;
         _stage = AuthStage.unauthenticated;
         _error = 'Session expired. Please sign in again.';
+        _errorCode = null;
         notifyListeners();
       }
       return;
@@ -154,6 +164,7 @@ class AuthController extends ChangeNotifier {
         _connectivity?.reportNetworkFailure();
       } else if (error.isUnauthorized || error.isForbidden) {
         _error = error.message;
+        _errorCode = error.code;
         _stage = AuthStage.unauthenticated;
       } else {
         // A server-side hiccup: keep the session, show the offline state.
@@ -176,6 +187,7 @@ class AuthController extends ChangeNotifier {
       _unconfirmed = false;
       _stage = AuthStage.unauthenticated;
       _error = 'Your session has ended. Please sign in again.';
+      _errorCode = null;
       notifyListeners();
       return;
     }
@@ -192,6 +204,7 @@ class AuthController extends ChangeNotifier {
     } on ApiException catch (error) {
       if (error.isUnauthorized || error.isForbidden) {
         _error = error.message;
+        _errorCode = error.code;
         _stage = AuthStage.unauthenticated;
       }
       // Anything else: stay signed in, keep showing the offline state.
@@ -202,6 +215,7 @@ class AuthController extends ChangeNotifier {
   /// Signs in with a username **or** an email address.
   Future<bool> login({required String identifier, required String password}) async {
     _error = null;
+    _errorCode = null;
     _busy = true;
     notifyListeners();
     try {
@@ -220,6 +234,7 @@ class AuthController extends ChangeNotifier {
     } on ApiException catch (error) {
       if (error.isNetwork) _connectivity?.reportNetworkFailure();
       _error = error.message;
+      _errorCode = error.code;
       return false;
     } finally {
       _busy = false;
@@ -245,6 +260,7 @@ class AuthController extends ChangeNotifier {
     bool cancelled() => isCancelled?.call() ?? false;
 
     _error = null;
+    _errorCode = null;
     _busy = true;
     notifyListeners();
     try {
@@ -309,6 +325,7 @@ class AuthController extends ChangeNotifier {
     } on ApiException catch (error) {
       if (error.isNetwork) _connectivity?.reportNetworkFailure();
       _error = error.message;
+      _errorCode = error.code;
       return LinkSignInOutcome.failed;
     } finally {
       _busy = false;
@@ -481,6 +498,7 @@ class AuthController extends ChangeNotifier {
       _deviceName = null;
       _devicePublicKey = null;
       _error = null;
+      _errorCode = null;
       _busy = false;
       _explicitLogout = false;
       _stage = AuthStage.unauthenticated;

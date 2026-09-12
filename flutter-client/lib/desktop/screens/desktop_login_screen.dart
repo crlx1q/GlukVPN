@@ -163,6 +163,23 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
       }
       return _ru ? 'Слишком много попыток.' : 'Too many attempts.';
     }
+    // Отказ уровня аккаунта приходит кодом и только кодом: сообщение сервера
+    // всегда по-английски, а «удалён» и «заблокирован» — разные новости.
+    if (e.isAccountDeleted) {
+      return _ru
+          ? 'Этот аккаунт удалён. Восстановить его нельзя — зарегистрируйте новый.'
+          : 'This account was deleted. It cannot be restored, so please register a new one.';
+    }
+    if (e.isAccountBlocked) {
+      return _ru
+          ? 'Аккаунт заблокирован. Напишите в поддержку.'
+          : 'This account is blocked. Contact support.';
+    }
+    if (e.isAccountDisabled) {
+      return _ru
+          ? 'Аккаунт отключён. Напишите в поддержку.'
+          : 'This account is disabled. Contact support.';
+    }
     if (e.isUnauthorized) {
       return _ru ? 'Неверный логин или пароль.' : 'Wrong username or password.';
     }

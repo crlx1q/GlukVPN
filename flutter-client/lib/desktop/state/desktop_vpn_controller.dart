@@ -1054,6 +1054,8 @@ class DesktopVpnController extends ChangeNotifier {
       reason == 'admin_revoked' ||
       reason == 'device_revoked' ||
       reason == 'user_disabled' ||
+      reason == 'user_blocked' ||
+      reason == 'user_deleted' ||
       reason == 'subscription_expired' ||
       reason == 'traffic_limit';
 
@@ -1110,29 +1112,37 @@ class DesktopVpnController extends ChangeNotifier {
         _publicIp = null;
         _currentPingMs = null;
         _dataObserved = false;
+        // «Удалён» — не то же самое, что «отозван»: блокировку однажды могут
+        // снять, а удалённый аккаунт не вернётся, и обещать обратное нельзя.
+        final bool deleted = reason == 'user_deleted';
         final bool revoked = reason == 'admin_revoked' ||
             reason == 'device_revoked' ||
-            reason == 'user_disabled';
+            reason == 'user_disabled' ||
+            reason == 'user_blocked';
         final bool lapsed = reason == 'subscription_expired';
         // Лимит трафика закрывает сеанс так же, как истёкшая подписка:
         // реконнект бессмыслен, пока окно тарифа не сбросится.
         final bool overQuota = reason == 'traffic_limit';
-        final String message = revoked
+        final String message = deleted
             ? (_ru
-                ? 'Сеанс завершён администратором. Подключение не восстанавливается автоматически.'
-                : 'The session was closed by an administrator. It will not be restored automatically.')
-            : lapsed
+                ? 'Аккаунт удалён, сеанс закрыт. Восстановить его нельзя.'
+                : 'The account was deleted, so the session was closed. It cannot be restored.')
+            : revoked
                 ? (_ru
-                    ? 'Подписка больше не активна, сеанс закрыт.'
-                    : 'The subscription is no longer active, so the session was closed.')
-                : overQuota
+                    ? 'Сеанс завершён администратором. Подключение не восстанавливается автоматически.'
+                    : 'The session was closed by an administrator. It will not be restored automatically.')
+                : lapsed
                     ? (_ru
-                        ? 'Месячный лимит трафика исчерпан — сеанс закрыт. Подключение заработает снова после сброса лимита.'
-                        : 'The monthly traffic allowance is spent, so the session was closed. Connecting works again after the allowance resets.')
-                    : (_ru
-                        ? 'Сервер закрыл эту сессию. Нажмите «Подключиться», чтобы начать заново.'
-                        : 'The server closed this session. Press Connect to start a new one.');
-        if (revoked) {
+                        ? 'Подписка больше не активна, сеанс закрыт.'
+                        : 'The subscription is no longer active, so the session was closed.')
+                    : overQuota
+                        ? (_ru
+                            ? 'Месячный лимит трафика исчерпан — сеанс закрыт. Подключение заработает снова после сброса лимита.'
+                            : 'The monthly traffic allowance is spent, so the session was closed. Connecting works again after the allowance resets.')
+                        : (_ru
+                            ? 'Сервер закрыл эту сессию. Нажмите «Подключиться», чтобы начать заново.'
+                            : 'The server closed this session. Press Connect to start a new one.');
+        if (revoked || deleted) {
           _fail(ConnectionPhase.accessRevoked, reason, message);
         } else if (lapsed || overQuota) {
           _fail(ConnectionPhase.limitReached, reason, message);

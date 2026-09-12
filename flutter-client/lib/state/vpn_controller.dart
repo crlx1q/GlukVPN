@@ -846,8 +846,13 @@ class VpnController extends ChangeNotifier {
             ? 'Доступ для этого устройства отозван.'
             : 'Access for this device was revoked.';
       case 'user_disabled':
+        return _russian ? 'Аккаунт отключён.' : 'The account is disabled.';
       case 'user_blocked':
         return _russian ? 'Аккаунт заблокирован.' : 'The account is blocked.';
+      // Удаление отличается от блокировки тем, что возвращаться некуда:
+      // ждать разблокировки бессмысленно, аккаунта больше нет.
+      case 'user_deleted':
+        return _russian ? 'Аккаунт удалён.' : 'The account was deleted.';
       case 'subscription_expired':
         return _russian
             ? 'Подписка закончилась, туннель остановлен.'
