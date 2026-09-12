@@ -81,7 +81,7 @@ class UsageStatsView extends StatelessWidget {
 					// Лимит тарифа стоит первым: из всей статистики именно он
 					// отключает туннель. Цифры серверные — считает узел, не клиент.
 					if (d.quota != null) ...<Widget>[
-						QuotaBar(quota: d.quota!, russian: _ru),
+						QuotaBar(quota: d.quota!, russian: _ru, ring: true),
 						const SizedBox(height: 12),
 					],
 					_Totals(snapshot: d, russian: _ru, period: period),
@@ -127,6 +127,29 @@ String _periodHint(AnalyticsPeriod period, bool ru) {
 			return ru ? '30 дней' : '30 days';
 	}
 }
+
+/// С чем сравнивается тренд. Прошлое окно сервер обрезает по
+/// прошедшей части текущего, так что это честно «к прошлым суткам»,
+/// а не «ко всему вчерашнему дню».
+String _previousHint(AnalyticsPeriod period, bool ru) {
+	switch (period) {
+		case AnalyticsPeriod.day:
+			return ru ? 'к прошлым суткам' : 'vs previous day';
+		case AnalyticsPeriod.week:
+			return ru ? 'к прошлой неделе' : 'vs previous week';
+		case AnalyticsPeriod.month:
+			return ru ? 'к прошлому месяцу' : 'vs previous month';
+	}
+}
+
+/// Шаг графика — решение сервера, а не выбор человека.
+String _bucketHint(AnalyticsPeriod period, bool ru) => period == AnalyticsPeriod.day
+		? (ru ? 'по часам' : 'by hour')
+		: (ru ? 'по дням' : 'by day');
+
+/// «+12 %» или «-8 %»: знак впереди, чтобы направление читалось
+/// раньше величины.
+String _signedPercent(int percent) => percent > 0 ? '+$percent%' : '$percent%';
 
 /// Заголовок и выбор периода.
 class _Head extends StatelessWidget {
@@ -272,6 +295,12 @@ class _Totals extends StatelessWidget {
 	@override
 	Widget build(BuildContext context) {
 		final int total = snapshot.downloadBytes + snapshot.uploadBytes;
+		// Тренд общего объёма дописывается к той же строке: отдельная
+		// карточка ради одного числа перегрузила бы экран телефона.
+		final int? totalTrend = snapshot.trend.total;
+		final String totalTail = totalTrend == null
+				? ''
+				: ' · ${_signedPercent(totalTrend)} ${_previousHint(period, russian)}';
 		return Column(
 			crossAxisAlignment: CrossAxisAlignment.stretch,
 			children: <Widget>[
@@ -283,6 +312,8 @@ class _Totals extends StatelessWidget {
 								label: russian ? 'Загружено' : 'Downloaded',
 								value: formatBytes(snapshot.downloadBytes),
 								tone: GlukColors.connected,
+								trendPercent: snapshot.trend.download,
+								trendNote: _previousHint(period, russian),
 							),
 						),
 						const SizedBox(width: 10),
@@ -292,6 +323,8 @@ class _Totals extends StatelessWidget {
 								label: russian ? 'Отправлено' : 'Uploaded',
 								value: formatBytes(snapshot.uploadBytes),
 								tone: GlukColors.violetLight,
+								trendPercent: snapshot.trend.upload,
+								trendNote: _previousHint(period, russian),
 							),
 						),
 					],
@@ -299,8 +332,8 @@ class _Totals extends StatelessWidget {
 				const SizedBox(height: 8),
 				Text(
 					russian
-							? 'Всего за период «${_periodTitle(period, russian).toLowerCase()}»: ${formatBytes(total)}'
-							: 'Total for "${_periodTitle(period, russian).toLowerCase()}": ${formatBytes(total)}',
+							? 'Всего за период «${_periodTitle(period, russian).toLowerCase()}»: ${formatBytes(total)}$totalTail'
+							: 'Total for "${_periodTitle(period, russian).toLowerCase()}": ${formatBytes(total)}$totalTail',
 					style: const TextStyle(color: GlukColors.text2, fontSize: 11.5),
 				),
 			],
@@ -309,11 +342,25 @@ class _Totals extends StatelessWidget {
 }
 
 class _Metric extends StatelessWidget {
-	const _Metric({required this.icon, required this.label, required this.value, required this.tone});
+	const _Metric({
+		required this.icon,
+		required this.label,
+		required this.value,
+		required this.tone,
+		this.trendPercent,
+		this.trendNote,
+	});
 
 	final IconData icon;
 	final String label, value;
 	final Color tone;
+
+	/// Разница с прошлым окном той же длины; `null` — сравнивать
+	/// не с чем, и бейджа тогда нет вовсе.
+	final int? trendPercent;
+
+	/// Подпись под значением: с чем именно сравнили.
+	final String? trendNote;
 
 	@override
 	Widget build(BuildContext context) => GlassPanel(
@@ -340,6 +387,7 @@ class _Metric extends StatelessWidget {
 										),
 									),
 								),
+								if (trendPercent != null) _TrendBadge(percent: trendPercent!),
 							],
 						),
 						const SizedBox(height: 7),
@@ -349,6 +397,15 @@ class _Metric extends StatelessWidget {
 							overflow: TextOverflow.ellipsis,
 							style: TextStyle(color: tone, fontSize: 19, fontWeight: FontWeight.w800),
 						),
+						if (trendPercent != null && trendNote != null) ...<Widget>[
+							const SizedBox(height: 4),
+							Text(
+								trendNote!,
+								maxLines: 1,
+								overflow: TextOverflow.ellipsis,
+								style: const TextStyle(color: GlukColors.text2, fontSize: 10),
+							),
+						],
 					],
 				),
 			);
@@ -375,10 +432,17 @@ class _TrafficChart extends StatelessWidget {
 		if (points.isEmpty) {
 			return _Empty(russian ? 'За этот период трафик не записан' : 'No traffic recorded for this period');
 		}
-		final int peak = points.fold<int>(
-			0,
-			(int m, TrafficPoint p) => math.max(m, math.max(p.downloadBytes, p.uploadBytes)),
-		);
+		// Пик нужен дважды: как масштаб оси и как подпись
+		// «Пик: 6.1 GB — 11.09», поэтому ищем и величину, и точку.
+		int peak = 0;
+		int peakIndex = 0;
+		for (int i = 0; i < points.length; i++) {
+			final int value = math.max(points[i].downloadBytes, points[i].uploadBytes);
+			if (value > peak) {
+				peak = value;
+				peakIndex = i;
+			}
+		}
 		if (peak <= 0) {
 			return _Empty(russian ? 'За этот период трафик не записан' : 'No traffic recorded for this period');
 		}
@@ -392,13 +456,35 @@ class _TrafficChart extends StatelessWidget {
 				children: <Widget>[
 					Row(
 						children: <Widget>[
+							Text(
+								russian ? 'Трафик' : 'Traffic',
+								style: const TextStyle(
+									color: GlukColors.text0,
+									fontSize: 13,
+									fontWeight: FontWeight.w700,
+								),
+							),
+							const Spacer(),
+							// Не выпадающий список: шаг графика выбирает сервер по
+							// периоду, и притворяться, будто его можно сменить, нечестно.
+							_BucketChip(label: _bucketHint(period, russian)),
+						],
+					),
+					const SizedBox(height: 10),
+					Row(
+						children: <Widget>[
 							_Legend(colour: GlukColors.connected, label: russian ? 'Получено' : 'Downloaded'),
 							const SizedBox(width: 12),
 							_Legend(colour: GlukColors.violetLight, label: russian ? 'Отправлено' : 'Uploaded'),
 							const Spacer(),
-							Text(
-								'${russian ? 'пик' : 'peak'} ${formatBytes(peak)}',
-								style: const TextStyle(color: GlukColors.text2, fontSize: 10),
+							Flexible(
+								child: Text(
+									'${russian ? 'Пик' : 'Peak'}: ${formatBytes(peak)} — ${_tick(points[peakIndex])}',
+									maxLines: 1,
+									overflow: TextOverflow.ellipsis,
+									textAlign: TextAlign.right,
+									style: const TextStyle(color: GlukColors.text2, fontSize: 10),
+								),
 							),
 						],
 					),
@@ -537,6 +623,62 @@ class _WavePainter extends CustomPainter {
 	@override
 	bool shouldRepaint(covariant _WavePainter old) =>
 			old.points != points || old.peak != peak || old.download != download || old.upload != upload;
+}
+
+/// Бейдж тренда к прошлому окну.
+///
+/// Цвет только по направлению, а не по «хорошо/плохо»: рост
+/// трафика для одного человека повод порадоваться, а для другого —
+/// повод проверить, что там качается ночами.
+class _TrendBadge extends StatelessWidget {
+	const _TrendBadge({required this.percent});
+
+	final int percent;
+
+	@override
+	Widget build(BuildContext context) {
+		final Color tone = percent == 0
+				? GlukColors.text2
+				: percent > 0
+						? GlukColors.connected
+						: GlukColors.text1;
+		return Container(
+			padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+			decoration: BoxDecoration(
+				color: tone.withOpacity(0.13),
+				borderRadius: BorderRadius.circular(999),
+			),
+			child: Text(
+				'${percent > 0 ? '↑' : percent < 0 ? '↓' : '·'} ${_signedPercent(percent)}',
+				style: TextStyle(color: tone, fontSize: 10, fontWeight: FontWeight.w800),
+			),
+		);
+	}
+}
+
+/// Чип шага графика: «по часам» или «по дням».
+class _BucketChip extends StatelessWidget {
+	const _BucketChip({required this.label});
+
+	final String label;
+
+	@override
+	Widget build(BuildContext context) => Container(
+				padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+				decoration: BoxDecoration(
+					color: Colors.white.withOpacity(0.05),
+					borderRadius: BorderRadius.circular(999),
+					border: Border.all(color: Colors.white.withOpacity(0.08)),
+				),
+				child: Text(
+					label,
+					style: const TextStyle(
+						color: GlukColors.text2,
+						fontSize: 10,
+						fontWeight: FontWeight.w600,
+					),
+				),
+			);
 }
 
 class _Legend extends StatelessWidget {

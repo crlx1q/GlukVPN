@@ -7,6 +7,9 @@ Map<String, dynamic> _map(Object? value) => value is Map
     : const <String, dynamic>{};
 int _int(Object? value) => value is num && value.isFinite ? value.toInt() : int.tryParse('$value') ?? 0;
 double? _double(Object? value) { final parsed = value is num ? value.toDouble() : double.tryParse('$value'); return parsed != null && parsed.isFinite ? parsed : null; }
+// Процент тренда: сервер уже округлил его до целого, но `null` здесь
+// значимое значение — «сравнивать не с чем», а не «ноль процентов».
+int? _percent(Object? value) { final double? parsed = _double(value); return parsed == null ? null : parsed.round(); }
 DateTime? _date(Object? value) => value is String ? DateTime.tryParse(value)?.toLocal() : null;
 
 class ServiceStatus {
@@ -133,8 +136,50 @@ class ServiceBudget {
   final DateTime? cycleStart, cycleEnd, lastPolledAt;
 }
 
+/// Прошлое окно той же длины — основа тренда «+12 %».
+///
+/// Сервер обрезает его по прошедшей части текущего периода: «сегодня с
+/// утра» сравнивается со «вчера до этого же часа». Иначе утро всегда
+/// показывало бы падение относительно полных вчерашних суток.
+class PreviousWindow {
+  const PreviousWindow({required this.start, required this.end, required this.downloadBytes, required this.uploadBytes});
+  factory PreviousWindow.fromJson(Map<String, dynamic> json) => PreviousWindow(
+    start: _date(json['start']), end: _date(json['end']),
+    downloadBytes: _int(json['downloadBytes']), uploadBytes: _int(json['uploadBytes']),
+  );
+  final DateTime? start, end;
+  final int downloadBytes, uploadBytes;
+  int get totalBytes => downloadBytes + uploadBytes;
+}
+
+/// Тренд период-к-периоду в целых процентах.
+///
+/// `comparable == false` означает «сравнивать не с чем»: история короче
+/// прошлого окна. Рисовать тогда «+100 %» нельзя — это была бы не
+/// разница трафика, а дата включения аналитики.
+class TrendInfo {
+  const TrendInfo({required this.comparable, this.downloadPercent, this.uploadPercent, this.totalPercent});
+  factory TrendInfo.fromJson(Map<String, dynamic> json) => TrendInfo(
+    comparable: json['comparable'] == true,
+    downloadPercent: _percent(json['downloadPercent']),
+    uploadPercent: _percent(json['uploadPercent']),
+    totalPercent: _percent(json['totalPercent']),
+  );
+
+  /// Старый ответ API: полей нет, бейджи не рисуем.
+  static const TrendInfo none = TrendInfo(comparable: false);
+
+  final bool comparable;
+  final int? downloadPercent, uploadPercent, totalPercent;
+
+  /// Значения для показа: `null` — бейджа нет вовсе.
+  int? get download => comparable ? downloadPercent : null;
+  int? get upload => comparable ? uploadPercent : null;
+  int? get total => comparable ? totalPercent : null;
+}
+
 class AnalyticsSnapshot {
-  const AnalyticsSnapshot({required this.period, required this.partial, required this.coverageSince, required this.downloadBytes, required this.uploadBytes, required this.series, required this.devices, required this.domainsEnabled, required this.domainWindowDays, required this.domains, required this.categories, required this.budget, this.quota});
+  const AnalyticsSnapshot({required this.period, required this.partial, required this.coverageSince, required this.downloadBytes, required this.uploadBytes, required this.series, required this.devices, required this.domainsEnabled, required this.domainWindowDays, required this.domains, required this.categories, required this.budget, this.quota, this.previous, this.trend = TrendInfo.none});
   factory AnalyticsSnapshot.fromJson(Map<String, dynamic> json) {
     final coverage = _map(json['coverage']); final totals = _map(json['totals']); final domains = _map(json['domains']);
     List<T> list<T>(Object? raw, T Function(Map<String,dynamic>) parse) => raw is List ? raw.map((e) => parse(_map(e))).toList(growable:false) : <T>[];
@@ -147,6 +192,10 @@ class AnalyticsSnapshot {
       // Личный лимит тарифа — не путать с `budget` выше: тот сервисный
       // и виден только админам.
       quota: json['quota'] == null ? null : QuotaInfo.fromJson(_map(json['quota'])),
+      // Старые ответы без previous/trend обязаны разбираться как раньше:
+      // клиент обновляется не одновременно с сервером.
+      previous: json['previous'] == null ? null : PreviousWindow.fromJson(_map(json['previous'])),
+      trend: json['trend'] == null ? TrendInfo.none : TrendInfo.fromJson(_map(json['trend'])),
     );
   }
   final String period;
@@ -163,4 +212,10 @@ class AnalyticsSnapshot {
 
   /// Месячный лимит тарифа по данным сервера; `null` — старый ответ API.
   final QuotaInfo? quota;
+
+  /// Прошлое окно той же длины; `null` — старый ответ API.
+  final PreviousWindow? previous;
+
+  /// Тренд к прошлому окну; для старых ответов — [TrendInfo.none].
+  final TrendInfo trend;
 }
