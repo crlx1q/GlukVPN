@@ -187,6 +187,11 @@
   var tgOut = box.querySelector("[data-sec-tg-out]");
   var tgLink = box.querySelector("[data-sec-tg-link]");
   var tgCode = box.querySelector("[data-sec-tg-code]");
+  /* Самоудаление. Пароль обязателен: access-токен лежит в браузере,
+     а операция необратима — остаётся надгробие с номером аккаунта, данных нет. */
+  var delForm = box.querySelector('[data-sec-form="delete"]');
+  var DEL_WORD = t("УДАЛИТЬ", "DELETE");
+  var root = document.documentElement.getAttribute("data-base") || "/";
 
   /* Второй шаг смены почты. Пока false — кнопка просит код, после — подтверждает. */
   var awaitingCode = false;
@@ -231,6 +236,10 @@
      потом по коду состояния — как запасной вариант. */
   function byText(raw) {
     var s = String(raw || "");
+    if (/wrong password/i.test(s))
+      return t("Неверный пароль. Если вы входили только через Google, сначала задайте пароль через «Забыли пароль?».", "Wrong password. If you only ever signed in with Google, set one first via password recovery.");
+    if (/admin accounts cannot be deleted/i.test(s))
+      return t("Аккаунт администратора удаляет только другой администратор.", "An admin account can only be deleted by another administrator.");
     if (/current password is incorrect/i.test(s))
       return t("Текущий пароль неверный.", "The current password is incorrect.");
     if (/at least 8 characters/i.test(s))
@@ -274,11 +283,15 @@
       || t("Не получилось. Попробуйте ещё раз.", "That did not work. Please try again.");
   }
 
-  function call(path, body) {
+  function send(path, method, body) {
     if (!window.GlukAuth || !window.GlukAuth.call) {
       return Promise.reject({ status: 401, code: "no_session" });
     }
-    return window.GlukAuth.call(path, { method: "POST", body: body || {} });
+    return window.GlukAuth.call(path, { method: method, body: body || {} });
+  }
+
+  function call(path, body) {
+    return send(path, "POST", body);
   }
 
   /* ------------------------------------------------------------ инфо */
@@ -445,6 +458,48 @@
           tgBtn.disabled = false;
           tgBtn.textContent = label;
           msg("telegram", human(err), "err");
+        }
+      );
+    });
+  }
+
+  /* ---------------------------------------------------------- удаление */
+  /* Три барьера подряд: открыть вкладку, ввести пароль, напечатать слово.
+     На неверный пароль сервер отвечает 400, а не 401: иначе GlukAuth.call
+     решил бы, что сессия протухла, и повторил запрос — одна опечатка съедала
+     бы две попытки из трёх в час. */
+  if (delForm) {
+    delForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var pass = String((delForm.password && delForm.password.value) || "");
+      var word = String((delForm.confirm && delForm.confirm.value) || "").trim().toUpperCase();
+      var why = String((delForm.reason && delForm.reason.value) || "").trim();
+      if (pass.length < 8) {
+        msg("delete", t("Введите пароль от аккаунта.", "Enter your account password."), "err");
+        return;
+      }
+      if (word !== DEL_WORD) {
+        msg("delete", t("Для подтверждения напечатайте ", "To confirm, type ") + DEL_WORD + ".", "err");
+        return;
+      }
+      var label = t("Удалить аккаунт навсегда", "Delete account permanently");
+      var body = { password: pass };
+      if (why) body.reason = why;
+      msg("delete", "");
+      busy(delForm, true, t("Удаляем…", "Deleting…"));
+      send("/api/account", "DELETE", body).then(
+        function (res) {
+          delForm.reset();
+          /* Кнопку не включаем обратно: аккаунта больше нет. */
+          busy(delForm, true, t("Аккаунт удалён", "Account deleted"));
+          var num = res && res.publicId ? " \u2116 " + res.publicId : "";
+          msg("delete", t("Аккаунт", "Account") + num + t(" удалён. Выходим…", " deleted. Signing out…"), "ok");
+          if (window.GlukAuth && window.GlukAuth.logout) window.GlukAuth.logout();
+          setTimeout(function () { location.replace(root); }, 1800);
+        },
+        function (err) {
+          busy(delForm, false, label);
+          msg("delete", human(err), "err");
         }
       );
     });

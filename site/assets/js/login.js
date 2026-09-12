@@ -120,8 +120,16 @@
         form.reset(); message(t("Готово. Открываем кабинет…", "Done. Opening your dashboard…"), true);
         paint(A.state);
       }, function (err) {
+        /* Сервер различает три отказа кодом в error.code, а не текстом:
+           account_blocked, account_deleted, account_disabled. Без этого любое
+           403 читалось как «доступ ограничен», и владелец удалённого аккаунта
+           не понимал, что восстанавливать уже нечего. */
+        var code = err && err.code ? String(err.code) : "";
         var text = t("Не удалось войти. Попробуйте снова.", "Could not sign in. Try again.");
-        if (err && err.status === 401) text = t("Неверный логин или пароль.", "Wrong login or password.");
+        if (code === "account_deleted") text = t("Аккаунт удалён. Восстановить его нельзя — зарегистрируйте новый.", "This account was deleted. It cannot be restored — please register a new one.");
+        else if (code === "account_blocked") text = t("Аккаунт заблокирован. Напишите в поддержку, если это ошибка.", "This account is blocked. Contact support if you think this is a mistake.");
+        else if (code === "account_disabled") text = t("Аккаунт отключён. Напишите в поддержку, чтобы вернуть доступ.", "This account is disabled. Contact support to restore access.");
+        else if (err && err.status === 401) text = t("Неверный логин или пароль.", "Wrong login or password.");
         else if (err && err.status === 403) text = t("Доступ к аккаунту ограничен.", "Access to this account is restricted.");
         else if (err && err.status === 429) text = t("Слишком много попыток. Повторите позже.", "Too many attempts. Please try again later.");
         else if (err && (err.status === 0 || err.status >= 500)) text = t("Сервис не отвечает. Проверьте соединение и повторите.", "The service is unavailable. Check your connection and retry.");
