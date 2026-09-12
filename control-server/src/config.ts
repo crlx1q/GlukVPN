@@ -104,16 +104,35 @@ const EnvSchema = z.object({
 	// ROUND 27: the plan's speed cap used to be a promise the desktop client
 	// was trusted to keep, and it did not - the phone (tc) and the browser
 	// extension (proxy token bucket) throttled themselves while Windows ran at
-	// line rate. The node agent now runs one shaped VLESS relay per sold speed
-	// (SHAPING_GATEWAY_TIERS there); this maps a cap in Mbit/s to the port that
-	// enforces it and must list the same pairs:
+	// line rate. The node agent runs one shaped VLESS relay per sold speed
+	// (SHAPING_GATEWAY_SPEEDS there) and the control plane picks which relay a
+	// device is sent to, so the cap stays a server-side fact: nothing a client
+	// can edit makes it faster.
 	//
-	//   VLESS_SHAPED_PORTS="30=2053,100=2083"
+	// ROUND 28 changed how that relay is addressed. Naming a per-tier port meant
+	// opening 2053, 2083 and friends in the Oracle VCN; they are closed, so a
+	// capped desktop got connect_timeout and could not connect at all. Now every
+	// tier is a subdomain of the node's gateway name on the one port that is
+	// open, and nginx `stream` + `ssl_preread` splits them by SNI:
 	//
-	// A capped device is handed the port of its tier instead of the node's own
-	// gateway port; an uncapped plan is untouched. Empty (the default) = no
-	// client is redirected, which is also the correct behaviour on a node whose
-	// agent has no shaped listeners yet.
+	//   VLESS_SPEED_TIERS="30,50,100,250,500"  ->  speed30.de-01.gluk.tech:443
+	//
+	// These are the speeds the node really shapes, so they must match the
+	// agent's SHAPING_GATEWAY_SPEEDS and the nginx map generated from it.
+	// A capped device is handed the SNI of its tier; an uncapped plan keeps the
+	// plain gateway name.
+	//
+	// Empty (the default) hands out no subdomain at all, which is the only safe
+	// default: until DNS, the certificate and the nginx map exist for those
+	// names, a subdomain would be a TLS or DNS failure for every capped client
+	// rather than a slow tunnel. node-agent/deploy/install-speed-router.sh sets
+	// all three up and prints the value to put here.
+	VLESS_SPEED_TIERS: z.string().default(""),
+	// Label in front of the speed: "speed" -> speed30.<gateway name>.
+	VLESS_SPEED_SNI_PREFIX: z.string().trim().default("speed"),
+	// Legacy ROUND 27 pairs, e.g. "30=2053,100=2083". Used only while
+	// VLESS_SPEED_TIERS is empty, so a node that still has externally exposed
+	// shaped ports keeps working until its SNI map is installed.
 	VLESS_SHAPED_PORTS: z.string().default(""),
 
 	// ------------------------- traffic attribution ---------------------------

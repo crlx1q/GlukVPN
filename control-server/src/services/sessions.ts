@@ -183,10 +183,11 @@ export type ShapedGatewayTier = { mbps: number; port: number }
 /**
  * Parses VLESS_SHAPED_PORTS ("30=2053,100=2083") into tiers sorted by speed.
  *
- * This is the control-plane half of the node agent's SHAPING_GATEWAY_TIERS and
- * has to list the same pairs. A malformed entry is dropped rather than thrown
- * on: a typo in .env must not stop the fleet from connecting, it only means
- * that one tier is not enforced at the gateway.
+ * The legacy ROUND 27 path: one externally reachable port per tier. Kept for
+ * nodes still deployed that way, but new nodes route by SNI on 443 instead -
+ * see parseSpeedTiers below for why. A malformed entry is dropped rather than
+ * thrown on: a typo in .env must not stop the fleet from connecting, it only
+ * means that one tier is not enforced at the gateway.
  */
 export function parseShapedGatewayPorts(spec: string): ShapedGatewayTier[] {
 	const seenSpeeds = new Set<number>()
@@ -234,14 +235,87 @@ export function shapedGatewayPort(
 }
 
 /**
+ * Parses VLESS_SPEED_TIERS ("30,50,100,250,500") into speeds sorted ascending.
+ *
+ * These are the speeds the node shapes behind its nginx SNI map, and the
+ * reason they carry no port: a tier used to be a port, every port except 443
+ * is closed in the Oracle VCN, and a capped desktop client therefore timed out
+ * instead of connecting slowly.
+ */
+export function parseSpeedTiers(spec: string): number[] {
+	const speeds: number[] = []
+	for (const raw of spec.split(",")) {
+		const entry = raw.trim()
+		if (entry === "") continue
+		// The agent's "<mbps>=<port>" spelling is tolerated so an operator who
+		// pastes SHAPING_GATEWAY_SPEEDS in here gets the speeds instead of
+		// nothing. The port is ignored on purpose: routing by port is exactly
+		// what this replaced.
+		const match = /^(\d{1,6})(?:\s*=\s*\d{1,5})?$/.exec(entry)
+		if (!match) continue
+		const mbps = Number(match[1])
+		if (mbps <= 0 || speeds.includes(mbps)) continue
+		speeds.push(mbps)
+	}
+	return speeds.sort((a, b) => a - b)
+}
+
+/**
+ * The gateway SNI for a device capped at `mbps`, or `null` for "use the node's
+ * plain gateway name".
+ *
+ * Tier choice is deliberately the same rule as shapedGatewayPort: the fastest
+ * listener that still respects the cap wins, and a cap below every tier falls
+ * back to the slowest one rather than to the unshaped name. Handing out more
+ * speed than was sold is the bug this exists to fix; a little less is merely a
+ * slow tunnel.
+ *
+ * `null` is also the answer for a base name that cannot carry a label - a bare
+ * IP, or a name with no dot - because prefixing one produces a host that
+ * resolves nowhere, and a client that cannot resolve its gateway is offline
+ * rather than throttled.
+ */
+export function speedGatewaySni(
+	mbps: number | null | undefined,
+	tiers: number[],
+	baseSni: string,
+	prefix = "speed",
+): string | null {
+	if (mbps == null || mbps <= 0) return null
+	if (tiers.length === 0) return null
+	const host = baseSni.trim().toLowerCase().replace(/\.$/, "")
+	if (!host.includes(".")) return null
+	if (host.includes(":") || /^[\d.]+$/.test(host)) return null
+	if (!/^[a-z0-9.-]+$/.test(host)) return null
+
+	let withinCap: number | null = null
+	let slowest: number | null = null
+	for (const tier of tiers) {
+		if (slowest === null || tier < slowest) slowest = tier
+		if (tier <= mbps && (withinCap === null || tier > withinCap)) withinCap = tier
+	}
+	const picked = withinCap ?? slowest
+	if (picked === null) return null
+	const label = prefix.trim().toLowerCase() || "speed"
+	if (!/^[a-z0-9-]*$/.test(label)) return null
+	return `${label}${picked}.${host}`
+}
+
+/**
  * The gateway clients should use on this node. Per-node values reported by the
  * agent win; the .env VLESS_* block is the fallback for a node whose agent
  * predates the heartbeat field. `null` = no gateway, the client uses WireGuard.
  *
- * ROUND 27: `speedLimitMbps` is the cap the caller already resolved. When the
- * operator has wired up the shaped listeners, a capped device is pointed at
- * the port that enforces its plan. Only the port moves - host, SNI, flow and
- * credential all still belong to the same sing-box behind the relay.
+ * `speedLimitMbps` is the cap the caller already resolved, and this is where it
+ * turns into something the client cannot argue with. A capped device is sent to
+ * the speed subdomain of its tier - speed30.de-01.gluk.tech - which nginx
+ * `ssl_preread` maps to the loopback relay that enforces 30 Mbit/s. The port
+ * stays 443 for everyone: it is the only port open in the cloud firewall, and
+ * ROUND 27's per-tier ports are why a capped desktop could not connect at all.
+ *
+ * Only the name moves. Port, credential, flow and the sing-box behind the relay
+ * are the same for every tier, and the whole decision is made here, on the
+ * server, from the plan in the database.
  */
 export function gatewayFor(
 	node: VpnNode,
@@ -250,29 +324,50 @@ export function gatewayFor(
 ): ClientTunnelConfig["gateway"] | null {
 	const uuid = (device.vlessUuid ?? config.VLESS_UUID).trim()
 	if (!uuid) return null
-	const shapedPort = shapedGatewayPort(
-		speedLimitMbps,
-		parseShapedGatewayPorts(config.VLESS_SHAPED_PORTS),
-	)
+	const speedTiers = parseSpeedTiers(config.VLESS_SPEED_TIERS)
+	// The legacy port hop only runs while no speed subdomain is configured: the
+	// two cannot both be right, because an SNI-routed client has to stay on the
+	// port nginx is listening on.
+	const legacyShapedPort = (): number | null =>
+		shapedGatewayPort(speedLimitMbps, parseShapedGatewayPorts(config.VLESS_SHAPED_PORTS))
+
 	if (node.gatewayHost && node.gatewayPort) {
+		// The certificate is issued for the TLS name, so the speed label goes on
+		// the SNI the node reported - falling back to the host when it matches.
+		const shapedSni = speedGatewaySni(
+			speedLimitMbps,
+			speedTiers,
+			node.gatewaySni ?? node.gatewayHost,
+			config.VLESS_SPEED_SNI_PREFIX,
+		)
 		return {
 			type: "vless",
-			host: node.gatewayHost,
-			port: shapedPort ?? node.gatewayPort,
+			// The speed subdomain is an A record onto the same address, so this
+			// dials the same node - only the SNI nginx routes on differs.
+			host: shapedSni ?? node.gatewayHost,
+			port: shapedSni ? node.gatewayPort : (legacyShapedPort() ?? node.gatewayPort),
 			uuid,
-			sni: node.gatewaySni ?? undefined,
+			sni: shapedSni ?? node.gatewaySni ?? undefined,
 			flow: (node.gatewayFlow ?? config.VLESS_FLOW).trim() || undefined,
 		}
 	}
 	// Legacy fallback: one gateway for the fleet, configured in .env. Only when
 	// the operator actually filled it in (VLESS_UUID is the historical switch).
 	if (!config.VLESS_UUID.trim()) return null
+	const host = config.VLESS_HOST.trim() || nodeHost(node)
+	const sni = config.VLESS_SNI.trim()
+	const legacySpeedSni = speedGatewaySni(
+		speedLimitMbps,
+		speedTiers,
+		sni || host,
+		config.VLESS_SPEED_SNI_PREFIX,
+	)
 	return {
 		type: "vless",
-		host: config.VLESS_HOST.trim() || nodeHost(node),
-		port: shapedPort ?? config.VLESS_PORT,
+		host: legacySpeedSni ?? host,
+		port: legacySpeedSni ? config.VLESS_PORT : (legacyShapedPort() ?? config.VLESS_PORT),
 		uuid,
-		sni: config.VLESS_SNI.trim() || undefined,
+		sni: legacySpeedSni ?? (sni || undefined),
 		flow: config.VLESS_FLOW.trim() || undefined,
 	}
 }
