@@ -290,3 +290,71 @@ openssl s_client -connect de-01.gluk.tech:443 -servername speed30.de-01.gluk.tec
 | клиент с тарифом не подключается, безлимитный работает | нет DNS или SAN для `speedNN` | пункты 1–2, затем `--certbot` |
 | один тир даёт connection refused | релей не слушает свой порт | сверить `shapedGateways` в логе с `nginx -T` |
 | ноды заканчиваются сокеты, скорость 0 | `SHAPING_GATEWAY_TARGET_PORT=443` | поставить порт sing-box (8445) |
+
+## Релизы: «залил два файла» и sync-downloads
+
+Версия больше не живёт в сайте. Страницы и `config.js` знают только два
+постоянных эндпоинта — `/download/windows` и `/download/android`, — а из `ui.js`
+убран хардкод `download="GlukVPN-Setup-1.5.0.exe"`, из-за которого установщик
+1.6.0 сохранялся под именем 1.5.0. Имя файла теперь задаёт сервер: редирект
+ведёт на версионный файл, при `--attachment` добавляется `Content-Disposition`.
+
+Единственный источник правды — имена двух файлов в каталоге загрузок:
+
+```
+/var/www/vpn.gluk.tech/downloads/GlukVPN-Setup-X.Y.Z.exe
+/var/www/vpn.gluk.tech/downloads/glukvpn-release-X.Y.Z.apk
+```
+
+Релиз = два шага:
+
+```bash
+# 1. залить сборки (ровно два файла в каталоге)
+scp GlukVPN-Setup-1.7.0.exe glukvpn-release-1.7.0.apk \
+    root@138.2.186.223:/var/www/vpn.gluk.tech/downloads/
+# 2. запустить скрипт из копии репозитория на сервере
+sudo bash site/deploy/sync-downloads.sh --changelog 'GlukVPN 1.7.0: ...'
+```
+
+Что делает `site/deploy/sync-downloads.sh`:
+
+- сканирует `downloads/`, берёт один `.exe` и один `.apk`, парсит из имени `X.Y.Z`;
+- пишет `api/version.json`: `version`, `build` (+1 при новой версии, тот же при
+  повторном запуске), `releaseDate` из mtime, `downloads.*` (версионные пути) и
+  `endpoints.*` (постоянные). `changelog` и `minSupportedVersion` сохраняются,
+  если не переданы флагами; неизвестные ключи файла не теряются;
+- генерирует сниппет nginx с `return 302` на актуальные файлы, проверяет
+  `nginx -t` и откатывается из бэкапа при ошибке;
+- ставит владельца `www-data:www-data` и права `644`.
+
+302, а не 301: цель меняется каждый релиз, а браузер с закэшированным постоянным
+редиректом ещё долго тянул бы удалённый установщик.
+
+Сниппет подключается вручную один раз, внутри server-блока `vpn.gluk.tech`:
+
+```nginx
+include /etc/glukvpn/nginx/downloads.conf;
+```
+
+Скрипт печатает эту строку и не перезагружает nginx, пока не увидит её в
+`nginx -T` — чтобы не рапортовать об успехе, когда редиректов на самом деле нет.
+
+Полезные флаги: `--dry-run` (ничего не пишет), `--json` (для CI), `--prune`
+(удалить лишние сборки; по умолчанию только предупреждение), `--min-supported`
+(форсировать обновление, баннер становится блокирующим), `--root` для беты.
+Повторный запуск без новых файлов ничего не меняет.
+
+### Проверка
+
+```bash
+curl -sI https://vpn.gluk.tech/download/windows | head -3        # 302 на .exe
+curl -sI https://vpn.gluk.tech/download/android | head -3        # 302 на .apk
+curl -s https://vpn.gluk.tech/api/version.json | jq '.version,.build,.downloads,.endpoints'
+```
+
+| Симптом | Причина | Что делать |
+| --- | --- | --- |
+| `/download/windows` даёт 404 | сниппет не подключён в server-блоке | добавить `include`, затем `nginx -s reload` |
+| скрипт ругается на имя файла | артефакт без версии (`glukvpn-release.apk` из `build-apk.yml`) | переименовать в `glukvpn-release-X.Y.Z.apk` до заливки |
+| клиенты не видят обновление | `version.json` не перегенерирован или отдаётся из кэша | запустить скрипт, проверить `curl` выше |
+| скачивается старый установщик | в `downloads/` осталось две версии | `--prune` или удалить лишние вручную |

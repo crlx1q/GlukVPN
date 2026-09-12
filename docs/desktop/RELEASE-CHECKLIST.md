@@ -126,3 +126,9 @@ doing nothing.
 8. Uninstall leaves no service and no `%PROGRAMDATA%\GlukVPN\run`.
 9. Free-tier limit implemented server-side, or explicitly deferred in writing.
 10. Merge `desktop/beta` → `beta` first. **Never straight to production.**
+11. Publish by uploading exactly two files - `GlukVPN-Setup-X.Y.Z.exe` and
+    `glukvpn-release-X.Y.Z.apk` - into `/var/www/vpn.gluk.tech/downloads/`, then
+    run `site/deploy/sync-downloads.sh --changelog '...'`. It derives the version
+    from the file names and rewrites `api/version.json` plus the
+    `/download/windows` and `/download/android` redirects. Never edit a version
+    number by hand in the site or the manifest; see `docs/deployment.md`.

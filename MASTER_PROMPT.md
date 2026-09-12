@@ -92,7 +92,7 @@ GlukVPN/
 │
 └── .github/workflows/                 # [CI/CD] Автоматические сборки GitHub Actions
     ├── build-apk.yml                  # Сборка и подпись Android APK постоянным JKS
-    └── build-desktop.yml              # Сборка Windows Installer (GlukVPN-Setup-1.3.0.exe)
+    └── build-desktop.yml              # Сборка Windows Installer (GlukVPN-Setup-X.Y.Z.exe)
 ```
 
 ---
@@ -190,3 +190,4 @@ sudo systemctl status glukvpn-egress-guard
 * **Android APK**: триггерится пушем в `master` или вручную в workflow `build-apk.yml`.
 * **Windows Setup**: триггерится пушем в `desktop/beta` или вручную в workflow `build-desktop.yml`.
 * Релизные файлы автоматически публикуются в GitHub Releases и дублируются на `https://vpn.gluk.tech/downloads/`.
+* **Публикация на сайте — два файла и один скрипт.** В `/var/www/vpn.gluk.tech/downloads/` всегда лежат ровно `GlukVPN-Setup-X.Y.Z.exe` и `glukvpn-release-X.Y.Z.apk`; после заливки запускается `site/deploy/sync-downloads.sh` — он сам парсит версию из имён, генерирует `api/version.json` и редиректы `/download/windows` и `/download/android`. Номера версий в HTML, `config.js`, `ui.js` и конфиге Nginx больше не правятся руками (подробно — `docs/deployment.md`).
