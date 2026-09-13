@@ -99,12 +99,14 @@ export async function accountAnalytics(userId: string, period: UsagePeriod, now 
 	])
 	const totals = emptyCounters()
 	const series = new Map<string, { start: string } & Counters>()
-	// Zero is only used inside the known observation coverage, never for a day
-	// before installation. A partial first hour/day is explicitly marked below.
+	// Сетка — все прошедшие бакеты окна, а не «с момента начала наблюдений»:
+	// сутки рисуются по часам с 00:00 UTC, неделя — по дням с понедельника,
+	// месяц — по дням с первого числа. Цикл идёт только до now, поэтому будущих
+	// бакетов не бывает. Неполнота истории помечается coverage.partial —
+	// раньше она вырезала начало оси, и график вырождался в 2–3 точки.
 	const since = settings.analyticsSince ? new Date(settings.analyticsSince) : now
-	const first = new Date(Math.max(window.start.getTime(), since.getTime()))
 	const step = window.bucketSize === "hour" ? 3600000 : 86400000
-	for (let t = new Date(usageBucket(first, window.bucketSize)).getTime(); t <= now.getTime(); t += step) {
+	for (let t = new Date(usageBucket(window.start, window.bucketSize)).getTime(); t <= now.getTime(); t += step) {
 		const start = new Date(t).toISOString()
 		series.set(start, { start, ...emptyCounters() })
 	}
