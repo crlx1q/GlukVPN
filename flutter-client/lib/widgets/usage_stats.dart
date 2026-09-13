@@ -1041,9 +1041,9 @@ class _BudgetCard extends StatelessWidget {
 	@override
 	Widget build(BuildContext context) {
 		final double fraction = (budget.usedPercent / 100).clamp(0.0, 1.0);
-		final Color tone = budget.usedPercent >= 90
-				? GlukColors.danger
-				: (budget.usedPercent >= 70 ? GlukColors.amber : GlukColors.connected);
+		// Та же шкала, что у личной квоты: серверный бюджет читается тем же
+		// движением глаза, и один оттенок значит одно и то же на всех шкалах.
+		final Color tone = QuotaScale.toneFromPercent(budget.usedPercent);
 		return GlassPanel(
 			radius: 16,
 			padding: const EdgeInsets.all(15),

@@ -16,8 +16,9 @@ import '../utils/format.dart';
 /// API складывает их в окне тарифа и решает, исчерпан ли лимит. Клиент
 /// ничего не сообщает о своём расходе и потому не может его занизить.
 ///
-/// Цвет меняется только на деле: зелёный пока запас есть, янтарный после
-/// 90 %, красный когда сервер уже не даст подключиться.
+/// Цвет едет непрерывно через [QuotaScale]: зелёный до 50 %, жёлтый к
+/// 70 %, красный к 90 %. Ступенька на 90 % предупреждала слишком поздно:
+/// тариф выбирают заранее, а не в последние десять процентов.
 class QuotaBar extends StatelessWidget {
 	const QuotaBar({
 		super.key,
@@ -45,11 +46,9 @@ class QuotaBar extends StatelessWidget {
 		if (!quota.hasLimit) return const SizedBox.shrink();
 		final double fraction = quota.fraction;
 		final bool over = quota.exceeded || fraction >= 1;
-		final Color tone = over
-				? GlukColors.danger
-				: fraction >= 0.9
-						? GlukColors.amber
-						: GlukColors.connected;
+		// При исчерпанном лимите берём край шкалы: сервер может считать квоту
+		// законченной и на 0.98 — полоса не должна оставаться оранжевой.
+		final Color tone = QuotaScale.tone(over ? 1 : fraction);
 		// В подробном виде дата сброса читается как обещание — «5 октября»,
 		// а не как номер документа.
 		final String reset = ring ? _longDate(quota.periodEnd, russian) : _shortDate(quota.periodEnd);
