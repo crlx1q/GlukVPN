@@ -11,6 +11,10 @@ const state = {
 	refreshToken: null,
 	username: null,
 	publicId: null,
+	// Роль текущего сеанса. Саппорт входит в панель, но видит её в режиме
+	// просмотра: из действий ему оставлена только подписка.
+	isAdmin: false,
+	isSupport: false,
 	tab: "overview",
 	timer: null,
 	jobTimer: null,
@@ -34,6 +38,15 @@ const state = {
 }
 
 const el = (id) => document.getElementById(id)
+
+/**
+ * Может ли текущий сеанс менять что-то кроме подписки.
+ *
+ * Граница та же, что на сервере: админу можно всё, саппорту — чтение плюс
+ * выдача и снятие подписки. Кнопки, на которые сервер ответит 403, саппорту
+ * не показываем: кнопка, которая всегда ругается, врёт.
+ */
+const canManage = () => state.isAdmin === true
 
 function toast(message, isError) {
 	const node = el("toast")
@@ -608,6 +621,14 @@ function renderNodes(nodes) {
 
 		const actions = document.createElement("td")
 		actions.className = "actions"
+		// Ноды целиком админские: у саппорта нет права ни на обслуживание, ни на
+		// выключение, поэтому строка остаётся без кнопок.
+		if (!canManage()) {
+			actions.textContent = "\u2014"
+			row.appendChild(actions)
+			body.appendChild(row)
+			continue
+		}
 		if (node.storedStatus !== "DISABLED") {
 			actions.appendChild(
 				actionButton(node.maintenance ? "End maintenance" : "Maintenance", node.maintenance ? "small ghost" : "small warn", async () => {
@@ -878,14 +899,17 @@ function subscriptionPanel(user, close) {
 		caps.push({ value: speed, label: String(speed) })
 		caps.sort((a, b) => a.value - b.value)
 	}
-	form.appendChild(
-		subField(
-			"Скорость, Мбит/с",
-			chipRow(caps, speed, (value) => {
-				speed = Number(value)
-			}),
-		),
-	)
+	// Ручной потолок скорости меняет только админ: саппорту это не положено.
+	if (canManage()) {
+		form.appendChild(
+			subField(
+				"Скорость, Мбит/с",
+				chipRow(caps, speed, (value) => {
+					speed = Number(value)
+				}),
+			),
+		)
+	}
 	if (ent.subscribed) {
 		// Продлить = добавить срок к остатку; заменить = начать новый с сегодня.
 		form.appendChild(
@@ -929,22 +953,24 @@ function subscriptionPanel(user, close) {
 			})
 		}),
 	)
-	actions.appendChild(
-		actionButton("Сохранить скорость", "small ghost", () =>
-			request(`/api/admin/users/${user.id}/speed-limit`, {
-				method: "POST",
-				body: { speedLimitMbps: speed || null },
-			}).then((result) => {
-				const applied = (result.entitlement || {}).speedLimitMbps
-				toast(
-					speed
-						? `Скорость ${speedLabel(speed)} \u2014 применится при следующем подключении`
-						: `Скорость по тарифу: ${speedLabel(applied)}`,
-				)
-				close()
-			}),
-		),
-	)
+	if (canManage()) {
+		actions.appendChild(
+			actionButton("Сохранить скорость", "small ghost", () =>
+				request(`/api/admin/users/${user.id}/speed-limit`, {
+					method: "POST",
+					body: { speedLimitMbps: speed || null },
+				}).then((result) => {
+					const applied = (result.entitlement || {}).speedLimitMbps
+					toast(
+						speed
+							? `Скорость ${speedLabel(speed)} \u2014 применится при следующем подключении`
+							: `Скорость по тарифу: ${speedLabel(applied)}`,
+					)
+					close()
+				}),
+			),
+		)
+	}
 	if (ent.subscribed) {
 		actions.appendChild(
 			actionButton("Отключить подписку", "small danger", () => {
@@ -996,7 +1022,7 @@ function subscriptionToggle(user, row) {
 		panel = document.createElement("tr")
 		panel.className = "sub-row"
 		const holder = document.createElement("td")
-		holder.colSpan = 9
+		holder.colSpan = 10
 		holder.appendChild(subscriptionPanel(user, close))
 		panel.appendChild(holder)
 		row.after(panel)
@@ -1015,15 +1041,80 @@ function subscriptionToggle(user, row) {
  */
 function testerButton(user) {
 	const enabled = Boolean(user.isTester)
-	const button = actionButton(enabled ? "Revoke tester" : "Make tester", "small ghost", () =>
-		request(`/api/admin/users/${user.id}/tester`, {
-			method: "POST",
-			body: { enabled: !enabled },
-		}),
+	// Подпись именно «Бета-тестер»: «Make/Revoke tester» не говорило, о чём речь,
+	// и читалось как отдельная роль, хотя это просто флаг на аккаунте.
+	const button = actionButton(
+		enabled ? "Бета-тестер: снять" : "Бета-тестер: выдать",
+		"small ghost",
+		() =>
+			request(`/api/admin/users/${user.id}/tester`, {
+				method: "POST",
+				body: { enabled: !enabled },
+			}),
 	)
 	button.title = enabled
-		? "Hide the PROD/BETA channel switch on every client of this account"
-		: "Show the PROD/BETA channel switch on Android, desktop and the extension"
+		? "Убрать переключатель PROD/BETA со всех клиентов этого аккаунта"
+		: "Показать переключатель PROD/BETA на Android, ПК и в расширении"
+	return button
+}
+
+/**
+ * Флаг администратора: полные права на сервис.
+ *
+ * Выдаёт и снимает его только админ, и никогда на своей строке — сняв флаг с
+ * себя, можно остаться без администратора вовсе. Сервер это тоже запрещает,
+ * здесь просто честный отказ сразу, без лишнего запроса.
+ */
+function adminFlagButton(user) {
+	const enabled = Boolean(user.isAdmin)
+	const button = actionButton(
+		enabled ? "Админка: снять" : "Админка: выдать",
+		enabled ? "small warn" : "small ghost",
+		() => {
+			if (state.publicId && String(user.publicId) === String(state.publicId)) {
+				toast("Свой флаг администратора менять нельзя", true)
+				return null
+			}
+			const question = enabled
+				? `Снять админку у ${user.username} (ID ${user.publicId})? Панель и все админ-действия закроются.`
+				: `Выдать админку ${user.username} (ID ${user.publicId})? Это полные права: ноды, каналы, тарифы, блокировки, удаление.`
+			if (!window.confirm(question)) return null
+			return request(`/api/admin/users/${user.id}/admin`, {
+				method: "POST",
+				body: { enabled: !enabled },
+			})
+		},
+	)
+	button.title = enabled
+		? "Забрать полные права администратора"
+		: "Полные права: ноды, каналы, тарифы, блокировки, удаление"
+	return button
+}
+
+/**
+ * Флаг саппорта — «как менеджер»: вход в админку на просмотр плюс выдача и
+ * снятие подписки. Ноды, каналы, настройки сервиса, бюджет трафика,
+ * блокировки, удаление и сами флаги остаются за админом.
+ */
+function supportFlagButton(user) {
+	const enabled = Boolean(user.isSupport)
+	const button = actionButton(
+		enabled ? "Саппорт: снять" : "Саппорт: выдать",
+		"small ghost",
+		() => {
+			const question = enabled
+				? `Снять саппорта у ${user.username} (ID ${user.publicId})? Доступ в админку закроется.`
+				: `Выдать саппорта ${user.username} (ID ${user.publicId})? Вход в админку: только просмотр плюс выдача и снятие подписки.`
+			if (!window.confirm(question)) return null
+			return request(`/api/admin/users/${user.id}/support`, {
+				method: "POST",
+				body: { enabled: !enabled },
+			})
+		},
+	)
+	button.title = enabled
+		? "Закрыть доступ в админку"
+		: "Просмотр админки плюс выдача и снятие подписки, без прав на ноды и настройки"
 	return button
 }
 
@@ -1098,6 +1189,7 @@ function renderUsers(users) {
 		cell(row, user.username)
 		cell(row, statusPill(user.status))
 		cell(row, user.isAdmin ? "yes" : "no")
+		cell(row, user.isSupport ? "yes" : "no")
 		cell(row, user.isTester ? "yes" : "no")
 		cell(row, `${user.devices} / ${user.maxDevices}`)
 		cell(row, `${user.liveSessions} / ${user.maxSessions}`)
@@ -1118,31 +1210,37 @@ function renderUsers(users) {
 			body.appendChild(row)
 			continue
 		}
-		if (user.status === "ACTIVE") {
-			actions.appendChild(
-				actionButton("Disable", "small danger", () => {
-					if (
-						!confirm(
-							`Disable ${user.username} (ID ${user.publicId})? Tunnels and tokens are revoked.`,
+		// Саппорту остаётся ровно одна кнопка — «Подписка»: остальное сервер всё
+		// равно отклонит с 403, а флаги выдаёт только админ.
+		if (canManage()) {
+			if (user.status === "ACTIVE") {
+				actions.appendChild(
+					actionButton("Disable", "small danger", () => {
+						if (
+							!confirm(
+								`Disable ${user.username} (ID ${user.publicId})? Tunnels and tokens are revoked.`,
+							)
 						)
-					)
-						return null
-					return request(`/api/admin/users/${user.id}/disable`, { method: "POST" })
-				}),
-			)
-		} else if (user.status !== "BLOCKED") {
-			// У заблокированного своя кнопка Unblock: Enable сняло бы бан молча.
-			actions.appendChild(
-				actionButton("Enable", "small ghost", () =>
-					request(`/api/admin/users/${user.id}/enable`, { method: "POST" }),
-				),
-			)
+							return null
+						return request(`/api/admin/users/${user.id}/disable`, { method: "POST" })
+					}),
+				)
+			} else if (user.status !== "BLOCKED") {
+				// У заблокированного своя кнопка Unblock: Enable сняло бы бан молча.
+				actions.appendChild(
+					actionButton("Enable", "small ghost", () =>
+						request(`/api/admin/users/${user.id}/enable`, { method: "POST" }),
+					),
+				)
+			}
+			actions.appendChild(blockButton(user))
+			actions.appendChild(adminFlagButton(user))
+			actions.appendChild(supportFlagButton(user))
+			actions.appendChild(testerButton(user))
 		}
-		actions.appendChild(blockButton(user))
-		actions.appendChild(testerButton(user))
 		const subToggle = subscriptionToggle(user, row)
 		actions.appendChild(subToggle)
-		actions.appendChild(deleteUserButton(user))
+		if (canManage()) actions.appendChild(deleteUserButton(user))
 		row.appendChild(actions)
 		body.appendChild(row)
 		// Раскрытый блок переживает любую перерисовку списка: после неё он
@@ -1152,7 +1250,7 @@ function renderUsers(users) {
 	if (users.length === 0) {
 		const row = document.createElement("tr")
 		const td = cell(row, state.userQuery ? "No user matches that ID or nickname." : "No users yet.")
-		td.colSpan = 9
+		td.colSpan = 10
 		td.className = "muted"
 		body.appendChild(row)
 	}
@@ -1172,7 +1270,8 @@ function renderDevices(devices) {
 
 		const actions = document.createElement("td")
 		actions.className = "actions"
-		if (device.status === "ACTIVE") {
+		// Отзыв устройства — админское действие.
+		if (device.status === "ACTIVE" && canManage()) {
 			actions.appendChild(
 				actionButton("Revoke", "small danger", () => {
 					if (!confirm(`Revoke ${device.deviceName}? Its WireGuard peer is removed.`)) return null
@@ -1201,7 +1300,7 @@ function renderSessions(sessions) {
 
 		const actions = document.createElement("td")
 		actions.className = "actions"
-		if (session.status === "ACTIVE" || session.status === "PENDING") {
+		if ((session.status === "ACTIVE" || session.status === "PENDING") && canManage()) {
 			actions.appendChild(
 				actionButton("Close", "small danger", () =>
 					request(`/api/admin/sessions/${session.id}/close`, { method: "POST" }),
@@ -1865,14 +1964,20 @@ async function loadAll() {
 		renderSessions(sessions.sessions)
 		renderAudit(audit.logs)
 		// Optional/rolling-deploy data loaders isolate their own availability errors.
-		await Promise.all([
-			loadServiceSettings(),
-			loadEgressBudget(),
-			loadDeploy(),
-			loadClientErrors(),
-			loadTrial(),
-			loadPromos(),
-		])
+		// Саппорту часть из них закрыта (403), а catch ниже на 403 выбрасывает из
+		// панели — поэтому для него грузим только разрешённое.
+		await Promise.all(
+			canManage()
+				? [
+						loadServiceSettings(),
+						loadEgressBudget(),
+						loadDeploy(),
+						loadClientErrors(),
+						loadTrial(),
+						loadPromos(),
+					]
+				: [loadClientErrors()],
+		)
 	} catch (error) {
 		if (error.status === 401 || error.status === 403) signOut(error.message)
 		else toast(error.message, true)
@@ -1931,12 +2036,43 @@ function selectTab(tab) {
 	}
 }
 
+/**
+ * Один проход по панели: прячет от саппорта всё, что ему закрыто — вкладки
+ * каналов и биллинга, блоки настроек сервиса и бюджета трафика, кнопки
+ * создания пользователя, enrollment-токена и чисток. Кнопки внутри таблиц
+ * убирают сами render-функции.
+ */
+function applyRoleVisibility() {
+	const manage = canManage()
+	for (const name of ["channels", "billing"]) {
+		const button = document.querySelector(`.tab[data-tab="${name}"]`)
+		if (button) button.hidden = !manage
+	}
+	// Вкладка могла остаться выбранной от предыдущего сеанса в этой же вкладке браузера.
+	if (!manage && (state.tab === "channels" || state.tab === "billing")) state.tab = "overview"
+	for (const id of [
+		"service-controls",
+		"egress-block",
+		"create-user-btn",
+		"enroll-btn",
+		"devices-purge",
+		"errors-clear",
+	]) {
+		const node = el(id)
+		if (node) node.hidden = !manage
+	}
+}
+
 function showDashboard() {
 	el("login-view").hidden = true
 	el("tabs").hidden = false
 	el("dashboard-view").hidden = false
 	el("session-box").hidden = false
-	el("who").textContent = `${state.username} \u00b7 ID ${state.publicId || "\u2014"}`
+	// Роль рядом с именем: иначе саппорт решит, что панель сломалась.
+	el("who").textContent = `${state.username} \u00b7 ID ${state.publicId || "\u2014"} \u00b7 ${
+		canManage() ? "admin" : "support"
+	}`
+	applyRoleVisibility()
 	selectTab(state.tab)
 }
 
@@ -1947,6 +2083,8 @@ function signOut(message) {
 	state.refreshToken = null
 	state.username = null
 	state.publicId = null
+	state.isAdmin = false
+	state.isSupport = false
 	state.serviceSettings = null
 	setServiceBusy(true)
 	el("tabs").hidden = true
@@ -1983,11 +2121,16 @@ el("login-form").addEventListener("submit", async (event) => {
 			method: "POST",
 			body: { username: el("username").value, password: el("password").value },
 		})
-		if (!data.user.isAdmin) throw new Error("This account is not an administrator")
+		// Саппорт тоже входит: что ему показать, решает сама панель, а границу прав
+		// всё равно держит сервер.
+		if (!data.user.isAdmin && !data.user.isSupport)
+			throw new Error("This account is neither an administrator nor support")
 		state.accessToken = data.accessToken
 		state.refreshToken = data.refreshToken
 		state.username = data.user.username
 		state.publicId = data.user.publicId || null
+		state.isAdmin = Boolean(data.user.isAdmin)
+		state.isSupport = Boolean(data.user.isSupport)
 		el("password").value = ""
 		showDashboard()
 		await loadAll()
