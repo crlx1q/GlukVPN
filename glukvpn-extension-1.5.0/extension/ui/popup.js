@@ -946,9 +946,12 @@ function renderServers() {
 		} else {
 			const load = Math.max(0, Math.min(100, Math.round(Number(node?.load ?? 0))))
 			const bar = document.createElement('span')
-			bar.className = 'load-bar' + (load >= 70 ? ' warm' : '')
+			// Загрузка узла красится той же шкалой, что и квоты: класс .warm
+			// давал ступеньку на 70 %, теперь переход плавный.
+			bar.className = 'load-bar'
 			const fill = document.createElement('i')
 			fill.style.width = `${load}%`
+			fill.style.background = quotaFill(load)
 			bar.appendChild(fill)
 			meta.appendChild(bar)
 			const label = document.createElement('span')
@@ -3072,6 +3075,29 @@ function statsNode(tag, className, text) {
 	return el
 }
 
+/* Единая шкала «сколько осталось»: зелёный, пока запас большой, к жёлтому
+   у 70 % и к красному у 90 %. Прежний градиент зелёный→фиолетовый выглядел
+   одинаково и на 5 %, и на 95 % — по нему нельзя было понять, пора ли
+   экономить. Тот же расчёт продублирован в админке (public/admin.js), на
+   сайте (assets/js/sprint2.js) и во Flutter (quota_bar.dart), поэтому
+   пороги менять нужно сразу во всех четырёх местах. */
+function quotaHue(percent) {
+	const p = Math.max(0, Math.min(100, Number(percent) || 0))
+	if (p <= 50) return 142
+	if (p <= 70) return 142 - ((p - 50) / 20) * 92
+	if (p <= 90) return 50 - ((p - 70) / 20) * 44
+	return 6 - ((p - 90) / 10) * 6
+}
+
+function quotaFill(percent) {
+	const hue = quotaHue(percent)
+	return `linear-gradient(90deg, hsl(${hue} 68% 46%), hsl(${hue} 70% 52%))`
+}
+
+function quotaColor(percent) {
+	return `hsl(${quotaHue(percent)} 70% 52%)`
+}
+
 /* Кружок лимита — тот же значок, что во Flutter: дуга по кругу вместо
    полоски. Собирается через createElementNS: innerHTML в MV3 закрыт CSP.
    Процент берётся с сервера (quota.usedPercent), клиент его не считает. */
@@ -3095,6 +3121,9 @@ function statsRing(percent) {
 		if (kind === 'val') {
 			ring.setAttribute('stroke-dasharray', String(length))
 			ring.setAttribute('stroke-dashoffset', String(length * (1 - share)))
+			// Именно style, а не setAttribute('stroke'): presentation-атрибут
+			// проигрывает CSS-правилам .val и .is-over .val, inline — нет.
+			ring.style.stroke = quotaColor(percent)
 		}
 		svg.appendChild(ring)
 	}
@@ -3233,6 +3262,8 @@ function renderStats() {
 		const track = statsNode('span', 'stats-share is-quota')
 		const fill = statsNode('i', '')
 		fill.style.width = `${Math.max(2, Math.min(100, Number(quota.usedPercent) || 0))}%`
+		// Ширина показывает израсходованное, цвет — насколько это уже тревожно.
+		fill.style.background = quotaFill(quota.usedPercent)
 		track.appendChild(fill)
 		card.appendChild(track)
 		const reset = new Date(quota.resetAt)
@@ -3467,6 +3498,7 @@ function renderStats() {
 			const track = statsNode('span', 'stats-share is-budget')
 			const fill = statsNode('i', '')
 			fill.style.width = `${Math.max(0, Math.min(100, Number(budget.usedPercent) || 0))}%`
+			fill.style.background = quotaFill(budget.usedPercent)
 			track.appendChild(fill)
 			card.appendChild(track)
 			card.appendChild(statsNode('small', '', `${statsUtc(budget.cycleStart)} — ${statsUtc(budget.cycleEnd)}`))

@@ -607,8 +607,10 @@ body.signed-out .rail { opacity: 0.5; }
 .s-meta { display: flex; align-items: center; gap: 7px; font-size: 10px; font-weight: var(--fw-medium); color: var(--text-2); }
 
 .load-bar { width: 52px; height: 4px; border-radius: var(--r-pill); background: rgba(255, 255, 255, 0.09); overflow: hidden; flex: 0 0 auto; }
-.load-bar i { display: block; height: 100%; border-radius: var(--r-pill); background: linear-gradient(90deg, var(--violet-light), var(--violet)); transition: width var(--t-med) var(--ease-soft); }
-.load-bar.warm i { background: linear-gradient(90deg, var(--amber), #e0764a); }
+/* Цвет заливки ставит popup.js через quotaFill(load) — зелёный/жёлтый/красный
+   по загрузке узла. Здесь только запасной цвет на случай, если скрипт не
+   успел покрасить бар. */
+.load-bar i { display: block; height: 100%; border-radius: var(--r-pill); background: hsl(142 70% 52%); transition: width var(--t-med) var(--ease-soft), background var(--t-med) linear; }
 
 .sig { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; flex: 0 0 auto; }
 .sig i { width: 3px; border-radius: 1.5px; background: rgba(255, 255, 255, 0.16); }
@@ -1563,7 +1565,7 @@ button.account-device-off.is-busy{opacity:.55}
 .stats-share{display:block;height:4px;margin-top:3px;border-radius:999px;background:rgba(255,255,255,.06);overflow:hidden}
 .stats-share i{display:block;height:100%;border-radius:999px;background:#8b5cf6}
 .stats-share.is-budget{height:7px;margin-top:6px}
-.stats-share.is-budget i{background:linear-gradient(90deg,#3ddc97,#8b5cf6)}
+.stats-share.is-budget i{background:hsl(142 70% 52%);transition:width .42s cubic-bezier(.22,1,.36,1),background .42s linear}
 .stats-more{margin:2px 0 4px;padding:7px 12px;border-radius:999px;font:inherit;font-size:11px;font-weight:600;color:#c4b5fd;background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.30);cursor:pointer}
 .stats-more:hover{background:rgba(139,92,246,.20)}
 .stats-empty{padding:14px 2px;font-size:11.5px;color:#5c5770}
@@ -1576,10 +1578,12 @@ button.account-device-off.is-busy{opacity:.55}
    израсходован, карточка становится красной — подключения больше нет. */
 .stats-quota{background:rgba(61,220,151,.07);border-color:rgba(61,220,151,.22)}
 .stats-quota span{color:#3ddc97}
-.stats-share.is-quota i{background:linear-gradient(90deg,#3ddc97,#8b5cf6)}
+/* Квота и бюджет: заливку красит popup.js (quotaFill), CSS держит запасной
+   цвет и плавный переход. Старый градиент зелёный→фиолетовый не менялся с
+   расходом, поэтому ничего не сообщал. */
+.stats-share.is-quota i{background:hsl(142 70% 52%);transition:width .42s cubic-bezier(.22,1,.36,1),background .42s linear}
 .stats-quota.is-over{background:rgba(248,113,113,.09);border-color:rgba(248,113,113,.30)}
 .stats-quota.is-over span{color:#fca5a5}
-.stats-quota.is-over .stats-share.is-quota i{background:linear-gradient(90deg,#f59e0b,#f87171)}
 /* Кружок лимита — тот же, что во Flutter: дуга по кругу слева,
    название и цифры справа. Раньше карточка начиналась сразу с цифр
    и прижималась к переключателю периода — оттуда и ощущение, что
