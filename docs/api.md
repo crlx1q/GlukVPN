@@ -95,11 +95,12 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 | DELETE | `/api/admin/users/:id/subscription` | admin, support | — |
 | GET | `/api/admin/devices` | admin, support | — |
 | POST | `/api/admin/devices/:id/revoke` | admin | — |
+| DELETE | `/api/admin/devices/stale` | admin | — |
 | GET | `/api/admin/sessions` | admin, support | — |
 | POST | `/api/admin/sessions/:id/close` | admin | — |
 | GET | `/api/admin/audit` | admin, support | — |
 | GET | `/api/admin/client-errors` | admin, support | — |
-| GET | `/api/admin/traffic-budget` | admin | — |
+| GET | `/api/admin/traffic-budget` | admin, support | — |
 | GET | `/api/admin/billing/trial` | admin, support | — |
 | POST | `/api/admin/billing/trial` | admin | — |
 | GET | `/api/admin/billing/promos` | admin, support | — |
@@ -110,7 +111,7 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 Уровни доступа: `user` — `Authorization: Bearer <accessToken>`;
 `device-scoped` — тот же токен, но обязательно с `deviceId` в claims (выдаётся
 после регистрации устройства); `admin` — токен пользователя с `isAdmin`; `admin, support` — токен
-с `isAdmin` **или** `isSupport` (саппорт читает всё, кроме `traffic-budget`,
+с `isAdmin` **или** `isSupport` (саппорт читает всё, включая бюджет egress,
 а из мутаций ему разрешена только подписка — см. «Роли admin и support»);
 `node-токен` — `Authorization: Bearer <nodeToken>` плюс заголовок `X-Node-Id`.
 
@@ -607,12 +608,32 @@ offlineAfterSec, wireguard: { ... } }`. `nodeToken` показывается е�
 `GET /api/admin/overview` — сводка для dashboard: число нод по статусам,
 пользователи, устройства, живые сессии, суммарный трафик.
 
+`devices` отдаётся как `{ active, revoked, total }`. Отозванное устройство — это
+удалённое устройство: строка живёт дальше только для того, чтобы прошлый
+трафик остался привязанным, а повторный вход на той же машине заводит
+новое. Панель брала `total` знаменателем и получалось «Devices active
+3 / 54», где 51 — надгробия; теперь `revoked` показывается отдельной
+строкой. Авточистка — `purgeStaleDevices` в мониторе (окно ≥ 30 дней, чтобы
+статистика трафика не обнулилась задним числом), ручная —
+`DELETE /api/admin/devices/stale?days=N` (`days=0` сносит всё мёртвое сразу,
+активные устройства не трогает).
+
 `POST /api/admin/nodes/enrollment-token` — выдаёт одноразовый токен для
 регистрации новой ноды (TTL 30 минут).
 
 `POST /api/admin/nodes/:id/disable` — нода больше не выдаётся клиентам, все её
 сессии закрываются, peer'ы удаляются. `DELETE /api/admin/nodes/:id` удаляет
 запись с токенами, арендами и командами.
+
+`GET /api/admin/users?q=&filter=` — список пользователей. `filter` принимает
+`active`, `disabled`, `blocked`, `deleted`, `admins`, `support`, `testers`,
+`all`; по умолчанию и при мусоре в query-строке — `active`, а не `all`: панель
+не должна открываться списком, где половина строк — надгробия удалённых
+аккаунтов. Срезы по ролям (`admins`, `support`, `testers`) исключают `DELETED`,
+чтобы снятый аккаунт не всплывал в роли. Ответ — `{ users, filter }`, где
+`filter` — фактически применённое значение: селекту в панели есть что показать
+после фолбэка. В строках `devices` и `sessions` считают только `ACTIVE` —
+REVOKED-надгробия и закрытые сессии в счётчики не идут.
 
 `POST /api/admin/users` — создаёт пользователя и возвращает сгенерированный пароль
 один раз. `disable` закрывает сессии и аннулирует токены.
@@ -663,14 +684,15 @@ required». Что саппорт может внутри, решает втор
 | Роль | Чтение (GET/HEAD) | Запись |
 | --- | --- | --- |
 | admin | всё | всё |
-| support | всё, кроме `/api/admin/traffic-budget` | только `POST` и `DELETE /api/admin/users/:id/subscription` |
+| support | всё | только `POST` и `DELETE /api/admin/users/:id/subscription` |
 
 Записи для саппорта — **allow-list** (`SUPPORT_ALLOWED_WRITES`), а не deny-list:
 endpoint, добавленный завтра, остаётся admin-only, пока его не внесли в список
 руками; обратный порядок раздавал бы ему каждую новую мутацию молча.
-Закрытое чтение одно (`SUPPORT_DENIED_READS`) — бюджет egress: это деньги,
-а не материал поддержки. Путь сверяется без query-строки, админ до проверок
-не доходит.
+Закрытых чтений больше нет: `SUPPORT_DENIED_READS` пуст. Бюджет egress саппорт
+тоже видит — это ответ на «почему вчера было медленно», а не только деньги;
+границу роли держит allow-list записи, а не спрятанные цифры. Путь сверяется
+без query-строки, админ до проверок не доходит.
 
 В токене флаги есть (`adm`, `sup` в `AccessTokenPayload`), но они справочные —
 для бейджей и UI. Авторизация всегда перечитывает строку пользователя
@@ -681,8 +703,11 @@ refresh; старый токен с `sup: true` доступа не даёт.
 токеном админа или саппорта. Собственных привилегий у неё нет: саппорту
 `applyRoleVisibility()` прячет вкладки «Channels» и «Billing», сервисные кнопки,
 создание пользователей, enrollment нод и чистки, а в строках пользователей
-оставляет только выдачу и снятие подписки. Это косметика поверх серверного
-гейта: запрос в обход UI всё равно получит 403.
+оставляет только выдачу и снятие подписки. Блок «Oracle Cloud: Egress & Costs
+(PAYG)» саппорту теперь показывается и грузится вместе с журналом клиентских
+ошибок: расход трафика нужен ему в работе, а выключить ноду он всё равно не
+может. Это косметика поверх серверного гейта: запрос в обход UI всё равно
+получит 403.
 
 ## Проверка вручную
 
