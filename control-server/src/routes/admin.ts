@@ -185,16 +185,69 @@ const EnrollmentTokenBody = z
 	.object({ note: z.string().trim().max(120).optional() })
 	.optional()
 
+/**
+ * How the users table is sliced. "active" is the default on purpose: the panel
+ * is opened to work with living accounts, while deleted tombstones and blocked
+ * abusers used to pad the list with rows nobody was looking for.
+ */
+const USER_FILTERS = [
+	"active",
+	"disabled",
+	"blocked",
+	"deleted",
+	"admins",
+	"support",
+	"testers",
+	"all",
+] as const
+
+type UserFilter = (typeof USER_FILTERS)[number]
+
 /** Free-text search over the public account number and the nickname. */
 const ListUsersQuery = z
-	.object({ q: z.string().trim().max(64).optional() })
+	.object({
+		q: z.string().trim().max(64).optional(),
+		filter: z.enum(USER_FILTERS).optional(),
+	})
 	.optional()
 
 /**
- * Reads a support (manager) account must not see, even though they are GETs.
- * Money is the line: the egress budget is cost data, not support material.
+ * The status/flag half of the users query.
+ *
+ * Role slices drop tombstones: an admin flag on a deleted account is history,
+ * not staff, and listing it under "admins" would overstate who holds power.
  */
-const SUPPORT_DENIED_READS: RegExp[] = [/^\/api\/admin\/traffic-budget$/]
+function userScope(filter: UserFilter) {
+	switch (filter) {
+		case "all":
+			return {} as const
+		case "disabled":
+			return { status: "DISABLED" } as const
+		case "blocked":
+			return { status: "BLOCKED" } as const
+		case "deleted":
+			return { status: "DELETED" } as const
+		case "admins":
+			return { isAdmin: true, status: { not: "DELETED" } } as const
+		case "support":
+			return { isSupport: true, status: { not: "DELETED" } } as const
+		case "testers":
+			return { isTester: true, status: { not: "DELETED" } } as const
+		default:
+			return { status: "ACTIVE" } as const
+	}
+}
+
+/**
+ * Reads a support (manager) account must not see, even though they are GETs.
+ *
+ * Deliberately empty. Support answers questions about the service, and the
+ * egress budget is one of the answers: "why was last night slow" is often
+ * "the cycle is at 90 %". The role is defined by what it cannot change -
+ * nodes, maintenance, channels, flags, deletion - and that boundary lives in
+ * the write allow-list below, not in a reading ban.
+ */
+const SUPPORT_DENIED_READS: RegExp[] = []
 
 /**
  * The only writes support may perform: hand a subscription out and take it
@@ -228,11 +281,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 	})
 
 	app.get("/api/admin/overview", async (_request, reply) => {
-		const [users, activeUsers, devices, activeDevices, nodes, liveSessions] =
+		const [users, activeUsers, revokedDevices, activeDevices, nodes, liveSessions] =
 			await Promise.all([
 				prisma.user.count(),
 				prisma.user.count({ where: { status: "ACTIVE" } }),
-				prisma.device.count(),
+				prisma.device.count({ where: { status: "REVOKED" } }),
 				prisma.device.count({ where: { status: "ACTIVE" } }),
 				prisma.vpnNode.findMany(),
 				prisma.session.count({ where: { status: { in: ["PENDING", "ACTIVE"] } } }),
@@ -244,7 +297,15 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
 		return reply.send({
 			users: { total: users, active: activeUsers },
-			devices: { total: devices, active: activeDevices },
+			// A revoked device is a deleted device: the row survives only so past
+			// traffic stays attributable, and signing in again on the same machine
+			// enrolls a fresh one. Counting those tombstones is what made the card
+			// read "3 / 54", so they are reported on a line of their own.
+			devices: {
+				active: activeDevices,
+				revoked: revokedDevices,
+				total: activeDevices + revokedDevices,
+			},
 			nodes: {
 				total: nodes.length,
 				online: nodes.filter((node) => effectiveNodeStatus(node) === "ONLINE").length,
@@ -780,7 +841,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 		// text matches the nickname. Prefer the number when banning — a nickname
 		// can be changed by the user at any moment, the number cannot.
 		const digits = term.replace(/\D/g, "")
-		const where = term
+		const search = term
 			? {
 					OR: [
 						{ username: { contains: term, mode: "insensitive" as const } },
@@ -788,9 +849,14 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 					],
 				}
 			: {}
+		// A missing or malformed filter falls back to "active", never to "all":
+		// a broken query string must not quietly widen the list to tombstones.
+		const filter: UserFilter = parsedQuery.success
+			? (parsedQuery.data?.filter ?? "active")
+			: "active"
 
 		const users = await prisma.user.findMany({
-			where,
+			where: { AND: [userScope(filter), search] },
 			orderBy: { createdAt: "asc" },
 			include: {
 				subscriptions: { orderBy: { expiresAt: "desc" }, take: 1 },
@@ -840,7 +906,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 				}
 			}),
 		)
-		return reply.send({ users: items })
+		// The filter is echoed back so the panel can label the list with what it
+		// is actually showing instead of what it thinks it asked for.
+		return reply.send({ users: items, filter })
 	})
 
 	app.post("/api/admin/users", async (request, reply) => {
