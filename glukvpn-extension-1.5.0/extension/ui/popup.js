@@ -3382,12 +3382,20 @@ function renderStats() {
 			legend.appendChild(cell)
 		}
 		frag.appendChild(legend)
+		// Подписи оси — до пяти равномерных отсчётов, а не три: сутки по часам
+		// и месяц по дням иначе читаются как безымянная полоса. Прореживаем
+		// только подписи: все точки ряда остаются на графике и в тултипах.
 		const axis = statsNode('div', 'stats-axis')
-		axis.append(
-			statsNode('span', '', statsTick(series[0]?.start)),
-			statsNode('span', '', `${statsTick(series[Math.floor(series.length / 2)]?.start)} UTC`),
-			statsNode('span', '', statsTick(series[series.length - 1]?.start)),
-		)
+		const tickCount = Math.min(series.length, 5)
+		const tickIndexes = []
+		for (let i = 0; i < tickCount; i++) {
+			const index = tickCount < 2 ? 0 : Math.round((i * (series.length - 1)) / (tickCount - 1))
+			if (!tickIndexes.includes(index)) tickIndexes.push(index)
+		}
+		for (const index of tickIndexes) {
+			const suffix = index === tickIndexes[tickIndexes.length - 1] ? ' UTC' : ''
+			axis.appendChild(statsNode('span', '', `${statsTick(series[index]?.start)}${suffix}`))
+		}
 		frag.appendChild(axis)
 		const bucketHint = statsPeriod === 'day' ? (ru ? 'по часам' : 'by hour') : (ru ? 'по дням' : 'by day')
 		const peakAt = peakIndex >= 0 ? statsTick(series[peakIndex]?.start) : null
