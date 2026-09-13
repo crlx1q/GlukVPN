@@ -427,6 +427,19 @@ class _TrafficChart extends StatelessWidget {
 		return '$two.${t.month.toString().padLeft(2, '0')}';
 	}
 
+	// Подписи оси — до пяти равномерных отсчётов, а не «первая, средняя,
+	// последняя»: сутки по часам и месяц по дням иначе читаются как
+	// безымянная полоса. Прореживаем только подписи: точки ряда рисуются все.
+	List<int> _tickIndices() {
+		final int count = math.min(points.length, 5);
+		final List<int> out = <int>[];
+		for (int i = 0; i < count; i++) {
+			final int index = count < 2 ? 0 : ((i * (points.length - 1)) / (count - 1)).round();
+			if (!out.contains(index)) out.add(index);
+		}
+		return out;
+	}
+
 	@override
 	Widget build(BuildContext context) {
 		if (points.isEmpty) {
@@ -517,14 +530,13 @@ class _TrafficChart extends StatelessWidget {
 					const SizedBox(height: 6),
 					Row(
 						mainAxisAlignment: MainAxisAlignment.spaceBetween,
-						children: <Widget>[
-							Text(_tick(points.first), style: const TextStyle(color: GlukColors.text2, fontSize: 10)),
-							Text(
-								'${_tick(points[points.length ~/ 2])} UTC',
+						children: _tickIndices().map((int index) {
+							final bool last = index == points.length - 1;
+							return Text(
+								last ? '${_tick(points[index])} UTC' : _tick(points[index]),
 								style: const TextStyle(color: GlukColors.text2, fontSize: 10),
-							),
-							Text(_tick(points.last), style: const TextStyle(color: GlukColors.text2, fontSize: 10)),
-						],
+							);
+						}).toList(),
 					),
 				],
 			),
