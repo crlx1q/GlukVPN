@@ -74,13 +74,13 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 | POST | `/api/node/report` | node-токен | 60/мин |
 | POST | `/api/node/commands/:id/ack` | node-токен | 120/мин |
 | POST | `/api/node/token/rotate` | node-токен | 5/час |
-| GET | `/api/admin/overview` | admin | — |
-| GET | `/api/admin/nodes` | admin | — |
+| GET | `/api/admin/overview` | admin, support | — |
+| GET | `/api/admin/nodes` | admin, support | — |
 | POST | `/api/admin/nodes/enrollment-token` | admin | — |
 | POST | `/api/admin/nodes/:id/disable` | admin | — |
 | POST | `/api/admin/nodes/:id/enable` | admin | — |
 | DELETE | `/api/admin/nodes/:id` | admin | — |
-| GET | `/api/admin/users` | admin | — |
+| GET | `/api/admin/users` | admin, support | — |
 | POST | `/api/admin/users` | admin | — |
 | POST | `/api/admin/users/:id/disable` | admin | — |
 | POST | `/api/admin/users/:id/enable` | admin | — |
@@ -88,24 +88,30 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 | POST | `/api/admin/users/:id/unblock` | admin | — |
 | DELETE | `/api/admin/users/:id` | admin | — |
 | POST | `/api/admin/users/:id/tester` | admin | — |
+| POST | `/api/admin/users/:id/admin` | admin | — |
+| POST | `/api/admin/users/:id/support` | admin | — |
 | POST | `/api/admin/users/:id/speed-limit` | admin | — |
-| POST | `/api/admin/users/:id/subscription` | admin | — |
-| DELETE | `/api/admin/users/:id/subscription` | admin | — |
-| GET | `/api/admin/devices` | admin | — |
+| POST | `/api/admin/users/:id/subscription` | admin, support | — |
+| DELETE | `/api/admin/users/:id/subscription` | admin, support | — |
+| GET | `/api/admin/devices` | admin, support | — |
 | POST | `/api/admin/devices/:id/revoke` | admin | — |
-| GET | `/api/admin/sessions` | admin | — |
+| GET | `/api/admin/sessions` | admin, support | — |
 | POST | `/api/admin/sessions/:id/close` | admin | — |
-| GET | `/api/admin/audit` | admin | — |
-| GET | `/api/admin/billing/trial` | admin | — |
+| GET | `/api/admin/audit` | admin, support | — |
+| GET | `/api/admin/client-errors` | admin, support | — |
+| GET | `/api/admin/traffic-budget` | admin | — |
+| GET | `/api/admin/billing/trial` | admin, support | — |
 | POST | `/api/admin/billing/trial` | admin | — |
-| GET | `/api/admin/billing/promos` | admin | — |
+| GET | `/api/admin/billing/promos` | admin, support | — |
 | POST | `/api/admin/billing/promos` | admin | — |
 | POST | `/api/admin/billing/promos/:id` | admin | — |
 | DELETE | `/api/admin/billing/promos/:id` | admin | — |
 
 Уровни доступа: `user` — `Authorization: Bearer <accessToken>`;
 `device-scoped` — тот же токен, но обязательно с `deviceId` в claims (выдаётся
-после регистрации устройства); `admin` — токен пользователя с `isAdmin`;
+после регистрации устройства); `admin` — токен пользователя с `isAdmin`; `admin, support` — токен
+с `isAdmin` **или** `isSupport` (саппорт читает всё, кроме `traffic-budget`,
+а из мутаций ему разрешена только подписка — см. «Роли admin и support»);
 `node-токен` — `Authorization: Bearer <nodeToken>` плюс заголовок `X-Node-Id`.
 
 ## Клиентские endpoints
@@ -317,6 +323,13 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
   "budget": null
 }
 ```
+
+`series` — сплошная сетка бакетов от `start` до текущего момента без пропусков:
+для дня — все прошедшие часы суток, для недели — 7 дней, для месяца — все дни
+с первого числа. Пустые бакеты приходят нулями, а не отсутствуют, иначе два
+часа с трафиком растянулись бы на всю ширину графика и сутки выглядели бы
+полностью закрытыми. `coverage.since` на сетку не влияет — он нужен только для
+`coverage.partial` и `trend.comparable`.
 
 `previous` — прошлое окно той же длины. Его конец обрезан по прошедшей
 части текущего — `min(previous.start + elapsed, start)`, где `elapsed = now - start`.
@@ -624,12 +637,52 @@ removedDevices, revokedTokens }`; вызов идемпотентен и при 
 бета-тестера. Клиенты (Android, Windows, расширение) показывают переключатель
 PROD/BETA только при `isAdmin || isTester`, поэтому этот endpoint — единственный
 способ пустить тестера на бету. В панели это колонка «Tester» и кнопка
-«Make tester» / «Revoke tester».
+«Бета-тестер: выдать» / «Бета-тестер: снять».
+
+`POST /api/admin/users/:id/admin` (`{ "enabled": true | false }`) — выдача и
+снятие админки. Себе флаг менять нельзя (409 «You cannot change your own
+admin flag»), аккаунту со статусом `DELETED` — тоже (409). Ответ —
+`{ ok, isAdmin }`, аудит — `admin.user.admin`.
+
+`POST /api/admin/users/:id/support` (`{ "enabled": true | false }`) — флаг
+саппорта (менеджера), устроен как `tester`: булево `isSupport` в таблице
+`users`, приходит в `GET /api/admin/users`, в карточке пользователя и в ответе
+логина (`userPayload`). Аккаунту `DELETED` не выдаётся (409). Ответ —
+`{ ok, isSupport }`, аудит — `admin.user.support`.
+Оба endpoint'а де-факто admin-only: гейт роли (ниже) не пускает саппорта ни в
+одну мутацию, кроме подписки, поэтому роли раздаёт только админ.
 
 `GET /api/admin/audit` — хвост аудит-лога с пагинацией.
 
+### Роли admin и support
+
+`requireStaff` (`src/middleware/auth.ts`) пускает в `/api/admin/*` владельцев
+`isAdmin` **или** `isSupport`, остальным отвечает 403 «Admin privileges
+required». Что саппорт может внутри, решает второй `preHandler`:
+
+| Роль | Чтение (GET/HEAD) | Запись |
+| --- | --- | --- |
+| admin | всё | всё |
+| support | всё, кроме `/api/admin/traffic-budget` | только `POST` и `DELETE /api/admin/users/:id/subscription` |
+
+Записи для саппорта — **allow-list** (`SUPPORT_ALLOWED_WRITES`), а не deny-list:
+endpoint, добавленный завтра, остаётся admin-only, пока его не внесли в список
+руками; обратный порядок раздавал бы ему каждую новую мутацию молча.
+Закрытое чтение одно (`SUPPORT_DENIED_READS`) — бюджет egress: это деньги,
+а не материал поддержки. Путь сверяется без query-строки, админ до проверок
+не доходит.
+
+В токене флаги есть (`adm`, `sup` в `AccessTokenPayload`), но они справочные —
+для бейджей и UI. Авторизация всегда перечитывает строку пользователя
+(`requireUser`), поэтому снятая роль действует сразу, а не со следующего
+refresh; старый токен с `sup: true` доступа не даёт.
+
 Веб-админка (`/admin`) — статика, которая вызывает ровно эти же endpoints с
-токеном админа. Собственных привилегий у неё нет.
+токеном админа или саппорта. Собственных привилегий у неё нет: саппорту
+`applyRoleVisibility()` прячет вкладки «Channels» и «Billing», сервисные кнопки,
+создание пользователей, enrollment нод и чистки, а в строках пользователей
+оставляет только выдачу и снятие подписки. Это косметика поверх серверного
+гейта: запрос в обход UI всё равно получит 403.
 
 ## Проверка вручную
 
