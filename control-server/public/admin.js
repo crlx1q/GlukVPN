@@ -20,6 +20,9 @@ const state = {
 	jobTimer: null,
 	busy: false,
 	userQuery: "",
+	// Какой срез таблицы пользователей показан. По умолчанию active: надгробия
+	// удалённых и отключённые аккаунты не должны забивать список при входе.
+	userFilter: "active",
 	searchTimer: null,
 	canDeploy: false,
 	channel: "current",
@@ -197,12 +200,41 @@ function ownerCell(user) {
 	return wrap
 }
 
+/**
+ * Оттенок шкалы заполнения по проценту: зелёный до половины, жёлтый к 70 %,
+ * красный к 90 %.
+ *
+ * Ведём именно hue, а не подменяем три фиксированных цвета: тогда шкала
+ * меняется плавно и по её цвету видно, сколько осталось, без чтения цифр.
+ * Тот же расчёт повторён в расширении, на сайте и во Flutter — одна и та же
+ * заполненность обязана выглядеть одинаково на всех площадках.
+ */
+function quotaHue(percent) {
+	const value = Math.max(0, Math.min(100, Number(percent || 0)))
+	if (value <= 50) return 142
+	if (value <= 70) return 142 + ((50 - 142) * (value - 50)) / 20
+	if (value <= 90) return 50 + ((6 - 50) * (value - 70)) / 20
+	return 6 + ((0 - 6) * (value - 90)) / 10
+}
+
+/** Заливка шкалы: однотонный градиент вокруг цвета, посчитанного по проценту. */
+function quotaFill(percent) {
+	const hue = quotaHue(percent)
+	return `linear-gradient(90deg, hsl(${hue} 68% 46%), hsl(${hue} 70% 52%))`
+}
+
+/** Свечение того же цвета: в CSS его не посчитать, поэтому ставим рядом с заливкой. */
+function quotaGlow(percent) {
+	return `0 0 18px hsl(${quotaHue(percent)} 70% 52% / 0.55)`
+}
+
 function loadBar(loadPercent) {
 	const wrap = document.createElement("div")
 	wrap.className = "loadbar"
 	const fill = document.createElement("i")
 	// CSSOM assignment, not a style attribute: the CSP has no 'unsafe-inline'.
 	fill.style.width = `${Math.max(0, Math.min(100, Number(loadPercent || 0)))}%`
+	fill.style.background = quotaFill(loadPercent)
 	wrap.appendChild(fill)
 	const label = document.createElement("span")
 	label.className = "sub-line"
@@ -411,17 +443,27 @@ function restrictionBadges(restrictions) {
 }
 
 function renderCards(overview) {
+	const devices = overview.devices || {}
+	const revoked = Number(devices.revoked || 0)
 	const items = [
 		["Nodes online", `${overview.nodes.online} / ${overview.nodes.total}`],
 		["Live sessions", overview.sessions.live],
 		["Users active", `${overview.users.active} / ${overview.users.total}`],
-		["Devices active", `${overview.devices.active} / ${overview.devices.total}`],
-		["Traffic rx", bytes(overview.traffic.bytesRx)],
-		["Traffic tx", bytes(overview.traffic.bytesTx)],
+		// Знаменатель раньше был общим числом строк в таблице устройств, включая
+		// надгробия отозванных: получалось «3 / 54» без единого намёка, откуда 54.
+		[
+			"Devices active",
+			`${devices.active} / ${devices.total}`,
+			`+${revoked} revoked record${revoked === 1 ? "" : "s"} kept for traffic stats`,
+		],
+		// rx/tx считаются со стороны узла, поэтому подпись переводит их в сторону
+		// клиента: иначе цифры читают наоборот.
+		["Traffic rx", bytes(overview.traffic.bytesRx), "clients upload"],
+		["Traffic tx", bytes(overview.traffic.bytesTx), "clients download"],
 	]
 	const container = el("cards")
 	container.replaceChildren()
-	for (const [label, value] of items) {
+	for (const [label, value, hint] of items) {
 		const card = document.createElement("div")
 		card.className = "metric"
 		const small = document.createElement("span")
@@ -429,6 +471,12 @@ function renderCards(overview) {
 		const strong = document.createElement("strong")
 		strong.textContent = String(value)
 		card.append(small, strong)
+		if (hint) {
+			const note = document.createElement("span")
+			note.className = "sub-line"
+			note.textContent = hint
+			card.appendChild(note)
+		}
 		container.appendChild(card)
 	}
 }
@@ -1249,7 +1297,14 @@ function renderUsers(users) {
 	}
 	if (users.length === 0) {
 		const row = document.createElement("tr")
-		const td = cell(row, state.userQuery ? "No user matches that ID or nickname." : "No users yet.")
+		const td = cell(
+			row,
+			state.userQuery
+				? "No user matches that ID or nickname."
+				: state.userFilter && state.userFilter !== "all"
+					? "No users in this filter."
+					: "No users yet.",
+		)
 		td.colSpan = 10
 		td.className = "muted"
 		body.appendChild(row)
@@ -1612,6 +1667,9 @@ function renderEgressBudget(view) {
 	const fill = document.createElement("i")
 	// The CSP has no unsafe-inline, so sizes go through the CSSOM, like loadBar.
 	fill.style.width = `${Math.max(0, Math.min(100, Number(view.usedPercent || 0)))}%`
+	// Тот же цвет по проценту, что у остальных шкал панели и клиентов.
+	fill.style.background = quotaFill(view.usedPercent)
+	fill.style.boxShadow = quotaGlow(view.usedPercent)
 	gauge.appendChild(fill)
 	// Marks sit at the real position of every Telegram threshold on the scale.
 	for (const tb of view.thresholdsTb || []) {
@@ -1634,6 +1692,14 @@ function renderEgressBudget(view) {
 	remaining.textContent = `Remaining: ${view.remainingLabel}`
 	legend.append(used, remaining)
 	wrap.appendChild(legend)
+
+	// Без этого пояснения цифра Oracle выглядит как ошибка: она всегда больше
+	// суммы Traffic rx + tx со вкладки Overview.
+	const scope = document.createElement("p")
+	scope.className = "muted small"
+	scope.textContent =
+		"Oracle meters every byte leaving the tenancy VNICs in this billing cycle: tunnel traffic in both directions, plus the site, the API, the admin panel, the Telegram bot, backups and OS updates, plus tunnel overhead. The Traffic rx / tx cards count only VPN session payload still stored in the database, so they are always lower."
+	wrap.appendChild(scope)
 
 	wrap.appendChild(egressRow("Billing cycle", egressCycle(view)))
 	wrap.appendChild(egressCostRow(view.charges))
@@ -1943,12 +2009,26 @@ async function loadDeploy() {
 	}
 }
 
+/**
+ * Строка запроса списка пользователей: поиск плюс выбранный фильтр.
+ *
+ * filter отправляем всегда, даже когда он равен серверному значению по
+ * умолчанию: иначе список и пункт в селекте могут разойтись после обновления
+ * сервера.
+ */
+function usersQuery() {
+	const params = new URLSearchParams()
+	if (state.userQuery) params.set("q", state.userQuery)
+	params.set("filter", state.userFilter || "active")
+	return `?${params.toString()}`
+}
+
 async function loadAll() {
 	if (!state.accessToken || state.busy) return
 	state.busy = true
 	try {
 		const liveOnly = el("live-only").checked ? "?live=true" : ""
-		const query = state.userQuery ? `?q=${encodeURIComponent(state.userQuery)}` : ""
+		const query = usersQuery()
 		const [overview, nodes, users, devices, sessions, audit] = await Promise.all([
 			request("/api/admin/overview"),
 			request("/api/admin/nodes"),
@@ -1976,7 +2056,7 @@ async function loadAll() {
 						loadTrial(),
 						loadPromos(),
 					]
-				: [loadClientErrors()],
+				: [loadEgressBudget(), loadClientErrors()],
 		)
 	} catch (error) {
 		if (error.status === 401 || error.status === 403) signOut(error.message)
@@ -1989,8 +2069,7 @@ async function loadAll() {
 async function loadUsersOnly() {
 	if (!state.accessToken) return
 	try {
-		const query = state.userQuery ? `?q=${encodeURIComponent(state.userQuery)}` : ""
-		const users = await request(`/api/admin/users${query}`)
+		const users = await request(`/api/admin/users${usersQuery()}`)
 		renderUsers(users.users)
 	} catch (error) {
 		toast(error.message, true)
@@ -2038,9 +2117,12 @@ function selectTab(tab) {
 
 /**
  * Один проход по панели: прячет от саппорта всё, что ему закрыто — вкладки
- * каналов и биллинга, блоки настроек сервиса и бюджета трафика, кнопки
- * создания пользователя, enrollment-токена и чисток. Кнопки внутри таблиц
- * убирают сами render-функции.
+ * каналов и биллинга, блок настроек сервиса, кнопки создания пользователя,
+ * enrollment-токена и чисток. Кнопки внутри таблиц убирают сами render-функции.
+ *
+ * Блок Oracle Egress саппорту оставлен: именно он отвечает на вопросы про
+ * трафик и обязан видеть те же цифры, что админ. Выключать сервера он всё
+ * равно не может: за это отвечает service-controls ниже.
  */
 function applyRoleVisibility() {
 	const manage = canManage()
@@ -2052,7 +2134,6 @@ function applyRoleVisibility() {
 	if (!manage && (state.tab === "channels" || state.tab === "billing")) state.tab = "overview"
 	for (const id of [
 		"service-controls",
-		"egress-block",
 		"create-user-btn",
 		"enroll-btn",
 		"devices-purge",
@@ -2254,6 +2335,16 @@ el("user-search").addEventListener("input", (event) => {
 		void loadUsersOnly()
 	}, 350)
 })
+
+// Срез списка: active / disabled / blocked / deleted / admins / support / testers / all.
+// Перегружаем только таблицу: остальные блоки от фильтра не зависят.
+const userFilterSelect = el("user-filter")
+if (userFilterSelect) {
+	userFilterSelect.addEventListener("change", (event) => {
+		state.userFilter = event.target.value
+		void loadUsersOnly()
+	})
+}
 
 el("deploy-beta-btn").addEventListener("click", (event) => {
 	void runDeployAction(

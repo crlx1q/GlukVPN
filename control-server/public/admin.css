@@ -421,6 +421,17 @@ button.small {
 	color: var(--text-1);
 }
 
+/* Подсказка под цифрой (откуда знаменатель, что значат rx и tx). Без этого
+   правила её перехватывает `.metric span` и она выглядит вторым заголовком. */
+.metric .sub-line {
+	margin-top: -1px;
+	font-size: 10.5px;
+	font-weight: 500;
+	letter-spacing: 0;
+	text-transform: none;
+	color: var(--text-2);
+}
+
 .metric strong {
 	font-size: 21px;
 	font-weight: 700;
@@ -714,7 +725,12 @@ td.actions {
 	inset: 0 auto 0 0;
 	display: block;
 	border-radius: 999px;
-	background: linear-gradient(90deg, var(--violet-light), var(--blue));
+	/* Цвет ставит quotaFill() из admin.js — он зависит от процента загрузки.
+	   Здесь остаётся запасной оттенок на случай, если скрипт до шкалы не дошёл. */
+	background: hsl(142 70% 52%);
+	transition:
+		width 0.4s ease,
+		background 0.4s ease;
 }
 
 .pill {
@@ -1127,24 +1143,13 @@ summary:focus-visible {
 	display: block;
 	min-width: 3px;
 	border-radius: 999px;
-	background: linear-gradient(90deg, #22c58a, var(--ok));
-	box-shadow: 0 0 18px rgba(61, 220, 151, 0.55);
-	transition: width 0.5s ease;
-}
-
-.egress-gauge.is-warn i {
-	background: linear-gradient(90deg, #d99b3f, var(--amber));
-	box-shadow: 0 0 18px rgba(240, 181, 103, 0.55);
-}
-
-.egress-gauge.is-high i {
-	background: linear-gradient(90deg, #f0812f, #ff9f45);
-	box-shadow: 0 0 18px rgba(255, 159, 69, 0.55);
-}
-
-.egress-gauge.is-crit i {
-	background: linear-gradient(90deg, #e04848, var(--danger));
-	box-shadow: 0 0 20px rgba(255, 107, 107, 0.65);
+	/* Цвет и свечение ставят quotaFill()/quotaGlow() из admin.js: шкала меняется
+	   плавно по проценту, а не тремя ступеньками is-warn/is-high/is-crit. */
+	background: hsl(142 70% 52%);
+	transition:
+		width 0.5s ease,
+		background 0.5s ease,
+		box-shadow 0.5s ease;
 }
 
 .egress-gauge b {

@@ -236,6 +236,16 @@
 								placeholder="search by ID (00000001) or nickname"
 								aria-label="Search users"
 							/>
+							<select id="user-filter" aria-label="Filter the user list">
+								<option value="active" selected>Active</option>
+								<option value="disabled">Disabled</option>
+								<option value="blocked">Blocked</option>
+								<option value="deleted">Deleted</option>
+								<option value="admins">Admins</option>
+								<option value="support">Support</option>
+								<option value="testers">Beta testers</option>
+								<option value="all">All</option>
+							</select>
 							<button type="button" id="create-user-btn" class="ghost small">
 								Create user
 							</button>
