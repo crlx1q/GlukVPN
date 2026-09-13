@@ -112,7 +112,24 @@
     var gran=data.bucketSize==="hour"?tr("по часам","hourly"):tr("по дням","daily");
     return'<div class="s2-subhead"><p>'+esc(tr("Статистика использования VPN по всем устройствам","VPN usage across all your devices"))+'</p>'+((day(s)&&day(e))?'<span class="s2-range">'+esc(day(s)+" → "+day(e)+" · "+gran+" · UTC")+'</span>':"")+'</div>';
   }
-  function chart(series){
+  // Подписи оси — до шести равномерных отсчётов, а не три штуки: сутки по
+  // часам и месяц по дням иначе читаются как безымянная полоса. Прореживаем
+  // только подписи: все точки ряда остаются на графике и в тултипах.
+  function tickLabel(v,unit){
+    var d=new Date(v);if(!v||isNaN(d))return"\u2014";
+    var pad=function(x){return(x<10?"0":"")+x;};
+    return unit==="hour"?pad(d.getUTCHours())+":00":pad(d.getUTCDate())+"."+pad(d.getUTCMonth()+1);
+  }
+  function axisTicks(series,unit){
+    var n=series.length,count=Math.min(n,6),out=[],used={},i,idx;
+    for(i=0;i<count;i++){
+      idx=count<2?0:Math.round(i*(n-1)/(count-1));
+      if(used[idx])continue;used[idx]=1;
+      out.push('<span>'+esc(tickLabel(series[idx].start,unit))+'</span>');
+    }
+    return out.join("");
+  }
+  function chart(series,unit){
     if(!series.length)return'<div class="s2-state"><span aria-hidden="true">⌁</span><b>'+esc(tr("За этот период данных пока нет","No data for this period yet"))+'</b></div>';
     var W=720,H=200,PL=10,PR=10,PT=14,PB=26,IW=W-PL-PR,IH=H-PT-PB,n=series.length;
     var dn=series.map(function(x){return Number(x.downloadBytes)||0;});
@@ -161,7 +178,8 @@
       '<path class="s2-wave__line s2-wave__line--dn" d="'+path(dn)+'"/>'+
       '<path class="s2-wave__line s2-wave__line--up" d="'+path(up)+'"/>'+
       '</svg>'+bands+'</div>'+
-      '<figcaption class="s2-wave__axis"><span>'+esc(when(series[0].start))+'</span><span class="s2-wave__legend"><i class="is-dn"></i>'+esc(tr("Получено","Downloaded"))+'<i class="is-up"></i>'+esc(tr("Отправлено","Uploaded"))+'</span><span>'+esc(when(series[n-1].start))+'</span></figcaption>'+peakNote(series)+'</figure>';
+      '<div class="s2-wave__ticks">'+axisTicks(series,unit)+'</div>'+
+      '<figcaption class="s2-wave__axis"><span class="s2-wave__legend"><i class="is-dn"></i>'+esc(tr("Получено","Downloaded"))+'<i class="is-up"></i>'+esc(tr("Отправлено","Uploaded"))+'</span><span>'+esc(tr("время UTC","UTC time"))+'</span></figcaption>'+peakNote(series)+'</figure>';
   }
   // Серверов будет больше одного, поэтому месячные траты подписаны
   // сервером: безымянный блок был бы непонятно чей.
@@ -176,7 +194,7 @@
     var dnRow=series.map(function(x){return Number(x.downloadBytes)||0;}),upRow=series.map(function(x){return Number(x.uploadBytes)||0;});
     var allRow=series.map(function(x){return(Number(x.downloadBytes)||0)+(Number(x.uploadBytes)||0);});
     var badge=function(p){return trend.comparable===true?trendBadge(typeof p==="number"?p:null):"";};
-    b.innerHTML=subhead(data)+quotaBar(quota)+coverageNote(coverage)+'<div class="s2-graph"><div class="s2-total"><div><span>'+esc(tr("Получено","Downloaded"))+'</span><strong class="s2-metric"><b>'+bytes(totals.downloadBytes)+'</b>'+badge(trend.downloadPercent)+'</strong>'+spark(dnRow,"is-dn")+'</div><div><span>'+esc(tr("Отправлено","Uploaded"))+'</span><strong class="s2-metric"><b>'+bytes(totals.uploadBytes)+'</b>'+badge(trend.uploadPercent)+'</strong>'+spark(upRow,"is-up")+'</div><div><span>'+esc(tr("Всего","Total"))+'</span><strong class="s2-metric"><b>'+bytes((Number(totals.downloadBytes)||0)+(Number(totals.uploadBytes)||0))+'</b>'+badge(trend.totalPercent)+'</strong>'+spark(allRow,"is-all")+'</div><div><span>'+esc(tr("Покрытие","Coverage"))+'</span><strong class="s2-metric"><b>'+esc(!coverage.since?tr('Не определено','Unknown'):coverage.partial?tr('Частичное','Partial'):tr('За период','For this period'))+'</b></strong></div></div><div class="s2-plot">'+chart(series)+'</div></div>'+
+    b.innerHTML=subhead(data)+quotaBar(quota)+coverageNote(coverage)+'<div class="s2-graph"><div class="s2-total"><div><span>'+esc(tr("Получено","Downloaded"))+'</span><strong class="s2-metric"><b>'+bytes(totals.downloadBytes)+'</b>'+badge(trend.downloadPercent)+'</strong>'+spark(dnRow,"is-dn")+'</div><div><span>'+esc(tr("Отправлено","Uploaded"))+'</span><strong class="s2-metric"><b>'+bytes(totals.uploadBytes)+'</b>'+badge(trend.uploadPercent)+'</strong>'+spark(upRow,"is-up")+'</div><div><span>'+esc(tr("Всего","Total"))+'</span><strong class="s2-metric"><b>'+bytes((Number(totals.downloadBytes)||0)+(Number(totals.uploadBytes)||0))+'</b>'+badge(trend.totalPercent)+'</strong>'+spark(allRow,"is-all")+'</div><div><span>'+esc(tr("Покрытие","Coverage"))+'</span><strong class="s2-metric"><b>'+esc(!coverage.since?tr('Не определено','Unknown'):coverage.partial?tr('Частичное','Partial'):tr('За период','For this period'))+'</b></strong></div></div><div class="s2-plot">'+chart(series,data.bucketSize)+'</div></div>'+
       '<p class="s2-caption">'+esc(tr("Границы периода и подписи — UTC. График содержит только наблюдавшиеся изменения счётчиков с момента запуска функции; история не достраивается.","Period boundaries and labels use UTC. The chart contains only observed counter deltas since rollout; history is never fabricated."))+'</p>'+
       '<details class="s2-details" open><summary>'+esc(tr('Подробнее об использовании','Usage breakdown'))+'</summary><div class="s2-breakdowns"><section><h3>'+esc(tr("По устройствам","By device"))+'</h3>'+(devices.length?'<ul>'+devices.map(function(d){return'<li><span>'+esc(d.deviceName||tr("Устройство","Device"))+' <small>'+esc(d.platform||"")+' · ↓ '+bytes(Number(d.downloadBytes)||0)+' ↑ '+bytes(Number(d.uploadBytes)||0)+'</small></span><b>'+bytes((Number(d.downloadBytes)||0)+(Number(d.uploadBytes)||0))+'</b></li>';}).join("")+'</ul>':'<p>'+esc(tr("Нет данных","No data"))+'</p>')+'</section><section><h3>'+esc(tr("Категории","Categories"))+'</h3>'+(cats.length?'<ul>'+cats.map(function(x){return'<li><span>'+esc(x.category||tr("Без категории","Uncategorised"))+'</span><b>'+bytes((Number(x.downloadBytes)||0)+(Number(x.uploadBytes)||0))+'</b></li>';}).join("")+'</ul>':'<p>'+esc(tr("Нет данных","No data"))+'</p>')+'</section></div>'+
       '<section class="s2-domains"><h3>'+esc(tr("Домены — сохранённые итоги сессий","Domains — retained session totals"))+'</h3><p>'+esc(tr("Этот список относится к сохранённым итогам сессий и может не совпадать с выбранным периодом графика.","This list uses retained session totals and may not match the selected chart period."))+'</p>'+(domains.enabled&&domains.items&&domains.items.length?'<ul>'+domains.items.slice(0,state.domainsOpen?domains.items.length:5).map(function(x){var fav=safeUrl(x.faviconUrl);return'<li>'+(fav?'<img src="'+esc(fav)+'" alt="" loading="lazy">':'<span class="s2-favicon" aria-hidden="true">◇</span>')+'<div><b>'+esc(x.domain)+'</b><span>'+esc(x.category||tr("Без категории","Uncategorised"))+' · '+(Number(x.connections)||0)+' '+esc(tr("соедин.","connections"))+'</span></div><strong>'+bytes((Number(x.downloadBytes)||0)+(Number(x.uploadBytes)||0))+'</strong></li>';}).join("")+'</ul>':'<div class="s2-state"><b>'+esc(domains.enabled?tr("Доменов пока нет","No domains yet"):tr("Аналитика доменов отключена","Domain analytics is disabled"))+'</b></div>')+((domains.enabled&&domains.items&&domains.items.length>5)?'<button type="button" class="btn btn--ghost btn--sm" data-s2-domains aria-expanded="'+(state.domainsOpen?'true':'false')+'">'+esc(state.domainsOpen?tr("Свернуть","Collapse"):tr("Показать все · "+domains.items.length,"Show all · "+domains.items.length))+'</button>':'')+'</section>'+
