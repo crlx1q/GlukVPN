@@ -4,8 +4,8 @@ import { z } from "zod"
 import { config } from "../config"
 import { writeAudit } from "../lib/audit"
 import { generateSecret, hashPassword, hashSecret } from "../lib/crypto"
-import { badRequest, conflict, notFound } from "../lib/errors"
-import { clientIp, getAuthUser, requireAdmin } from "../middleware/auth"
+import { badRequest, conflict, forbidden, notFound } from "../lib/errors"
+import { clientIp, getAuthUser, requireStaff } from "../middleware/auth"
 import { bytesToNumber, prisma } from "../prisma"
 import { deleteAccount } from "../services/accountDeletion"
 import { cancelOrder, grantPlan, markOrderPaid, orderView } from "../services/billing"
@@ -69,7 +69,8 @@ const BlockBody = z
 	.object({ reason: z.string().trim().max(300).optional() })
 	.optional()
 
-const TesterBody = z.object({ enabled: z.boolean() })
+/** Every boolean flag toggle sends the same body: tester, admin, support. */
+const FlagBody = z.object({ enabled: z.boolean() })
 
 // Deletion cannot be undone; the optional reason is kept on the tombstone.
 const DeleteUserBody = z
@@ -189,9 +190,42 @@ const ListUsersQuery = z
 	.object({ q: z.string().trim().max(64).optional() })
 	.optional()
 
+/**
+ * Reads a support (manager) account must not see, even though they are GETs.
+ * Money is the line: the egress budget is cost data, not support material.
+ */
+const SUPPORT_DENIED_READS: RegExp[] = [/^\/api\/admin\/traffic-budget$/]
+
+/**
+ * The only writes support may perform: hand a subscription out and take it
+ * back. Everything else - nodes, maintenance, channels, service settings,
+ * blocking, deletion, flags - stays with administrators.
+ */
+const SUPPORT_ALLOWED_WRITES: RegExp[] = [/^\/api\/admin\/users\/[^/]+\/subscription$/]
+
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
-	// Everything below requires an admin user token.
-	app.addHook("preHandler", requireAdmin)
+	// Everything below requires a staff token: an admin or a support account.
+	app.addHook("preHandler", requireStaff)
+
+	/**
+	 * Second gate: what a support account may actually do once inside.
+	 *
+	 * Writes are allow-listed rather than the dangerous ones deny-listed, and
+	 * that is the whole point: a route added tomorrow is admin-only until
+	 * somebody deliberately puts it on the list. Administrators never reach
+	 * the checks below.
+	 */
+	app.addHook("preHandler", async (request) => {
+		const { user } = getAuthUser(request)
+		if (user.isAdmin) return
+		// Path without the query string; the :id segment is covered by the regex.
+		const path = request.url.split("?")[0] ?? ""
+		const isRead = request.method === "GET" || request.method === "HEAD"
+		const allowed = isRead
+			? !SUPPORT_DENIED_READS.some((rule) => rule.test(path))
+			: SUPPORT_ALLOWED_WRITES.some((rule) => rule.test(path))
+		if (!allowed) throw forbidden("Admin privileges required")
+	})
 
 	app.get("/api/admin/overview", async (_request, reply) => {
 		const [users, activeUsers, devices, activeDevices, nodes, liveSessions] =
@@ -568,6 +602,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 				status: user.status,
 				isAdmin: user.isAdmin,
 				isTester: user.isTester,
+				isSupport: user.isSupport,
 				blockedAt: user.blockedAt?.toISOString() ?? null,
 				blockedReason: user.blockedReason,
 				deletedAt: user.deletedAt?.toISOString() ?? null,
@@ -784,6 +819,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 					status: user.status,
 					isAdmin: user.isAdmin,
 					isTester: user.isTester,
+					isSupport: user.isSupport,
 					blockedReason: user.blockedReason,
 					deletedAt: user.deletedAt?.toISOString() ?? null,
 					maxDevices: user.maxDevices,
@@ -1013,7 +1049,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 	app.post("/api/admin/users/:id/tester", async (request, reply) => {
 		const parsed = IdParams.safeParse(request.params)
 		if (!parsed.success) throw badRequest("Invalid user id")
-		const body = TesterBody.safeParse(request.body)
+		const body = FlagBody.safeParse(request.body)
 		if (!body.success) throw badRequest("enabled is required")
 		const { user: admin } = getAuthUser(request)
 		const target = await prisma.user.findUnique({ where: { id: parsed.data.id } })
@@ -1029,6 +1065,68 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 			metadata: { targetUserId: target.id, enabled: body.data.enabled },
 		})
 		return reply.send({ ok: true, isTester: body.data.enabled })
+	})
+
+	/**
+	 * Administrator flag.
+	 *
+	 * Only an administrator hands out or takes back the keys to the service, and
+	 * never on their own row: demoting yourself is how a workspace ends up with
+	 * no administrator at all, so it has to be somebody else's click. Nothing is
+	 * signed out - every request re-reads the user row, so the new flag is in
+	 * force on the target's very next call.
+	 */
+	app.post("/api/admin/users/:id/admin", async (request, reply) => {
+		const parsed = IdParams.safeParse(request.params)
+		if (!parsed.success) throw badRequest("Invalid user id")
+		const body = FlagBody.safeParse(request.body)
+		if (!body.success) throw badRequest("enabled is required")
+		const { user: admin } = getAuthUser(request)
+		const target = await prisma.user.findUnique({ where: { id: parsed.data.id } })
+		if (!target) throw notFound("User not found")
+		if (target.id === admin.id) throw conflict("You cannot change your own admin flag")
+		if (target.status === "DELETED") throw conflict("This account is deleted")
+		await prisma.user.update({
+			where: { id: target.id },
+			data: { isAdmin: body.data.enabled },
+		})
+		await writeAudit({
+			action: "admin.user.admin",
+			userId: admin.id,
+			ip: clientIp(request),
+			metadata: { targetUserId: target.id, enabled: body.data.enabled },
+		})
+		return reply.send({ ok: true, isAdmin: body.data.enabled })
+	})
+
+	/**
+	 * Support (manager) flag.
+	 *
+	 * Opens the admin panel read-only plus the subscription grant/revoke pair -
+	 * the day job of support. It is not a weaker admin: nodes, maintenance,
+	 * channels, service settings, blocking, deletion and every flag (this one
+	 * included) stay with administrators.
+	 */
+	app.post("/api/admin/users/:id/support", async (request, reply) => {
+		const parsed = IdParams.safeParse(request.params)
+		if (!parsed.success) throw badRequest("Invalid user id")
+		const body = FlagBody.safeParse(request.body)
+		if (!body.success) throw badRequest("enabled is required")
+		const { user: admin } = getAuthUser(request)
+		const target = await prisma.user.findUnique({ where: { id: parsed.data.id } })
+		if (!target) throw notFound("User not found")
+		if (target.status === "DELETED") throw conflict("This account is deleted")
+		await prisma.user.update({
+			where: { id: target.id },
+			data: { isSupport: body.data.enabled },
+		})
+		await writeAudit({
+			action: "admin.user.support",
+			userId: admin.id,
+			ip: clientIp(request),
+			metadata: { targetUserId: target.id, enabled: body.data.enabled },
+		})
+		return reply.send({ ok: true, isSupport: body.data.enabled })
 	})
 
 	/**

@@ -72,6 +72,21 @@ export async function requireAdmin(request: FastifyRequest): Promise<void> {
 }
 
 /**
+ * Requires a staff token: an administrator or a support (manager) account.
+ *
+ * This only opens the door. What support may actually *do* behind it is
+ * decided per route - see the second preHandler in routes/admin.ts, which
+ * keeps support on reads plus the subscription grant/revoke pair. Splitting it
+ * that way means a new admin route is admin-only by default: forgetting to
+ * think about support cannot silently widen their access.
+ */
+export async function requireStaff(request: FastifyRequest): Promise<void> {
+	await requireUser(request)
+	const user = request.authUser?.user
+	if (!user?.isAdmin && !user?.isSupport) throw forbidden("Admin privileges required")
+}
+
+/**
  * Verifies a node credential: `Authorization: Bearer <node token>` plus
  * `X-Node-Id`. The raw token is never stored server-side; lookup happens by
  * HMAC hash, so no secret comparison is performed in application code.

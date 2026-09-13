@@ -172,6 +172,12 @@ model User {
   /// Beta tester: may switch the PROD/BETA channel in every client without
   /// being an administrator. Set from the admin panel.
   isTester        Boolean    @default(false) @map("is_tester")
+  /// Support (manager): may open the admin panel read-only and grant or revoke
+  /// a subscription. Nothing else - no nodes, no maintenance, no channels, no
+  /// service settings, no blocking, no flags. Deliberately a second boolean
+  /// next to `isAdmin` rather than a role enum: the two are independent, an
+  /// admin is not "a stronger support" and never needs this flag set.
+  isSupport       Boolean    @default(false) @map("is_support")
   blockedAt       DateTime?  @map("blocked_at")
   blockedReason   String?    @map("blocked_reason")
   /// Deletion tombstone. `status = DELETED` plus these three columns is all

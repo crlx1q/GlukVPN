@@ -106,6 +106,7 @@ export async function deleteAccount(params: {
 			// Privileges and manual overrides must not survive on a dead row.
 			isAdmin: false,
 			isTester: false,
+			isSupport: false,
 			speedLimitMbps: null,
 		},
 	})

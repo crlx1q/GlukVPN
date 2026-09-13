@@ -17,6 +17,8 @@ export type AccessTokenPayload = {
 	/** Device credential epoch; absent on legacy tokens (epoch zero). */
 	dv?: number
 	adm?: boolean
+	/** Support (manager) flag. Informational: authorisation re-reads the row. */
+	sup?: boolean
 	typ: "access"
 }
 

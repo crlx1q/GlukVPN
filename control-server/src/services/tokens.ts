@@ -30,6 +30,7 @@ export async function issueTokens(
 			sub: user.id,
 			...(device ? { did: device.id, dv: device.tokenVersion ?? 0 } : {}),
 			adm: user.isAdmin,
+			sup: user.isSupport,
 			typ: "access",
 		},
 		{ expiresIn: `${config.ACCESS_TOKEN_TTL_SEC}s` },

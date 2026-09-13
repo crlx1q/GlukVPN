@@ -19,6 +19,7 @@ export function userPayload(user: User): Record<string, unknown> {
 		emailVerified: user.emailVerifiedAt !== null,
 		isAdmin: user.isAdmin,
 		isTester: user.isTester,
+		isSupport: user.isSupport,
 		status: user.status,
 		maxDevices: user.maxDevices,
 		maxConcurrentSessions: user.maxSessions,
