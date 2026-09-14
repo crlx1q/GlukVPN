@@ -191,6 +191,27 @@ async function tryRefresh() {
 	return refreshing
 }
 
+/*
+ * Account state exactly as the control server reports it.
+ *
+ * `subscription` is the plan in force and nothing else; the newest row in the
+ * account's history arrives separately as `lastSubscription`. Treating those
+ * two as one value is what left this extension drawing a revoked beta plan
+ * with three years on the clock. `subscriptionRevision` changes whenever any
+ * of it changes, which is how the worker knows the cache is stale.
+ */
+function accountFrom(json, previous) {
+	const session = previous ?? {}
+	return {
+		user: json?.user ?? session.user ?? null,
+		subscription: json?.subscription ?? null,
+		lastSubscription: json?.lastSubscription ?? null,
+		entitlement: json?.entitlement ?? null,
+		subscriptionRevision: json?.subscriptionRevision ?? json?.entitlement?.revision ?? null,
+		accountAt: Date.now(),
+	}
+}
+
 export const Api = {
 	lastRefreshOutcome: () => lastRefresh,
 	baseUrl,
@@ -206,7 +227,7 @@ export const Api = {
 			body: { identifier, username: identifier, password },
 			authenticated: false,
 		})
-		await Store.saveSession({ user: json.user ?? null, subscription: json.subscription ?? null, tokens: bundleFrom(json, null) })
+		await Store.saveSession({ ...accountFrom(json), tokens: bundleFrom(json, null) })
 		return json
 	},
 
@@ -231,6 +252,21 @@ export const Api = {
 	},
 
 	me: () => request('GET', '/api/auth/me'),
+
+	/**
+	 * Re-reads the account and replaces the cached plan with the answer.
+	 *
+	 * The subscription used to be stored once, at sign-in, and never looked at
+	 * again - so a plan that was replaced, downgraded or revoked stayed on the
+	 * screen for as long as the browser kept the session. Tokens are left
+	 * untouched: this call only ever refreshes what is shown.
+	 */
+	async account() {
+		const json = await request('GET', '/api/auth/me')
+		const session = (await Store.session()) ?? {}
+		await Store.saveSession({ ...session, ...accountFrom(json, session) })
+		return json
+	},
 
 	/*
 	 * Sign in by link: the same device-authorization flow the desktop client
@@ -263,11 +299,7 @@ export const Api = {
 
 	/** Stores the tokens an approved link handed back, as a normal session. */
 	async saveLinkedSession(json) {
-		await Store.saveSession({
-			user: json.user ?? null,
-			subscription: json.subscription ?? null,
-			tokens: bundleFrom(json, null),
-		})
+		await Store.saveSession({ ...accountFrom(json), tokens: bundleFrom(json, null) })
 		lastRefresh = REFRESH.ok
 		return json.user ?? null
 	},

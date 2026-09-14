@@ -38,6 +38,10 @@ self.addEventListener('error', (event) => {
 
 const POLL_ALARM = 'gluk-poll'
 const MAINTENANCE_ALARM = 'gluk-maintenance'
+// Floor between two plan re-reads. The popup asks for state every five seconds
+// and a plan changes maybe twice a year, so this keeps that poll from turning
+// into a request per tick while still feeling immediate to a human.
+const ACCOUNT_SYNC_MS = 10000
 const PHASE = {
 	signedOut: 'signedOut',
 	idle: 'idle',
@@ -696,6 +700,48 @@ async function checkMaintenance() {
 	}
 }
 
+let accountSyncAt = 0
+let accountSyncing = null
+
+/**
+ * Re-reads the plan in force and tells the popup when it really changed.
+ *
+ * Everything about a subscription can change while this worker sleeps: an
+ * admin grants Pro, replaces it with a cheaper Basic, or revokes it outright.
+ * The copy cached at sign-in cannot know any of that, which is how the popup
+ * ended up advertising a beta plan with three years left on it. Throttled and
+ * single-flight: several callers per second are normal, extra requests are not.
+ */
+async function syncAccount({ force = false } = {}) {
+	const session = await Store.session()
+	if (!session?.tokens?.refreshToken) return null
+	if (!force && Date.now() - accountSyncAt < ACCOUNT_SYNC_MS) return null
+	if (accountSyncing) return accountSyncing
+	accountSyncing = (async () => {
+		try {
+			const before = session.subscriptionRevision ?? null
+			const json = await Api.account()
+			accountSyncAt = Date.now()
+			// Only a real change is worth waking the popup for.
+			if ((json?.subscriptionRevision ?? null) !== before) broadcastAccount()
+			return json
+		} catch {
+			// Offline or a 5xx must not erase what we know - a stale plan is bad,
+			// an empty one is worse. Expired tokens are `request`'s business.
+			return null
+		} finally {
+			accountSyncing = null
+		}
+	})()
+	return accountSyncing
+}
+
+function broadcastAccount() {
+	try {
+		chrome.runtime.sendMessage({ type: 'account' }).catch(() => {})
+	} catch {}
+}
+
 async function poll() {
 	const runtime = await Store.runtime()
 	if (runtime?.phase !== PHASE.connected) return
@@ -715,6 +761,9 @@ async function poll() {
 			// The control plane closed the session (revoked device, admin action,
 			// subscription lapse). Stop pretending we are up.
 			await disconnect({ silent: true })
+			// A lapsed plan is one of the usual reasons, so re-read it: the popup
+			// must not explain the drop with a subscription that is already gone.
+			void syncAccount({ force: true })
 			// Это сообщение, а не вечная ошибка: ставим метку времени,
 			// чтобы попап показал его один раз и убрал, и снимаем
 			// connectIntent — иначе клиент пытается вернуть сессию, которую
@@ -727,6 +776,11 @@ async function poll() {
 		}
 		const gateway = runtime.gateway
 		const session = await Store.session()
+		// The status answer carries the revision of the plan the server is
+		// enforcing right now. If it differs from the cached one the cache is
+		// wrong - grant, renewal, downgrade or revocation, no need to know which.
+		const revision = status.subscriptionRevision ?? null
+		if (revision && revision !== (session?.subscriptionRevision ?? null)) void syncAccount({ force: true })
 		const device = await Store.device()
 		const token = session?.tokens?.accessToken
 		const credentials = token
@@ -817,7 +871,13 @@ async function state() {
 	return {
 		settings,
 		user: session?.user ?? null,
+		// Three separate answers on purpose: the plan in force, the history
+		// behind it, and the limits the server enforces. The popup renders the
+		// first one and may only *name* the second, never date or count from it.
 		subscription: session?.subscription ?? null,
+		lastSubscription: session?.lastSubscription ?? null,
+		entitlement: session?.entitlement ?? null,
+		subscriptionRevision: session?.subscriptionRevision ?? null,
 		device: device ? { id: device.id, deviceName: device.deviceName, platform: device.platform, browser: device.browser, os: device.os } : null,
 		nodes,
 		runtime: withoutStaleNotice(runtime) ?? { phase: signedIn ? PHASE.idle : PHASE.signedOut },
@@ -994,6 +1054,14 @@ const HANDLERS = {
 		// collects the tokens at once instead of waiting for the alarm.
 		void runLinkPoll()
 		void poll()
+		// The same five seconds keep the plan fresh while the popup is open, which
+		// is the only moment anyone can read it. Throttled inside.
+		void syncAccount()
+		return state()
+	},
+	/** Opening the profile re-reads the plan without waiting for the throttle. */
+	refreshAccount: async () => {
+		await syncAccount({ force: true })
 		return state()
 	},
 	login,
@@ -1284,6 +1352,9 @@ async function bootstrap() {
 		if (wasConnected || settings.autoConnect) await scheduleAutoConnect(1)
 		return
 	}
+	// The session survived, but the plan behind it may not have: re-read it once
+	// on wake so the first popup after a revocation is already honest.
+	void syncAccount({ force: true })
 	if (wasConnected || settings.autoConnect) {
 		// A failed autostart must still end on a phase the popup can render.
 		try {

@@ -588,6 +588,9 @@ function setView(next) {
 	if (next === 'profile') {
 		ensureDevices()
 		renderProfile()
+		// Тариф мог измениться, пока попап был закрыт: спрашиваем сразу, а не
+		// ждём следующего пятисекундного опроса.
+		void refreshAccount()
 	}
 	// A hidden element measures 0 wide, so the sliding pill can only be placed
 	// after the section is on screen.
@@ -845,7 +848,9 @@ function renderMetric(el, { value = DASH, loading = false, chars = SKELETON_CHAR
  * потом отказывал — и причина не была видна.
  */
 function manualSelectionLocked() {
-	return String(state?.subscription?.status ?? '').toUpperCase() !== 'ACTIVE'
+	// Права считает сервер: действующая подписка либо есть, либо её нет, а
+	// прошлая строка на выбор узла уже не влияет.
+	return !livePlan() && Number(state?.entitlement?.tier ?? 0) <= 0
 }
 
 /** Режим «Авто»: ручного предпочтения нет или оно закрыто тарифом. */
@@ -1622,6 +1627,36 @@ function devicePagerNode(pageCount) {
 	return pager
 }
 
+/*
+ * Действующий тариф и история — это два разных вопроса.
+ *
+ * Сервер отдаёт активную строку в `subscription`, последнюю по времени — в
+ * `lastSubscription`, и признак `active` считает тоже он. Пока расширение
+ * путало их, попап рисовал отозванную бету со сроком до 2029 года.
+ */
+function livePlan() {
+	const sub = state?.subscription ?? null
+	if (!sub || sub.active === false) return null
+	return String(sub.status ?? '').toUpperCase() === 'ACTIVE' ? sub : null
+}
+
+/** Прошлый тариф — только чтобы его назвать, без дат, дней и лимитов. */
+function pastPlan() {
+	return livePlan() ? null : (state?.lastSubscription ?? null)
+}
+
+/** Статус строки подписки словами, включая административные состояния. */
+function planStatusLabel(sub) {
+	const status = String(sub?.status ?? '').toUpperCase()
+	if (status === 'ACTIVE') return t('profile.active')
+	if (status === 'EXPIRED') return t('profile.expired')
+	if (status === 'REVOKED') return t('profile.revoked')
+	if (status === 'REPLACED') return t('profile.replaced')
+	if (status === 'REFUNDED') return t('profile.refunded')
+	if (status === 'DISABLED') return t('profile.disabled')
+	return t('profile.noSub')
+}
+
 /** The profile screen mirrors the Flutter "My profile" page. */
 function displayPlan(sub) {
  const code=String(sub?.plan||sub?.planName||'').toLowerCase().replace(/[\s_-]/g,'');
@@ -1630,7 +1665,8 @@ function displayPlan(sub) {
 }
 function renderProfile() {
 	const user = state?.user ?? null
-	const sub = state?.subscription ?? null
+	const sub = livePlan()
+	const past = pastPlan()
 	const name = user?.username ?? user?.email ?? user?.name ?? ''
 	const set = (id, value) => {
 		const node = $(id)
@@ -1640,12 +1676,13 @@ function renderProfile() {
 	const initial = $('prof-initial')
 	if (initial) initial.textContent = (name || '?').trim().charAt(0).toUpperCase() || '?'
 
-	const status = String(sub?.status ?? '').toUpperCase()
-	const label =
-		status === 'ACTIVE' ? t('profile.active')
-		: status === 'EXPIRED' ? t('profile.expired')
-		: status === 'DISABLED' ? t('profile.disabled')
-		: t('profile.noSub')
+	// Кончилась или отобрали — это Free без остатков. Прошлый тариф всё же
+	// называем: иначе «Нет подписки» читается как потеря аккаунта.
+	const label = sub
+		? planStatusLabel(sub)
+		: past
+			? `${planStatusLabel(past)} \u00b7 ${displayPlan(past)}`
+			: t('profile.noSub')
 	const chip = $('prof-chip')
 	if (chip) {
 		// Бейджик рядом с ником: глиф + имя тарифа, как на сайте и ПК.
@@ -1661,10 +1698,12 @@ function renderProfile() {
 	const role = $('prof-role')
 	if (role) role.hidden = !isAdminUser()
 	set('prof-status', label)
-	set('prof-plan', displayPlan(sub))
+	set('prof-plan', sub ? displayPlan(sub) : t('profile.free'))
 	const until = sub?.expiresAt ? new Date(sub.expiresAt) : null
-	set('prof-expires', until && Number.isFinite(until.getTime()) ? until.toLocaleDateString() : status === 'ACTIVE' ? t('profile.unlimited') : '\u2014')
-	const max = Number(user?.maxDevices ?? 0)
+	set('prof-expires', until && Number.isFinite(until.getTime()) ? until.toLocaleDateString() : sub ? t('profile.unlimited') : '\u2014')
+	// Лимит устройств берём у entitlement: сервер понижает его вместе с
+	// тарифом, и именно этим числом он ограничивает на самом деле.
+	const max = Number(state?.entitlement?.maxDevices ?? user?.maxDevices ?? 0)
 	set('prof-devices', max ? t('dev.limit', { used: deviceActiveCount, max }) : String(deviceActiveCount || '\u2014'))
 }
 
@@ -1845,6 +1884,19 @@ async function refreshState({ quiet = false } = {}) {
 		banner('set-banner', humanError(response), { actionLabel: t('common.retry'), onAction: () => refreshState() })
 	}
 	return false
+}
+
+/**
+ * Просит воркер перечитать действующий тариф и применяет ответ.
+ *
+ * Тихо по задумке: если сервер недоступен, на экране остаётся то, что было,
+ * и отдельный баннер про подписку в профиле не нужен.
+ */
+async function refreshAccount() {
+	const response = await call('refreshAccount')
+	if (!response?.ok) return
+	const next = response.state ?? response.data ?? response
+	if (next && typeof next === 'object') applyState(next)
 }
 
 // ---------------------------------------------------------------- actions ---
@@ -2432,6 +2484,12 @@ function wire() {
 	try {
 		chrome.runtime.onMessage.addListener((message) => {
 			if (!message || typeof message !== 'object') return
+			// Подписку сменили на сервере — воркер сообщает об этом сам,
+			// чтобы попап не ждал следующего опроса.
+			if (message.type === 'account') {
+				void refreshState({ quiet: true })
+				return
+			}
 			if (message.type === 'state' || message.type === 'runtime') {
 				const runtime = message.runtime ?? message.payload ?? null
 				if (runtime) {
