@@ -836,12 +836,22 @@ export type OrderSyncResult = {
 export async function reconcilePendingOrders(user: User, limit = 5): Promise<OrderSyncResult[]> {
 	const gateway = provider()
 	if (gateway.name !== "tabpay") return []
+	const now = Date.now()
 	const open = await prisma.order.findMany({
 		where: {
 			userId: user.id,
-			status: "PENDING",
 			provider: gateway.name,
-			createdAt: { gt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+			OR: [
+				{ status: "PENDING", createdAt: { gt: new Date(now - 7 * 24 * 60 * 60 * 1000) } },
+				// TabPay settles late: an attempt we already wrote off can still turn
+				// into SUCCESS. Re-asking about yesterday's refusals costs one call
+				// and is the difference between "declined" and the plan somebody paid
+				// for; markOrderPaid revives FAILED and CANCELLED for exactly this.
+				{
+					status: { in: ["FAILED", "CANCELLED"] },
+					createdAt: { gt: new Date(now - 24 * 60 * 60 * 1000) },
+				},
+			],
 		},
 		orderBy: { createdAt: "desc" },
 		take: Math.max(1, Math.min(limit, 10)),
