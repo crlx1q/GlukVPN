@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="ru" data-base="/" data-lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Личный кабинет — GlukVPN</title>
+  <meta name="description" content="Личный кабинет GlukVPN: подписка, активные устройства на карте, управление сессиями и загрузки.">
+  <link rel="canonical" href="https://vpn.gluk.tech/app/">
+  <meta name="theme-color" content="#0a0714">
+  <meta name="color-scheme" content="dark">
+  <meta name="format-detection" content="telephone=no">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="GlukVPN">
+  <meta property="og:locale" content="ru_RU">
+  <link rel="alternate" hreflang="ru" href="https://vpn.gluk.tech/app/">
+  <link rel="alternate" hreflang="en" href="https://vpn.gluk.tech/en/app/">
+  <link rel="alternate" hreflang="x-default" href="https://vpn.gluk.tech/app/">
+  <meta property="og:title" content="Личный кабинет — GlukVPN">
+  <meta property="og:description" content="Личный кабинет GlukVPN: подписка, активные устройства на карте, управление сессиями и загрузки.">
+  <meta property="og:url" content="https://vpn.gluk.tech/app/">
+  <meta property="og:image" content="https://vpn.gluk.tech/assets/img/og-cover.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="GlukVPN — быстрый, приватный VPN">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Личный кабинет — GlukVPN">
+  <meta name="twitter:description" content="Личный кабинет GlukVPN: подписка, активные устройства на карте, управление сессиями и загрузки.">
+  <meta name="twitter:image" content="https://vpn.gluk.tech/assets/img/og-cover.png">
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/img/favicon-16.png">
+  <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&amp;display=swap">
+  <link rel="stylesheet" href="/assets/css/fonts.css?v=1.3.0">
+  <link rel="stylesheet" href="/assets/css/tokens.css?v=1.3.0">
+  <link rel="stylesheet" href="/assets/css/base.css?v=20260905.1">
+  <link rel="stylesheet" href="/assets/css/components.css?v=1.3.0">
+  <link rel="stylesheet" href="/assets/css/sections.css?v=1.3.0">
+  <link rel="stylesheet" href="/assets/css/app-ui.css?v=1.3.0">
+  <link rel="stylesheet" href="/assets/css/utilities.css?v=1.3.0">
+  <link rel="stylesheet" href="/assets/css/fx.css?v=1.3.0">
+  <link rel="stylesheet" href="/assets/css/auth.css?v=20260907.1">
+  <link rel="stylesheet" href="/assets/css/dash.css?v=0.9.2">
+  <link rel="stylesheet" href="/assets/css/sprint2.css?v=20260913.2">
+  <script src="/assets/js/config.js?v=20260912.1" defer></script>
+  <script src="/assets/js/telemetry.js?v=1.4.0" defer></script>
+  <script src="/assets/js/i18n.js?v=1.3.1" defer></script>
+  <script src="/assets/js/world-dots.js?v=1.3.0" defer></script>
+  <script src="/assets/js/globe.js?v=1.3.0" defer></script>
+  <script src="/assets/js/network-map.js?v=1.3.0" defer></script>
+  <script src="/assets/js/sections.js?v=1.3.0" defer></script>
+  <script src="/assets/js/ui.js?v=20260912.1" defer></script>
+  <script src="/assets/js/fx.js?v=1.3.0" defer></script>
+  <script src="/assets/js/auth.js?v=20260907.1" defer></script>
+  <script src="/assets/js/fonts.js?v=1.3.0" defer></script>
+
+<link rel="stylesheet" href="/assets/css/dashboard.css?v=20260909.1">
+</head>
+<body>
+  <a class="skip-link" href="#main">К основному содержимому</a>
+  <div class="scene" aria-hidden="true">
+  <svg class="scene__waves" viewBox="0 0 1440 900" preserveAspectRatio="none" focusable="false">
+    <defs>
+      <linearGradient id="gW1" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#1a1230"/><stop offset="1" stop-color="#08060f"/>
+      </linearGradient>
+      <linearGradient id="gW2" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#140e24"/><stop offset="1" stop-color="#050409"/>
+      </linearGradient>
+    </defs>
+    <path d="M0,430 C240,330 420,520 700,450 C960,385 1180,470 1440,395 L1440,900 L0,900 Z" fill="url(#gW1)" opacity=".9"/>
+    <path d="M0,430 C240,330 420,520 700,450 C960,385 1180,470 1440,395" fill="none" stroke="#241a3a" stroke-width="1"/>
+    <path d="M0,585 C260,505 500,665 760,595 C1020,525 1230,625 1440,555 L1440,900 L0,900 Z" fill="url(#gW2)"/>
+  </svg>
+  <span class="scene__glow scene__glow--a"></span>
+  <span class="scene__glow scene__glow--b"></span>
+  <span class="scene__grain"></span>
+</div>
+  <div class="page">
+  <header class="header">
+    <div class="wrap header__inner">
+      <a class="brand" href="/" aria-label="GlukVPN — на главную">
+        <img src="/assets/img/logo-96.png" width="96" height="96" alt="" decoding="async">
+        <span>GlukVPN</span>
+      </a>
+      <nav class="nav" aria-label="Основное меню"><a class="nav__link" href="/features/">Возможности</a><a class="nav__link" href="/mobile/">Приложение</a><a class="nav__link" href="/pricing/">Тарифы</a><a class="nav__link" href="/download/">Загрузки</a><a class="nav__link" href="/support/">Поддержка</a></nav>
+      <div class="header__actions">
+        <a class="btn btn--primary btn--icon header__dl" href="/download/" data-download-android aria-label="Скачать GlukVPN" title="Скачать GlukVPN"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></a>
+        <div class="acct" data-acct><span class="acct__skel" aria-hidden="true"></span></div>
+        <button class="burger" type="button" aria-expanded="false" aria-controls="drawer" aria-label="Меню"><svg class="burger__open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg><svg class="burger__close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <div class="drawer" id="drawer" aria-hidden="true">
+      <a class="drawer__link" href="/features/">Возможности <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/mobile/">Приложение <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/pricing/">Тарифы <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/download/">Загрузки <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <a class="drawer__link" href="/support/">Поддержка <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h13M12.5 5.5L19 12l-6.5 6.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <div class="acct acct--drawer" data-acct><span class="acct__skel" aria-hidden="true"></span></div>
+      <a class="btn btn--primary btn--lg drawer__cta" href="/download/" data-download-android><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Скачать GlukVPN</a>
+  </div>
+
+  <main id="main">
+  <section class="section section--tight dash" id="dash" aria-labelledby="dash-title">
+    <div class="wrap">
+      <h1 class="sr-only" id="dash-title">Личный кабинет GlukVPN</h1>
+
+      <div class="dash-load" data-dash-view="loading">
+        <div class="dash-skel"></div>
+        <div class="dash-skel"></div>
+        <div class="dash-skel dash-skel--tall"></div>
+      </div>
+
+      <div class="dash-guest" data-dash-view="guest" hidden>
+        <div class="gate">
+          <div class="gate__main">
+            <span class="gate__badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.6" y="10.4" width="14.8" height="9.6" rx="2.6" stroke="currentColor" stroke-width="1.6"/><path d="M8.3 10.4V8a3.7 3.7 0 0 1 7.4 0v2.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="15.2" r="1.25" fill="currentColor"/></svg>Личный кабинет</span>
+            <h1 class="gate__title">Войдите, чтобы открыть кабинет</h1>
+            <p class="gate__text">Подписка, устройства, сессии и ключи — в одном месте. Логин и пароль те же, что в приложении GlukVPN.</p>
+            <ul class="gate__list"><li><span class="gate__ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.9L19 9.8l-5.1 1.9L12 17l-1.9-5.3L5 9.8l5.1-1.9L12 3z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></svg></span><b>Подписка и срок</b><span>тариф, дата продления и статус оплаты</span></li><li><span class="gate__ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="13" height="9.5" rx="1.8" stroke="currentColor" stroke-width="1.6"/><rect x="16" y="9" width="5.5" height="10.5" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M6 17.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><b>Устройства и сессии</b><span>кто подключён сейчас и с какого узла</span></li><li><span class="gate__ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 9.5h17M3.5 14.5h17" stroke="currentColor" stroke-width="1.6"/><path d="M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z" stroke="currentColor" stroke-width="1.6"/></svg></span><b>Карта подключений</b><span>регион, пинг и активный протокол</span></li><li><span class="gate__ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l7 3v5.2c0 4.3-2.9 8.2-7 9.8-4.1-1.6-7-5.5-7-9.8V6l7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.2 12.2l2 2 3.6-3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><b>Ключи и Kill switch</b><span>конфиги WireGuard и защита от утечек</span></li></ul>
+            <div class="gate__actions"><a class="btn btn--primary" href="/login/?next=%2Fapp%2F">Войти</a><a class="btn btn--ghost" href="/login/?mode=register">Создать аккаунт</a></div>
+            <p class="gate__note">Ещё нет приложения? <a href="/download/" data-download-android>Скачать GlukVPN</a></p>
+          </div>
+          <aside class="gate__side" aria-hidden="true"><div class="gate__mock"><div class="gate__mockhead"><span class="gate__ava"></span><span class="gate__lines"><span class="gate__bar" style="width:108px"></span><span class="gate__bar gate__bar--dim" style="width:152px"></span></span><span class="gate__chip"></span></div><div class="gate__mockgrid"><span class="gate__cell"><span class="gate__bar gate__bar--dim" style="width:52px"></span><span class="gate__val"></span></span><span class="gate__cell"><span class="gate__bar gate__bar--dim" style="width:52px"></span><span class="gate__val"></span></span><span class="gate__cell"><span class="gate__bar gate__bar--dim" style="width:52px"></span><span class="gate__val"></span></span><span class="gate__cell"><span class="gate__bar gate__bar--dim" style="width:52px"></span><span class="gate__val"></span></span></div><div class="gate__mockrows"><span class="gate__row"><span class="gate__dot"></span><span class="gate__bar" style="width:118px"></span><span class="gate__pill"></span></span><span class="gate__row"><span class="gate__dot"></span><span class="gate__bar" style="width:118px"></span><span class="gate__pill"></span></span><span class="gate__row"><span class="gate__dot"></span><span class="gate__bar" style="width:118px"></span><span class="gate__pill"></span></span></div></div><div class="gate__veil"><span class="gate__lock"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.6" y="10.4" width="14.8" height="9.6" rx="2.6" stroke="currentColor" stroke-width="1.6"/><path d="M8.3 10.4V8a3.7 3.7 0 0 1 7.4 0v2.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="15.2" r="1.25" fill="currentColor"/></svg></span><b>Данные откроются после входа</b><span>подписка · устройства · карта подключений</span></div></aside>
+        </div>
+      </div>
+
+      <div class="dash-in" data-dash-view="in" hidden>
+        <header class="dash-top">
+          <span class="dash-avatar" data-d="initial">—</span>
+          <div class="dash-id">
+            <p class="dash-name"><span data-d="name">—</span></p>
+            <span class="dash-mail" data-d="email">—</span>
+            <div class="dash-badges">
+              <span class="dash-badge dash-badge--plan" data-d="plan-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="12" r="1.15" fill="currentColor"/></svg><span data-d="plan">—</span></span>
+              <span class="dash-badge" data-d="status-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-d="status">—</span></span>
+              <span class="dash-badge dash-badge--admin" data-d="admin-badge" hidden><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.2l6.4 2.4v5.1c0 3.9-2.6 7.3-6.4 8.3-3.8-1-6.4-4.4-6.4-8.3V5.6L12 3.2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.4 12.1l1.9 1.9 3.4-3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>ADMIN</span></span>
+              <span class="dash-badge" data-d="id-badge"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="8" cy="12" r="4" stroke="currentColor" stroke-width="1.6"/><path d="M12 12h8m-3 0v3m3-3v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span data-d="public-id">—</span></span>
+            </div>
+          </div>
+          <div class="dash-actions">
+            <button class="dash-ibtn" type="button" data-dash-refresh aria-label="Обновить данные" title="Обновить"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>
+            <a class="dash-ibtn" href="/download/" data-download-android aria-label="Скачать приложение" title="Скачать"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></a>
+            <button class="dash-ibtn dash-ibtn--danger" type="button" data-dash-logout aria-label="Выйти из аккаунта" title="Выйти"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg></button>
+          </div>
+        </header>
+
+        <div class="dash-stats">
+          <div class="dash-stat">
+            <span class="dash-stat__k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.9L19 9.8l-5.1 1.9L12 17l-1.9-5.3L5 9.8l5.1-1.9L12 3z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></svg>Подписка</span>
+            <b class="dash-stat__v" data-d="sub-state">—</b>
+            <span class="dash-stat__s" data-d="sub-until">—</span>
+          </div>
+          <div class="dash-stat">
+            <span class="dash-stat__k"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="13" height="9.5" rx="1.8" stroke="currentColor" stroke-width="1.6"/><rect x="16" y="9" width="5.5" height="10.5" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M6 17.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Устройства</span>
+            <b class="dash-stat__v" data-d="dev-count">—</b>
+            <span class="dash-stat__s" data-d="dev-note">—</span>
+          </div>
+          <div class="dash-stat">
+            <span class="dash-stat__k"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2.5-7 5 14L17.5 12H21"/></svg>Сессии</span>
+            <b class="dash-stat__v" data-d="sessions">—</b>
+            <span class="dash-stat__s" data-d="sessions-note">одновременные подключения</span>
+          </div>
+          <div class="dash-stat">
+            <span class="dash-stat__k"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Канал</span>
+            <b class="dash-stat__v" data-d="channel">—</b>
+            <span class="dash-stat__s" data-d="channel-note">активная среда</span>
+          </div>
+        </div>
+
+        <div class="dash-grid">
+          <div class="dash-col">
+            <article class="dash-card">
+              <div class="dash-card__head">
+                <h2 class="dash-card__title"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="13" height="9.5" rx="1.8" stroke="currentColor" stroke-width="1.6"/><rect x="16" y="9" width="5.5" height="10.5" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M6 17.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Мои устройства</h2>
+                <span class="dash-card__hint" data-d="dev-hint">где и к какому узлу подключены</span>
+              </div>
+
+              <div class="dash-map">
+                <div class="dash-map__stage">
+                  <canvas class="dash-map__canvas" data-dash-map width="960" height="460" role="img" aria-label="Карта моих устройств и узлов GlukVPN"></canvas>
+                  <div class="dash-map__overlay" data-dash-pins aria-hidden="true"></div>
+                </div>
+                <div class="dash-map__legend">
+                  <span><i class="is-dev"></i>Мои устройства</span>
+                  <span><i class="is-node"></i>Узел выхода</span>
+                  <span class="hide-sm">Положение приблизительное: мы не храним точную геолокацию</span>
+                </div>
+              </div>
+
+              <ul class="dev-list" data-dash-devices><li class="dash-skel dash-skel--row"></li><li class="dash-skel dash-skel--row"></li></ul>
+              <p class="dash-msg" data-dash-msg role="status" aria-live="polite"></p>
+              <p class="dash-note">Отключение завершает сессию устройства: туннель рвётся сразу, повторный вход в приложении снова создаст его.</p>
+            </article>
+
+            <!-- 0.8.0: история подключений из GET /api/vpn/sessions — последние 20. -->
+            <article class="dash-card" data-dash-sessions-card>
+              <div class="dash-card__head">
+                <h2 class="dash-card__title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2.5-7 5 14L17.5 12H21"/></svg>Последние сессии</h2>
+                <span class="dash-card__hint">узел, трафик и длительность</span>
+              </div>
+              <ul class="ses-list" data-dash-sessions><li class="dash-skel dash-skel--row"></li><li class="dash-skel dash-skel--row"></li><li class="dash-skel dash-skel--row"></li></ul>
+              <div class="dash-cta"><button class="btn btn--ghost btn--sm" type="button" data-dash-sessions-more hidden>Показать все</button></div>
+              <p class="dash-note">Мы храним только служебные показатели сессии — узел, объём трафика и время. Содержимое трафика не отображается. Если включена аналитика доменов, её сохранённые итоги показаны отдельно.</p>
+            </article>
+
+            <article class="dash-card">
+              <div class="dash-card__head">
+                <h2 class="dash-card__title"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l7 3v5.2c0 4.3-2.9 8.2-7 9.8-4.1-1.6-7-5.5-7-9.8V6l7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.2 12.2l2 2 3.6-3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Безопасность аккаунта</h2>
+              </div>
+              <div class="dash-rows">
+                <div class="dash-row"><span>Почта</span><b data-d="sec-email">—</b></div>
+                <div class="dash-row"><span>Подтверждение почты</span><b data-d="sec-verified">—</b></div>
+                <!-- Телеграм и номер приходят из GET /api/auth/telegram и заполняются
+                     в account.js: номер сервер раздаёт уже замаскированным. -->
+                <div class="dash-row"><span>Telegram</span><b data-sec-info="telegram">—</b></div>
+                <div class="dash-row"><span>Номер из Telegram</span><b data-sec-info="phone">—</b></div>
+                <div class="dash-row"><span>Лимит устройств</span><b data-d="sec-max-dev">—</b></div>
+                <div class="dash-row"><span>Лимит сессий</span><b data-d="sec-max-ses">—</b></div>
+                <div class="dash-row"><span>Регион аккаунта</span><b data-d="sec-origin">—</b></div>
+              </div>
+              <!-- РАУНД 9 (2.2): эндпоинты безопасности готовы с раунда 8, а в
+                   кабинете на их месте стояла ссылка «Сменить пароль» → /support/,
+                   то есть «напишите нам». Теперь это три реальных действия. -->
+              <div class="sec-actions" data-sec>
+                <div class="sec-tabs">
+                  <button class="btn btn--ghost btn--sm" type="button" data-sec-open="password">Сменить пароль</button>
+                  <button class="btn btn--ghost btn--sm" type="button" data-sec-open="email">Почта и подтверждение</button>
+                  <button class="btn btn--ghost btn--sm" type="button" data-sec-open="telegram">Перепривязать Telegram</button>
+                  <button class="btn btn--ghost btn--sm" type="button" data-sec-open="delete">Удалить аккаунт</button>
+                </div>
+
+                <form class="form sec-form" data-sec-form="password" hidden novalidate>
+                  <label class="field">
+                    <span class="field__label">Текущий пароль</span>
+                    <span class="field__box"><input class="input" type="password" name="currentPassword" autocomplete="current-password" required></span>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Новый пароль</span>
+                    <span class="field__box"><input class="input" type="password" name="password" autocomplete="new-password" placeholder="Минимум 8 символов" required></span>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Повторите новый пароль</span>
+                    <span class="field__box"><input class="input" type="password" name="password2" autocomplete="new-password" required></span>
+                  </label>
+                  <button class="btn btn--primary btn--sm" type="submit">Сохранить пароль</button>
+                  <p class="auth-msg" data-sec-msg="password" role="status" aria-live="polite"></p>
+                  <p class="dash-note">После смены пароля все сессии завершаются — войти заново придётся на всех устройствах.</p>
+                </form>
+
+                <form class="form sec-form" data-sec-form="email" hidden novalidate>
+                  <label class="field">
+                    <span class="field__label">Почта</span>
+                    <span class="field__box"><input class="input" type="email" name="email" autocomplete="email" placeholder="you@example.com" required></span>
+                  </label>
+                  <!-- Сервер на POST /api/auth/email просит только новый адрес:
+                       владение доказывает код из письма, а не текущий пароль.
+                       Лишнее поле здесь выглядело бы требованием, которого нет. -->
+                  <!-- Поле кода появляется только после того, как сервер сказал,
+                       что код отправлен: пустая графа «код» до письма выглядит
+                       как требование его угадать. -->
+                  <label class="field" data-sec-code hidden>
+                    <span class="field__label">Код из письма</span>
+                    <span class="field__box"><input class="input input--code" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"></span>
+                  </label>
+                  <button class="btn btn--primary btn--sm" type="submit">Прислать код</button>
+                  <p class="auth-msg" data-sec-msg="email" role="status" aria-live="polite"></p>
+                  <!-- Одна и та же форма подтверждает текущий адрес и меняет его:
+                       сервер шлёт код на тот адрес, который отправили. Без этой
+                       строки подтверждение своей же почты выглядело невозможным. -->
+                  <p class="dash-note">Код придёт на указанный адрес. Чтобы подтвердить теперешнюю почту — оставьте её как есть и нажмите «Прислать код». Чтобы сменить — впишите новый адрес.</p>
+                </form>
+
+                <div class="sec-form" data-sec-form="telegram" hidden>
+                  <p class="dash-note">Перепривязка нужна, если сменился аккаунт Telegram. Бот попросит поделиться контактом заново.</p>
+                  <button class="btn btn--primary btn--sm" type="button" data-sec-tg>Получить ссылку на бота</button>
+                  <p class="auth-msg" data-sec-msg="telegram" role="status" aria-live="polite"></p>
+                  <p class="dash-note" data-sec-tg-out hidden>Откройте <a class="auth-link" data-sec-tg-link href="#" target="_blank" rel="noopener">бота</a> и отправьте код <b class="mono" data-sec-tg-code></b>.</p>
+                </div>
+
+                <!-- Самоудаление: DELETE /api/account с паролем. Строка аккаунта
+                     остаётся надгробием (статус DELETED): номер не выдаётся повторно,
+                     а при попытке войти человек видит «аккаунт удалён», а не
+                     «неверный логин или пароль». -->
+                <form class="form sec-form" data-sec-form="delete" hidden novalidate>
+                  <p class="dash-note">Почта, Telegram, устройства и ключи доступа удаляются сразу и навсегда. В истории платежей останется только номер аккаунта. Восстановить аккаунт нельзя, оплаченное время не возвращается.</p>
+                  <label class="field">
+                    <span class="field__label">Пароль</span>
+                    <span class="field__box"><input class="input" type="password" name="password" autocomplete="current-password" required></span>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Напечатайте УДАЛИТЬ</span>
+                    <span class="field__box"><input class="input" type="text" name="confirm" autocomplete="off" placeholder="УДАЛИТЬ" required></span>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Причина (необязательно)</span>
+                    <span class="field__box"><input class="input" type="text" name="reason" autocomplete="off" maxlength="200" placeholder="Почему уходите"></span>
+                  </label>
+                  <button class="btn btn--danger btn--sm" type="submit">Удалить аккаунт навсегда</button>
+                  <p class="auth-msg" data-sec-msg="delete" role="status" aria-live="polite"></p>
+                </form>
+              </div>
+
+              <div class="dash-cta">
+                <button class="btn btn--ghost btn--sm" type="button" data-dash-logout>Выйти на этом устройстве</button>
+              </div>
+            </article>
+          </div>
+
+          <div class="dash-col">
+            <article class="dash-card">
+              <div class="dash-card__head">
+                <h2 class="dash-card__title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 4.9L19 9.8l-5.1 1.9L12 17l-1.9-5.3L5 9.8l5.1-1.9L12 3z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/></svg>Подписка</h2>
+                <span class="dash-card__hint" data-d="sub-hint">—</span>
+              </div>
+              <div class="dash-rows">
+                <div class="dash-row"><span>Тариф</span><b data-d="plan2">—</b></div>
+                <div class="dash-row"><span>Статус</span><b data-d="sub-status">—</b></div>
+                <div class="dash-row"><span>Действует до</span><b data-d="sub-date">—</b></div>
+                <div class="dash-row"><span>Осталось</span><b data-d="sub-left">—</b></div>
+              </div>
+              <div class="dash-meter" role="progressbar" aria-label="Остаток оплаченного периода"><i class="dash-bar" data-d="sub-bar"></i></div>
+              <p class="dash-note" data-d="sub-note">Оплата и продление на время беты оформляются вручную.</p>
+              <div class="dash-cta">
+                <a class="btn btn--primary btn--sm" href="/pricing/" data-dash-upgrade>Продлить или сменить тариф</a>
+                <a class="btn btn--ghost btn--sm" href="/support/">Написать в поддержку</a>
+              </div>
+            </article>
+
+            <!-- 0.8.0: платежи из GET /api/billing/orders. Карточка скрыта, пока
+                 биллинг выключен или заказов ещё нет — app.js покажет её сам. -->
+            <article class="dash-card" data-dash-orders hidden>
+              <div class="dash-card__head">
+                <h2 class="dash-card__title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19"/><path d="M6.5 15h4"/></svg>Мои платежи</h2>
+                <span class="dash-card__hint">последние заказы</span>
+              </div>
+              <ul class="ord-list" data-dash-orders-list></ul>
+              <p class="dash-note">Оплаченный заказ продлевает подписку автоматически. Если платёж прошёл, а срок не обновился — напишите в поддержку с номером заказа.</p>
+            </article>
+
+            <!-- 0.8.0: раньше здесь стояли «рекомендованный узел», пинг и загрузка
+                 из config.js — не живые данные. Теперь блок показывает активную
+                 VPN-сессию из /api/vpn/sessions, а без неё честно говорит
+                 «не подключено». Если история сессий недоступна, карточка скрыта. -->
+            <article class="dash-card" data-dash-conn>
+              <div class="dash-card__head">
+                <h2 class="dash-card__title"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 9h17M3.5 15h17" stroke="currentColor" stroke-width="1.6"/><path d="M12 3c2.6 2.5 3.9 5.5 3.9 9s-1.3 6.5-3.9 9c-2.6-2.5-3.9-5.5-3.9-9S9.4 5.5 12 3Z" stroke="currentColor" stroke-width="1.6"/></svg>Соединение</h2>
+                <span class="dash-card__hint" data-d="conn-hint">—</span>
+              </div>
+              <div class="dash-rows">
+                <div class="dash-row"><span>Статус</span><b data-d="conn-state">—</b></div>
+                <div class="dash-row" data-conn-row hidden><span>Узел</span><b data-d="conn-node">—</b></div>
+                <div class="dash-row" data-conn-row hidden><span>Устройство</span><b data-d="conn-dev">—</b></div>
+                <div class="dash-row" data-conn-row hidden><span>Адрес в туннеле</span><b class="mono" data-d="conn-ip">—</b></div>
+                <div class="dash-row" data-conn-row hidden><span>Подключено</span><b data-d="conn-since">—</b></div>
+                <div class="dash-row" data-conn-row hidden><span>Последний handshake</span><b data-d="conn-hs">—</b></div>
+                <div class="dash-row"><span>Протокол</span><b>WireGuard</b></div>
+                <div class="dash-row"><span>DNS</span><b>внутренний, без утечек</b></div>
+              </div>
+              <p class="dash-note">Узел выбирается в приложении: кнопка Best Server берёт вариант с лучшим откликом.</p>
+            </article>
+
+            <article class="dash-card">
+              <div class="dash-card__head">
+                <h2 class="dash-card__title"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5v11m0 0l4-4m-4 4l-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 16.5v1.8a2.2 2.2 0 0 0 2.2 2.2h10.6a2.2 2.2 0 0 0 2.2-2.2v-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Загрузки</h2>
+              </div>
+              <ul class="dash-dl">
+                <li class="dash-dl__item"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993.0001.5511-.4482.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4482.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.2439 13.8533 7.8508 12 7.8508s-3.5902.3931-5.1367 1.0989L4.841 5.4467a.4161.4161 0 00-.5677-.1521.4157.4157 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3435-4.1021-2.6892-7.5743-6.1185-9.4396"/></svg><b>Android</b><a class="btn btn--primary btn--sm" href="/download/android" data-download-android>APK</a></li>
+                <li class="dash-dl__item"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-13.051-1.801"/></svg><b>Windows</b><a class="btn btn--primary btn--sm" href="/download/windows" data-download-windows>EXE</a></li>
+                <li class="dash-dl__item"><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='4' y='2.5' width='16' height='19' rx='2.4'/><rect x='6.6' y='5' width='10.8' height='8.4' rx='1.2'/><circle cx='10' cy='8.6' r='.85' fill='currentColor' stroke='none'/><circle cx='14' cy='8.6' r='.85' fill='currentColor' stroke='none'/><path d='M10 10.9c.55.6 1.2.9 2 .9s1.45-.3 2-.9'/><path d='M7 16.4h5.2M7 18.7h3.2'/><circle cx='16.6' cy='17.6' r='1.5'/></svg><b>macOS</b><span class="dash-soon">Скоро</span></li>
+                <li class="dash-dl__item"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.035 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.088-4.61 1.088zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg><b>iOS</b><span class="dash-soon">Скоро</span></li>
+                <li class="dash-dl__item"><svg class="brand-ic" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0C8.21 0 4.831 1.757 2.632 4.501l3.953 6.848A5.454 5.454 0 0 1 12 6.545h10.691A12 12 0 0 0 12 0zM1.931 5.47A11.943 11.943 0 0 0 0 12c0 6.012 4.42 10.991 10.189 11.864l3.953-6.847a5.45 5.45 0 0 1-6.865-2.29zm13.342 2.166a5.446 5.446 0 0 1 1.45 7.09l.002.001h-.002l-5.344 9.257c.206.01.413.016.621.016 6.627 0 12-5.373 12-12 0-1.54-.29-3.011-.818-4.364zM12 16.364a4.364 4.364 0 1 1 0-8.728 4.364 4.364 0 0 1 0 8.728z"/></svg><b>Расширение Chrome</b><span class="dash-soon">Скоро</span></li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script src="/assets/js/dashboard-ui.js?v=20260906.1" defer></script>
+  <script src="/assets/js/app.js?v=20260906.1" defer></script>
+  <script src="/assets/js/account-map-ui.js?v=20260906.1" defer></script>
+  <script src="/assets/js/sprint2.js?v=20260913.2" defer></script>
+  <!-- РАУНД 9 (2.2): блок «Безопасность аккаунта» живёт в account.js. -->
+  <script src="/assets/js/account.js?v=0.9.2" defer></script>
+
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <div class="footer__mark" aria-hidden="true">GlukVPN</div>
+      <div class="footer__grid">
+        <div class="footer__about">
+          <a class="brand" href="/">
+            <img src="/assets/img/logo-96.png" width="96" height="96" alt="" loading="lazy" decoding="async">
+            <span>GlukVPN</span>
+          </a>
+          <p>Быстрый и приватный VPN с понятным приложением: одно нажатие до защищённого соединения.</p>
+        </div>
+        <div>
+          <div class="footer__title">Продукт</div>
+          <div class="footer__list">
+            <a href="/features/">Возможности</a>
+            <a href="/mobile/">Приложение</a>
+            <a href="/pricing/">Тарифы</a>
+            <a href="/download/">Загрузки</a>
+          </div>
+        </div>
+        <div>
+          <div class="footer__title">Помощь</div>
+          <div class="footer__list">
+            <a href="/support/">Поддержка</a>
+            <a href="/#faq">Частые вопросы</a>
+            <a href="https://t.me/glukvpn" data-telegram rel="noopener" target="_blank">Telegram</a>
+            <a href="mailto:support@gluk.tech" data-support-email data-fill-text>support@gluk.tech</a>
+          </div>
+        </div>
+        <div>
+          <div class="footer__title">Правовое</div>
+          <div class="footer__list">
+            <a href="/privacy/">Конфиденциальность</a>
+            <a href="/terms/">Условия использования</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer__bottom">
+        <span>© <span data-year>2026</span> GlukVPN · <span data-site-domain>vpn.gluk.tech</span></span>
+        <div class="footer__right"><a class="madeby" href="https://crlx1q.com" target="_blank" rel="noopener">made by <b>crlx1q</b></a><div class="langpop" data-langpop><button class="langpop__btn" type="button" aria-expanded="false" aria-haspopup="true" aria-label="Язык сайта"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M3.4 9.5h17.2M3.4 14.5h17.2" stroke="currentColor" stroke-width="1.6"/><path d="M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z" stroke="currentColor" stroke-width="1.6"/></svg><span data-langpop-label>Русский</span><svg class="langpop__chev" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 10l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button><div class="langpop__menu" role="menu"><a class="langpop__opt is-on" href="/" hreflang="ru" data-lang-set="ru" role="menuitem">Русский<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg></a><a class="langpop__opt" href="/en/" hreflang="en" data-lang-set="en" role="menuitem">English<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div></div></div>
+      </div>
+    </div>
+  </footer>
+  </div>
+</body>
+</html>

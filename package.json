@@ -1,0 +1,5 @@
+{
+  "name": "glukvpn-public-site",
+  "private": true,
+  "scripts": { "test": "node --test tests/site.test.cjs tests/downloads.test.cjs" }
+}

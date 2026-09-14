@@ -1,0 +1,339 @@
+
+/* Подложка мобильного меню */
+.drawer-backdrop{position:fixed;inset:0;z-index:50;background:rgba(5,4,10,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);opacity:0;visibility:hidden;transition:opacity .28s var(--ease-soft),visibility .28s var(--ease-soft)}
+.drawer-backdrop.is-on{opacity:1;visibility:visible}
+@media (min-width:901px){.drawer-backdrop{display:none}}
+
+/* Бургер: готовая SVG-иконка, крест в открытом состоянии */
+.burger svg{width:20px;height:20px;display:block}
+.burger .burger__close{display:none}
+.burger[aria-expanded="true"] .burger__open{display:none}
+.burger[aria-expanded="true"] .burger__close{display:block}
+
+/* Официальные глифы платформ — единый размер и цвет */
+.brand-ic{width:22px;height:22px;fill:currentColor;display:block}
+.platform__icon .brand-ic{width:26px;height:26px}
+
+/* Бейдж канала в шапке */
+.chan-badge{display:inline-flex;align-items:center;height:21px;padding:0 8px;margin-left:10px;border-radius:999px;border:1px solid var(--stroke-violet);background:rgba(124,92,246,.16);color:var(--violet-light);font-size:10px;font-weight:700;letter-spacing:.14em;flex:none}
+@media (max-width:760px){.chan-badge{display:none}}
+@media (max-width:900px){.header__dl{display:none}}
+
+/* Подпись автора */
+.madeby{color:var(--text-2);text-decoration:none;transition:color .18s var(--ease-soft)}
+.madeby b{color:var(--text-1);font-weight:600}
+.madeby:hover,.madeby:hover b{color:var(--violet-light)}
+
+/* Шаги в карточке регистрации */
+.auth-steps{display:flex;flex-direction:column;gap:11px;margin:18px 0 20px}
+.auth-step{display:flex;gap:12px;align-items:flex-start;font-size:14px;color:var(--text-1);line-height:1.55}
+.auth-step b{flex:none;width:24px;height:24px;border-radius:999px;display:grid;place-items:center;background:rgba(124,92,246,.18);border:1px solid var(--stroke-violet);color:var(--violet-light);font-size:12px}
+.acct-panel__actions{margin-top:20px;display:flex;gap:10px;flex-wrap:wrap}
+.auth-side__note{margin-top:18px;font-size:12.5px;line-height:1.65}
+.acct--drawer{width:100%;margin:6px 0 10px}
+.acct--drawer .acct__guest{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.acct--drawer .acct__guest .btn{justify-content:center}
+@media (max-width:520px){.header__actions .acct__guest .btn--primary{display:none}}
+
+.section--tight{padding-top:clamp(28px,4vw,52px);padding-bottom:clamp(28px,4vw,52px)}
+.ticker__wrap{position:relative;display:block;flex:1;min-height:20px}
+.ticker__wrap .ticker__item{position:absolute;inset:0;opacity:0;transform:translateY(6px);transition:opacity .45s var(--ease-soft),transform .45s var(--ease-soft)}
+.ticker__wrap .ticker__item.is-on{opacity:1;transform:none}
+
+/* ======================= Живые элементы ======================= */
+
+/* Бегущая строка */
+.marquee{position:relative;overflow:hidden;padding:12px 0;border-radius:16px;-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
+.marquee__track{display:flex;align-items:center;gap:10px;width:max-content;animation:mq 42s linear infinite}
+.marquee:hover .marquee__track{animation-play-state:paused}
+.marquee__chip{display:inline-flex;align-items:center;height:30px;padding:0 14px;border-radius:999px;border:1px solid var(--stroke-soft);background:rgba(255,255,255,.03);color:var(--text-1);font-size:12.5px;font-weight:500;white-space:nowrap;letter-spacing:.01em}
+.marquee__chip::before{content:"";width:5px;height:5px;border-radius:999px;margin-right:9px;background:var(--violet);box-shadow:0 0 10px rgba(139,92,246,.9);flex:none}
+@keyframes mq{from{transform:translate3d(0,0,0)}to{transform:translate3d(-50%,0,0)}}
+
+/* Показатели со счётчиками */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:18px}
+@media (max-width:900px){.metrics{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:520px){.metrics{grid-template-columns:1fr}}
+.metric{position:relative;overflow:hidden;padding:20px 20px 22px;border-radius:20px;border:1px solid var(--stroke-soft);background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015));backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);transition:border-color .3s var(--ease-soft),transform .3s var(--ease-soft)}
+.metric:hover{border-color:var(--stroke-violet);transform:translateY(-2px)}
+.metric__value{display:flex;align-items:baseline;gap:5px;font-variant-numeric:tabular-nums}
+.metric__value b{font-size:clamp(30px,3.3vw,42px);line-height:1;font-weight:700;letter-spacing:-.02em;background:linear-gradient(120deg,#fff 10%,var(--violet-light) 60%,var(--violet-deep) 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.metric__unit{font-size:14px;color:var(--text-1);font-weight:600}
+.metric__label{margin-top:10px;font-size:12.8px;line-height:1.5;color:var(--text-1);max-width:22ch}
+.metric__spark{position:absolute;left:0;right:0;bottom:0;height:1px;background:linear-gradient(90deg,transparent,var(--violet),transparent);opacity:.5;transform:translateX(-100%);animation:spark 5.5s var(--ease-soft) infinite}
+.metric:nth-child(2) .metric__spark{animation-delay:.6s}
+.metric:nth-child(3) .metric__spark{animation-delay:1.2s}
+.metric:nth-child(4) .metric__spark{animation-delay:1.8s}
+@keyframes spark{0%{transform:translateX(-100%)}55%,100%{transform:translateX(100%)}}
+
+/* Строка со сменой фактов */
+.ticker{display:flex;align-items:center;gap:12px;margin-top:14px;padding:13px 18px;border-radius:14px;font-size:13.5px;color:var(--text-1)}
+.pulse-dot{position:relative;flex:none;width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 10px rgba(94,231,163,.8)}
+.pulse-dot::after{content:"";position:absolute;inset:-6px;border-radius:999px;border:1px solid rgba(94,231,163,.5);animation:pulse 2.4s var(--ease-soft) infinite}
+@keyframes pulse{0%{transform:scale(.55);opacity:.9}70%,100%{transform:scale(1.25);opacity:0}}
+
+/* Блик под курсором */
+.fx-spot{position:relative;isolation:isolate}
+.fx-spot::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:-1;opacity:0;transition:opacity .35s var(--ease-soft);background:radial-gradient(340px circle at var(--mx,50%) var(--my,-20%),rgba(139,92,246,.18),transparent 62%)}
+.fx-spot:hover::after{opacity:1}
+
+/* Прогресс чтения */
+.read-progress{position:fixed;top:0;left:0;right:0;height:2px;z-index:120;transform:scaleX(0);transform-origin:0 50%;background:linear-gradient(90deg,var(--violet),var(--violet-deep));box-shadow:0 0 12px rgba(124,92,246,.7)}
+
+@media (prefers-reduced-motion:reduce){
+  .marquee__track{animation:none}
+  .metric__spark{animation:none;opacity:.25;transform:none}
+  .pulse-dot::after{animation:none;opacity:.35}
+}
+
+/* Шрифт выбирается переключателем (fonts.js выставляет --font-sans) */
+:root{--font:var(--font-sans,"Inter","Manrope",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif)}
+
+/* ==========================================================================
+   Шрифт заголовков — отдельная переменная, чтобы работали пары
+   «дисплейный + текстовой». По умолчанию равна основному шрифту.
+   ========================================================================== */
+:root {
+  --font-display: var(--font-sans, var(--font));
+}
+h1,
+h2,
+h3,
+.display,
+.h2,
+.h3,
+.eyebrow,
+.metric__value,
+.plan__price,
+.hero__title,
+.page-hero__title,
+.faq__q,
+.step__title {
+  font-family: var(--font-display, var(--font));
+}
+
+/* ============================ v3: типографика Nunito ============================ */
+body {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  letter-spacing: -0.002em;
+}
+h1, h2, h3, h4,
+.display, .h2, .h3,
+.plan__price, .metric__value, .acc-stat__value {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.018em;
+}
+.lead {
+  font-weight: 500;
+}
+.btn,
+.nav__link,
+.eyebrow,
+.chip,
+.field__label,
+.plan__name {
+  font-weight: 700;
+}
+b, strong {
+  font-weight: 800;
+}
+.muted, .doc p, .doc li {
+  font-weight: 500;
+}
+
+/* ================== v3: «нитки» в блоке безопасности — рисуются сверху вниз ================== */
+.flow__row {
+  --i: 0;
+  opacity: 0.3;
+  transform: translateY(9px);
+  transition: opacity 0.46s var(--ease-soft), transform 0.46s var(--ease-soft);
+  transition-delay: calc(var(--i) * 0.09s);
+}
+.flow.is-live .flow__row {
+  opacity: 1;
+  transform: none;
+}
+.flow__pipe {
+  --i: 0;
+  position: relative;
+  transform: scaleY(0);
+  transform-origin: top center;
+  transition: transform 0.44s var(--ease-soft);
+  transition-delay: calc(var(--i) * 0.09s);
+}
+.flow.is-live .flow__pipe {
+  transform: scaleY(1);
+}
+.flow__pipe::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: var(--violet-light);
+  box-shadow: 0 0 10px 3px rgba(139, 92, 246, 0.45);
+  opacity: 0;
+}
+.flow.is-live .flow__pipe::after {
+  animation: flowSpark 2.6s var(--ease-soft) infinite;
+  animation-delay: calc(var(--i) * 0.16s + 0.55s);
+}
+@keyframes flowSpark {
+  0% { opacity: 0; transform: translateY(-6px); }
+  14% { opacity: 1; }
+  70% { opacity: 1; transform: translateY(15px); }
+  100% { opacity: 0; transform: translateY(21px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flow__row,
+  .flow__pipe {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .flow.is-live .flow__pipe::after {
+    animation: none;
+  }
+}
+
+/* ===================== v4: язык, иконка-кнопка, фиксы размытия ===================== */
+
+/* переключатель языка */
+.lang{position:relative;display:inline-flex;align-items:center;gap:0;padding:3px;border-radius:999px;border:1px solid rgba(255,255,255,.10);background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.02));box-shadow:inset 0 1px 0 rgba(255,255,255,.07)}
+.lang__opt{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:28px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--text-1);text-decoration:none;transition:color var(--t-fast),background var(--t-fast)}
+.lang__opt:hover{color:var(--text-0);background:rgba(255,255,255,.06)}
+.lang__opt.is-on{color:#fff;background:radial-gradient(130% 150% at 28% 0%,rgba(183,155,255,.98),rgba(76,31,181,.96));box-shadow:0 6px 18px rgba(76,31,181,.48),inset 0 1px 0 rgba(255,255,255,.24)}
+.lang--drawer{width:100%;margin:8px 0 4px;justify-content:stretch}
+.lang--drawer .lang__opt{flex:1;height:44px;font-size:14px}
+@media (max-width:940px){.header__actions .lang{display:none}}
+
+/* квадратная кнопка только с иконкой (Скачать в шапке) */
+.btn--icon{width:42px;height:42px;padding:0;justify-content:center;border-radius:999px;flex:none}
+.btn--icon svg{width:19px;height:19px}
+.header__dl.btn--icon{box-shadow:0 10px 28px rgba(76,31,181,.44)}
+@media (max-width:940px){.header__actions .btn--icon{display:none}}
+
+/* --- баг 1: у меню аккаунта иногда пропадало размытие ---
+   Причина: backdrop-filter срывался на слое с scale() и прозрачный фон обнажал страницу.
+   Решение: плотный фон + без scale + свой слой композитинга. */
+.header__actions{isolation:isolate}
+.acct__menu{background:rgba(15,11,26,.94);transform:translateY(-8px);will-change:opacity,transform;contain:paint}
+.acct__menu.is-open{transform:translateY(0)}
+@supports not ((backdrop-filter:blur(4px)) or (-webkit-backdrop-filter:blur(4px))){
+  .acct__menu{background:rgba(13,10,22,.985)}
+}
+
+/* --- баг 2: на телефоне бургер-меню выглядело замыленным ---
+   Причина: translateY на слое с backdrop-filter давал растровый текст.
+   Решение: сама панель без transform и почти непрозрачная, ездит только содержимое. */
+.drawer{background:rgba(7,5,14,.975);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transform:none;will-change:opacity;transition:opacity var(--t-med) ease,visibility var(--t-med)}
+.drawer.is-open{transform:none}
+.drawer>*{opacity:0;transform:translateY(-8px);transition:opacity .26s var(--ease-soft),transform .26s var(--ease-soft)}
+.drawer.is-open>*{opacity:1;transform:none}
+.drawer>*:nth-child(1){transition-delay:.02s}
+.drawer>*:nth-child(2){transition-delay:.05s}
+.drawer>*:nth-child(3){transition-delay:.08s}
+.drawer>*:nth-child(4){transition-delay:.11s}
+.drawer>*:nth-child(5){transition-delay:.14s}
+.drawer>*:nth-child(6){transition-delay:.17s}
+.drawer>*:nth-child(7){transition-delay:.2s}
+@supports not ((backdrop-filter:blur(4px)) or (-webkit-backdrop-filter:blur(4px))){
+  .drawer{background:rgba(6,4,12,.995)}
+}
+
+/* --- Windows / macOS "уменьшить анимацию": не вырубаем всё, а сбавляем --- */
+@media (prefers-reduced-motion: reduce){
+  :root{--t-fast:.1s;--t-med:.16s;--t-slow:.22s}
+  *,*::before,*::after{
+    animation-duration:1ms !important;
+    animation-iteration-count:1 !important;
+    animation-delay:0s !important;
+    transition-duration:.16s !important;
+    transition-delay:0s !important;
+  }
+  html{scroll-behavior:auto}
+  .reveal,.reveal.is-in{opacity:1 !important;transform:none !important}
+  .drawer>*{opacity:1 !important;transform:none !important}
+  .marquee__track{animation:none !important;transform:none !important}
+  .flow__row{opacity:1 !important;transform:none !important}
+  .flow__pipe{transform:scaleY(1) !important}
+}
+
+/* ===== v7 refresh ===== */
+/* Глубокая фиолетовая гамма без белых обводок и без синевы. */
+:root{
+  --stroke:rgba(167,139,250,.17);
+  --stroke-soft:rgba(167,139,250,.11);
+  --stroke-violet:rgba(168,85,247,.34);
+  --glow-violet:0 18px 58px rgba(109,40,217,.42);
+}
+body{background:radial-gradient(1200px 760px at 18% -8%,rgba(109,40,217,.30),transparent 62%),radial-gradient(980px 720px at 88% 6%,rgba(76,29,149,.26),transparent 60%),var(--bg-deep,#04020a)}
+
+/* Шапка: тёмное стекло, волосяная фиолетовая граница */
+.header.is-stuck{background:linear-gradient(180deg,rgba(12,7,24,.94),rgba(7,4,15,.8));border-bottom-color:rgba(167,139,250,.14);box-shadow:0 16px 40px rgba(4,2,10,.6)}
+
+/* RU/EN — аккуратный segmented control вместо белых кусков */
+.lang{display:inline-flex;align-items:center;gap:2px;height:40px;padding:3px;border-radius:13px;border:1px solid rgba(167,139,250,.16);background:rgba(18,11,34,.72);box-shadow:none;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.lang__opt{height:34px;min-width:42px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:var(--text-2);font:inherit;font-size:12.5px;font-weight:700;letter-spacing:.05em;line-height:1;cursor:pointer;display:inline-grid;place-items:center;transition:color .18s var(--ease-soft),background .18s var(--ease-soft)}
+.lang__opt:hover{color:var(--text-0);background:rgba(139,92,246,.12)}
+.lang__opt.is-on{color:#fff;background:linear-gradient(180deg,rgba(168,85,247,.5),rgba(93,32,197,.46));box-shadow:0 6px 18px rgba(93,32,197,.4);border:0}
+.lang--drawer{width:100%;height:46px;border-radius:15px}
+.lang--drawer .lang__opt{flex:1;height:40px}
+
+/* Квадратная (не овальная) иконочная кнопка */
+.btn--icon{width:44px;height:44px;min-height:44px;max-height:44px;padding:0;flex:0 0 44px;aspect-ratio:1/1;border-radius:14px;display:inline-grid;place-items:center;gap:0}
+.btn--icon svg{width:20px;height:20px}
+.header__dl.btn--icon{background:linear-gradient(155deg,#a855f7 0%,#6d28d9 56%,#4c1d95 100%);color:#fff;border:1px solid rgba(196,181,253,.2);box-shadow:0 12px 30px rgba(93,32,197,.5)}
+.header__dl.btn--icon:hover{box-shadow:0 16px 40px rgba(139,92,246,.58);transform:translateY(-1px)}
+.burger{width:44px;height:44px;border-radius:14px;border:1px solid rgba(167,139,250,.16);background:rgba(18,11,34,.7);color:var(--text-0);display:grid;place-items:center}
+.burger:hover{border-color:rgba(168,85,247,.34);background:rgba(28,17,52,.8)}
+
+/* Кнопки: белый текст на насыщенном фиолете, без светлых бликов */
+.btn--primary{background:linear-gradient(150deg,#a855f7 0%,#7c3aed 46%,#5b21b6 100%);color:#fff;border:1px solid rgba(196,181,253,.2);box-shadow:0 14px 38px rgba(93,32,197,.44);text-shadow:none}
+.btn--primary:hover{box-shadow:0 18px 50px rgba(139,92,246,.55)}
+.btn--ghost{background:rgba(22,13,42,.6);border-color:rgba(167,139,250,.18);color:var(--text-0)}
+.btn--ghost:hover{background:rgba(32,20,58,.72);border-color:rgba(168,85,247,.36)}
+.header__actions .btn--sm{min-height:40px;padding:0 16px}
+
+/* Стеклянные панели: тёмно-фиолетовые вместо белого тумана */
+.glass,.metric,.card,.plan{border-color:rgba(167,139,250,.13)}
+.glass{background:linear-gradient(180deg,rgba(30,19,54,.66),rgba(11,6,22,.58))}
+.metric{background:linear-gradient(180deg,rgba(28,18,50,.6),rgba(11,6,22,.5))}
+.marquee__chip{border-color:rgba(167,139,250,.14);background:rgba(24,15,44,.55)}
+
+/* Световые пятна сцены — глубже и мягче */
+.scene__glow--a{background:radial-gradient(closest-side,rgba(139,92,246,.5),rgba(139,92,246,0) 72%)}
+.scene__glow--b{background:radial-gradient(closest-side,rgba(76,29,149,.46),rgba(76,29,149,0) 74%)}
+.globe__halo{background:radial-gradient(closest-side,rgba(139,92,246,.34),rgba(139,92,246,0) 70%)}
+.globe__ring--1,.globe__ring--2{border-color:rgba(167,139,250,.14)}
+
+/* Плитки сервисов под реальные бренд-глифы */
+.acs-tile{background:linear-gradient(180deg,rgba(27,17,49,.7),rgba(10,6,20,.6));border:1px solid rgba(167,139,250,.12);box-shadow:none}
+.acs-tile:hover{border-color:color-mix(in srgb,var(--brand,#a855f7) 42%,transparent);transform:translateY(-2px)}
+.acs-tile__ic{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;flex:none;background:color-mix(in srgb,var(--brand,#a855f7) 15%,rgba(9,5,18,.7));border:1px solid color-mix(in srgb,var(--brand,#a855f7) 28%,transparent);box-shadow:none}
+.acs-tile__ic svg{width:21px;height:21px;display:block;fill:var(--brand,#d7c9ff)}
+.acs-tile__glow{background:radial-gradient(closest-side,color-mix(in srgb,var(--brand,#a855f7) 26%,transparent),transparent)}
+.acs-game__ic svg,.acs-game svg{fill:var(--brand,#d7c9ff)}
+.acs-tile__ic svg[stroke],.acs-game svg[stroke]{fill:none;stroke:var(--brand,#d7c9ff)}
+
+
+/* ===== v7.1 tiles+brand ===== */
+/* Две колонки вместо трёх: названия сервисов перестают обрезаться. */
+.acs-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (max-width:520px){.acs-grid{grid-template-columns:1fr}}
+.acs-tile{padding:13px 14px;gap:11px}
+.acs-tile__ic{width:38px;height:38px;border-radius:12px}
+.acs-tile__ic svg{width:20px;height:20px}
+.acs-tile__name{font-size:13.5px}
+.acs-tile__ping{white-space:nowrap}
+.acs-game__ic{flex:none}
+.acs-game svg{width:19px;height:19px}
+
+/* Знак в шапке был глухим на тёмном фоне */
+.brand img{filter:brightness(1.14) saturate(1.06) drop-shadow(0 6px 18px rgba(139,92,246,.4))}
+

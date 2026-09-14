@@ -1,0 +1,554 @@
+/* ==========================================================================
+   GlukVPN — авторизация на сайте.
+
+   Тот же control plane, что и у приложения (см. flutter-client/lib/services/
+   api_client.dart): POST /api/auth/login → refresh-токен хранится, access
+   живёт только в памяти, перед запросами делается rotate.
+   Токены разделены по каналам: prod и beta — разные базы и разные ключи
+   подписи, сессия одного канала бессмысленна в другом.
+   ========================================================================== */
+(function () {
+  "use strict";
+
+  var G = window.GLUK_CONFIG || {};
+  var API = G.api || {};
+  var AC = G.auth || {};
+
+  /* Канал берётся из конфига — кроме одного случая. Страница /link/
+     обязана подтверждать вход на том же инстансе API, который выдал
+     ссылку: prod и beta — разные процессы с раздельной памятью и разными
+     ключами подписи, и код из prod на beta просто не существует — сервер
+     честно отвечает 404, а человек видит «ссылка устарела» через секунду
+     после её выдачи.
+
+     Здесь приходит имя канала, а не адрес: значение проходит через свой же
+     список API.base, поэтому параметром в URL нельзя увести страницу на
+     чужой сервер. Живёт только во вкладке, чтобы один бета-вход не
+     перевёл человека на бету навсегда.                                    */
+  function pickChannel() {
+    var fallback = API.channel === "prod" ? "prod" : "beta";
+    var bases = API.base || {};
+    var m = /[?&]api=([^&]*)/.exec(location.search || "");
+    var wanted = m ? decodeURIComponent(m[1]).toLowerCase() : "";
+    if (!wanted) {
+      var n = /[?&]next=([^&]*)/.exec(location.search || "");
+      if (n) {
+        var nextDecoded = decodeURIComponent(n[1]);
+        var m2 = /[?&]api=([^&]*)/.exec(nextDecoded || "");
+        if (m2) wanted = decodeURIComponent(m2[1]).toLowerCase();
+      }
+    }
+    if (!wanted) {
+      try { wanted = sessionStorage.getItem("gluk.api") || ""; } catch (e) { wanted = ""; }
+    }
+    if (wanted && bases[wanted]) {
+      try { sessionStorage.setItem("gluk.api", wanted); } catch (e) {}
+      return wanted;
+    }
+    return fallback;
+  }
+
+  var CHANNEL = pickChannel();
+  var BASE = String((API.base || {})[CHANNEL] || "").replace(/\/+$/, "");
+  var TIMEOUT = API.timeoutMs || 12000;
+  var KEY = "gluk." + CHANNEL + ".refresh";
+  var root = document.documentElement.getAttribute("data-base") || "/";
+  var T = window.GlukT || function (s) { return s; };
+  var I18N = window.GlukI18n || null;
+
+  var IC = {
+    caret: '<svg class="acct__caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
+    user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+    grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>',
+    down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>',
+    out: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>',
+    ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>'
+  };
+
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function read() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+  function write(v) {
+    try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY); } catch (e) {}
+  }
+
+  /* ------------------------------------------------------------ transport */
+  var access = null;
+
+  function request(path, opts) {
+    opts = opts || {};
+    var ctrl = window.AbortController ? new AbortController() : null;
+    var timer = setTimeout(function () { ctrl && ctrl.abort(); }, TIMEOUT);
+    var init = {
+      method: opts.method || "GET",
+      headers: { accept: "application/json" },
+      mode: "cors",
+      credentials: "omit"
+    };
+    if (ctrl) init.signal = ctrl.signal;
+    if (opts.body) {
+      init.headers["content-type"] = "application/json";
+      init.body = JSON.stringify(opts.body);
+    }
+    if (opts.auth && access) init.headers.authorization = "Bearer " + access;
+
+    return fetch(BASE + path, init).then(
+      function (res) {
+        clearTimeout(timer);
+        return res.text().then(function (text) {
+          var json = {};
+          if (text) { try { json = JSON.parse(text); } catch (e) { json = {}; } }
+          if (res.ok) return json;
+          var err = (json && json.error) || {};
+          var e = new Error(err.message || "Запрос не выполнен (" + res.status + ").");
+          e.status = res.status;
+          e.code = err.code || "http_" + res.status;
+          e.details = err.details || null;
+          e.retryAfter = parseInt(res.headers.get("retry-after") || "", 10) || null;
+          document.dispatchEvent(new CustomEvent("gluk:api-error", { detail: { status: e.status, code: e.code, details: e.details } }));
+          throw e;
+        });
+      },
+      function () {
+        clearTimeout(timer);
+        var e = new Error("Не удалось связаться с сервером. Проверьте соединение.");
+        e.status = 0;
+        e.code = "network_error";
+        throw e;
+      }
+    );
+  }
+
+  function setSession(json) {
+    access = json.accessToken || null;
+    if (json.refreshToken) write(json.refreshToken);
+    return json;
+  }
+
+  /* 0.8.0: вход через Telegram (/api/auth/link/poll) и Google (/api/auth/google)
+     возвращают тот же набор токенов, что и /api/auth/login. Принимаем их одной
+     функцией, чтобы сессия хранилась ровно так же, как после пароля: refresh в
+     localStorage, access в памяти, затем /api/auth/me за каноническим
+     состоянием (activeDevices, isTester и т.д.). Если /me недоступен, а в
+     ответе уже есть user — не теряем вход, показываем что есть. */
+  function adoptTokens(payload) {
+    if (!payload || !payload.accessToken) {
+      return Promise.reject({ status: 400, code: "bad_payload", message: "No access token in payload." });
+    }
+    setSession(payload);
+    return request("/api/auth/me", { auth: true })
+      .then(applyMe)
+      .catch(function (e) {
+        if (payload.user && !(e && (e.status === 401 || e.status === 403))) {
+          return applyMe({
+            user: payload.user,
+            subscription: payload.subscription || null,
+            lastSubscription: payload.lastSubscription || null,
+            entitlement: payload.entitlement || null,
+            subscriptionRevision: payload.subscriptionRevision || null,
+            activeDevices: typeof payload.activeDevices === "number" ? payload.activeDevices : 0
+          });
+        }
+        throw e;
+      });
+  }
+
+  function rotate() {
+    var rt = read();
+    if (!rt) return Promise.reject({ status: 401, code: "no_session" });
+    return request("/api/auth/refresh", { method: "POST", body: { refreshToken: rt } }).then(setSession);
+  }
+
+  /* --------------------------------------------------------------- состояние
+     subscription — только действующая подписка: сервер отдаёт null, если срок
+     вышел или тариф отобрали. История живёт отдельно в lastSubscription и
+     годится лишь для подписи «была Pro» — тарифом её называть нельзя, иначе
+     отозванная строка выглядит как живой план. entitlement — фактические
+     лимиты, revision — их отпечаток с сервера: он меняется при выдаче,
+     продлении, повышении, понижении и отзыве. */
+  var state = {
+    status: "loading",
+    user: null,
+    subscription: null,
+    lastSubscription: null,
+    entitlement: null,
+    revision: null,
+    devices: 0,
+    currentDeviceId: null,
+    offline: false
+  };
+
+  function emit() {
+    document.dispatchEvent(new CustomEvent("gluk:auth", { detail: state }));
+    render();
+  }
+
+  function applyMe(json) {
+    state.status = "in";
+    state.user = json.user || null;
+    state.subscription = json.subscription || null;
+    state.lastSubscription = json.lastSubscription || null;
+    state.entitlement = json.entitlement || null;
+    state.revision = json.subscriptionRevision
+      || (json.entitlement && json.entitlement.revision)
+      || null;
+    state.devices = typeof json.activeDevices === "number" ? json.activeDevices : 0;
+    state.currentDeviceId = json.currentDeviceId || null;
+    state.offline = false;
+    lastSyncAt = Date.now();
+    if (state.revision) knownRevision = String(state.revision);
+    emit();
+    return state;
+  }
+
+  function guest(offline) {
+    state.status = "out";
+    state.user = null;
+    state.subscription = null;
+    state.lastSubscription = null;
+    state.entitlement = null;
+    state.revision = null;
+    state.devices = 0;
+    state.currentDeviceId = null;
+    state.offline = !!offline;
+    knownRevision = null;
+    emit();
+  }
+
+  function boot() {
+    if (AC.enabled === false) { guest(false); return; }
+    if (!read()) { guest(false); return; }
+    rotate()
+      .then(function () { return request("/api/auth/me", { auth: true }); })
+      .then(applyMe)
+      .catch(function (e) {
+        // Сервер явно отказал — сессия больше не действительна.
+        // Оффлайн/таймаут — токен сохраняем и пробуем в следующий раз.
+        if (e && (e.status === 401 || e.status === 403)) write(null);
+        guest(!e || e.status === 0);
+      });
+  }
+
+  /* ------------------------------------------------- живое обновление
+     Подписку меняет не браузер: её выдаёт админ, продлевает платёж,
+     гасит монитор истечения. Значит состояние надо переспрашивать, а не
+     держать то, что было на момент загрузки страницы. Запрос дешёвый
+     (/api/auth/me), но частить нечем: между вызовами держим паузу. */
+  var lastSyncAt = 0;
+  var syncing = null;
+  var SYNC_GAP = 5000;
+
+  function syncAccount(force) {
+    if (state.status !== "in") return Promise.resolve(state);
+    if (syncing) return syncing;
+    if (!force && Date.now() - lastSyncAt < SYNC_GAP) return Promise.resolve(state);
+    var free = function (v) { syncing = null; return v; };
+    syncing = request("/api/auth/me", { auth: true })
+      .then(applyMe)
+      .catch(function (e) {
+        /* 401 на фоновом запросе чаще всего значит «access истёк», а не
+           «сессия мертва»: один раз пробуем refresh и только потом
+           высаживаем. Оффлайн не трогает состояние вообще. */
+        if (!e || (e.status !== 401 && e.status !== 403)) return state;
+        return rotate()
+          .then(function () { return request("/api/auth/me", { auth: true }); })
+          .then(applyMe)
+          .catch(function (e2) {
+            if (e2 && (e2.status === 401 || e2.status === 403)) {
+              write(null);
+              access = null;
+              guest(false);
+            }
+            return state;
+          });
+      })
+      .then(free, function (err) { free(); throw err; });
+    return syncing;
+  }
+
+  /* Отпечаток прав приходит в каждом ответе, который их описывает
+     (/api/auth/me, /api/vpn/status). Другой отпечаток значит, что подписку
+     изменили на сервере — перечитываем аккаунт сразу, не ждав опроса
+     по таймеру. Первый отпечаток запоминаем молча: он ничего не менял. */
+  var knownRevision = null;
+
+  function noteRevision(rev) {
+    var next = rev == null ? "" : String(rev);
+    if (!next) return;
+    if (knownRevision === null) { knownRevision = next; return; }
+    if (knownRevision === next) return;
+    knownRevision = next;
+    syncAccount(true);
+  }
+
+  /* ------------------------------------------------------------ шапка */
+  function initials(u) {
+    var s = (u && (u.username || u.email || "")) + "";
+    var parts = s.replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(/\s+/);
+    var a = (parts[0] || "?").charAt(0);
+    var b = parts.length > 1 ? parts[1].charAt(0) : (parts[0] || "").charAt(1) || "";
+    return (a + b).toUpperCase();
+  }
+
+  /* Имя тарифа так же, как в расширении и на ПК: Free / Basic / Pro / β Pro.
+     В шапке раньше висело просто «Активна», а это не отвечало на вопрос
+     «какой у меня план». Общий хелпер из dashboard-ui.js используем, когда он
+     загружен, иначе считаем сами — шапка есть на всех страницах. */
+  function planTitle(s) {
+    var shared = typeof window !== "undefined" && window.GlukDashboard;
+    if (shared && typeof shared.planLabel === "function") {
+      var label = shared.planLabel(s);
+      if (label && label !== "\u2014") return label;
+    }
+    var code = String((s && (s.plan || s.planName)) || "").toLowerCase().replace(/[\s_-]/g, "");
+    if (!code) return "";
+    var beta = code.indexOf("beta") >= 0 || code.indexOf("β") >= 0;
+    var base = code.indexOf("pro") >= 0 ? "Pro"
+      : code.indexOf("basic") >= 0 ? "Basic"
+      : code.indexOf("free") >= 0 ? "Free" : "";
+    if (!base) return "";
+    return beta ? "β " + base : base;
+  }
+
+  /* ------------------------------------------------------------ бейджики
+     Уровень подписки рядом с ником: серый Free, синий Basic, фиолетовый Pro
+     и «необычный» β Pro. Токен считает сервер (subscription.badge), клиент его
+     не выбирает; для старых серверов выводим из кода тарифа. Free — это
+     отсутствие подписки, поэтому и пустой план даёт серый Free. */
+  var BADGE_LABELS = { free: "Free", basic: "Basic", pro: "Pro", beta: "\u03b2 Pro" };
+  /* Глиф — сеть: узел в центре и нити к соседним узлам. Free — одинокая точка,
+     Basic — одна нить, Pro — три уравновешенных узла, β Pro — та же сеть за
+     пунктирным контуром. Координаты те же, что в расширении и во Flutter. */
+  var BADGE_CORE = '<circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="12" r="1.15" fill="currentColor"/>';
+  var BADGE_SPOTS = [[15.25, 6.37], [15.25, 17.63], [5.5, 12]];
+  function badgeNodes(count, halo, dot) {
+    var spots = BADGE_SPOTS.slice(0, count), out = "";
+    spots.forEach(function (s) {
+      out += '<line x1="12" y1="12" x2="' + s[0] + '" y2="' + s[1] +
+        '" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity=".85"/>';
+    });
+    spots.forEach(function (s) {
+      out += '<circle cx="' + s[0] + '" cy="' + s[1] + '" r="' + halo +
+        '" fill="currentColor" fill-opacity=".18"/>';
+    });
+    spots.forEach(function (s) {
+      out += '<circle cx="' + s[0] + '" cy="' + s[1] + '" r="' + dot + '" fill="currentColor"/>';
+    });
+    return out;
+  }
+  var BADGE_GLYPHS = {
+    free: BADGE_CORE,
+    basic: badgeNodes(1, 2.05, 1) + BADGE_CORE,
+    pro: badgeNodes(3, 1.9, 0.95) + BADGE_CORE,
+    beta: '<circle cx="12" cy="12" r="9.3" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="1.4 2" opacity=".5"/>' +
+      badgeNodes(3, 1.9, 0.95) + BADGE_CORE
+  };
+
+  function badgeToken(s) {
+    var token = String((s && s.badge) || "").toLowerCase();
+    if (BADGE_LABELS[token]) return token;
+    var code = String((s && (s.plan || s.planName)) || "").toLowerCase().replace(/[\s_-]/g, "");
+    if (/beta|β/.test(code)) return "beta";
+    if (code.indexOf("pro") >= 0) return "pro";
+    if (code.indexOf("basic") >= 0) return "basic";
+    return "free";
+  }
+
+  function badgeHtml(s, extra) {
+    var token = badgeToken(s);
+    var label = BADGE_LABELS[token];
+    return '<span class="gl-badge gl-badge--' + token + (extra ? " " + extra : "") +
+      '" title="' + esc(T("Тариф")) + ": " + esc(label) + '">' +
+      '<span class="gl-badge__ic"><svg viewBox="0 0 24 24" aria-hidden="true">' +
+      BADGE_GLYPHS[token] + "</svg></span>" +
+      "<span>" + esc(label) + "</span></span>";
+  }
+
+  function subLabel() {
+    var s = state.subscription;
+    /* Действующей подписки нет — это ровно Free. Прошлая строка годится
+       только на подпись «была Pro, истекла»: ни дней, ни даты она больше
+       не даёт. */
+    if (!s || !s.status) {
+      var past = state.lastSubscription;
+      var pastName = past ? planTitle(past) : "";
+      if (pastName) return { text: pastName + " · " + T("Истекла"), ok: false };
+      return { text: T("Нет подписки"), ok: false };
+    }
+    if (String(s.status).toUpperCase() === "ACTIVE") {
+      var d = s.expiresAt ? new Date(s.expiresAt) : null;
+      /* год обязателен: "до 20 авг." без года читался неоднозначно */
+      var fmt = d && !isNaN(d)
+        ? (I18N ? I18N.dateShort(d)
+                : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" }))
+        : "";
+      var until = fmt ? " · " + T("до") + " " + fmt : "";
+      return { text: (planTitle(s) || T("Активна")) + until, ok: true };
+    }
+    var name = planTitle(s);
+    var off = String(s.status).toUpperCase() === "EXPIRED" ? T("Истекла") : T("Неактивна");
+    return { text: name ? name + " · " + off : off, ok: false };
+  }
+
+  /* Кабинет живёт под тем же языковым префиксом, что и страница: на /en/
+     ссылка ведёт в /en/app/. Явный accountUrl из конфига уважаем, только если
+     он не дефолтный. */
+  function accountUrl() {
+    var u = AC.accountUrl || "";
+    if (!u || u === "/app/") return root + "app/";
+    return u;
+  }
+
+  function render() {
+    var slots = document.querySelectorAll("[data-acct]");
+    if (!slots.length) return;
+    var html;
+    if (state.status === "loading") {
+      html = '<div class="acct__skel" aria-hidden="true"></div><span class="sr-only">' + esc(T("Загрузка аккаунта")) + "</span>";
+    } else if (state.status === "out") {
+      html =
+        '<div class="acct__guest">' +
+        '<a class="btn btn--primary btn--sm" href="' + root + 'login/?mode=register">' + esc(T("Регистрация")) + "</a>" +
+        "</div>";
+    } else {
+      var u = state.user || {};
+      var sub = subLabel();
+      html =
+        '<button class="acct__chip" type="button" aria-haspopup="true" aria-expanded="false" data-acct-toggle>' +
+        '<span class="avatar avatar--online">' + esc(initials(u)) + "</span>" +
+        '<span class="acct__name">' + esc(u.username || T("Аккаунт")) + "</span>" +
+        badgeHtml(state.subscription, "gl-badge--sm") + IC.caret +
+        "</button>" +
+        '<div class="acct__menu" data-acct-menu role="menu">' +
+        '<div class="acct__head"><span class="avatar avatar--lg">' + esc(initials(u)) + "</span>" +
+        '<span class="acct__id"><b>' + esc(u.username || "") + "</b><span>" +
+        esc(u.email || (u.publicId ? "№ " + u.publicId : "")) + "</span></span>" +
+        badgeHtml(state.subscription) + "</div>" +
+        '<div class="acct__rows">' +
+        '<div class="acct__row"><span>' + esc(T("Подписка")) + '</span><b class="' + (sub.ok ? "ok" : "") + '">' + esc(sub.text) + "</b></div>" +
+        '<div class="acct__row"><span>' + esc(T("Устройства")) + "</span><b>" + state.devices + " / " + (u.maxDevices || 3) + "</b></div>" +
+        (u.publicId ? '<div class="acct__row"><span>' + esc(T("Номер аккаунта")) + "</span><b>" + esc(u.publicId) + "</b></div>" : "") +
+        "</div>" +
+        '<div class="acct__links">' +
+        '<a class="acct__link" href="' + esc(accountUrl()) + '">' + IC.user + esc(T("Личный кабинет")) + "</a>" +
+        (AC.webAppUrl ? '<a class="acct__link" href="' + esc(AC.webAppUrl) + '">' + IC.grid + esc(T("Веб-приложение")) + "</a>" : "") +
+        '<a class="acct__link" href="' + root + 'download/">' + IC.down + esc(T("Скачать приложение")) + "</a>" +
+        '<button class="acct__link acct__link--danger" type="button" data-acct-logout>' + IC.out + esc(T("Выйти")) + "</button>" +
+        "</div></div>";
+    }
+    Array.prototype.forEach.call(slots, function (slot) {
+      slot.innerHTML = html;
+    });
+  }
+
+  function closeMenus() {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-acct-menu]"), function (m) {
+      m.classList.remove("is-open");
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-acct-toggle]"), function (b) {
+      b.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  document.addEventListener("click", function (e) {
+    var toggle = e.target.closest && e.target.closest("[data-acct-toggle]");
+    if (toggle) {
+      var box = toggle.parentNode;
+      var menu = box.querySelector("[data-acct-menu]");
+      var open = menu.classList.contains("is-open");
+      closeMenus();
+      if (!open) {
+        menu.classList.add("is-open");
+        toggle.setAttribute("aria-expanded", "true");
+      }
+      return;
+    }
+    if (e.target.closest && e.target.closest("[data-acct-logout]")) {
+      api.logout();
+      return;
+    }
+    if (!(e.target.closest && e.target.closest("[data-acct-menu]"))) closeMenus();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeMenus();
+  });
+
+  /* Вкладку вернули из фона — первым делом уточняем подписку. Именно
+     так человек и возвращается после оплаты или после того, как ему
+     выдали тариф в админке. */
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") syncAccount(false);
+  });
+  window.addEventListener("focus", function () { syncAccount(false); });
+
+  /* ------------------------------------------------------------- публичное API */
+  var api = {
+    channel: CHANNEL,
+    /* Базовый адрес API выбранного канала — для скриптов, которым нужен тот же
+       инстанс, что и у сессии (sso.js: link/start и link/poll обязаны идти
+       туда же, куда потом пойдёт /api/auth/me). */
+    base: BASE,
+    get state() { return state; },
+    /* Публичный запрос без токена (config, google, link/start|poll,
+       billing/plans). Тот же transport и та же обработка ошибок, что у call. */
+    public: function (path, opts) {
+      opts = opts || {};
+      opts.auth = false;
+      return request(path, opts);
+    },
+    adoptTokens: adoptTokens,
+    login: function (identifier, password) {
+      return request("/api/auth/login", {
+        method: "POST",
+        body: { identifier: identifier, username: identifier, password: password }
+      })
+        .then(setSession)
+        .then(function () { return request("/api/auth/me", { auth: true }); })
+        .then(applyMe);
+    },
+    logout: function () {
+      var rt = read();
+      write(null);
+      var done = function () { access = null; guest(false); };
+      request("/api/auth/logout", { method: "POST", auth: true, body: rt ? { refreshToken: rt } : {} })
+        .then(done, done);
+    },
+    refresh: boot,
+    /* Переспросить состояние аккаунта без повторного входа: refresh крутит
+       весь boot с rotate, а sync — только /api/auth/me. noteRevision зовут те,
+       кто видит subscriptionRevision в своих ответах (например /api/vpn/status). */
+    sync: syncAccount,
+    noteRevision: noteRevision,
+    /* Авторизованный запрос к control plane — нужен личному кабинету /app/:
+       если access протух — один раз крутим refresh и повторяем. */
+    call: function (path, opts) {
+      opts = opts || {};
+      opts.auth = true;
+      var run = function () { return request(path, opts); };
+      if (!access) return rotate().then(run);
+      return run().catch(function (e) {
+        if (e && (e.status === 401 || e.status === 403)) return rotate().then(run);
+        throw e;
+      });
+    },
+    isAuthed: function () { return state.status === "in"; },
+    /* Общий бейджик тарифа для кабинета и любой другой страницы: разметка
+       одна и та же, чтобы сайт не расходился сам с собой. */
+    planBadge: badgeToken,
+    planBadgeHtml: badgeHtml,
+    planBadgeGlyph: function (token) { return BADGE_GLYPHS[token] || BADGE_GLYPHS.free; },
+    planBadgeLabel: function (token) { return BADGE_LABELS[token] || BADGE_LABELS.free; }
+  };
+  window.GlukAuth = api;
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () { render(); boot(); });
+  } else {
+    render();
+    boot();
+  }
+})();

@@ -1,0 +1,762 @@
+/* Auth UI: слот аккаунта в шапке, меню, форма входа */
+
+.acct{position:relative;display:flex;align-items:center;gap:10px;min-height:40px}
+.acct__skel{width:150px;height:38px;border-radius:999px;border:1px solid var(--stroke-soft);background:linear-gradient(90deg,rgba(255,255,255,.03) 0%,rgba(255,255,255,.09) 40%,rgba(255,255,255,.03) 80%);background-size:220% 100%;animation:acct-shimmer 1.35s linear infinite}
+@keyframes acct-shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
+
+.acct__chip{display:inline-flex;align-items:center;gap:10px;padding:5px 14px 5px 5px;border-radius:999px;border:1px solid var(--stroke);background:var(--glass-2);color:var(--text-0);font:inherit;font-size:14px;font-weight:600;cursor:pointer;transition:border-color var(--t-fast),background var(--t-fast),transform var(--t-fast)}
+.acct__chip:hover{border-color:var(--stroke-violet);background:rgba(124,92,246,.12)}
+.acct__chip:active{transform:scale(.98)}
+.acct__chip[aria-expanded="true"]{border-color:var(--stroke-violet)}
+.acct__name{max-width:118px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acct__caret{width:14px;height:14px;opacity:.55;transition:transform var(--t-fast)}
+.acct__chip[aria-expanded="true"] .acct__caret{transform:rotate(180deg)}
+
+.avatar{position:relative;width:28px;height:28px;border-radius:999px;display:grid;place-items:center;font-size:12px;font-weight:700;color:#07040f;background:var(--grad-cta);box-shadow:0 0 0 1px rgba(255,255,255,.16) inset}
+.avatar--lg{width:44px;height:44px;font-size:16px}
+.avatar--online::after{content:"";position:absolute;right:-1px;bottom:-1px;width:9px;height:9px;border-radius:999px;background:var(--green);box-shadow:0 0 0 2px var(--bg)}
+
+.acct__menu{position:absolute;right:0;top:calc(100% + 12px);width:274px;padding:14px;border-radius:18px;border:1px solid var(--stroke);background:var(--glass-3);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);box-shadow:0 24px 70px rgba(0,0,0,.55);opacity:0;visibility:hidden;transform:translateY(-8px) scale(.98);transition:opacity var(--t-fast),transform var(--t-fast),visibility var(--t-fast);z-index:60}
+.acct__menu.is-open{opacity:1;visibility:visible;transform:none}
+.acct__head{display:flex;align-items:center;gap:12px;padding-bottom:12px;margin-bottom:10px;border-bottom:1px solid var(--stroke-soft)}
+.acct__id{min-width:0}
+.acct__id b{display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acct__id span{display:block;font-size:12px;color:var(--text-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acct__rows{display:grid;gap:7px;margin-bottom:12px}
+.acct__row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--text-1)}
+.acct__row b{color:var(--text-0);font-weight:600;font-variant-numeric:tabular-nums}
+.acct__row b.ok{color:var(--green)}
+.acct__links{display:grid;gap:3px}
+.acct__link{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:12px;color:var(--text-0);font-size:13.5px;text-decoration:none;background:none;border:0;width:100%;text-align:left;font-family:inherit;cursor:pointer;transition:background var(--t-fast)}
+.acct__link:hover{background:rgba(255,255,255,.06)}
+.acct__link svg{width:16px;height:16px;opacity:.6;flex:none}
+.acct__link--danger{color:#ff9a9a}
+.acct__guest{display:flex;align-items:center;gap:8px}
+
+/* Страница входа */
+.auth-grid{display:grid;grid-template-columns:minmax(0,430px) minmax(0,1fr);gap:44px;align-items:start}
+@media (max-width:900px){.auth-grid{grid-template-columns:1fr;gap:26px}}
+.auth-card{padding:28px;border-radius:24px}
+.auth-tabs{display:flex;gap:4px;padding:4px;border-radius:999px;border:1px solid var(--stroke-soft);background:rgba(10,7,20,.5);margin-bottom:20px}
+.auth-tab{flex:1;padding:9px 12px;border:0;border-radius:999px;background:transparent;color:var(--text-1);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:color var(--t-fast),background var(--t-fast)}
+.auth-tab.is-active{color:var(--text-0);background:rgba(124,92,246,.18);box-shadow:0 0 0 1px var(--stroke-violet) inset}
+.auth-card__title{font-size:23px;font-weight:650;letter-spacing:-.01em;margin:0 0 6px}
+.auth-card__sub{color:var(--text-1);font-size:14px;line-height:1.55;margin:0 0 22px}
+.form{display:grid;gap:16px}
+.field{display:grid;gap:7px}
+.field__label{font-size:12.5px;color:var(--text-1);font-weight:500}
+.field__wrap{position:relative;display:flex;align-items:center}
+.input{width:100%;padding:13px 15px;border-radius:14px;border:1px solid var(--stroke);background:rgba(10,7,20,.6);color:var(--text-0);font:inherit;font-size:14.5px;transition:border-color var(--t-fast),box-shadow var(--t-fast),background var(--t-fast)}
+.input::placeholder{color:var(--text-2)}
+.input:hover{border-color:rgba(255,255,255,.22)}
+.input:focus{outline:none;border-color:var(--violet);box-shadow:0 0 0 4px rgba(124,92,246,.16);background:rgba(10,7,20,.85)}
+.input[aria-invalid="true"]{border-color:rgba(255,120,120,.6)}
+.field__wrap .input{padding-right:46px}
+.pw-toggle{position:absolute;right:6px;width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:10px;background:transparent;color:var(--text-1);cursor:pointer;transition:color var(--t-fast),background var(--t-fast)}
+.pw-toggle:hover{color:var(--text-0);background:rgba(255,255,255,.06)}
+.pw-toggle svg{width:17px;height:17px}
+
+.auth-msg{display:none;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:14px;font-size:13.5px;line-height:1.45}
+.auth-msg.is-on{display:flex}
+.auth-msg--err{border:1px solid rgba(255,120,120,.32);background:rgba(255,90,90,.09);color:#ffc9c9}
+.auth-msg--ok{border:1px solid rgba(94,231,163,.3);background:rgba(94,231,163,.09);color:#a9f0c8}
+.auth-msg svg{width:17px;height:17px;flex:none;margin-top:1px}
+
+.spinner{width:16px;height:16px;border-radius:999px;border:2px solid rgba(255,255,255,.28);border-top-color:#fff;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.btn[data-busy="1"]{pointer-events:none;opacity:.75}
+
+/* ---------------------------------------------------------------- 0.8.0 --
+ * Вход через Telegram и Google под формой пароля (.auth-alt).
+ * Telegram — тёмная ghost-кнопка с фирменным #26A5E4 акцентом; Google —
+ * официальная кнопка GIS, рисуется скриптом Google в [data-google-btn].
+ * Обе секции скрываются JS, если /api/auth/config говорит, что провайдер
+ * выключен; без JS ряд остаётся hidden целиком. */
+.auth-alt{display:grid;gap:10px;margin-top:16px}
+.auth-alt[hidden]{display:none}
+.auth-alt__div{display:flex;align-items:center;gap:12px;color:var(--text-2);font-size:11.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+.auth-alt__div::before,.auth-alt__div::after{content:"";flex:1;height:1px;background:var(--stroke-soft)}
+.auth-alt__btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:48px;padding:12px 16px;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.035);color:var(--text-0);font:inherit;font-size:14px;font-weight:650;text-align:center;cursor:pointer;text-decoration:none;transition:border-color .18s ease,background .18s ease,transform .18s ease}
+.auth-alt__btn svg{width:18px;height:18px;flex:none}
+.auth-alt__btn:hover{transform:translateY(-1px)}
+.auth-alt__btn:disabled{opacity:.6;cursor:default;transform:none}
+.auth-alt__btn[hidden]{display:none}
+.auth-alt__btn--tg{border-color:rgba(38,165,228,.32);background:rgba(38,165,228,.08)}
+.auth-alt__btn--tg svg{color:#26a5e4}
+.auth-alt__btn--tg:hover{border-color:rgba(38,165,228,.55);background:rgba(38,165,228,.14)}
+.auth-alt__google{display:flex;justify-content:center;min-height:44px}
+.auth-alt__google[hidden]{display:none}
+.auth-alt__google>div{max-width:100%}
+.auth-alt__note{margin:0;font-size:12px;line-height:1.5;color:var(--text-2);text-align:center}
+.auth-alt__note[hidden]{display:none}
+
+/* /pricing/: результат создания заказа (инструкции ручной оплаты, ошибки). */
+.billing-notice{margin:0 0 16px;padding:16px 18px;border-radius:16px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.035);font-size:13.5px;line-height:1.55;color:var(--text-1)}
+.billing-notice[hidden]{display:none}
+.billing-notice b{color:var(--text-0)}
+.billing-notice--ok{border-color:rgba(94,231,163,.3);background:rgba(94,231,163,.07)}
+.billing-notice--err{border-color:rgba(255,120,120,.32);background:rgba(255,90,90,.08)}
+.billing-notice__text{margin:8px 0 0;white-space:pre-line}
+.billing-notice__meta{margin:8px 0 0;font-size:12.5px;color:var(--text-2)}
+.billing-notice a{color:#c9a9ff;text-decoration:none;border-bottom:1px solid rgba(201,169,255,.32)}
+.plan__cta:disabled{opacity:.7;pointer-events:none}
+
+/* Ожидание подтверждения в Telegram: код, ссылка, таймер и отмена. */
+.sso-wait{display:grid;gap:12px;padding:16px;border-radius:16px;border:1px solid rgba(38,165,228,.3);background:rgba(38,165,228,.07)}
+.sso-wait[hidden]{display:none}
+.sso-wait__head{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:650}
+.sso-wait__head .spinner{border-top-color:#26a5e4}
+.sso-wait__text{margin:0;font-size:13px;line-height:1.5;color:var(--text-1)}
+.sso-wait__code{display:grid;gap:6px;justify-items:center;padding:12px;border-radius:12px;border:1px dashed rgba(255,255,255,.14);background:rgba(10,7,20,.45)}
+.sso-wait__code b{font-size:26px;letter-spacing:.3em;font-variant-numeric:tabular-nums}
+.sso-wait__code span{font-size:12px;color:var(--text-2)}
+.sso-wait__code a{color:#9fd8ff;text-decoration:none;border-bottom:1px solid rgba(159,216,255,.35);word-break:break-all}
+.sso-wait__row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.sso-wait__timer{font-size:12.5px;color:var(--text-2);font-variant-numeric:tabular-nums}
+.sso-wait__timer.is-low{color:var(--amber)}
+
+.auth-side{display:grid;gap:14px}
+.auth-fact{display:flex;gap:14px;padding:16px 18px;border-radius:18px}
+.auth-fact__ic{width:38px;height:38px;flex:none;border-radius:12px;display:grid;place-items:center;background:rgba(124,92,246,.14);border:1px solid var(--stroke-violet);color:var(--violet-light)}
+.auth-fact__ic svg{width:18px;height:18px}
+.auth-fact b{display:block;font-size:14.5px;margin-bottom:3px}
+.auth-fact p{margin:0;font-size:13px;color:var(--text-1);line-height:1.5}
+
+/* Мини-кабинет после входа */
+.acct-panel{display:grid;gap:16px}
+.acct-panel__grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.acct-stat{padding:16px;border-radius:16px}
+.acct-stat__label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-2);margin-bottom:6px}
+.acct-stat__value{font-size:19px;font-weight:650;font-variant-numeric:tabular-nums}
+.acct-stat__value--ok{color:var(--green)}
+
+/* ======================= v3: страница входа на весь экран ======================= */
+.auth-screen {
+  position: relative;
+  min-height: calc(100vh - var(--header-h));
+  display: grid;
+  place-items: center;
+  padding: clamp(28px, 6vh, 76px) 20px clamp(40px, 8vh, 90px);
+  overflow: hidden;
+}
+.auth-screen__bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.auth-screen__map {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.55;
+}
+.auth-screen__veil {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(115% 78% at 50% 34%, rgba(10, 7, 20, 0.32), rgba(5, 4, 10, 0.93) 72%);
+}
+.auth-screen__glow {
+  position: absolute;
+  width: 52vw;
+  height: 52vw;
+  max-width: 620px;
+  max-height: 620px;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.45;
+}
+.auth-screen__glow--a {
+  background: rgba(139, 92, 246, 0.5);
+  top: -16%;
+  left: -8%;
+}
+.auth-screen__glow--b {
+  background: rgba(124, 58, 237, 0.32);
+  right: -12%;
+  bottom: -20%;
+}
+.auth-screen__inner {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 468px;
+  display: grid;
+  gap: 18px;
+  justify-items: center;
+}
+.auth-card {
+  width: 100%;
+  padding: clamp(22px, 3vw, 34px);
+  border-radius: 26px;
+}
+.auth-card__head {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  text-align: center;
+  margin-bottom: 20px;
+}
+.auth-card__logo {
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  display: grid;
+  place-items: center;
+  color: var(--violet-light);
+  background: linear-gradient(140deg, rgba(139, 92, 246, 0.32), rgba(124, 58, 237, 0.16));
+  border: 1px solid var(--stroke-violet);
+  box-shadow: 0 10px 30px rgba(109, 77, 224, 0.28);
+}
+.auth-card__logo svg {
+  width: 22px;
+  height: 22px;
+}
+.auth-tabs {
+  position: relative;
+  isolation: isolate;
+}
+.auth-tabs__ind {
+  position: absolute;
+  z-index: -1;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.95), rgba(109, 77, 224, 0.85));
+  box-shadow: 0 8px 22px rgba(109, 77, 224, 0.35);
+  transition: transform 0.4s var(--ease-soft);
+}
+.auth-tab {
+  position: relative;
+  transition: color var(--t-med) ease;
+}
+.auth-panes {
+  position: relative;
+}
+.auth-pane {
+  opacity: 0;
+  transform: translateY(10px) scale(0.985);
+  transition: opacity 0.34s var(--ease-soft), transform 0.34s var(--ease-soft);
+}
+.auth-pane.is-in {
+  opacity: 1;
+  transform: none;
+}
+.auth-pane[hidden] {
+  display: none;
+}
+.pw-toggle__ic {
+  display: grid;
+  place-items: center;
+}
+.pw-toggle__ic--on {
+  display: none;
+}
+.pw-toggle.is-on .pw-toggle__ic--on {
+  display: grid;
+}
+.pw-toggle.is-on .pw-toggle__ic--off {
+  display: none;
+}
+.pw-toggle.is-on {
+  color: var(--violet-light);
+}
+.auth-hint {
+  margin-top: 12px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-2);
+  text-align: center;
+}
+.auth-invite {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  text-align: center;
+}
+.auth-card__foot {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--stroke-soft);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  justify-content: center;
+}
+.auth-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-1);
+  text-decoration: none;
+  transition: color var(--t-fast) ease;
+}
+.auth-link svg {
+  width: 15px;
+  height: 15px;
+}
+.auth-link:hover {
+  color: var(--text-0);
+}
+.auth-marks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: center;
+}
+.auth-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.auth-mark svg {
+  width: 14px;
+  height: 14px;
+  color: var(--violet-light);
+}
+@media (max-width: 520px) {
+  .auth-screen {
+    padding: 22px 14px 40px;
+  }
+}
+
+/* ============================ v3: личный кабинет ============================ */
+/* 0.8.0: старый блок .acc-* (acc-top/acc-stats/acc-card…) удалён — ни одна
+   страница его не использовала; кабинет /app/ живёт в dash.css. Единственное,
+   что от него осталось нужным: крупный аватар в меню аккаунта. */
+.avatar--lg {
+  width: 52px;
+  height: 52px;
+  font-size: 20px;
+}
+
+/* ===================== v6: экран входа — форма слева, живая карта справа ===================== */
+.auth-split{display:grid;grid-template-columns:minmax(0,430px) minmax(0,1fr);gap:24px;align-items:start;max-width:1080px;width:100%}
+.auth-split .auth-card{width:100%;margin:0}
+
+/* без скачков при переключении вход/регистрация: обе панели в одной ячейке сетки */
+.auth-panes{display:grid;position:relative}
+.auth-pane{grid-area:1/1;transition:opacity .34s var(--ease-soft),transform .34s var(--ease-soft)}
+.auth-pane[hidden]{display:none}
+.auth-pane.is-in{opacity:1;visibility:visible;pointer-events:auto;transform:none}
+
+/* правая колонка */
+.auth-aside{display:flex;flex-direction:column;gap:14px;min-width:0}
+.auth-aside__card{position:relative;padding:16px;border-radius:26px;border:1px solid var(--stroke-soft);background:linear-gradient(165deg,rgba(30,21,52,.72),rgba(11,8,22,.78));overflow:hidden}
+.auth-aside__head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.auth-aside__title{font-size:13.5px;font-weight:var(--fw-strong);letter-spacing:-.01em}
+.auth-aside__badge{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:999px;border:1px solid rgba(94,231,163,.26);background:rgba(94,231,163,.09);color:var(--green);font-size:11.5px;font-weight:var(--fw-medium)}
+.auth-aside__stage{position:relative;border-radius:18px;border:1px solid var(--stroke-soft);background:radial-gradient(120% 120% at 50% 0%,rgba(124,77,234,.16),rgba(6,4,14,.5));overflow:hidden;aspect-ratio:16/9}
+.auth-aside__map{display:block;width:100%;height:100%}
+.auth-aside__stats{list-style:none;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 0;padding:0}
+.auth-aside__stats li{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:14px;border:1px solid var(--stroke-soft);background:rgba(255,255,255,.03)}
+.auth-aside__stats b{font-size:17px;font-weight:var(--fw-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.auth-aside__stats span{color:var(--text-1);font-size:11px;line-height:1.35}
+.auth-split .auth-marks{margin:0}
+.auth-card__logo img{width:34px;height:34px;display:block}
+
+@media (max-width:1040px){
+  .auth-split{grid-template-columns:minmax(0,1fr);max-width:520px}
+  .auth-aside{order:2}
+  .auth-aside__stage{aspect-ratio:16/10}
+}
+@media (max-width:520px){
+  .auth-aside__stats{grid-template-columns:1fr 1fr}
+  .auth-aside__stats li:last-child{grid-column:1/-1}
+}
+
+/* ===== v7 refresh ===== */
+/* Глазок пароля: в разметке обёртка называется .field__box, а стили были
+   написаны только для .field__wrap — поэтому кнопка выпадала под поле. */
+.field__box{position:relative;display:flex;align-items:center;width:100%}
+.field__box .input,.field__wrap .input{padding-right:50px}
+.field__box .pw-toggle,.field__wrap .pw-toggle{position:absolute;top:50%;right:7px;left:auto;bottom:auto;transform:translateY(-50%);margin:0}
+.pw-toggle{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;flex:none}
+.pw-toggle:hover{background:rgba(139,92,246,.16);color:#fff}
+.pw-toggle:focus-visible{outline:2px solid rgba(168,85,247,.6);outline-offset:2px}
+.input:focus{box-shadow:0 0 0 4px rgba(139,92,246,.18)}
+.auth-tab.is-active{background:linear-gradient(180deg,rgba(168,85,247,.36),rgba(93,32,197,.32));color:#fff;box-shadow:none}
+
+
+/* ===== v7.2 header+langpop+gate ===== */
+/* --- шапка: компактные контролы вместо громоздких 44px --- */
+.header__actions{gap:8px}
+.nav{gap:2px}
+.nav__link{padding:8px 11px;border-radius:9px;font-size:13.5px}
+.nav__link:hover{background:rgba(255,255,255,.05)}
+.header__dl.btn--icon{width:38px;height:38px;aspect-ratio:1/1;border-radius:11px;border:1px solid rgba(167,139,250,.2);background:linear-gradient(180deg,rgba(168,85,247,.18),rgba(93,32,197,.12));box-shadow:none;color:#ece5ff;transition:border-color .18s ease,background .18s ease}
+.header__dl.btn--icon:hover{border-color:rgba(168,85,247,.42);background:linear-gradient(180deg,rgba(168,85,247,.3),rgba(93,32,197,.2));transform:none}
+.header__dl.btn--icon svg{width:17px;height:17px}
+.acct__guest .btn,.acct__guest .btn--sm{height:38px;padding:0 16px;border-radius:11px;font-size:13.5px;font-weight:650;letter-spacing:0;border:1px solid rgba(196,167,255,.26);background:linear-gradient(180deg,#9a5cf6,#6d28d9);box-shadow:0 8px 20px rgba(76,29,149,.34)}
+.acct__guest .btn:hover{background:linear-gradient(180deg,#a874f8,#7c3aed);box-shadow:0 10px 24px rgba(76,29,149,.42)}
+.acct__chip{height:38px;border-radius:11px}
+
+/* бургер — только на узких экранах */
+.burger{display:none;width:38px;height:38px;border-radius:11px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);color:var(--text-0)}
+.burger:hover{border-color:rgba(168,85,247,.32);background:rgba(124,58,237,.12)}
+.burger svg{width:18px;height:18px}
+@media (max-width:940px){.burger{display:grid;place-items:center}}
+
+/* --- шторка меню: без backdrop-filter, иначе chromium размывает само содержимое --- */
+.drawer{background:#0a0714;backdrop-filter:none;-webkit-backdrop-filter:none;will-change:auto}
+.drawer__link{padding:14px 16px;border-radius:13px;font-size:14.5px;background:rgba(255,255,255,.035);border-color:rgba(255,255,255,.07)}
+.drawer__link:hover{border-color:rgba(168,85,247,.3);background:rgba(124,58,237,.12)}
+.drawer__cta{height:48px;border-radius:14px;font-size:14.5px}
+@media (min-width:941px){.drawer,.drawer-backdrop{display:none}}
+
+/* --- переключатель языка в подвале --- */
+.footer__right{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.langpop{position:relative;line-height:1}
+.langpop__btn{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 12px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text-0);font:inherit;font-size:13px;font-weight:600;line-height:1;cursor:pointer;transition:border-color .18s ease,background .18s ease}
+.langpop__btn:hover{border-color:rgba(168,85,247,.34);background:rgba(124,58,237,.14)}
+.langpop__btn>svg:first-child{width:16px;height:16px;opacity:.85}
+.langpop__chev{width:14px;height:14px;opacity:.6;transition:transform .18s ease}
+.langpop.is-open .langpop__chev{transform:rotate(180deg)}
+.langpop__menu{position:absolute;right:0;bottom:calc(100% + 8px);min-width:182px;padding:6px;border-radius:14px;border:1px solid rgba(167,139,250,.18);background:#0d0818;box-shadow:0 22px 60px rgba(2,1,6,.66);opacity:0;visibility:hidden;transform:translateY(6px);transition:opacity .18s ease,transform .18s ease,visibility .18s;z-index:40}
+.langpop.is-open .langpop__menu{opacity:1;visibility:visible;transform:none}
+.langpop__opt{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;border-radius:10px;color:var(--text-1);font-size:13.5px;text-decoration:none}
+.langpop__opt:hover{background:rgba(255,255,255,.05);color:#fff}
+.langpop__opt svg{width:15px;height:15px;opacity:0;color:#c9a9ff}
+.langpop__opt.is-on{color:#fff;background:rgba(124,58,237,.16)}
+.langpop__opt.is-on svg{opacity:1}
+@media (max-width:640px){.footer__right{width:100%;justify-content:space-between}}
+
+/* --- /app/ без аккаунта --- */
+.gate{display:grid;grid-template-columns:1.02fr .98fr;gap:20px;align-items:stretch}
+.gate__main{padding:30px 32px 28px;border-radius:22px;border:1px solid rgba(167,139,250,.16);background:linear-gradient(168deg,rgba(29,17,54,.9),rgba(11,7,22,.94));box-shadow:0 30px 80px rgba(4,2,10,.55)}
+.gate__badge{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px;border-radius:999px;border:1px solid rgba(168,85,247,.28);background:rgba(124,58,237,.14);color:#d7c9ff;font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+.gate__badge svg{width:14px;height:14px}
+.gate__title{margin:16px 0 10px;font-size:clamp(25px,2.3vw,33px);line-height:1.14;letter-spacing:-.02em}
+.gate__text{margin:0;max-width:48ch;color:var(--text-1);font-size:14.5px;line-height:1.6}
+.gate__list{list-style:none;margin:22px 0 0;padding:0;display:grid;gap:9px}
+.gate__list li{display:grid;grid-template-columns:36px 1fr;gap:2px 12px;align-items:center;padding:11px 13px;border-radius:14px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.022)}
+.gate__list b{font-size:13.5px;font-weight:650;color:var(--text-0)}
+.gate__list li>span:last-child{grid-column:2;color:var(--text-2);font-size:12.5px;line-height:1.45}
+.gate__ic{grid-row:1/3;width:36px;height:36px;border-radius:12px;display:grid;place-items:center;border:1px solid rgba(168,85,247,.22);background:rgba(124,58,237,.13);color:#c9a9ff}
+.gate__ic svg{width:18px;height:18px}
+.gate__actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
+.gate__actions .btn{height:44px;padding:0 20px;border-radius:13px;font-size:14px}
+.gate__note{margin:14px 0 0;color:var(--text-2);font-size:12.5px}
+.gate__note a{color:#c9a9ff;text-decoration:none;border-bottom:1px solid rgba(201,169,255,.32)}
+.gate__side{position:relative;overflow:hidden;border-radius:22px;border:1px solid rgba(255,255,255,.07);background:linear-gradient(180deg,rgba(18,11,34,.82),rgba(8,5,16,.92));min-height:360px}
+.gate__mock{padding:22px;filter:blur(3.2px);opacity:.5;display:grid;gap:14px;align-content:start}
+.gate__mockhead{display:flex;align-items:center;gap:12px}
+.gate__ava{width:44px;height:44px;border-radius:14px;background:linear-gradient(160deg,rgba(168,85,247,.5),rgba(76,29,149,.5));flex:none}
+.gate__lines{display:grid;gap:7px;flex:1}
+.gate__chip{width:66px;height:24px;border-radius:999px;background:rgba(255,255,255,.09)}
+.gate__bar{display:block;height:9px;border-radius:5px;background:rgba(255,255,255,.16)}
+.gate__bar--dim{background:rgba(255,255,255,.08)}
+.gate__mockgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.gate__cell{display:grid;gap:9px;padding:13px;border-radius:14px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03)}
+.gate__val{height:19px;width:74px;border-radius:6px;background:linear-gradient(90deg,rgba(201,169,255,.5),rgba(168,85,247,.22))}
+.gate__mockrows{display:grid;gap:8px}
+.gate__row{display:flex;align-items:center;gap:10px;padding:12px 13px;border-radius:13px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.025)}
+.gate__dot{width:9px;height:9px;border-radius:50%;background:#5ee7a3;flex:none}
+.gate__pill{margin-left:auto;width:52px;height:20px;border-radius:999px;background:rgba(94,231,163,.2)}
+.gate__veil{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:9px;padding:26px;text-align:center;background:radial-gradient(120% 90% at 50% 0%,rgba(12,7,24,.28),rgba(6,3,13,.84))}
+.gate__veil b{font-size:15px;font-weight:650}
+.gate__veil>span:last-child{color:var(--text-2);font-size:12.5px}
+.gate__lock{width:48px;height:48px;border-radius:16px;display:grid;place-items:center;border:1px solid rgba(168,85,247,.3);background:rgba(124,58,237,.18);color:#d7c9ff}
+.gate__lock svg{width:22px;height:22px}
+@media (max-width:940px){.gate{grid-template-columns:1fr}.gate__main{padding:24px 20px}.gate__side{min-height:280px;order:-1}}
+
+
+/* ===== v7.3 blurfix+buttons ===== */
+/* подложка без backdrop-filter: даже если порядок слоёв собьётся, текст останется резким */
+.drawer-backdrop{background:rgba(4,2,10,.6);backdrop-filter:none;-webkit-backdrop-filter:none}
+.drawer{z-index:60}
+.drawer>*{will-change:auto}
+
+/* меню: одна кнопка на всю ширину, а не половина сетки */
+.acct--drawer .acct__guest{display:grid;grid-template-columns:1fr;gap:8px}
+.acct--drawer .acct__guest .btn{width:100%;height:46px;border-radius:13px;font-size:14px}
+
+/* кнопки: меньше радиус, тише тени, плотнее типографика */
+.btn{border-radius:12px;font-weight:650;letter-spacing:0;box-shadow:none;transition:background .18s ease,border-color .18s ease,box-shadow .18s ease,transform .18s ease}
+.btn--lg{height:52px;padding:0 24px;border-radius:14px;font-size:15px}
+.btn--sm{height:36px;padding:0 14px;border-radius:10px;font-size:13px}
+.btn--primary{background:linear-gradient(180deg,#9a5cf6,#6d28d9);border:1px solid rgba(196,167,255,.24);box-shadow:0 10px 26px rgba(76,29,149,.32)}
+.btn--primary:hover{background:linear-gradient(180deg,#a874f8,#7c3aed);box-shadow:0 12px 30px rgba(76,29,149,.42);transform:translateY(-1px)}
+.btn--ghost{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);box-shadow:none}
+.btn--ghost:hover{background:rgba(124,58,237,.12);border-color:rgba(168,85,247,.34);transform:translateY(-1px)}
+.btn--icon{border-radius:11px}
+.hero__cta .btn,.hero__actions .btn{box-shadow:0 12px 30px rgba(76,29,149,.3)}
+
+/* превью кабинета: плотнее заполняет панель */
+.gate__mock{gap:16px}
+.gate__cell{min-height:86px;align-content:space-between}
+.gate__row{padding:15px 14px}
+
+
+/* ===== v7.4 drawer stack ===== */
+/* порядок слоёв внутри .page: подложка 50 < шторка 55 < шапка */
+.drawer{z-index:55}
+
+/* кнопка аккаунта в меню: на всю ширину и вторичным стилем */
+.acct--drawer{display:block;width:100%}
+.acct--drawer .acct__guest{display:grid;grid-template-columns:1fr;gap:8px;width:100%}
+.acct--drawer .acct__guest .btn{width:100%;height:48px;border-radius:14px;font-size:14.5px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.12);box-shadow:none;color:#fff}
+.acct--drawer .acct__guest .btn:hover{background:rgba(124,58,237,.14);border-color:rgba(168,85,247,.34);transform:none}
+
+
+/* ---------------------------------------------------------------- round 8 --
+ * Sign-up and password recovery (/register/, /recover/).
+ *
+ * Only additive: every rule here is either a new class or a modifier of an
+ * existing one, so the login page keeps rendering exactly as before.
+ */
+.auth-card--solo{max-width:520px;margin:0 auto}
+.reg-steps{display:flex;gap:8px;margin:0 0 18px;padding:0;list-style:none}
+.reg-steps__item{flex:1;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:rgba(255,255,255,.42);padding-top:9px;border-top:2px solid rgba(255,255,255,.10);transition:color .18s,border-color .18s}
+.reg-steps__item.is-on{color:#cbb8ff;border-top-color:#8b5cf6}
+/* Turnstile renders into this box asynchronously; the reserved height stops the
+ * form from jumping once the widget appears. */
+.captcha{margin:14px 0 4px;min-height:66px}
+.input--code{font-size:22px;letter-spacing:.34em;text-align:center;font-variant-numeric:tabular-nums}
+.auth-status{display:flex;align-items:center;gap:10px;margin:14px 0;font-size:13px;color:rgba(255,255,255,.72)}
+.notice--warn{display:block;border:1px solid rgba(240,181,103,.32);background:rgba(240,181,103,.09);color:#f3d3a5;border-radius:12px;padding:11px 13px;font-size:12.5px;line-height:1.45}
+.icon-badge--ok{border-color:rgba(94,231,163,.35);background:rgba(94,231,163,.12);color:#a9f0c8}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.06em}
+.choice{display:flex;gap:10px;margin:6px 0 2px}
+.choice__opt{flex:1;display:flex;align-items:center;gap:9px;cursor:pointer;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);border-radius:12px;padding:11px 12px;font-size:13px;color:rgba(255,255,255,.8);transition:border-color .16s,background .16s}
+.choice__opt:hover{border-color:rgba(139,92,246,.42);background:rgba(139,92,246,.07)}
+.choice__opt input{accent-color:#8b5cf6;margin:0}
+@media (max-width:560px){.reg-steps__item{font-size:10px}.input--code{font-size:19px;letter-spacing:.26em}.choice{flex-direction:column}}
+
+/* ---------------------------------------------------------------- round 9 --
+ * The captcha slot, and the three-mode /login/ card.
+ */
+
+/* The captcha was invisible in practice, and this is why: the slot reserved
+ * height but had no frame, no caption and no stacking context. So whenever
+ * Turnstile rendered nothing - an invisible-type sitekey, a blocked script, an
+ * unsupported `size` value - the box was indistinguishable from empty space,
+ * while the form still refused to submit with "complete the anti-bot check".
+ * The slot is now always a visible, labelled box: if the widget is missing,
+ * you can at least see that something is missing. */
+.captcha{position:relative;isolation:isolate;z-index:2;display:flex;align-items:center;justify-content:center;min-height:74px;margin:16px 0 6px;padding:10px;border:1px solid rgba(255,255,255,.12);border-radius:14px;background:rgba(255,255,255,.03)}
+.captcha[hidden]{display:none}
+.captcha__cap{display:block;margin:14px 0 -6px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:rgba(255,255,255,.46)}
+.captcha__note{margin:8px 0 0;font-size:12.5px;line-height:1.45;color:#f3d3a5}
+.captcha__note[hidden]{display:none}
+/* Turnstile's own iframe is 300x65 at size:normal. Clamp it so a narrow card
+ * shrinks it instead of letting it overflow the form silently. */
+.captcha iframe{max-width:100%}
+@media (max-width:400px){.captcha{padding:6px;min-height:70px}}
+
+/* Three tabs instead of two. The indicator is positioned from measurements in
+ * login.js now, so there is deliberately no fixed 50% width here: a hard-coded
+ * fraction is what sent it off the edge as soon as a third tab appeared. */
+.auth-tabs__ind{will-change:transform,width}
+.auth-tab{white-space:nowrap}
+@media (max-width:560px){.auth-tab{font-size:12.5px;padding-left:7px;padding-right:7px}}
+
+/* ==========================================================================
+   РАУНД 9 (2.2) — «Безопасность аккаунта» в кабинете /app/.
+   Формы лежат внутри dash-card, поэтому берут её типографику и отступы;
+   здесь только раскладка переключателей и рамка раскрытой формы, чтобы было
+   видно, где заканчивается карточка и начинается действие.
+   ========================================================================== */
+.sec-actions {
+  margin-top: 14px;
+}
+
+.sec-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sec-tabs .btn.is-active {
+  border-color: color-mix(in srgb, var(--brand, #7c5cf6) 55%, transparent);
+  background: color-mix(in srgb, var(--brand, #7c5cf6) 14%, transparent);
+  color: inherit;
+}
+
+.sec-form {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.sec-form[hidden] {
+  display: none;
+}
+
+.sec-form .field + .field {
+  margin-top: 10px;
+}
+
+.sec-form .btn {
+  margin-top: 12px;
+}
+
+.sec-form .auth-msg:empty {
+  display: none;
+}
+
+.sec-form .dash-note {
+  margin-bottom: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   РАУНД 17 — вход и регистрация
+   --------------------------------------------------------------------------- */
+
+/* Вкладка «Восстановление» и полоска шагов остались в разметке ради скриптов,
+   но рисоваться не должны. Без этих двух правил атрибут hidden бесполезен: у
+   обоих элементов есть собственный display (flex/grid), а он сильнее hidden. */
+.auth-tabs .auth-tab[hidden]{display:none}
+.reg-steps[hidden]{display:none}
+
+/* Полоса вкладок теперь на два элемента, а не на три. */
+.auth-tabs--pair{grid-template-columns:1fr 1fr}
+
+/* Правая панель — та же композиция, что в окне входа Windows-клиента. */
+.auth-hero{display:grid;gap:22px;align-content:start;position:relative;overflow:hidden}
+.auth-hero__copy{position:relative;z-index:2}
+.auth-hero__title{margin:0 0 10px;font-size:clamp(24px,2.4vw,32px);line-height:1.14;font-weight:680;letter-spacing:-.01em}
+.auth-hero__sub{margin:0;max-width:34ch;font-size:14px;line-height:1.6;color:var(--text-2,rgba(255,255,255,.62))}
+
+/* Планета: диск, подсветка и две орбиты — только градиенты. Ни одного байта
+   картинки и ни одного кадра canvas, поэтому панель ничего не грузит и не
+   считает. aspect-ratio держит круг круглым на любой ширине. */
+.auth-hero__stage{position:relative;height:clamp(190px,22vw,268px);margin:2px -8px -6px}
+.auth-hero__glow,
+.auth-hero__globe,
+.auth-hero__orbit{position:absolute;top:50%;left:50%;aspect-ratio:1;border-radius:50%}
+.auth-hero__glow{width:118%;transform:translate(-50%,-50%);background:radial-gradient(circle at 50% 50%,rgba(124,92,246,.40),rgba(124,92,246,.10) 46%,transparent 68%)}
+.auth-hero__globe{
+  width:min(72%,232px);transform:translate(-50%,-50%);
+  background:
+    radial-gradient(circle at 30% 26%,rgba(255,255,255,.32),transparent 42%),
+    radial-gradient(circle at 68% 74%,rgba(56,189,248,.32),transparent 52%),
+    radial-gradient(circle at 50% 50%,#3a2a7a 0%,#241a4d 58%,#140f2a 100%);
+  box-shadow:inset 0 0 46px rgba(5,4,10,.70),0 22px 60px rgba(10,6,26,.55),0 0 0 1px rgba(168,85,247,.22)
+}
+.auth-hero__orbit{border:1px solid rgba(168,85,247,.26)}
+.auth-hero__orbit--a{width:min(94%,300px);transform:translate(-50%,-50%) rotate(-18deg) scaleY(.30)}
+.auth-hero__orbit--b{width:min(114%,356px);border-color:rgba(56,189,248,.20);transform:translate(-50%,-50%) rotate(14deg) scaleY(.22)}
+
+/* Три строки о продукте — как в exe под планетой. */
+.auth-hero__list{list-style:none;margin:0;padding:0;display:grid;gap:12px;position:relative;z-index:2}
+.auth-hero__row{display:grid;grid-template-columns:20px 1fr;align-items:start;gap:12px;font-size:13.5px;line-height:1.5}
+.auth-hero__row svg{width:20px;height:20px;margin-top:1px;color:var(--violet-light,#c4b5fd)}
+.auth-hero__row span{color:rgba(255,255,255,.80)}
+
+@media (max-width:900px){
+  /* На узком экране планета только отодвигает форму вниз. */
+  .auth-hero__stage{display:none}
+  .auth-hero__sub{max-width:none}
+}
+
+/* ===================== МЕГА-СПРИНТ, БЛОК B: космическая сцена входа ===================== */
+/* Старая планета (.auth-hero__stage и три градиентных span) остаётся в файле:
+   её всё ещё использует английская страница и окно привязки устройства. Здесь только
+   оправа для canvas-сцены: размер, свечение и поведение на узких экранах.
+   Порог скрытия — те же 900px, что у старого stage: выше в файле .auth-split уже
+   схлопывается в одну колонку с max-width:520px, то есть форма сама встаёт по центру. */
+.auth-hero--cosmic{
+  background:
+    radial-gradient(120% 95% at 76% 4%,rgba(124,58,237,.30),transparent 60%),
+    radial-gradient(95% 75% at 10% 96%,rgba(94,231,163,.10),transparent 58%),
+    linear-gradient(180deg,#0b0818 0%,#07060e 100%);
+}
+.auth-hero--cosmic .auth-hero__copy{position:relative;z-index:2}
+
+/* Плашка «сеть на связи»: та же роль, что у статуса в окне входа Cloudflare —
+   показать, что сервис жив, ещё до ввода пароля. */
+.auth-hero__badge{display:inline-flex;align-items:center;gap:8px;margin:0 0 10px;padding:5px 11px;border-radius:999px;border:1px solid rgba(94,231,163,.26);background:rgba(94,231,163,.09);color:#9defc4;font-size:11.5px;font-weight:var(--fw-medium);letter-spacing:.01em}
+.auth-hero__pulse{width:7px;height:7px;border-radius:50%;background:#5ee7a3;box-shadow:0 0 0 0 rgba(94,231,163,.55);animation:gluk-cosmos-pulse 2.4s var(--ease-soft) infinite}
+@keyframes gluk-cosmos-pulse{
+  0%{box-shadow:0 0 0 0 rgba(94,231,163,.5)}
+  70%{box-shadow:0 0 0 9px rgba(94,231,163,0)}
+  100%{box-shadow:0 0 0 0 rgba(94,231,163,0)}
+}
+
+/* Сцена. Высота в clamp, а не aspect-ratio: панель стоит рядом с карточкой формы,
+   и её высота не должна тянуться за шириной колонки. */
+.auth-cosmos{position:relative;height:clamp(260px,30vw,380px);margin:6px -8px -2px;isolation:isolate}
+.auth-cosmos__canvas{display:block;width:100%;height:100%;border-radius:20px}
+/* Виньетка: края canvas гаснут, поэтому звёздное поле не обрезается резкой
+   линией, а уходит в фон панели. */
+.auth-cosmos__veil{position:absolute;inset:0;pointer-events:none;border-radius:20px;background:
+  radial-gradient(120% 100% at 50% 50%,transparent 52%,rgba(7,6,14,.55) 84%,rgba(7,6,14,.9) 100%)}
+/* Орбита поверх сцены — единственный декор, который дешевле сделать CSS-ом,
+   чем считать каждый кадр. */
+.auth-cosmos__ring{position:absolute;top:50%;left:50%;width:min(78%,300px);aspect-ratio:1;transform:translate(-50%,-50%) rotate3d(1,.35,0,74deg);border:1px solid rgba(196,181,253,.20);border-radius:50%;pointer-events:none;animation:gluk-cosmos-orbit 26s linear infinite}
+@keyframes gluk-cosmos-orbit{
+  from{transform:translate(-50%,-50%) rotate3d(1,.35,0,74deg) rotate(0)}
+  to{transform:translate(-50%,-50%) rotate3d(1,.35,0,74deg) rotate(360deg)}
+}
+
+@media (max-width:900px){
+  /* Форма остаётся по центру, сцена уходит совсем: canvas на телефоне только
+     отодвигал бы поля вниз и грел батарею. login.js видит display:none и
+     вовсе не монтирует сцену. */
+  .auth-cosmos{display:none}
+  .auth-hero--cosmic{background:linear-gradient(180deg,rgba(30,21,52,.72),rgba(11,8,22,.78))}
+}
+@media (prefers-reduced-motion:reduce){
+  .auth-cosmos__ring,.auth-hero__pulse{animation:none}
+}
+
+/* ===================== БЛОК B: капча — обновление и узкие экраны ===================== */
+/* Строка над слотом: подпись слева, кнопка ⟳ справа. Разметку строит register.js,
+   поэтому при выключенной капче пустого заголовка не остаётся. */
+.captcha__head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0 -6px}
+.captcha__head .captcha__cap{margin:0}
+.captcha__refresh{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;flex:0 0 auto;padding:0;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:var(--violet-light);cursor:pointer;transition:border-color var(--t-fast) var(--ease-soft),background var(--t-fast) var(--ease-soft),color var(--t-fast) var(--ease-soft)}
+.captcha__refresh:hover{border-color:rgba(139,92,246,.55);background:rgba(139,92,246,.14);color:#fff}
+.captcha__refresh:focus-visible{outline:2px solid var(--violet);outline-offset:2px}
+.captcha__refresh svg{width:16px;height:16px;display:block}
+.captcha__refresh.is-spin svg{animation:gluk-captcha-spin .64s var(--ease-soft)}
+@keyframes gluk-captcha-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.captcha__refresh.is-spin svg{animation:none}}
+
+/* Мобильная адаптация. Виджет Turnstile — жёсткие 300×65 в iframe: на экране 320px
+   с паддингами карточки он вылезал за край. max-width сам iframe не сжимает
+   содержимое, поэтому на самых узких масштабируем блок целиком. */
+.captcha{overflow:hidden}
+@media (max-width:380px){
+  .captcha{padding:6px 4px}
+  .captcha>div{transform:scale(.9);transform-origin:center center}
+  .captcha__head{margin-bottom:-4px}
+}
+
+/* Бейджики уровня подписки рядом с ником. Одни и те же цвета в кабинете,
+   в ПК-версии, на телефоне и в расширении: серый Free, синий Basic,
+   фиолетовый Pro и бирюзово-фиолетовый β Pro — тариф внутренний, потому и
+   цвет у него намеренно не из общего ряда. */
+.gl-badge{position:relative;display:inline-flex;align-items:center;gap:6px;height:27px;padding:0 11px 0 8px;border-radius:999px;--gb-h:224;--gb-c:10%;--gb-l:74%;color:hsl(var(--gb-h) var(--gb-c) var(--gb-l));border:1px solid hsl(var(--gb-h) var(--gb-c) var(--gb-l)/.32);background:hsl(var(--gb-h) var(--gb-c) var(--gb-l)/.10);font-size:12px;font-weight:640;line-height:1;white-space:nowrap;vertical-align:middle;flex:none;user-select:none}
+.gl-badge::before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 1px 0 hsl(var(--gb-h) 100% 95%/.09);pointer-events:none}
+/* Иконка живёт в своём флекс-боксе фиксированного размера: так глиф садится
+   строго по центру бейджика, а не «на глаз» через line-height. */
+.gl-badge__ic{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex:none}
+.gl-badge svg{width:16px;height:16px;display:block;overflow:visible;flex:none}
+.gl-badge--sm{height:23px;padding:0 9px 0 7px;gap:5px;font-size:11px}
+.gl-badge--sm .gl-badge__ic,.gl-badge--sm svg{width:14px;height:14px}
+.gl-badge--free{--gb-h:224;--gb-c:10%;--gb-l:74%}
+.gl-badge--basic{--gb-h:215;--gb-c:90%;--gb-l:70%}
+.gl-badge--pro{--gb-h:266;--gb-c:84%;--gb-l:75%}
+.gl-badge--beta{--gb-h:172;--gb-c:70%;--gb-l:62%;border-color:hsl(266 60% 72%/.34);background:linear-gradient(120deg,hsl(172 70% 62%/.15),hsl(266 84% 75%/.16))}
+.acct__head .gl-badge{margin-left:auto}
+/* В узкой шапке имя и так обрезается — бейджик остаётся в меню. */
+@media (max-width:560px){.acct__chip .gl-badge{display:none}}
+
+/* ADMIN-бейдж в кабинете. Живёт здесь, а не в dashboard.css, потому что
+   токен того файла закреплён тестом сайта; auth.css грузится на тех же
+   страницах и уже с свежим токеном. Два класса в селекторе — чтобы
+   перебить базовый .dash-badge из dashboard.css. */
+.dash-badges .dash-badge--admin{color:#f0b95f;border-color:rgba(240,185,95,.34);background:rgba(240,185,95,.12)}
+.dash-badges .dash-badge--admin svg{opacity:1}

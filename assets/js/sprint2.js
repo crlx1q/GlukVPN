@@ -1,0 +1,229 @@
+/* Sprint 2 web control-plane UI: active map, device slots, service state and analytics. */
+(function () {
+  "use strict";
+  var D=window.GlukDashboard, generation=0, identity='', lastMap=null;
+  var A, EN = (document.documentElement.getAttribute("data-lang") || "ru") === "en";
+  var tr = function (ru, en) { return EN ? en : ru; };
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var esc = function (v) { return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); };
+  var state = { mapBusy:false, devicesBusy:false, analyticsBusy:false, period:"day", domainsOpen:false, lastAnalytics:null, modalOpen:false, lastFocus:null, poll:null, nodes:[] };
+  var platformIcon={};['android','windows','ios','macos','linux','extension','other'].forEach(function(p){platformIcon[p]=D.deviceIcon(p);});
+
+  function kind(p) { p=String(p||"").toLowerCase(); if(/android/.test(p))return"android";if(/win/.test(p))return"windows";if(/ios|iphone|ipad/.test(p))return"ios";if(/mac|darwin/.test(p))return"macos";if(/linux/.test(p))return"linux";if(/ext|chrome|browser/.test(p))return"extension";return"other"; }
+  function bytes(n) { if(n==null||!Number.isFinite(Number(n))||Number(n)<0)return '—'; n=Number(n); var u=["B","KB","MB","GB","TB"];var i=0;while(n>=1024&&i<4){n/=1024;i++;}return (i?(n>=100?Math.round(n):n.toFixed(1)):Math.round(n))+" "+u[i]; }
+  function duration(n) { n=Math.max(0,Number(n)||0);var h=Math.floor(n/3600),m=Math.floor(n%3600/60);return h?h+tr(" ч ","h ")+m+tr(" мин","m"):Math.max(1,m)+tr(" мин","m"); }
+  function when(v) { var d=new Date(v);if(!v||isNaN(d))return"—";return d.toLocaleString(EN?"en-GB":"ru-RU",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",timeZone:"UTC"})+" UTC"; }
+  function safeUrl(v) { try { var u=new URL(v,location.href);return u.protocol==="https:"?u.href:""; } catch(e){return"";} }
+  function human(e, fallback) { if(!e)return fallback;if(e.status===0)return tr("Нет связи с сервером. Проверьте интернет и повторите.","Cannot reach the service. Check your connection and retry.");if(e.status===401)return tr("Сессия истекла. Войдите снова.","Your session expired. Sign in again.");if(e.status===403)return e.message||tr("Доступ ограничен.","Access forbidden.");if(e.status===429)return tr("Слишком много запросов. Подождите минуту и повторите.","Too many requests. Wait a minute and retry.");if(e.status>=500)return tr("Сервис временно недоступен. Повторите позже.","The service is temporarily unavailable. Retry later.");return e.message||fallback; }
+  function errorBox(target, text, retry) { if(!target)return;target.innerHTML='<div class="s2-state s2-state--error"><span aria-hidden="true">!</span><div><b>'+esc(text)+'</b><button type="button" data-s2-retry="'+esc(retry||"")+'">'+esc(tr("Повторить","Retry"))+'</button></div></div>'; }
+
+  function inject() {
+    var dash=$(".dash-in"); if(!dash||dash.hasAttribute("data-s2-mounted"))return;dash.setAttribute("data-s2-mounted","");
+    var root=document.createElement("div");root.setAttribute("data-s2-root","");
+    root.innerHTML='<div class="s2-service" data-s2-service hidden role="status" aria-live="polite"></div>'+
+      '<section class="dash-card s2-analytics" data-s2-analytics><div class="dash-card__head"><h2 class="dash-card__title"><span aria-hidden="true">⌁</span>'+esc(tr("Аналитика трафика","Traffic analytics"))+'</h2><div class="s2-tabs" role="group"><button data-s2-period="day">'+esc(tr("День","Day"))+'</button><button data-s2-period="week">'+esc(tr("Неделя","Week"))+'</button><button data-s2-period="month">'+esc(tr("Месяц","Month"))+'</button></div></div><div data-s2-analytics-body><div class="s2-skeleton"></div></div></section>'+
+      '<div class="s2-modal" data-s2-modal hidden><div class="s2-backdrop" data-s2-close></div><section class="s2-dialog" role="dialog" aria-modal="true" aria-labelledby="s2-device-title" tabindex="-1"><button class="s2-close" type="button" data-s2-close aria-label="'+esc(tr("Закрыть","Close"))+'">×</button><h2 id="s2-device-title">'+esc(tr("Устройства аккаунта","Account devices"))+'</h2><p>'+esc(tr("Удаление сразу завершает VPN-сессию этого устройства. Подтверждение для каждой строки не показывается.","Removing a device immediately ends its VPN session. There is no extra confirmation per row."))+'</p><div data-s2-device-body><div class="s2-skeleton"></div></div></section></div>';
+    dash.insertBefore(root.firstChild,dash.firstChild);while(root.firstChild)dash.appendChild(root.firstChild);
+    var analytics=$('[data-s2-analytics]');if(analytics)dash.insertBefore(analytics,$('.dash-grid',dash));
+    var heads=$$(".dash-card__head");heads.forEach(function(h){if($("[data-dash-devices]",h.parentNode)&&!$("[data-s2-manage]",h)){var b=document.createElement("button");b.type="button";b.className="btn btn--ghost btn--sm";b.setAttribute("data-s2-manage","");b.textContent=tr("Управлять","Manage");h.appendChild(b);}});
+    var legend=$(".dash-map__legend");if(legend){var n=document.createElement("span");n.setAttribute("data-s2-map-note","");n.textContent=tr("Загрузка живых подключений…","Loading live connections…");legend.appendChild(n);}
+  }
+
+  function service(data) { var el=$("[data-s2-service]");if(!el)return;var maintenance=!!(data&&data.maintenance);el.hidden=!maintenance;if(maintenance)el.innerHTML='<span aria-hidden="true">⚠</span><div><b>'+esc(tr("Технические работы","Service maintenance"))+'</b><span>'+esc(tr("Новые VPN-подключения могут быть временно недоступны. Веб-кабинет не создаёт VPN-туннель.","New VPN connections may be temporarily unavailable. This web dashboard does not create a VPN tunnel."))+'</span></div>'; }
+  function loadService(){if(!A||!A.public)return;D.request(A,'/api/service/status',null,true).then(service,function(){});}
+  function loadNodes(){if(!A||!A.public)return Promise.resolve();return D.request(A,'/api/nodes',null,true).then(function(raw){state.nodes=(raw&&Array.isArray(raw.nodes)?raw.nodes:Array.isArray(raw)?raw:[]).filter(function(n){return n&&n.location;});},function(){state.nodes=[];});}
+
+  function openModal() { var m=$("[data-s2-modal]");if(!m)return;state.lastFocus=document.activeElement;state.modalOpen=true;m.hidden=false;document.body.classList.add("s2-no-scroll");$(".s2-dialog",m).focus();loadDevices(); }
+  function closeModal() { var m=$("[data-s2-modal]");if(!m)return;state.modalOpen=false;m.hidden=true;document.body.classList.remove("s2-no-scroll");if(state.lastFocus&&state.lastFocus.focus)state.lastFocus.focus(); }
+  function normalizeDevice(d){return{id:d.id||d.deviceId||"",name:d.deviceName||d.name||tr("Устройство","Device"),platform:d.platform||"",last:d.lastSeen||d.lastSeenAt||null,node:d.connectedNode||null,status:String(d.status||"").toUpperCase(),connected:d.connected===true};}
+  function nodeName(n){if(!n)return tr("Узел не указан","Node unavailable");return [n.name||n.country,n.city].filter(Boolean).join(" · ")||tr("Узел","Node");}
+  function renderDevices(raw){var body=$("[data-s2-device-body]");if(!body)return;var list=(raw&&Array.isArray(raw.devices)?raw.devices:[]).map(normalizeDevice);var max=raw&&raw.maxDevices!=null?raw.maxDevices:((A.state.user||{}).maxDevices??'—');if(!list.length){body.innerHTML='<div class="s2-state"><span aria-hidden="true">◇</span><b>'+esc(tr("Активных устройств нет","No active devices"))+'</b></div>';return;}body.innerHTML='<div class="s2-slots"><b>'+esc(tr("Занято слотов","Slots used"))+': '+list.length+' / '+max+'</b><span>'+esc(tr("Веб-кабинет не занимает слот устройства.","The web dashboard does not occupy a device slot."))+'</span></div><ul class="s2-device-list">'+list.map(function(d){var k=kind(d.platform);return '<li><span class="s2-platform" aria-hidden="true">'+platformIcon[k]+'</span><div><b>'+esc(d.name)+'</b><span>'+esc(d.platform||tr("Неизвестная платформа","Unknown platform"))+' · '+esc(when(d.last))+'</span><span>'+esc(d.connected?nodeName(d.node):tr("Не подключено","Not connected"))+' · '+esc(d.status||tr("Активно","Active"))+'</span></div><button type="button" class="s2-off" data-s2-off="'+esc(sessionFor(d.id)||'')+'" data-s2-dev="'+esc(d.id)+'" '+(sessionFor(d.id)||d.connected?"":"disabled")+'>'+esc(tr("Отключить","Disconnect"))+'</button><button type="button" data-s2-delete="'+esc(d.id)+'" '+(d.id?"":"disabled")+'>'+esc(tr("Удалить","Remove"))+'</button></li>';}).join("")+'</ul>';}
+  function loadDevices(){if(state.devicesBusy||!A||!A.call||!A.isAuthed())return;var version=generation;state.devicesBusy=true;var body=$("[data-s2-device-body]");if(body)body.innerHTML='<div class="s2-skeleton"></div>';D.request(A,"/api/devices").then(function(data){if(version===generation&&A.isAuthed())renderDevices(data);},function(e){if(version!==generation||!A.isAuthed())return;errorBox(body,human(e,tr("Не удалось загрузить устройства.","Could not load devices.")),"devices");}).then(function(){if(version===generation)state.devicesBusy=false;});}
+  function removeDevice(id,btn){if(!id||!A||!A.call)return;btn.disabled=true;btn.textContent=tr("Удаляем…","Removing…");D.request(A,"/api/devices/"+encodeURIComponent(id),{method:"DELETE"}).then(function(){document.dispatchEvent(new Event('gluk:devices-changed'));return Promise.all([loadMap(true),new Promise(function(resolve){state.devicesBusy=false;loadDevices();resolve();})]);},function(e){btn.disabled=false;btn.textContent=tr("Удалить","Remove");var body=$("[data-s2-device-body]");var note=document.createElement("div");note.className="s2-inline-error";note.textContent=human(e,tr("Не удалось удалить устройство. Повторите.","Could not remove the device. Retry."));body.insertBefore(note,body.firstChild);});}
+
+  // id сессии берём из живой карты: /api/devices его не отдаёт, а без него
+  // нечего гасить — тогда кнопка «Отключить» просто неактивна.
+  function sessionFor(id){var rows=(lastMap&&Array.isArray(lastMap.devices))?lastMap.devices:[];for(var i=0;i<rows.length;i++){var r=rows[i];if(r&&String(r.id)===String(id)&&r.sessionId&&r.status==="ACTIVE")return String(r.sessionId);}return null;}
+  function afterDeviceChange(){document.dispatchEvent(new Event('gluk:devices-changed'));state.devicesBusy=false;loadDevices();return loadMap(true);}
+  // «Отключить» гасит только туннель: устройство остаётся в аккаунте.
+  function disconnectDevice(sessionId,btn,deviceId){if((!sessionId&&!deviceId)||!A||!A.call)return;btn.disabled=true;btn.textContent=tr("Отключаем…","Disconnecting…");var body=sessionId?{sessionId:sessionId}:{deviceId:deviceId};D.request(A,"/api/vpn/disconnect",{method:"POST",body:body}).then(afterDeviceChange,function(e){btn.disabled=false;btn.textContent=tr("Отключить","Disconnect");var b=$("[data-s2-device-body]");if(!b)return;var note=document.createElement("div");note.className="s2-inline-error";note.textContent=human(e,tr("Не удалось отключить устройство. Повторите.","Could not disconnect the device. Retry."));b.insertBefore(note,b.firstChild);});}
+  // Хук для панели устройств на карте (account-map-ui.js): там нет
+  // авторизованного клиента, поэтому запросы делаем здесь.
+  D.deviceAction=function(action,payload){
+   var p=payload||{};
+   if(!A||!A.call)return Promise.reject(tr("Нет сессии","No session"));
+   var step=(p.sessionId||p.deviceId)?D.request(A,"/api/vpn/disconnect",{method:"POST",body:p.sessionId?{sessionId:p.sessionId}:{deviceId:p.deviceId}}):Promise.resolve();
+   if(action==="signout"){
+    if(!p.deviceId)return Promise.reject(tr("Устройство не найдено","Device not found"));
+    // Падение первого шага не блокирует второй: удаление устройства
+    // всё равно закрывает его сессии на сервере.
+    step=step.then(null,function(){}).then(function(){return D.request(A,"/api/devices/"+encodeURIComponent(p.deviceId),{method:"DELETE"});});
+   }
+   return step.then(afterDeviceChange,function(e){return Promise.reject(human(e,tr("Не получилось — попробуйте ещё раз","That did not work — try again")));});
+  };
+
+  function mapXY(loc,w,h){return{x:((loc.lon+180)/360)*w,y:((90-loc.lat)/180)*h};}
+  function restrictionLabel(r){var labels={bittorrent:tr("BitTorrent ограничен","BitTorrent restricted"),smtp25:tr("SMTP 25 ограничен","SMTP 25 restricted"),p2p_ports:tr("P2P-порты ограничены","P2P ports restricted")};return labels[r.code]||r.label||r.value||tr("Ограничение сети","Network restriction");}
+  function drawMap(data){if(D.drawAccountMap){D.drawAccountMap(data);service(data.service);return;}var canvas=$("[data-dash-map]");var overlay=$("[data-dash-pins]");var note=$("[data-s2-map-note]");if(!canvas||!overlay)return;if(canvas._glukMap&&canvas._glukMap.stop)canvas._glukMap.stop();var r=canvas.getBoundingClientRect(),w=Math.max(320,Math.round(r.width)),h=Math.max(180,Math.round(r.height)),dpr=Math.min(devicePixelRatio||1,2);canvas.width=w*dpr;canvas.height=h*dpr;var c=canvas.getContext("2d");if(!c)return;c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,w,h);var grd=c.createRadialGradient(w*.5,0,0,w*.5,0,w);grd.addColorStop(0,"rgba(124,77,234,.2)");grd.addColorStop(1,"rgba(8,5,18,.7)");c.fillStyle=grd;c.fillRect(0,0,w,h);c.fillStyle="rgba(139,124,246,.25)";var land=window.GLUK_WORLD_DOTS;if(land){var dots=atob(land.packed);for(var j=0;j<dots.length;j+=2){c.fillRect(dots.charCodeAt(j)/2/land.vbW*w,dots.charCodeAt(j+1)*land.yStep/land.vbH*h,1.5,1.5);}}
+    var devices=(data.devices||[]).filter(function(d){return d.status==='ACTIVE';}), placed=0, unknown=0,nodes={},routes=[];state.nodes.forEach(function(n){if(n.id)nodes[n.id]=n;});devices.forEach(function(d){if(d.node&&d.node.id)nodes[d.node.id]=d.node;if(!d.origin||!d.node||!d.node.location){unknown++;return;}placed++;var a=mapXY(d.origin,w,h),b=mapXY(d.node.location,w,h),ctrl={x:(a.x+b.x)/2,y:Math.min(a.y,b.y)-Math.abs(b.x-a.x)*.12};routes.push({a:a,b:b,c:ctrl});});
+    overlay.innerHTML='<svg class="s2-routes" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none" aria-hidden="true">'+routes.map(function(r){return '<path d="M'+r.a.x.toFixed(1)+' '+r.a.y.toFixed(1)+' Q'+r.c.x.toFixed(1)+' '+r.c.y.toFixed(1)+' '+r.b.x.toFixed(1)+' '+r.b.y.toFixed(1)+'"/>';}).join("")+'</svg>';function pin(loc,html,cls,title){if(!loc)return;var p=mapXY(loc,w,h),el=document.createElement("button");el.type="button";el.className="dash-pin "+cls;el.style.left=(p.x/w*100)+"%";el.style.top=(p.y/h*100)+"%";el.innerHTML=html;el.title=title;el.setAttribute("aria-label",title);overlay.appendChild(el);}devices.forEach(function(d){if(!d.origin)return;pin(d.origin,'<span aria-hidden="true">'+platformIcon[kind(d.platform)]+'</span>'+esc(d.deviceName),"dash-pin--device",d.deviceName+" · "+(d.platform||tr("устройство","device"))+" · "+nodeName(d.node)+" · "+duration(d.durationSec));});Object.keys(nodes).forEach(function(id){var n=nodes[id];var restrictions=(n.restrictions||[]).map(restrictionLabel);pin(n.location,'<span aria-hidden="true">▣</span>'+esc(n.name||n.city||n.country)+(restrictions.length?'<em class="s2-restrict" aria-label="'+esc(tr("Ограничения","Restrictions"))+': '+restrictions.length+'">'+restrictions.length+'</em>':'')+(n.maintenance||String(n.status||"").toUpperCase()==="MAINTENANCE"?'<em class="s2-restrict">!</em>':''),"dash-pin--node"+(n.maintenance||String(n.status||"").toUpperCase()==="MAINTENANCE"?" dash-pin--maintenance":""),nodeName(n)+(restrictions.length?" · "+restrictions.join(", "):"")+(n.maintenance?" · "+tr("технические работы","maintenance"):""));});if(note)note.textContent=(data.activeTunnels||devices.length)+" "+tr("активн. · ","live · ")+(unknown?unknown+" "+tr("без координат","without location"):tr("все позиции приблизительные","all positions approximate"));service(data.service);}
+  function loadMap(force){if(state.mapBusy||!A||!A.call||!A.isAuthed()||document.hidden&&!force)return Promise.resolve();var version=generation;state.mapBusy=true;return D.request(A,"/api/user/active-map").then(function(data){if(version!==generation||!A.isAuthed())return;lastMap=data||{};D.live(data);drawMap(lastMap);var wait=Math.max(3000,Math.min(30000,Number(data&&data.pollAfterMs)||5000));clearTimeout(state.poll);state.poll=setTimeout(loadMap,wait);},function(e){if(version!==generation||!A.isAuthed())return;D.live(null);lastMap=null;var pins=$('[data-dash-pins]');if(pins)pins.innerHTML='';var note=$("[data-s2-map-note]");var details=$('[data-map-detail]');if(details)details.textContent='';if(note)note.textContent=human(e,tr("Живая карта недоступна. Повторите.","Live map unavailable. Retry."));clearTimeout(state.poll);state.poll=setTimeout(loadMap,10000);}).then(function(){if(version===generation)state.mapBusy=false;});}
+
+  // ФОТО 5: две плавные волны — «получено» и «отправлено» — вместо частокола
+  // столбиков, который на неделе и месяце был нечитаем. Цифры серверные,
+  // границы бакетов и подписи — UTC, как и было.
+  // Бейдж «↑ +12 %». Проценты считает сервер (trend), сайт их не пересчитывает
+  // и не показывает вовсе, когда trend.comparable=false: сравнивать не с чем.
+  function trendBadge(pct){
+    if(typeof pct!=="number"||!isFinite(pct))return"";
+    var cls=pct>0?"is-up":pct<0?"is-down":"is-flat",arrow=pct>0?"↑ +":pct<0?"↓ −":"→ ";
+    return'<em class="s2-trend '+cls+'" title="'+esc(tr("К предыдущему периоду той же длины","Versus the previous period of the same length"))+'">'+arrow+Math.abs(pct)+'%</em>';
+  }
+  // Спарклайн — тот же ряд, что и большой график: одна правда, два масштаба.
+  function spark(vals,cls){
+    var n=vals.length;if(!n)return"";
+    var W=132,H=34,max=Math.max.apply(Math,vals.concat([1])),d="",i,x,y;
+    for(i=0;i<n;i++){x=n<2?0:W*i/(n-1);y=H-3-(vals[i]/max)*(H-6);d+=(i?"L":"M")+x.toFixed(1)+" "+y.toFixed(1);}
+    if(n<2)d+="L"+W+" "+(H-3-(vals[0]/max)*(H-6)).toFixed(1);
+    return'<svg class="s2-spark '+cls+'" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="'+d+'"/></svg>';
+  }
+  // Янтарная плашка о начале наблюдений. Пустота до этой точки — отсутствие
+  // измерений, а не нулевой трафик; молчать об этом нечестно.
+  function coverageNote(coverage){
+    if(!coverage||coverage.partial!==true)return"";
+    var d=coverage.since?new Date(coverage.since):null;
+    var stamp=d&&!isNaN(d.getTime())?d.toISOString().slice(0,16).replace("T"," ")+" UTC":"";
+    var text=stamp?tr("История ведётся с ","History starts at ")+stamp+tr(". За более ранние дни данных нет — это не нулевой трафик.",". Earlier days have no measurements — that is not zero traffic."):tr("Начало наблюдений неизвестно. За более ранние дни данных нет — это не нулевой трафик.","The observation start is unknown. Earlier days have no measurements — that is not zero traffic.");
+    return'<div class="s2-note" role="note"><span aria-hidden="true">!</span><p>'+esc(text)+'</p></div>';
+  }
+  // Пик считает клиент из того же ряда: сервер не должен угадывать, какой
+  // интервал надо подписать. Нулевой пик не подписывается вовсе.
+  function peakNote(series){
+    var best=null;
+    (series||[]).forEach(function(x){var v=(Number(x.downloadBytes)||0)+(Number(x.uploadBytes)||0);if(v>0&&(!best||v>best.v))best={v:v,start:x.start};});
+    return best?'<b class="s2-peak">'+esc(tr("Пик: ","Peak: "))+bytes(best.v)+' — '+esc(when(best.start))+'</b>':"";
+  }
+  // Подзаголовок и честный диапазон окна. Выбора произвольных дат тут нет:
+  // API знает только day|week|month, и рисовать неработающий календарь нельзя.
+  function subhead(data){
+    var s=data.start?new Date(data.start):null,e=data.end?new Date(data.end):null;
+    var day=function(d){return d&&!isNaN(d.getTime())?d.toISOString().slice(0,10):"";};
+    var gran=data.bucketSize==="hour"?tr("по часам","hourly"):tr("по дням","daily");
+    return'<div class="s2-subhead"><p>'+esc(tr("Статистика использования VPN по всем устройствам","VPN usage across all your devices"))+'</p>'+((day(s)&&day(e))?'<span class="s2-range">'+esc(day(s)+" → "+day(e)+" · "+gran+" · UTC")+'</span>':"")+'</div>';
+  }
+  // Подписи оси — до шести равномерных отсчётов, а не три штуки: сутки по
+  // часам и месяц по дням иначе читаются как безымянная полоса. Прореживаем
+  // только подписи: все точки ряда остаются на графике и в тултипах.
+  function tickLabel(v,unit){
+    var d=new Date(v);if(!v||isNaN(d))return"\u2014";
+    var pad=function(x){return(x<10?"0":"")+x;};
+    return unit==="hour"?pad(d.getUTCHours())+":00":pad(d.getUTCDate())+"."+pad(d.getUTCMonth()+1);
+  }
+  function axisTicks(series,unit){
+    var n=series.length,count=Math.min(n,6),out=[],used={},i,idx;
+    for(i=0;i<count;i++){
+      idx=count<2?0:Math.round(i*(n-1)/(count-1));
+      if(used[idx])continue;used[idx]=1;
+      out.push('<span>'+esc(tickLabel(series[idx].start,unit))+'</span>');
+    }
+    return out.join("");
+  }
+  function chart(series,unit){
+    if(!series.length)return'<div class="s2-state"><span aria-hidden="true">⌁</span><b>'+esc(tr("За этот период данных пока нет","No data for this period yet"))+'</b></div>';
+    var W=720,H=200,PL=10,PR=10,PT=14,PB=26,IW=W-PL-PR,IH=H-PT-PB,n=series.length;
+    var dn=series.map(function(x){return Number(x.downloadBytes)||0;});
+    var up=series.map(function(x){return Number(x.uploadBytes)||0;});
+    var max=Math.max.apply(Math,dn.concat(up).concat([1]));
+    var xAt=function(i){return n<2?PL+IW/2:PL+IW*i/(n-1);};
+    var yAt=function(v){return PT+IH-(v/max)*IH;};
+    // Catmull-Rom → кубические Безье: волна, а не ломаная.
+    function path(vals){
+      var pts=vals.map(function(v,i){return{x:xAt(i),y:yAt(v)};});
+      if(pts.length===1)return'M'+PL+' '+pts[0].y.toFixed(1)+'L'+(W-PR)+' '+pts[0].y.toFixed(1);
+      var d='M'+pts[0].x.toFixed(1)+' '+pts[0].y.toFixed(1);
+      for(var i=0;i<pts.length-1;i++){
+        var p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||pts[i+1];
+        var c1x=p1.x+(p2.x-p0.x)/6,c1y=p1.y+(p2.y-p0.y)/6;
+        var c2x=p2.x-(p3.x-p1.x)/6,c2y=p2.y-(p3.y-p1.y)/6;
+        d+='C'+c1x.toFixed(1)+' '+c1y.toFixed(1)+' '+c2x.toFixed(1)+' '+c2y.toFixed(1)+' '+p2.x.toFixed(1)+' '+p2.y.toFixed(1);
+      }
+      return d;
+    }
+    var base=(PT+IH).toFixed(1);
+    function area(vals){return path(vals)+'L'+xAt(n-1).toFixed(1)+' '+base+'L'+xAt(0).toFixed(1)+' '+base+'Z';}
+    var grid='';
+    for(var g=0;g<=2;g++){var gy=(PT+IH*g/2).toFixed(1);grid+='<line class="s2-grid" x1="'+PL+'" y1="'+gy+'" x2="'+(W-PR)+'" y2="'+gy+'"/>';}
+    // Тултипы — HTML-полосы поверх SVG, а не <title> и не SVG-текст:
+    // у графика preserveAspectRatio="none", так что любой текст внутри svg
+    // растянуло бы по ширине. Полоса — цель высотой во всю область,
+    // показывается чистым CSS по :hover/:focus-visible.
+    var bandW=n<2?100:(IW/(n-1))/W*100;
+    var bands=series.map(function(x,i){
+      var cx=xAt(i)/W*100,left=Math.max(0,Math.min(100-bandW,cx-bandW/2)),inner=bandW>0?(cx-left)/bandW*100:50;
+      var side=inner<28?" is-start":inner>72?" is-end":"";
+      var label=when(x.start),dnv=Number(x.downloadBytes)||0,upv=Number(x.uploadBytes)||0;
+      return'<div class="s2-band" tabindex="0" role="img" aria-label="'+esc(label+" · "+tr("получено","downloaded")+" "+bytes(dnv)+" · "+tr("отправлено","uploaded")+" "+bytes(upv))+'" style="left:'+left.toFixed(2)+'%;width:'+bandW.toFixed(2)+'%">'+
+        '<i class="s2-band__x" style="left:'+inner.toFixed(2)+'%"></i>'+
+        '<b class="s2-dot is-dn" style="left:'+inner.toFixed(2)+'%;top:'+(yAt(dnv)/H*100).toFixed(2)+'%"></b>'+
+        '<b class="s2-dot is-up" style="left:'+inner.toFixed(2)+'%;top:'+(yAt(upv)/H*100).toFixed(2)+'%"></b>'+
+        '<div class="s2-tip'+side+'" style="left:'+inner.toFixed(2)+'%"><span>'+esc(label)+'</span><em class="is-dn">↓ '+bytes(dnv)+'</em><em class="is-up">↑ '+bytes(upv)+'</em></div></div>';
+    }).join("");
+    return'<figure class="s2-wave"><div class="s2-wave__stage"><svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" role="img" aria-label="'+esc(tr("График трафика по времени UTC","Traffic chart over time in UTC"))+'">'+
+      '<defs><linearGradient id="s2-grad-dn" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(139,124,246,.55)"/><stop offset="1" stop-color="rgba(139,124,246,0)"/></linearGradient>'+
+      '<linearGradient id="s2-grad-up" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(94,231,163,.45)"/><stop offset="1" stop-color="rgba(94,231,163,0)"/></linearGradient></defs>'+
+      grid+
+      '<path d="'+area(dn)+'" fill="url(#s2-grad-dn)"/>'+
+      '<path d="'+area(up)+'" fill="url(#s2-grad-up)"/>'+
+      '<path class="s2-wave__line s2-wave__line--dn" d="'+path(dn)+'"/>'+
+      '<path class="s2-wave__line s2-wave__line--up" d="'+path(up)+'"/>'+
+      '</svg>'+bands+'</div>'+
+      '<div class="s2-wave__ticks">'+axisTicks(series,unit)+'</div>'+
+      '<figcaption class="s2-wave__axis"><span class="s2-wave__legend"><i class="is-dn"></i>'+esc(tr("Получено","Downloaded"))+'<i class="is-up"></i>'+esc(tr("Отправлено","Uploaded"))+'</span><span>'+esc(tr("время UTC","UTC time"))+'</span></figcaption>'+peakNote(series)+'</figure>';
+  }
+  // Серверов будет больше одного, поэтому месячные траты подписаны
+  // сервером: безымянный блок был бы непонятно чей.
+  function serverLabel(){var list=state.nodes||[];var n=list.filter(function(x){return x&&x.location;})[0]||list[0];return n?nodeName(n):tr("текущий сервер","current server");}
+  // Месячный лимит тарифа — шкала «234 МБ из 5 ГБ». Цифры серверные:
+  // байты считает узел, API складывает их в окне тарифа, сайт только рисует.
+  // Это личный лимит пользователя, а не сервисный бюджет ниже: тот виден только админам.
+  // Рядом с гигабайтами — ширина канала тарифа: сервер отдаёт её в той же
+  // квоте (speedLimitMbps), сайт ничего не вычисляет и не догадывается.
+  // Цвет любой шкалы заполнения: зелёный до половины, жёлтый к 70 %,
+  // красный к 90 % — так человек видит остаток без чтения цифр. Тот же
+  // расчёт стоит в админке, расширении и приложении: одинаковая заполненность
+  // обязана выглядеть одинаково на всех площадках.
+  function quotaHue(p){var v=Math.max(0,Math.min(100,Number(p)||0));if(v<=50)return 142;if(v<=70)return 142+(50-142)*(v-50)/20;if(v<=90)return 50+(6-50)*(v-70)/20;return 6+(0-6)*(v-90)/10;}
+  function quotaColor(p){var h=quotaHue(p).toFixed(1);return'linear-gradient(90deg,hsl('+h+',68%,46%),hsl('+h+',70%,52%))';}
+  function quotaBar(q){if(!q||q.unlimited===true||!(Number(q.limitBytes)>0))return"";var pct=Math.max(0,Math.min(100,Number(q.usedPercent)||0));var over=q.exceeded===true;var speed=Math.round(Number(q.speedLimitMbps)||0);var d=q.resetAt?new Date(q.resetAt):null;var when=d&&!isNaN(d.getTime())?d.toLocaleDateString(tr("ru-RU","en-US"),{day:"numeric",month:"long"}):"\u2014";return'<section class="s2-quota'+(over?' is-over':'')+'"><header><h3>'+esc(tr("Лимит тарифа","Plan allowance"))+'</h3><b>'+bytes(Number(q.usedBytes)||0)+' '+esc(tr("из","of"))+' '+bytes(Number(q.limitBytes)||0)+'</b></header><div class="s2-quotabar" role="img" aria-label="'+esc(tr("Использовано трафика","Traffic used"))+': '+pct.toFixed(1)+'%"><i style="width:'+Math.max(2,pct)+'%;background:'+quotaColor(pct)+'"></i></div><p>'+(over?esc(tr("Лимит израсходован. Подключения возобновятся ","Allowance spent. Connections resume on "))+esc(when):esc(tr("Осталось ","Left "))+bytes(Math.max(0,Number(q.remainingBytes)||0))+' · '+esc(tr("сброс ","resets "))+esc(when))+' · '+pct.toFixed(1)+'%'+(speed?' · '+esc(tr("до "+speed+" Мбит/с","up to "+speed+" Mbit/s")):"")+'</p></section>';}
+  function renderAnalytics(data){state.lastAnalytics=data;var b=$("[data-s2-analytics-body]");if(!b)return;var totals=data.totals||{},budget=data.budget||{},domains=data.domains||{},coverage=data.coverage||{};var devices=data.devices||[],cats=data.categories||[],quota=data.quota||null;var series=data.series||[],trend=data.trend||{};
+    var dnRow=series.map(function(x){return Number(x.downloadBytes)||0;}),upRow=series.map(function(x){return Number(x.uploadBytes)||0;});
+    var allRow=series.map(function(x){return(Number(x.downloadBytes)||0)+(Number(x.uploadBytes)||0);});
+    var badge=function(p){return trend.comparable===true?trendBadge(typeof p==="number"?p:null):"";};
+    b.innerHTML=subhead(data)+quotaBar(quota)+coverageNote(coverage)+'<div class="s2-graph"><div class="s2-total"><div><span>'+esc(tr("Получено","Downloaded"))+'</span><strong class="s2-metric"><b>'+bytes(totals.downloadBytes)+'</b>'+badge(trend.downloadPercent)+'</strong>'+spark(dnRow,"is-dn")+'</div><div><span>'+esc(tr("Отправлено","Uploaded"))+'</span><strong class="s2-metric"><b>'+bytes(totals.uploadBytes)+'</b>'+badge(trend.uploadPercent)+'</strong>'+spark(upRow,"is-up")+'</div><div><span>'+esc(tr("Всего","Total"))+'</span><strong class="s2-metric"><b>'+bytes((Number(totals.downloadBytes)||0)+(Number(totals.uploadBytes)||0))+'</b>'+badge(trend.totalPercent)+'</strong>'+spark(allRow,"is-all")+'</div><div><span>'+esc(tr("Покрытие","Coverage"))+'</span><strong class="s2-metric"><b>'+esc(!coverage.since?tr('Не определено','Unknown'):coverage.partial?tr('Частичное','Partial'):tr('За период','For this period'))+'</b></strong></div></div><div class="s2-plot">'+chart(series,data.bucketSize)+'</div></div>'+
+      '<p class="s2-caption">'+esc(tr("Границы периода и подписи — UTC. График содержит только наблюдавшиеся изменения счётчиков с момента запуска функции; история не достраивается.","Period boundaries and labels use UTC. The chart contains only observed counter deltas since rollout; history is never fabricated."))+'</p>'+
+      '<details class="s2-details" open><summary>'+esc(tr('Подробнее об использовании','Usage breakdown'))+'</summary><div class="s2-breakdowns"><section><h3>'+esc(tr("По устройствам","By device"))+'</h3>'+(devices.length?'<ul>'+devices.map(function(d){return'<li><span>'+esc(d.deviceName||tr("Устройство","Device"))+' <small>'+esc(d.platform||"")+' · ↓ '+bytes(Number(d.downloadBytes)||0)+' ↑ '+bytes(Number(d.uploadBytes)||0)+'</small></span><b>'+bytes((Number(d.downloadBytes)||0)+(Number(d.uploadBytes)||0))+'</b></li>';}).join("")+'</ul>':'<p>'+esc(tr("Нет данных","No data"))+'</p>')+'</section><section><h3>'+esc(tr("Категории","Categories"))+'</h3>'+(cats.length?'<ul>'+cats.map(function(x){return'<li><span>'+esc(x.category||tr("Без категории","Uncategorised"))+'</span><b>'+bytes((Number(x.downloadBytes)||0)+(Number(x.uploadBytes)||0))+'</b></li>';}).join("")+'</ul>':'<p>'+esc(tr("Нет данных","No data"))+'</p>')+'</section></div>'+
+      '<section class="s2-domains"><h3>'+esc(tr("Домены — сохранённые итоги сессий","Domains — retained session totals"))+'</h3><p>'+esc(tr("Этот список относится к сохранённым итогам сессий и может не совпадать с выбранным периодом графика.","This list uses retained session totals and may not match the selected chart period."))+'</p>'+(domains.enabled&&domains.items&&domains.items.length?'<ul>'+domains.items.slice(0,state.domainsOpen?domains.items.length:5).map(function(x){var fav=safeUrl(x.faviconUrl);return'<li>'+(fav?'<img src="'+esc(fav)+'" alt="" loading="lazy">':'<span class="s2-favicon" aria-hidden="true">◇</span>')+'<div><b>'+esc(x.domain)+'</b><span>'+esc(x.category||tr("Без категории","Uncategorised"))+' · '+(Number(x.connections)||0)+' '+esc(tr("соедин.","connections"))+'</span></div><strong>'+bytes((Number(x.downloadBytes)||0)+(Number(x.uploadBytes)||0))+'</strong></li>';}).join("")+'</ul>':'<div class="s2-state"><b>'+esc(domains.enabled?tr("Доменов пока нет","No domains yet"):tr("Аналитика доменов отключена","Domain analytics is disabled"))+'</b></div>')+((domains.enabled&&domains.items&&domains.items.length>5)?'<button type="button" class="btn btn--ghost btn--sm" data-s2-domains aria-expanded="'+(state.domainsOpen?'true':'false')+'">'+esc(state.domainsOpen?tr("Свернуть","Collapse"):tr("Показать все · "+domains.items.length,"Show all · "+domains.items.length))+'</button>':'')+'</section>'+
+      ((A.state.user&&A.state.user.isAdmin===true&&data.budget)?'<section class="s2-budget"><h3>'+esc(tr("Месячные траты инфраструктуры","Monthly infrastructure spend")+' · '+serverLabel())+'</h3>'+(budget.available?'<div class="s2-budgetbar"><i style="width:'+Math.max(0,Math.min(100,Number(budget.usedPercent)||0))+'%;background:'+quotaColor(budget.usedPercent)+'"></i></div><p>'+bytes(budget.usedBytes)+' / '+bytes(budget.budgetBytes)+' · '+(Number(budget.usedPercent)||0).toFixed(1)+'%</p>':'<p>'+esc(tr("Данные бюджета сейчас недоступны. Нулевое использование не предполагается.","Budget data is currently unavailable. Zero usage is not assumed."))+'</p>')+'<small>'+esc(tr("Это общий сервисный бюджет OCI, а не персональный лимит трафика.","This is the shared OCI service budget, not your personal traffic allowance."))+'</small></section>':'')+'</details>';}
+  function loadAnalytics(){
+    if(!A||!A.call||!A.isAuthed())return;
+    var version=generation,requestId=(state.analyticsVersion||0)+1;state.analyticsVersion=requestId;state.analyticsBusy=true;
+    var b=$('[data-s2-analytics-body]');if(b)b.innerHTML='<div class="s2-skeleton" aria-label="'+tr('Загрузка','Loading')+'"></div>';
+    $$('[data-s2-period]').forEach(function(x){var on=x.getAttribute('data-s2-period')===state.period;x.classList.toggle('is-on',on);x.setAttribute('aria-pressed',String(on));});
+    D.request(A,'/api/user/analytics?period='+state.period).then(function(data){if(version===generation&&requestId===state.analyticsVersion&&A.isAuthed())renderAnalytics(data||{});},function(e){if(version!==generation||requestId!==state.analyticsVersion||!A.isAuthed())return;errorBox(b,human(e,tr('Не удалось загрузить аналитику.','Could not load analytics.')),'analytics');}).then(function(){if(requestId===state.analyticsVersion)state.analyticsBusy=false;});
+  }
+
+  function bind(){document.addEventListener("click",function(e){var t=e.target.closest&&e.target.closest("[data-s2-manage],[data-s2-close],[data-s2-delete],[data-s2-period],[data-s2-retry],[data-s2-domains],[data-s2-off]");if(!t)return;if(t.hasAttribute("data-s2-off")){disconnectDevice(t.getAttribute("data-s2-off"),t,t.getAttribute("data-s2-dev"));return;}if(t.hasAttribute("data-s2-manage")){openModal();return;}if(t.hasAttribute("data-s2-close")){closeModal();return;}if(t.hasAttribute("data-s2-delete")){removeDevice(t.getAttribute("data-s2-delete"),t);return;}if(t.hasAttribute("data-s2-period")){state.period=t.getAttribute("data-s2-period");loadAnalytics();return;}if(t.hasAttribute("data-s2-domains")){state.domainsOpen=!state.domainsOpen;if(state.lastAnalytics)renderAnalytics(state.lastAnalytics);return;}var r=t.getAttribute("data-s2-retry");if(r==="devices"){state.devicesBusy=false;loadDevices();}if(r==="analytics"){state.analyticsBusy=false;loadAnalytics();}});document.addEventListener("keydown",function(e){if(!state.modalOpen)return;if(e.key==="Escape"){e.preventDefault();closeModal();return;}if(e.key==="Tab"){var d=$(".s2-dialog"),f=$$('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])',d).filter(function(x){return!x.disabled;});if(!f.length)return;var first=f[0],last=f[f.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});document.addEventListener("visibilitychange",function(){if(!document.hidden&&A&&A.isAuthed&&A.isAuthed()){loadMap(true);loadService();}});document.addEventListener("gluk:api-error",function(e){var x=e.detail||{};if(x.status===409&&x.code==="device_limit_reached")openModal();});}
+  function start(){
+    A=window.GlukAuth;
+    var key=A&&A.isAuthed&&A.isAuthed()?String(A.base)+':'+String((A.state.user||{}).id):'';
+    if(key!==identity){generation++;identity=key;clearTimeout(state.poll);state.poll=0;state.mapBusy=false;state.devicesBusy=false;state.analyticsVersion=(state.analyticsVersion||0)+1;state.period='day';lastMap=null;D.live(null);closeModal();['[data-s2-analytics-body]','[data-s2-device-body]','[data-dash-pins]'].forEach(function(sel){var el=$(sel);if(el)el.innerHTML='';});}
+    if(!key)return;
+    inject();loadService();var version=generation;loadNodes().then(function(){if(version===generation)loadMap(true);});loadAnalytics();
+  }
+  function init(){
+    window.addEventListener('resize',function(){if(lastMap&&A&&A.isAuthed())drawMap(lastMap);});
+    document.addEventListener('click',function(e){if(e.target.closest&&e.target.closest('[data-dash-refresh]')&&A&&A.isAuthed()){loadMap(true);loadAnalytics();}});
+    bind();document.addEventListener("gluk:auth",function(){setTimeout(start,0);});start();}
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);else init();
+})();
