@@ -230,7 +230,7 @@
               <div class="sec-actions" data-sec>
                 <div class="sec-tabs">
                   <button class="btn btn--ghost btn--sm" type="button" data-sec-open="password">Сменить пароль</button>
-                  <button class="btn btn--ghost btn--sm" type="button" data-sec-open="email">Сменить почту</button>
+                  <button class="btn btn--ghost btn--sm" type="button" data-sec-open="email">Почта и подтверждение</button>
                   <button class="btn btn--ghost btn--sm" type="button" data-sec-open="telegram">Перепривязать Telegram</button>
                   <button class="btn btn--ghost btn--sm" type="button" data-sec-open="delete">Удалить аккаунт</button>
                 </div>
@@ -255,7 +255,7 @@
 
                 <form class="form sec-form" data-sec-form="email" hidden novalidate>
                   <label class="field">
-                    <span class="field__label">Новая почта</span>
+                    <span class="field__label">Почта</span>
                     <span class="field__box"><input class="input" type="email" name="email" autocomplete="email" placeholder="you@example.com" required></span>
                   </label>
                   <!-- Сервер на POST /api/auth/email просит только новый адрес:
@@ -270,6 +270,10 @@
                   </label>
                   <button class="btn btn--primary btn--sm" type="submit">Прислать код</button>
                   <p class="auth-msg" data-sec-msg="email" role="status" aria-live="polite"></p>
+                  <!-- Одна и та же форма подтверждает текущий адрес и меняет его:
+                       сервер шлёт код на тот адрес, который отправили. Без этой
+                       строки подтверждение своей же почты выглядело невозможным. -->
+                  <p class="dash-note">Код придёт на указанный адрес. Чтобы подтвердить теперешнюю почту — оставьте её как есть и нажмите «Прислать код». Чтобы сменить — впишите новый адрес.</p>
                 </form>
 
                 <div class="sec-form" data-sec-form="telegram" hidden>

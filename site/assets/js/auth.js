@@ -147,6 +147,9 @@
           return applyMe({
             user: payload.user,
             subscription: payload.subscription || null,
+            lastSubscription: payload.lastSubscription || null,
+            entitlement: payload.entitlement || null,
+            subscriptionRevision: payload.subscriptionRevision || null,
             activeDevices: typeof payload.activeDevices === "number" ? payload.activeDevices : 0
           });
         }
@@ -160,8 +163,24 @@
     return request("/api/auth/refresh", { method: "POST", body: { refreshToken: rt } }).then(setSession);
   }
 
-  /* --------------------------------------------------------------- состояние */
-  var state = { status: "loading", user: null, subscription: null, devices: 0, currentDeviceId: null, offline: false };
+  /* --------------------------------------------------------------- состояние
+     subscription — только действующая подписка: сервер отдаёт null, если срок
+     вышел или тариф отобрали. История живёт отдельно в lastSubscription и
+     годится лишь для подписи «была Pro» — тарифом её называть нельзя, иначе
+     отозванная строка выглядит как живой план. entitlement — фактические
+     лимиты, revision — их отпечаток с сервера: он меняется при выдаче,
+     продлении, повышении, понижении и отзыве. */
+  var state = {
+    status: "loading",
+    user: null,
+    subscription: null,
+    lastSubscription: null,
+    entitlement: null,
+    revision: null,
+    devices: 0,
+    currentDeviceId: null,
+    offline: false
+  };
 
   function emit() {
     document.dispatchEvent(new CustomEvent("gluk:auth", { detail: state }));
@@ -172,9 +191,16 @@
     state.status = "in";
     state.user = json.user || null;
     state.subscription = json.subscription || null;
+    state.lastSubscription = json.lastSubscription || null;
+    state.entitlement = json.entitlement || null;
+    state.revision = json.subscriptionRevision
+      || (json.entitlement && json.entitlement.revision)
+      || null;
     state.devices = typeof json.activeDevices === "number" ? json.activeDevices : 0;
     state.currentDeviceId = json.currentDeviceId || null;
     state.offline = false;
+    lastSyncAt = Date.now();
+    if (state.revision) knownRevision = String(state.revision);
     emit();
     return state;
   }
@@ -183,9 +209,13 @@
     state.status = "out";
     state.user = null;
     state.subscription = null;
+    state.lastSubscription = null;
+    state.entitlement = null;
+    state.revision = null;
     state.devices = 0;
     state.currentDeviceId = null;
     state.offline = !!offline;
+    knownRevision = null;
     emit();
   }
 
@@ -201,6 +231,58 @@
         if (e && (e.status === 401 || e.status === 403)) write(null);
         guest(!e || e.status === 0);
       });
+  }
+
+  /* ------------------------------------------------- живое обновление
+     Подписку меняет не браузер: её выдаёт админ, продлевает платёж,
+     гасит монитор истечения. Значит состояние надо переспрашивать, а не
+     держать то, что было на момент загрузки страницы. Запрос дешёвый
+     (/api/auth/me), но частить нечем: между вызовами держим паузу. */
+  var lastSyncAt = 0;
+  var syncing = null;
+  var SYNC_GAP = 5000;
+
+  function syncAccount(force) {
+    if (state.status !== "in") return Promise.resolve(state);
+    if (syncing) return syncing;
+    if (!force && Date.now() - lastSyncAt < SYNC_GAP) return Promise.resolve(state);
+    var free = function (v) { syncing = null; return v; };
+    syncing = request("/api/auth/me", { auth: true })
+      .then(applyMe)
+      .catch(function (e) {
+        /* 401 на фоновом запросе чаще всего значит «access истёк», а не
+           «сессия мертва»: один раз пробуем refresh и только потом
+           высаживаем. Оффлайн не трогает состояние вообще. */
+        if (!e || (e.status !== 401 && e.status !== 403)) return state;
+        return rotate()
+          .then(function () { return request("/api/auth/me", { auth: true }); })
+          .then(applyMe)
+          .catch(function (e2) {
+            if (e2 && (e2.status === 401 || e2.status === 403)) {
+              write(null);
+              access = null;
+              guest(false);
+            }
+            return state;
+          });
+      })
+      .then(free, function (err) { free(); throw err; });
+    return syncing;
+  }
+
+  /* Отпечаток прав приходит в каждом ответе, который их описывает
+     (/api/auth/me, /api/vpn/status). Другой отпечаток значит, что подписку
+     изменили на сервере — перечитываем аккаунт сразу, не ждав опроса
+     по таймеру. Первый отпечаток запоминаем молча: он ничего не менял. */
+  var knownRevision = null;
+
+  function noteRevision(rev) {
+    var next = rev == null ? "" : String(rev);
+    if (!next) return;
+    if (knownRevision === null) { knownRevision = next; return; }
+    if (knownRevision === next) return;
+    knownRevision = next;
+    syncAccount(true);
   }
 
   /* ------------------------------------------------------------ шапка */
@@ -288,7 +370,15 @@
 
   function subLabel() {
     var s = state.subscription;
-    if (!s || !s.status) return { text: T("Нет подписки"), ok: false };
+    /* Действующей подписки нет — это ровно Free. Прошлая строка годится
+       только на подпись «была Pro, истекла»: ни дней, ни даты она больше
+       не даёт. */
+    if (!s || !s.status) {
+      var past = state.lastSubscription;
+      var pastName = past ? planTitle(past) : "";
+      if (pastName) return { text: pastName + " · " + T("Истекла"), ok: false };
+      return { text: T("Нет подписки"), ok: false };
+    }
     if (String(s.status).toUpperCase() === "ACTIVE") {
       var d = s.expiresAt ? new Date(s.expiresAt) : null;
       /* год обязателен: "до 20 авг." без года читался неоднозначно */
@@ -300,7 +390,8 @@
       return { text: (planTitle(s) || T("Активна")) + until, ok: true };
     }
     var name = planTitle(s);
-    return { text: name ? name + " · " + T("Неактивна") : T("Неактивна"), ok: false };
+    var off = String(s.status).toUpperCase() === "EXPIRED" ? T("Истекла") : T("Неактивна");
+    return { text: name ? name + " · " + off : off, ok: false };
   }
 
   /* Кабинет живёт под тем же языковым префиксом, что и страница: на /en/
@@ -386,6 +477,14 @@
     if (e.key === "Escape") closeMenus();
   });
 
+  /* Вкладку вернули из фона — первым делом уточняем подписку. Именно
+     так человек и возвращается после оплаты или после того, как ему
+     выдали тариф в админке. */
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") syncAccount(false);
+  });
+  window.addEventListener("focus", function () { syncAccount(false); });
+
   /* ------------------------------------------------------------- публичное API */
   var api = {
     channel: CHANNEL,
@@ -419,6 +518,11 @@
         .then(done, done);
     },
     refresh: boot,
+    /* Переспросить состояние аккаунта без повторного входа: refresh крутит
+       весь boot с rotate, а sync — только /api/auth/me. noteRevision зовут те,
+       кто видит subscriptionRevision в своих ответах (например /api/vpn/status). */
+    sync: syncAccount,
+    noteRevision: noteRevision,
     /* Авторизованный запрос к control plane — нужен личному кабинету /app/:
        если access протух — один раз крутим refresh и повторяем. */
     call: function (path, opts) {

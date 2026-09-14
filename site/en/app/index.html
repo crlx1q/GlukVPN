@@ -228,7 +228,7 @@
               <div class="sec-actions" data-sec>
                 <div class="sec-tabs">
                   <button class="btn btn--ghost btn--sm" type="button" data-sec-open="password">Change password</button>
-                  <button class="btn btn--ghost btn--sm" type="button" data-sec-open="email">Change email</button>
+                  <button class="btn btn--ghost btn--sm" type="button" data-sec-open="email">Email &amp; verification</button>
                   <button class="btn btn--ghost btn--sm" type="button" data-sec-open="telegram">Re-link Telegram</button>
                   <button class="btn btn--ghost btn--sm" type="button" data-sec-open="delete">Delete account</button>
                 </div>
@@ -253,7 +253,7 @@
 
                 <form class="form sec-form" data-sec-form="email" hidden novalidate>
                   <label class="field">
-                    <span class="field__label">New email</span>
+                    <span class="field__label">Email</span>
                     <span class="field__box"><input class="input" type="email" name="email" autocomplete="email" placeholder="you@example.com" required></span>
                   </label>
                   <label class="field" data-sec-code hidden>
@@ -262,6 +262,10 @@
                   </label>
                   <button class="btn btn--primary btn--sm" type="submit">Send code</button>
                   <p class="auth-msg" data-sec-msg="email" role="status" aria-live="polite"></p>
+                  <!-- The same form verifies the current address and changes it: the
+                       server sends the code to whatever address was submitted. Without
+                       this line, verifying your own email looked impossible. -->
+                  <p class="dash-note">The code goes to the address you submit. To verify the current email, leave it as is and press “Send code”. To change it, type the new address.</p>
                 </form>
 
                 <div class="sec-form" data-sec-form="telegram" hidden>

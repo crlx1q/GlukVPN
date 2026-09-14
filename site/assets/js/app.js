@@ -200,9 +200,13 @@
     return null;
   }
 
+  /* Статус приходит с сервера как есть, и неназванный попадал в интерфейс
+     буквально: «Ваш тариф Free / DISABLED». Называем все состояния, которые
+     умеет ставить бэкенд при отзыве и замене подписки. */
   var SUB_STATUS = {
     ACTIVE: "Активна", EXPIRED: "Истекла", INACTIVE: "Нет подписки", NONE: "Нет подписки",
-    SUSPENDED: "Приостановлена", PENDING: "Ожидает оплаты", TRIAL: "Пробный период", CANCELED: "Отменена", CANCELLED: "Отменена"
+    SUSPENDED: "Приостановлена", PENDING: "Ожидает оплаты", TRIAL: "Пробный период", CANCELED: "Отменена", CANCELLED: "Отменена",
+    DISABLED: "Отозвана", REVOKED: "Отозвана", REPLACED: "Заменена", REFUNDED: "Возврат оплаты"
   };
 
   function subStatusLabel(sub) {
@@ -567,6 +571,7 @@
   function renderAccount(st) {
     var u = st.user || {};
     var sub = st.subscription || null;
+    var ent = st.entitlement || null;
     var A = window.GlukAuth;
 
     state.currentDeviceId = u.currentDeviceId || st.currentDeviceId || null;
@@ -577,11 +582,14 @@
     set("email", esc(u.email || "\u2014"));
     set("public-id", esc(u.publicId || u.id || "\u2014"));
 
-    /* Неактивная подписка не даёт тарифа: на сервере это ровно Free, поэтому
-       имя, уровень и бейджик считаем по действующей подписке, а отозванную
-       или истёкшую строку оставляем только для истории («до …»). */
-    var liveSub = D.subscription(sub, billing.plansByCode).active ? sub : null;
-    var histTier = planTier(sub);
+    /* Сервер отдаёт в subscription только действующую подписку, а прошлые
+       строки — в lastSubscription. Пока это было одно поле, отозванная строка
+       выглядела живым тарифом. Проверку активности всё равно держим: страница
+       может висеть открытой ровно в минуту истечения. */
+    var model = D.subscription(sub, billing.plansByCode);
+    var liveSub = model.active ? sub : null;
+    var histSub = liveSub ? null : (sub || st.lastSubscription || null);
+    var histTier = planTier(histSub);
     var name = D.planLabel(liveSub);
     var tier = planTier(liveSub);
     var badge = D.planBadge(liveSub);
@@ -607,36 +615,63 @@
        на телефоне и в расширении, а в кабинете его не было. */
     show('[data-d="admin-badge"]', !!u.isAdmin);
 
-    set("sec-email", esc(u.email || "\u2014"));
-    set("sec-verified", esc(u.emailVerified ? T("Подтверждена") : T("Не подтверждена")));
-    setClass("sec-verified", "is-ok", !!u.emailVerified);
-    var maxDev = state.maxDevices ?? u.maxDevices ?? '—';
+    /* Три разных состояния почты — три разных слова. Раньше пустой адрес
+       показывался как «—» и сразу же «Не подтверждена»: выглядело так, будто
+       сервис потерял почту или отказался её признать. */
+    var mail = String(u.email || "").trim();
+    set("sec-email", esc(mail || T("не указана")));
+    set("sec-verified", esc(!mail
+      ? T("Нет почты")
+      : u.emailVerified ? T("Подтверждена") : T("Не подтверждена")));
+    setClass("sec-verified", "is-ok", !!(mail && u.emailVerified));
+    /* Лимиты — из фактических прав, а не из строки подписки: после отзыва
+       сервер уже пересчитал их на free, и карточка обязана показать то же. */
+    var maxDev = state.maxDevices ?? (ent && ent.maxDevices) ?? u.maxDevices ?? '—';
+    var maxSes = (ent && ent.maxSessions) ?? u.maxConcurrentSessions ?? '—';
     set("sec-max-dev", esc(String(maxDev)));
-    set("sec-max-ses", esc(String(u.maxConcurrentSessions ?? '—')));
+    set("sec-max-ses", esc(String(maxSes)));
     var ORIGIN = { admin: "выдан админом", self: "самостоятельно", register: "самостоятельно", google: "Google", telegram: "Telegram", invite: "по приглашению" };
     var origin = u.origin;
     set('sec-origin', esc(origin && typeof origin === 'object' ? [origin.country, origin.region].filter(Boolean).join(' · ') || '—' : '—'));
 
-    /* подписка */
-    var model = D.subscription(sub, billing.plansByCode);
+    /* подписка
+       Существование строки и её действие — разные вещи. Дату и остаток дней
+       спрашиваем только у действующей подписки: именно поэтому Free
+       показывал «0 дней» и дату из 2029 года от отозванной беты. У прошлой
+       строки берём ровно то, чем она ещё полезна: чем был тариф и как
+       он кончился. */
     var status = model.status;
     var active = model.active;
-    var end = model.end !== null ? new Date(model.end) : null;
+    var end = liveSub && model.end !== null ? new Date(model.end) : null;
     if (end && isNaN(end)) end = null;
-    var left = model.left;
-    var paid = histTier > 0 && (active || status === "EXPIRED" || status === "PENDING");
+    var left = liveSub ? model.left : null;
+    /* Ни действующей подписки, ни истории — это не «истекла», а Free. */
+    var offLabel = histSub ? subStatusLabel(histSub) : T('Нет подписки');
+    var paid = histTier > 0 || (active && tier > 0);
 
-    set('sub-state',esc(active ? name : subStatusLabel({status:status})));
+    set('sub-state',esc(active ? name : offLabel));
     setClass("sub-state", "is-ok", active && tier > 0);
     setClass("sub-state", "is-warn", !active || (left != null && left <= 5 && tier > 0));
-    set('sub-until',esc(end ? T('до')+' '+fmtDate(end) : subStatusLabel({status:status})));
-    set('sub-status', esc(subStatusLabel({status:status})));
+    set('sub-until',esc(end ? T('до')+' '+fmtDate(end) : offLabel));
+    set('sub-status', esc(active ? subStatusLabel({status:status}) : offLabel));
     setClass("sub-status", "is-ok", active);
     set('sub-date', esc(end ? fmtDate(end) : '—'));
     set("sub-left", esc(left != null && end ? fmtDays(left) : "\u2014"));
     setClass("sub-left", "is-warn", left != null && end && left <= 5);
     var days = model.days;
-    set('sub-hint', esc(days ? planText + ' · ' + fmtDays(days) : planText));
+    var hint;
+    if (active) hint = days ? planText + ' · ' + fmtDays(days) : planText;
+    else if (histSub) {
+      /* Отозванную подписку датой не подписываем: её срок ещё в будущем,
+         и «Отозвана 6 февраля 2029» читалось бы как обещание. */
+      var histEnd = String(histSub.status || '').toUpperCase() === 'EXPIRED' && histSub.expiresAt
+        ? new Date(histSub.expiresAt)
+        : null;
+      if (histEnd && isNaN(histEnd)) histEnd = null;
+      hint = (EN ? 'Previous plan' : 'Прошлый тариф') + ': ' + D.planLabel(histSub) +
+        ' · ' + offLabel + (histEnd ? ' ' + fmtDate(histEnd) : '');
+    } else hint = planText;
+    set('sub-hint', esc(hint));
 
     var bar = $('[data-d="sub-bar"]');
     if (bar) {
@@ -659,7 +694,7 @@
     set("dev-count", esc((typeof st.devices === "number" ? st.devices : state.devices.length) + " / " + maxDev));
     set("dev-note", esc(T("лимит тарифа")));
     if (state.sessionsOk === null) {
-      set("sessions", esc("\u2014 / " + (u.maxConcurrentSessions || 1)));
+      set("sessions", esc("\u2014 / " + ((ent && ent.maxSessions) || u.maxConcurrentSessions || 1)));
       setText("sessions-note", T("активных сейчас из лимита"));
     }
     var ch = (A && A.channel) || (CFG.api && CFG.api.channel) || "beta";
@@ -851,6 +886,12 @@
     var A = window.GlukAuth;
     if (!A || !A.call || !A.isAuthed() || inflight) return;
     inflight = true;
+    /* Подписку меняет сервер, а не эта страница: админ выдал или
+       отобрал, платёж прошёл, срок вышел. Поэтому любое обновление
+       кабинета начинается с переспроса аккаунта — иначе тариф, дата и
+       лимиты остаются теми, что были при загрузке страницы. Свой троттлинг
+       внутри sync не даёт лишних запросов. */
+    if (A.sync) A.sync(false);
     var btn = $("[data-dash-refresh]");
     if (btn) btn.classList.add("is-busy");
     var version = epoch;
@@ -980,6 +1021,9 @@
       if (document.visibilityState !== "visible") return;
       var A = window.GlukAuth;
       if (!A || !A.isAuthed || !A.isAuthed()) return;
+      /* Здесь переспрос форсируем: карточка не должна быть старее 45 с,
+         даже если человек ничего не нажимал. */
+      if (A.sync) A.sync(true);
       loadAll();
     }, 45000);
   }

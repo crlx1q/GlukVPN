@@ -195,6 +195,9 @@
 
   /* Второй шаг смены почты. Пока false — кнопка просит код, после — подтверждает. */
   var awaitingCode = false;
+  /* Что сервер сказал про Telegram в последний раз; null — ещё не спрашивали.
+     Нужно, чтобы подсказка во вкладке не выдумывала состояние. */
+  var tgLinked = null;
 
   function msg(name, text, kind) {
     var el = box.querySelector('[data-sec-msg="' + name + '"]');
@@ -222,6 +225,13 @@
       var first = target.querySelector("input, button");
       if (first && first.focus) { try { first.focus({ preventScroll: true }); } catch (e) {} }
     }
+    if (name === "email") primeMail();
+    if (name === "telegram" && tgLinked === false) {
+      msg("telegram", t(
+        "Telegram пока не привязан. Он подтверждает аккаунт и открывает пробный период — привязка занимает один шаг.",
+        "Telegram is not linked yet. It verifies the account and unlocks the trial — linking takes one step."
+      ), "");
+    }
   }
 
   function busy(form, on, label) {
@@ -229,6 +239,28 @@
     if (!btn) return;
     btn.disabled = !!on;
     if (label != null) btn.textContent = label;
+  }
+
+  /* Подтвердить текущий адрес и сменить адрес — одна и та же пара
+     запросов: код уходит на тот адрес, который отправлен в POST
+     /api/auth/email, а конфликт возникает только когда адрес занят другим
+     аккаунтом — свой же адрес прислать себе можно, так он и
+     подтверждается. Но поле называлось «Новая почта» и было пустым,
+     поэтому человек с неподтверждённой почтой не догадывался, что
+     подтверждение живёт здесь же, и в карточке навсегда оставалось
+     «Не подтверждена». Подставляем текущий адрес и говорим, что будет. */
+  function primeMail() {
+    if (!mailForm || awaitingCode) return;
+    var st = (window.GlukAuth && window.GlukAuth.state) || {};
+    var u = st.user || {};
+    var cur = String(u.email || "").trim();
+    var field = mailForm.email;
+    if (!field || !cur || u.emailVerified) return;
+    if (!field.value) field.value = cur;
+    msg("email", t(
+      "Эта почта ещё не подтверждена. Нажмите «Прислать код» — письмо придёт на неё же. Чтобы сменить адрес, впишите другой.",
+      "This email is not verified yet. Press “Send code” and the letter arrives at the same address. To change it, type another one."
+    ), "");
   }
 
   /* --------------------------------------------------------------- ошибки */
@@ -315,11 +347,13 @@
     get("/api/auth/telegram").then(
       function (res) {
         var name = res && res.username ? "@" + String(res.username) : "";
+        tgLinked = !!(res && res.linked);
         /* Привязка и подтверждение — разные вещи с тех пор, как
            регистрация перестала требовать Telegram. Строка называет
-           статус целиком: без этого «не привязан» читается как
-           необязательная мелочь, хотя именно это держит аккаунт
-           неподтверждённым и закрывает пробный период.          */
+           статус только про Telegram. Раньше здесь стояло «аккаунт не
+           подтверждён», и это читалось как приговор всему аккаунту —
+           при живой подписке и работающем входе. Последствия объясняет
+           подсказка во вкладке перепривязки.          */
         if (res && res.linked) {
           var who = name || t("привязан", "linked");
           setInfo("telegram", res.verifiedAt
