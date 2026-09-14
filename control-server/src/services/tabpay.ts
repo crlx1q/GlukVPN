@@ -304,7 +304,7 @@ export const tabpayProvider: PaymentProvider = {
 			siteUrl(isTrial ? `/trial/?paid=1&order=${order.id}` : `/app/?paid=1&order=${order.id}`)
 		const failUrl =
 			config.BILLING_CANCEL_URL.trim() ||
-			siteUrl(isTrial ? `/trial/?failed=1&order=${order.id}` : `/pricing/?failed=1&order=${order.id}`)
+			siteUrl(isTrial ? `/trial/?failed=1&order=${order.id}` : `/app/?failed=1&order=${order.id}`)
 
 		const payment = await createTabpayPayment({
 			orderId: order.id,

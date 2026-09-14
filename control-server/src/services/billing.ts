@@ -264,7 +264,7 @@ const stripeProvider: PaymentProvider = {
 			"success_url",
 			config.BILLING_SUCCESS_URL.trim() || siteUrl("/app/?paid=1&order=" + order.id),
 		)
-		params.set("cancel_url", config.BILLING_CANCEL_URL.trim() || siteUrl("/pricing/?cancelled=1"))
+		params.set("cancel_url", config.BILLING_CANCEL_URL.trim() || siteUrl("/app/?failed=1&order=" + order.id))
 		if (user.email) params.set("customer_email", user.email)
 
 		let response: Response
