@@ -1,25 +1,34 @@
 /**
  * Self-service sign-up.
  *
- * The funnel is deliberately three steps:
+ * The funnel has up to three steps:
  *
  *   1. email + password (twice, checked in the browser)
  *   2. a 6-digit code sent to that address
  *   3. Telegram: the user opens the bot and shares their contact
  *
- * Only after all three does a `User` row exist. Everything before that lives
- * in `PendingRegistration`, which means an abandoned sign-up cannot occupy a
- * username, cannot sign in, cannot receive a password reset, and is deleted by
- * the sweeper instead of lingering as a half-account.
+ * Whether step 3 is mandatory is an operator decision: REGISTER_REQUIRE_TELEGRAM
+ * here, GOOGLE_REQUIRE_TELEGRAM on the Google path. With the flag on, a `User`
+ * row exists only after all three steps. With it off, the row is created at the
+ * end of step 2 and `telegramVerifiedAt` stays null: the account works, but it
+ * is *unverified*, and the user can finish the Telegram link later from the
+ * account page. The flag defaults to off because Telegram is unreachable in
+ * some regions, and a dead step 3 means no sign-ups at all rather than fewer.
+ *
+ * Everything before the `User` row lives in `PendingRegistration`, which means
+ * an abandoned sign-up cannot occupy a username, cannot sign in, cannot receive
+ * a password reset, and is deleted by the sweeper instead of lingering as a
+ * half-account.
  *
  * Why Telegram at all: the email code proves the address exists, nothing more.
  * Addresses are free and infinite. A phone number shared through Telegram's
  * own contact button is scarce and tied to a SIM, so it is what actually makes
  * one human one account - which is the whole point of the step, and why the
- * bot refuses a *forwarded* contact.
+ * bot refuses a *forwarded* contact. That is also why perks which cost real
+ * money (the trial, see `trial.ts`) still demand a verified account even when
+ * the flag is off: waiving the step must cost sign-ups, not money.
  *
- * Google sign-up skips step 2 (Google already proved the address) but never
- * step 3.
+ * Google sign-up skips step 2 - Google already proved the address.
  */
 
 import { randomInt } from "node:crypto"
@@ -220,6 +229,14 @@ export type EmailConfirmed = {
 	telegramUrl: string
 	/** Shown as a fallback for anyone who has to type it into the bot by hand. */
 	telegramCode: string
+	/** Only set together with `state: "done"`, i.e. when the account exists. */
+	username?: string
+	/**
+	 * Whether the finished account has a confirmed Telegram contact. Only the
+	 * last screen needs it, to choose between "you are all set" and "finish the
+	 * link from your account page".
+	 */
+	verified?: boolean
 }
 
 export async function confirmRegistrationEmail(params: {
@@ -228,6 +245,26 @@ export async function confirmRegistrationEmail(params: {
 }): Promise<EmailConfirmed> {
 	await requireRegistrationEnabled()
 	const email = normalizeEmail(params.email)
+
+	// Without the Telegram step the account is created right here, which deletes
+	// the pending row - so a retried submit (double click, flaky network, back
+	// button) finds nothing to confirm. Answer from the `User` row instead of
+	// failing with "no sign-up in progress". This tells an attacker nothing new:
+	// `register/start` and `register/status` already distinguish a taken address.
+	const settled = await prisma.user.findFirst({
+		where: { email },
+		select: { username: true, telegramVerifiedAt: true },
+	})
+	if (settled) {
+		return {
+			state: "done",
+			username: settled.username,
+			verified: Boolean(settled.telegramVerifiedAt),
+			telegramCode: "",
+			telegramUrl: "",
+		}
+	}
+
 	const pending = await loadPending(email)
 
 	// Idempotent: a double-submitted form must not burn a second code and must
@@ -242,6 +279,17 @@ export async function confirmRegistrationEmail(params: {
 			where: { id: pending.id },
 			data: { emailVerifiedAt: new Date() },
 		})
+	}
+
+	if (!config.REGISTER_REQUIRE_TELEGRAM) {
+		const created = await createUserFromPending(pending)
+		return {
+			state: "done",
+			username: created.username,
+			verified: false,
+			telegramCode: "",
+			telegramUrl: "",
+		}
 	}
 
 	return {
@@ -341,22 +389,145 @@ export async function createUserFromGoogle(params: {
 	return created
 }
 
+/**
+ * Tell the admin channel about a fresh account (#090 + #091) with the safe
+ * facts only: masked address, masked phone, platform, method, entry point and
+ * an approximate region.
+ *
+ * Fire-and-forget on purpose - the account exists either way, and a sign-up
+ * must never fail, or even wait, because a chat message could not be sent.
+ * Shared by both finishing paths so the two never drift apart.
+ */
+function notifyNewAccount(params: {
+	pending: PendingRegistration
+	username: string
+	publicId: string
+	telegramUsername?: string | null
+	telegramPhone?: string | null
+}): void {
+	const notices = adminNotices()
+	if (!notices) return
+	const pending = params.pending
+	void (async () => {
+		// Region comes from the address the sign-up was started from, and only
+		// when GEOIP is configured. The address itself is never sent to a chat.
+		const geo = require("./geo") as typeof import("./geo")
+		const origin = pending.createdIp
+			? await geo.lookupOrigin(pending.createdIp).catch(() => null)
+			: null
+		await notices.notifyRegistration({
+			username: params.username,
+			publicId: params.publicId,
+			email: pending.email,
+			method: pending.googleSub ? "google" : "email",
+			platform: pending.createdPlatform,
+			source: pending.createdSource ?? (pending.googleSub ? "google" : null),
+			region: [origin?.country, origin?.region].filter(Boolean).join(", ") || null,
+			telegramUsername: params.telegramUsername ?? null,
+			telegramPhone: params.telegramPhone ?? null,
+		})
+	})().catch(() => undefined)
+}
+
+/**
+ * Turn a confirmed pending row into an account without the Telegram step
+ * (REGISTER_REQUIRE_TELEGRAM=false).
+ *
+ * The result matches a Telegram-completed account in every way except the
+ * Telegram columns: same default subscription, same device limits, same Google
+ * link when the funnel started there. Leaving `telegramVerifiedAt` null is not
+ * an oversight - it is the single fact the rest of the app reads to decide the
+ * account is unverified.
+ */
+async function createUserFromPending(
+	pending: PendingRegistration,
+): Promise<{ username: string }> {
+	const identityLinks: Prisma.IdentityLinkCreateWithoutUserInput[] = []
+	if (pending.googleSub) {
+		identityLinks.push({
+			provider: "GOOGLE",
+			providerUserId: pending.googleSub,
+			providerEmail: pending.email,
+		})
+	}
+
+	const username = await uniqueUsername(pending.email)
+	let created: { id: string; publicId: string; username: string }
+	try {
+		created = await withRegistrationGate((tx) => tx.user.create({
+			data: {
+				username,
+				email: pending.email,
+				// The caller may hold a row read before the code was consumed; the
+				// fallback keeps that from writing a null into a confirmed account.
+				emailVerifiedAt: pending.emailVerifiedAt ?? new Date(),
+				passwordHash: pending.passwordHash,
+				maxDevices: config.MAX_DEVICES_PER_USER,
+				maxSessions: config.MAX_CONCURRENT_SESSIONS,
+				identityLinks: identityLinks.length ? { create: identityLinks } : undefined,
+			},
+			select: { id: true, publicId: true, username: true },
+		}))
+	} catch (err) {
+		// Two submits raced and the other one won the unique index. The caller
+		// asked whether an account exists for this address, not whether *this*
+		// call created it - so report the winner instead of a 500.
+		const winner = await prisma.user.findFirst({
+			where: { email: pending.email },
+			select: { username: true },
+		})
+		if (winner) return winner
+		throw err
+	}
+
+	// Same Free plan a Telegram-completed sign-up gets, so "connect" works on
+	// the first try instead of answering "No active subscription".
+	await grantDefaultSubscription(created.id).catch(() => undefined)
+
+	// Frees the address for the unique index right away and makes a replayed
+	// confirm fall through to the "already an account" branch above.
+	await prisma.pendingRegistration
+		.delete({ where: { id: pending.id } })
+		.catch(() => undefined)
+
+	notifyNewAccount({ pending, username: created.username, publicId: created.publicId })
+	return { username: created.username }
+}
+
 export async function registrationStatus(email: string): Promise<{
 	state: RegistrationState
 	telegramUrl?: string
 	username?: string
+	/** See `EmailConfirmed.verified`. */
+	verified?: boolean
 }> {
 	const normalized = normalizeEmail(email)
 
 	const user = await prisma.user.findFirst({
 		where: { email: normalized },
-		select: { username: true },
+		select: { username: true, telegramVerifiedAt: true },
 	})
-	if (user) return { state: "done", username: user.username }
+	if (user) {
+		return {
+			state: "done",
+			username: user.username,
+			verified: Boolean(user.telegramVerifiedAt),
+		}
+	}
 	await requireRegistrationEnabled()
 
 	const pending = await loadPending(normalized)
 	if (!pending.emailVerifiedAt) return { state: "email" }
+
+	// Self-heal: the address is confirmed and Telegram is no longer required,
+	// yet the row is still pending - the flag was flipped mid-funnel, or the
+	// create lost a race. Finish it here instead of parking the browser on a
+	// step the UI no longer renders.
+	if (!config.REGISTER_REQUIRE_TELEGRAM) {
+		const created = await createUserFromPending(pending)
+		return { state: "done", username: created.username, verified: false }
+	}
+
 	return { state: "telegram", telegramUrl: telegramDeepLink(pending.telegramCode) }
 }
 
@@ -572,31 +743,13 @@ export async function attachTelegram(params: {
 		.delete({ where: { id: pending.id } })
 		.catch(() => undefined)
 
-	// #090 + #091: the admin channel hears about the new account, with the safe
-	// facts only - masked address, masked phone, platform, method, entry point
-	// and an approximate region. Fire-and-forget: the account exists either way.
-	const notices = adminNotices()
-	if (notices) {
-		void (async () => {
-			// Region comes from the address the sign-up was started from, and only
-			// when GEOIP is configured. The address itself is never sent to a chat.
-			const geo = require("./geo") as typeof import("./geo")
-			const origin = pending.createdIp
-				? await geo.lookupOrigin(pending.createdIp).catch(() => null)
-				: null
-			await notices.notifyRegistration({
-				username: created.username,
-				publicId: created.publicId,
-				email: pending.email,
-				method: pending.googleSub ? "google" : "email",
-				platform: pending.createdPlatform,
-				source: pending.createdSource ?? (pending.googleSub ? "google" : null),
-				region: [origin?.country, origin?.region].filter(Boolean).join(", ") || null,
-				telegramUsername: params.telegramUsername ?? null,
-				telegramPhone: phone,
-			})
-		})().catch(() => undefined)
-	}
+	notifyNewAccount({
+		pending,
+		username: created.username,
+		publicId: created.publicId,
+		telegramUsername: params.telegramUsername ?? null,
+		telegramPhone: phone,
+	})
 
 	return { ok: true, kind: "registered", username: created.username }
 }

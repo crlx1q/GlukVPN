@@ -274,6 +274,10 @@
                 <span class="icon-badge icon-badge--ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg></span>
                 <h2 class="h3">Аккаунт создан</h2>
                 <p class="muted">Ваш логин: <b class="mono" id="reg-done-login"></b>. Войти можно и по логину, и по почте — на сайте, в приложении и в расширении.</p>
+                <!-- Регистрация без Telegram: аккаунт рабочий, но неподтверждённый.
+                     register.js снимает hidden только в этом случае — тем, кто
+                     прошёл привязку, такая подсказка врала бы. -->
+                <p class="auth-hint" id="reg-done-tg" hidden>Аккаунт пока не подтверждён. Привяжите Telegram в кабинете — это подтверждает аккаунт и открывает пробный период.</p>
                 <a class="btn btn--primary btn--lg btn--block" href="/login/" data-auth-goto="login">Войти</a>
                 <a class="btn btn--ghost btn--block" href="/download/">Скачать приложение</a>
               </div>

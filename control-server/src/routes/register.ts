@@ -133,6 +133,11 @@ export async function registrationRoutes(app: FastifyInstance): Promise<void> {
 				// "Can a Telegram step actually finish here", not merely "is a token
 				// set": only the channel that owns the bot can read its codes back.
 				enabled: telegramUsable(),
+				// Whether sign-up *ends* in Telegram. Split from `enabled` on purpose:
+				// a deployment can keep a working bot for verification later while
+				// letting people register with email alone, and the site must not
+				// close registration just because the bot happens to be unreachable.
+				required: config.REGISTER_REQUIRE_TELEGRAM,
 				username: botUsername(),
 				// Which channel long-polls the bot, and which one answered this
 				// request. Equal on a healthy deployment; when they differ, that
@@ -186,11 +191,13 @@ export async function registrationRoutes(app: FastifyInstance): Promise<void> {
 				throw serviceUnavailable("Email delivery is not configured on this server")
 			}
 
-			// Telegram is a required step, so starting a sign-up that can never
-			// finish would be worse than refusing it. `telegramUsable` also covers
-			// the channel that does not own the bot: it can hand out a deep link,
-			// but nothing on the other side will ever read this database.
-			if (!telegramUsable()) {
+			// Only when Telegram is the last step: starting a sign-up that can
+			// never finish would be worse than refusing it. `telegramUsable` also
+			// covers the channel that does not own the bot: it can hand out a deep
+			// link, but nothing on the other side will ever read this database.
+			// With the step waived the bot is optional, so a dead bot must not
+			// block a funnel that now ends at the email code.
+			if (config.REGISTER_REQUIRE_TELEGRAM && !telegramUsable()) {
 				throw serviceUnavailable("Sign-up is temporarily unavailable")
 			}
 

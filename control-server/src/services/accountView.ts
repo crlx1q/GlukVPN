@@ -17,6 +17,14 @@ export function userPayload(user: User): Record<string, unknown> {
 		username: user.username,
 		email: user.email,
 		emailVerified: user.emailVerifiedAt !== null,
+		// With the Telegram step optional, "verified account" stopped meaning the
+		// email code: an address is free and infinite, a phone shared through
+		// Telegram is not. So the badge every client draws - and the trial - hang
+		// on the phone step, while an email-only account stays real and usable,
+		// just unverified until the link is made from Settings.
+		telegramLinked: user.telegramId !== null,
+		telegramVerified: user.telegramVerifiedAt !== null,
+		verified: user.telegramVerifiedAt !== null,
 		isAdmin: user.isAdmin,
 		isTester: user.isTester,
 		isSupport: user.isSupport,

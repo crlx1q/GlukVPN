@@ -155,6 +155,20 @@ const EnvSchema = z.object({
 	// (one human = one account). Set to false to create the account instantly.
 	GOOGLE_REQUIRE_TELEGRAM: envFlag("true"),
 
+	// ---------------------------- registration -------------------------------
+	// Whether the email funnel ends in the Telegram contact step.
+	//
+	// Off by default: Telegram is blocked in Russia, which is most of the
+	// audience, so a mandatory bot step turned "sign up" into "already own a
+	// working VPN" - a sign-up that cannot finish is worse than a weaker
+	// anti-fraud signal. Email plus a code now creates the account; what it
+	// does not create is a *verified* one. Telegram is linked later from
+	// Settings, and the things that actually need a scarce identity still ask
+	// for it (TRIAL_OFFER_REQUIRE_TELEGRAM).
+	//
+	// Set to true to restore the old three-step funnel.
+	REGISTER_REQUIRE_TELEGRAM: envFlag("false"),
+
 	// ------------------------------ billing ----------------------------------
 	// Payment gateway adapter: "" (billing hidden), "manual" (orders are
 	// created, an admin marks them paid), "stripe" (Checkout + webhook),

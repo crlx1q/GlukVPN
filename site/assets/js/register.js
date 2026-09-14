@@ -373,6 +373,20 @@
     if (reg.poll) { clearTimeout(reg.poll); reg.poll = null; }
   }
 
+  /* Последний экран воронки. unverified — аккаунт создан по почте, без
+     Telegram: он рабочий, но неподтверждённый. Сказать об этом надо
+     прямо здесь, иначе человек узнает о статусе только случайно, уже
+     в кабинете. Текст подсказки лежит в HTML, чтобы переводился
+     вместе со страницей, а не двумя разными способами.            */
+  function showDone(username, unverified) {
+    stopPolling();
+    var login = $("reg-done-login");
+    if (login) login.textContent = username || "";
+    var hint = $("reg-done-tg");
+    if (hint) hint.hidden = !unverified;
+    step("done");
+  }
+
   /* Страница не узнает от бота ничего напрямую, поэтому спрашиваем
      сервер. Поллинг ограничен по времени: забытая открытой вкладка
      не должна стучать в API бесконечно.                              */
@@ -389,9 +403,7 @@
     request("/api/auth/register/status?email=" + encodeURIComponent(reg.email))
       .then(function (json) {
         if (json && json.state === "done") {
-          var login = $("reg-done-login");
-          if (login) login.textContent = json.username || "";
-          step("done");
+          showDone(json.username, json.verified === false);
           return;
         }
         reg.poll = setTimeout(pollStatus, 3000);
@@ -473,6 +485,13 @@
       }).then(
         function (json) {
           busy(codeBtn, false, "", t("Подтвердить", "Confirm"));
+          /* Телеграм-шага может не быть: сервер создаёт аккаунт сразу
+             после кода, если оператор перестал его требовать. Тогда
+             воронка кончается здесь, а привязка уезжает в кабинет.  */
+          if (json && json.state === "done") {
+            showDone(json.username, json.verified === false);
+            return;
+          }
           reg.telegramUrl = json.telegramUrl || "";
           var open = $("reg-tg-open");
           if (open && reg.telegramUrl) open.href = reg.telegramUrl;
@@ -674,7 +693,12 @@
   request("/api/auth/config").then(
     function (json) {
       var closed = json && json.selfRegistration === false;
-      var noBot = json && json.telegram && json.telegram.enabled === false;
+      /* Бот важен, только если им заканчивается регистрация. Когда
+         сервер снял это требование, неработающий бот больше не повод
+         закрывать форму: почты и кода достаточно, а привязку можно
+         сделать позже из кабинета.                                 */
+      var tgRequired = !(json && json.telegram && json.telegram.required === false);
+      var noBot = tgRequired && json && json.telegram && json.telegram.enabled === false;
       if (noBot && !closed) {
         closeRegistration(t(
           "Подтверждение в Telegram сейчас недоступно, поэтому регистрация закрыта. Напишите нам — откроем доступ вручную.",

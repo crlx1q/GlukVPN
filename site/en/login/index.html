@@ -258,6 +258,10 @@
                 <span class="icon-badge icon-badge--ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg></span>
                 <h2 class="h3">Account created</h2>
                 <p class="muted">Your login: <b class="mono" id="reg-done-login"></b>. You can sign in with the login or the email — on the site, in the app and in the extension.</p>
+                <!-- Sign-up without Telegram: the account works, but it is not
+                     verified. register.js unhides this only in that case - for
+                     someone who did link Telegram the hint would be a lie. -->
+                <p class="auth-hint" id="reg-done-tg" hidden>Your account is not verified yet. Link Telegram from your account page — that verifies the account and unlocks the trial.</p>
                 <a class="btn btn--primary btn--lg btn--block" href="/en/login/" data-auth-goto="login">Sign in</a>
                 <a class="btn btn--ghost btn--block" href="/en/download/">Download the app</a>
               </div>

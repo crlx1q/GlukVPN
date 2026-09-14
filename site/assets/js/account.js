@@ -315,9 +315,22 @@
     get("/api/auth/telegram").then(
       function (res) {
         var name = res && res.username ? "@" + String(res.username) : "";
-        setInfo("telegram", res && res.linked
-          ? (name || t("привязан", "linked"))
-          : t("не привязан", "not linked"));
+        /* Привязка и подтверждение — разные вещи с тех пор, как
+           регистрация перестала требовать Telegram. Строка называет
+           статус целиком: без этого «не привязан» читается как
+           необязательная мелочь, хотя именно это держит аккаунт
+           неподтверждённым и закрывает пробный период.          */
+        if (res && res.linked) {
+          var who = name || t("привязан", "linked");
+          setInfo("telegram", res.verifiedAt
+            ? who
+            : who + t(" — не подтверждён", " - not verified"));
+        } else {
+          setInfo("telegram", t(
+            "не привязан — аккаунт не подтверждён",
+            "not linked - account not verified"
+          ));
+        }
         setInfo("phone", (res && res.phoneMask)
           || (res && res.phoneTail ? "*** " + res.phoneTail : t("нет номера", "no number")));
       },
