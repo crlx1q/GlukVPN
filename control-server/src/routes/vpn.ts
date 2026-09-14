@@ -3,6 +3,7 @@ import { z } from "zod"
 import { badRequest, forbidden, notFound } from "../lib/errors"
 import { clientIp, getAuthUser, requireDeviceScope, requireUser } from "../middleware/auth"
 import { prisma } from "../prisma"
+import { entitlementRevision } from "../services/entitlements"
 import { quotaPayload, quotaStatus } from "../services/quota"
 import { serviceStatus } from "../services/serviceControl"
 import { loadPublicNodes } from "../services/nodes"
@@ -277,6 +278,13 @@ export async function vpnRoutes(app: FastifyInstance): Promise<void> {
 			session: current ? toSessionView(current) : null,
 			sessions: sessions.map(toSessionView),
 			subscriptionActive,
+			// The token a client compares against its cached plan. This poll is the
+			// only thing all four platforms already run on a timer, which makes it
+			// the cheapest possible way to say "your plan changed, re-read
+			// /api/auth/me": no socket, no schema change, one string. A grant, a
+			// renewal, a downgrade or a revoke therefore lands everywhere within
+			// one poll instead of waiting for the next sign-in.
+			subscriptionRevision: entitlementRevision(quota.entitlement),
 			quota: quotaPayload(quota),
 			serverTime: new Date().toISOString(),
 		})

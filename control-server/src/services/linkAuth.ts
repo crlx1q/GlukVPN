@@ -47,7 +47,12 @@ export type LinkTokenPayload = {
 	refreshToken: string
 	refreshTokenExpiresAt: string
 	user: Record<string, unknown>
+	/** The plan in force, or null for Free. Never a row out of the history. */
 	subscription: Record<string, unknown> | null
+	/** The previous plan, so an expired one can still be named. */
+	lastSubscription: Record<string, unknown> | null
+	entitlement: Record<string, unknown>
+	subscriptionRevision: string
 }
 
 /**

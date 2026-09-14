@@ -16,7 +16,7 @@ import { prisma } from "../prisma"
 import { config } from "../config"
 import { requireRegistrationEnabled } from "../services/serviceControl"
 import { deleteAccount } from "../services/accountDeletion"
-import { latestSubscription, subscriptionPayload, userPayload } from "../services/accountView"
+import { accountSubscriptionPayload, userPayload } from "../services/accountView"
 import { refreshUserOrigin } from "../services/geo"
 import { googleConfigured, verifyGoogleIdToken } from "../services/googleAuth"
 import { startGoogleRegistration, telegramUsable } from "../services/registration"
@@ -175,7 +175,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 				geoUpdatedAt: user.geoUpdatedAt,
 			})
 
-			const subscription = await latestSubscription(user.id)
+			const account = await accountSubscriptionPayload(user.id)
 
 			return reply.send({
 				tokenType: "Bearer",
@@ -184,7 +184,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 				refreshToken: tokens.refreshToken,
 				refreshTokenExpiresAt: tokens.refreshTokenExpiresAt.toISOString(),
 				user: userPayload(user),
-				subscription: subscriptionPayload(subscription),
+				...account,
 			})
 		},
 	)
@@ -228,7 +228,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 					knownCountryCode: user.lastCountryCode,
 					geoUpdatedAt: user.geoUpdatedAt,
 				})
-				const subscription = await latestSubscription(user.id)
+				const account = await accountSubscriptionPayload(user.id)
 				return reply.send({
 					outcome: "signed_in",
 					tokenType: "Bearer",
@@ -237,7 +237,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 					refreshToken: tokens.refreshToken,
 					refreshTokenExpiresAt: tokens.refreshTokenExpiresAt.toISOString(),
 					user: userPayload(user),
-					subscription: subscriptionPayload(subscription),
+					...account,
 				})
 			}
 
@@ -540,15 +540,19 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
 	app.get("/api/auth/me", { preHandler: requireUser }, async (request, reply) => {
 		const { user, device } = getAuthUser(request)
-		const [deviceCount, subscription] = await Promise.all([
+		const [deviceCount, account] = await Promise.all([
 			prisma.device.count({ where: { userId: user.id, status: "ACTIVE" } }),
-			latestSubscription(user.id),
+			accountSubscriptionPayload(user.id),
 		])
 		return reply.send({
 			user: userPayload(user),
 			activeDevices: deviceCount,
 			currentDeviceId: device?.id ?? null,
-			subscription: subscriptionPayload(subscription),
+			// `subscription` (in force, null for Free), `lastSubscription`
+			// (history), `entitlement` (the limits actually enforced) and
+			// `subscriptionRevision`. This endpoint is what every client polls
+			// and re-reads after a change, so it carries the whole answer.
+			...account,
 		})
 	})
 

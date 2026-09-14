@@ -1,6 +1,13 @@
 import type { Subscription, User } from "@prisma/client"
 import { prisma } from "../prisma"
-import { FREE_PLAN_CODE, planBadge, planDisplayName } from "./entitlements"
+import {
+	FREE_PLAN_CODE,
+	entitlementPayload,
+	entitlementRevision,
+	planBadge,
+	planDisplayName,
+	resolveEntitlement,
+} from "./entitlements"
 
 /**
  * The one shape every sign-in surface returns for a user and a subscription.
@@ -44,16 +51,37 @@ export function userPayload(user: User): Record<string, unknown> {
 // Plan names, tiers, badges and limits all live in one matrix now.
 export { planBadge, planDisplayName }
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * One subscription row as clients see it.
+ *
+ * `at` is a parameter instead of `Date.now()` so a payload can never disagree
+ * with the entitlement sent beside it.
+ */
 export function subscriptionPayload(
 	subscription: Subscription | null,
+	at: Date = new Date(),
 ): Record<string, unknown> | null {
 	if (!subscription) return null
 	// Free is not a subscription. A legacy "free" row must read as "no plan",
 	// otherwise clients print nonsense like "Free, active, 790 days left".
 	if (subscription.plan.trim().toLowerCase() === FREE_PLAN_CODE) return null
-	const msLeft = subscription.expiresAt.getTime() - Date.now()
+	const msLeft = subscription.expiresAt.getTime() - at.getTime()
+	// The clock decides, not the column. `monitor` sweeps run-out rows every few
+	// minutes, so until one runs a row can sit at ACTIVE with a date already in
+	// the past - and a client that trusted the column drew a live plan from it.
+	const status =
+		subscription.status === "ACTIVE" && msLeft <= 0 ? "EXPIRED" : subscription.status
+	const active = status === "ACTIVE"
 	return {
-		status: subscription.status,
+		id: subscription.id,
+		status,
+		// Existence and validity are two different questions. A row exists from
+		// the first purchase onwards and that is not what "subscribed" means, so
+		// every client reads this flag rather than re-deriving it from a status
+		// string and a date in its own timezone - four clients, four answers.
+		active,
 		plan: subscription.plan,
 		planName: planDisplayName(subscription.plan),
 		// Which badge every client draws next to the nickname.
@@ -61,15 +89,77 @@ export function subscriptionPayload(
 		tier: subscription.tier,
 		source: subscription.source,
 		expiresAt: subscription.expiresAt.toISOString(),
-		daysLeft: Math.max(0, Math.ceil(msLeft / (24 * 60 * 60 * 1000))),
+		// Zero once it is over: "0 days left" beside a date in 2029 is what made
+		// the account page unreadable.
+		daysLeft: active ? Math.max(0, Math.ceil(msLeft / DAY_MS)) : 0,
 	}
 }
 
-/** The subscription clients should display: the latest-expiring one. */
+/**
+ * The row that is valid *right now*, or null.
+ *
+ * Same filter and same ordering as `resolveEntitlement`, deliberately: these
+ * two answers are rendered side by side, and while they disagreed the account
+ * page could show "Free" next to a Pro badge.
+ */
+export async function activeSubscription(
+	userId: string,
+	at: Date = new Date(),
+): Promise<Subscription | null> {
+	return prisma.subscription.findFirst({
+		where: { userId, status: "ACTIVE", expiresAt: { gt: at }, plan: { not: FREE_PLAN_CODE } },
+		orderBy: [{ tier: "desc" }, { expiresAt: "desc" }],
+	})
+}
+
+/**
+ * The newest row in the account's history, whatever state it is in.
+ *
+ * History, never the current plan. Handing this out as "the subscription" is
+ * the whole bug: a revoked beta row running to 2029 outranked the Pro month
+ * that was actually paid for, so the website printed "Free - DISABLED - 0 days
+ * - 6 February 2029" while the admin panel had it right all along.
+ */
 export async function latestSubscription(userId: string): Promise<Subscription | null> {
 	return prisma.subscription.findFirst({
 		// Free rows are skipped on purpose: they are not subscriptions.
 		where: { userId, plan: { not: FREE_PLAN_CODE } },
-		orderBy: [{ expiresAt: "desc" }, { tier: "desc" }],
+		orderBy: [{ createdAt: "desc" }, { expiresAt: "desc" }],
 	})
+}
+
+/**
+ * Everything a sign-in surface says about a plan, in one object.
+ *
+ * Spread into the reply, so `/api/auth/login`, `/api/auth/me`, Google sign-in
+ * and the link flow cannot drift apart again:
+ *
+ * - `subscription` - the plan in force, or `null` for Free. This is what
+ *   clients render, and nothing else.
+ * - `lastSubscription` - what came before, so an expired plan can be named
+ *   ("Pro ended on 14 October") instead of leaving a Free page unexplained.
+ *   Absent while it is the active row.
+ * - `entitlement` - the limits the server will actually enforce.
+ * - `subscriptionRevision` - changes whenever any of the above does.
+ */
+export async function accountSubscriptionPayload(
+	userId: string,
+	at: Date = new Date(),
+): Promise<{
+	subscription: Record<string, unknown> | null
+	lastSubscription: Record<string, unknown> | null
+	entitlement: Record<string, unknown>
+	subscriptionRevision: string
+}> {
+	const [active, last, entitlement] = await Promise.all([
+		activeSubscription(userId, at),
+		latestSubscription(userId),
+		resolveEntitlement(userId, at),
+	])
+	return {
+		subscription: subscriptionPayload(active, at),
+		lastSubscription: last && last.id !== active?.id ? subscriptionPayload(last, at) : null,
+		entitlement: entitlementPayload(entitlement),
+		subscriptionRevision: entitlementRevision(entitlement),
+	}
 }

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { prisma } from "../prisma"
 
 /**
@@ -268,10 +269,39 @@ export async function resolveEntitlement(
 	}
 }
 
+/**
+ * A short token that changes if and only if something a client renders about
+ * the plan changed: which row is in force, when it ends, and the limits it
+ * carries.
+ *
+ * This is how a client learns its copy is stale without a schema change and
+ * without a socket. It travels in every account payload and in
+ * `/api/vpn/status`, which all four clients already poll, so a grant, a
+ * renewal, a downgrade or a revoke is noticed within one poll instead of at
+ * the next sign-in.
+ *
+ * Deliberately built from none of `daysLeft`, `period` or "now": a token that
+ * moved every second would have every client refetching every second.
+ */
+export function entitlementRevision(ent: Entitlement): string {
+	const parts = [
+		ent.subscriptionId ?? "none",
+		ent.planCode,
+		ent.expiresAt ? String(ent.expiresAt.getTime()) : "0",
+		String(ent.maxDevices),
+		String(ent.maxSessions),
+		String(ent.trafficLimitBytes ?? -1),
+		String(ent.speedLimitMbps ?? -1),
+		ent.speedLimitSource,
+	]
+	return createHash("sha1").update(parts.join("|")).digest("hex").slice(0, 16)
+}
+
 /** The plan half of what clients render. Traffic numbers live in `quota.ts`. */
 export function entitlementPayload(ent: Entitlement): Record<string, unknown> {
 	return {
 		plan: ent.planCode,
+		revision: entitlementRevision(ent),
 		planName: ent.planName,
 		badge: ent.badge,
 		tier: ent.tier,

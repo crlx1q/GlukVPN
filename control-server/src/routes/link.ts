@@ -7,7 +7,7 @@ import { writeAudit } from "../lib/audit"
 import { badRequest, notFound } from "../lib/errors"
 import { clientIp, getAuthUser, requireUser } from "../middleware/auth"
 import { prisma } from "../prisma"
-import { latestSubscription, subscriptionPayload, userPayload } from "../services/accountView"
+import { accountSubscriptionPayload, userPayload } from "../services/accountView"
 import type { LinkTokenPayload } from "../services/linkAuth"
 import {
 	approveLink,
@@ -74,7 +74,7 @@ async function mintLinkTokens(
 	user: User,
 ): Promise<LinkTokenPayload> {
 	const tokens = await issueTokens(app, user, null)
-	const subscription = await latestSubscription(user.id)
+	const account = await accountSubscriptionPayload(user.id)
 	return {
 		tokenType: "Bearer",
 		accessToken: tokens.accessToken,
@@ -82,7 +82,7 @@ async function mintLinkTokens(
 		refreshToken: tokens.refreshToken,
 		refreshTokenExpiresAt: tokens.refreshTokenExpiresAt.toISOString(),
 		user: userPayload(user),
-		subscription: subscriptionPayload(subscription),
+		...account,
 	}
 }
 
