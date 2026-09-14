@@ -759,6 +759,94 @@
     });
   }
 
+  /* -------------------------------------------------- возврат от шлюза */
+  /* Со страницы оплаты браузер возвращается на /app/?paid=1&order=<id>
+     или на ?failed=1. Подписку выдаёт вебхук, но его доставка может
+     опоздать или потеряться, поэтому кабинет сам просит сервер сверить
+     платёж со шлюзом и говорит результат словами: подключено, ждём
+     подтверждения или отклонено. */
+  var SYNC_TRIES = 5, SYNC_DELAY = 3000;
+  var PAYMENT_DEAD = { FAILED: 1, CANCELED: 1, CANCELLED: 1, EXPIRED: 1 };
+
+  function param(name) {
+    var m = new RegExp("[?&]" + name + "=([^&#]*)").exec(window.location.search || "");
+    return m ? decodeURIComponent(m[1].replace(/\+/g, " ")) : "";
+  }
+
+  /* Метки платежа в адресе одноразовые: после перезагрузки они уже
+     ничего не значат и только сбивают с толку. */
+  function dropPaymentQuery() {
+    if (!window.history || !window.history.replaceState) return;
+    var keep = String(window.location.search || "").replace(/^\?/, "").split("&").filter(function (pair) {
+      if (!pair) return false;
+      var key = pair.split("=")[0];
+      return key !== "paid" && key !== "failed" && key !== "order";
+    });
+    window.history.replaceState({}, "", window.location.pathname + (keep.length ? "?" + keep.join("&") : "") + (window.location.hash || ""));
+  }
+
+  function syncOrders() {
+    var A = window.GlukAuth;
+    if (!A || !A.call || !A.isAuthed || !A.isAuthed()) return Promise.resolve(null);
+    var opts = { method: "POST", body: {} };
+    var req = D && D.request ? D.request(A, "/api/billing/orders/sync", opts) : A.call("/api/billing/orders/sync", opts);
+    return req.then(function (res) { return res || null; }, function () { return null; });
+  }
+
+  /* Нужен заказ, чей id прислал шлюз; без него — самый свежий. */
+  function syncedOrder(res, id) {
+    var list = (res && Array.isArray(res.orders)) ? res.orders : [];
+    var exact = null;
+    if (id) list.forEach(function (o) { if (!exact && o && String(o.id) === String(id)) exact = o; });
+    return exact || list[0] || null;
+  }
+
+  function paymentDeclined() {
+    msg(T("Платёж не прошёл. Деньги не списаны — попробуйте другую карту или оплатите ещё раз."), "is-err");
+  }
+
+  function gatewayReturn() {
+    var paid = param("paid"), failed = param("failed"), id = param("order");
+    if (!paid && !failed) return;
+    dropPaymentQuery();
+    if (!paid) {
+      paymentDeclined();
+      /* Закрываем отклонённую попытку сразу, иначе следующая оплата
+         упрётся в тот же заказ. */
+      syncOrders().then(function () { loadAll(); });
+      return;
+    }
+    msg(T("Проверяем платёж…"), "");
+    check(0);
+
+    function check(attempt) {
+      syncOrders().then(function (res) {
+        var A = window.GlukAuth;
+        var order = syncedOrder(res, id);
+        var status = String((order && order.status) || "").toUpperCase();
+        if (status === "PAID") {
+          msg(T("Оплата прошла — подписка подключена."), "is-ok");
+          if (A && A.refresh) A.refresh();
+          loadAll();
+          return;
+        }
+        if (PAYMENT_DEAD[status]) {
+          paymentDeclined();
+          loadAll();
+          return;
+        }
+        /* Банк ещё думает: переспрашиваем несколько раз, а не пугаем отказом. */
+        if (attempt + 1 < SYNC_TRIES) {
+          msg(T("Платёж обрабатывается — подписка включится автоматически."), "");
+          window.setTimeout(function () { check(attempt + 1); }, SYNC_DELAY);
+          return;
+        }
+        msg(T("Платёж ещё обрабатывается. Подписка включится сама — обновите страницу через минуту."), "");
+        loadAll();
+      });
+    }
+  }
+
   function loadAll() {
     var A = window.GlukAuth;
     if (!A || !A.call || !A.isAuthed() || inflight) return;
@@ -855,6 +943,8 @@
       pinData = pinsFor([]);
       placePins();
       loadAll();
+      /* Только после входа: сверка платежа требует сессии. */
+      gatewayReturn();
     }
   }
 
