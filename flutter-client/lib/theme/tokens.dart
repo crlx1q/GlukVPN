@@ -239,7 +239,8 @@ class QuotaScale {
 	/// `fraction` — доля израсходованного, 0..1. Значения выше единицы
 	/// прижимаются: перерасход уже максимально тревожен, дальше краснеть некуда.
 	static Color tone(double fraction) {
-		final double p = ((fraction.isFinite ? fraction : 0) * 100).clamp(0.0, 100.0);
+		final double p =
+				((fraction.isFinite ? fraction : 0) * 100).clamp(0.0, 100.0).toDouble();
 		final double hue = p <= 50
 				? 142
 				: p <= 70

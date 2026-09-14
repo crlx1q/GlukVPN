@@ -36,7 +36,18 @@ class AuthController extends ChangeNotifier {
 
   AuthStage _stage = AuthStage.unknown;
   AuthUser? _user;
-  SubscriptionInfo? _subscription;
+
+  /// Тариф, история и лимиты одним снимком: склеивать их из разных ответов
+  /// экраны не должны — именно так бейдж и лимиты и начинали расходиться.
+  AccountSnapshot _account = const AccountSnapshot();
+
+  /// Ревизия, ради которой аккаунт уже перечитывали. Сравнение только на
+  /// равенство: сервер считает отпечаток хешем, «новее» у него не бывает.
+  String _seenRevision = '';
+
+  /// Перечитывание уже идёт. Статус туннеля опрашивается часто, а ответ
+  /// приходит не мгновенно, иначе один и тот же запрос уйдёт несколько раз.
+  bool _revisionRefreshing = false;
   String? _error;
 
   /// Машинный код последнего отказа (`ApiException.code`). Сообщение
@@ -63,7 +74,18 @@ class AuthController extends ChangeNotifier {
   ApiClient get api => _api;
   AuthStage get stage => _stage;
   AuthUser? get user => _user;
-  SubscriptionInfo? get subscription => _subscription;
+
+  /// Действующий сейчас тариф; `null` — Free.
+  SubscriptionInfo? get subscription => _account.subscription;
+
+  /// Последняя закрытая строка — только для подписи «Прошлый тариф».
+  SubscriptionInfo? get lastSubscription => _account.last;
+
+  /// Лимиты, которые действуют сейчас, включая бесплатные.
+  EntitlementInfo? get entitlement => _account.entitlement;
+
+  /// Отпечаток тарифа, с которым сверяется ревизия из статуса туннеля.
+  String get subscriptionRevision => _account.revision;
   String? get error => _error;
 
   /// Код последнего отказа, если он пришёл от сервера.
@@ -82,10 +104,17 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
   }
   bool get isAuthenticated => _stage == AuthStage.authenticated;
-  bool get subscriptionActive => _subscription?.isActive ?? false;
+  bool get subscriptionActive => _account.paid;
 
   /// True while signed in with a session the server has not re-confirmed yet.
   bool get sessionUnconfirmed => _unconfirmed;
+
+  /// Забывает тариф вместе с сессией: чужой бейдж после выхода — это данные
+  /// прошлого аккаунта на экране, пусть и безобидные на вид.
+  void _forgetAccount() {
+    _account = const AccountSnapshot();
+    _seenRevision = '';
+  }
 
   void clearError() {
     if (_error == null && _errorCode == null) return;
@@ -101,7 +130,7 @@ class AuthController extends ChangeNotifier {
       _store.deleteRefreshToken().ignore();
       if (_stage == AuthStage.authenticated && !_explicitLogout) {
         _user = null;
-        _subscription = null;
+        _forgetAccount();
         _stage = AuthStage.unauthenticated;
         _error = 'Session expired. Please sign in again.';
         _errorCode = null;
@@ -183,7 +212,7 @@ class AuthController extends ChangeNotifier {
     if (outcome == SessionRefreshOutcome.revoked) {
       await _store.deleteRefreshToken();
       _user = null;
-      _subscription = null;
+      _forgetAccount();
       _unconfirmed = false;
       _stage = AuthStage.unauthenticated;
       _error = 'Your session has ended. Please sign in again.';
@@ -222,7 +251,8 @@ class AuthController extends ChangeNotifier {
       final LoginResult result =
           await _api.login(identifier: identifier.trim(), password: password);
       _user = result.user;
-      _subscription = result.subscription;
+      _account = result.account;
+      _seenRevision = result.account.revision;
       _unconfirmed = false;
       _connectivity?.reportSuccess();
       await _store.writeUsername(result.user.username);
@@ -312,7 +342,8 @@ class AuthController extends ChangeNotifier {
         // From here the flow is identical to a password login, deliberately:
         // one code path owns "what it means to become signed in".
         _user = result.user;
-        _subscription = result.subscription;
+        _account = result.account;
+        _seenRevision = result.account.revision;
         _unconfirmed = false;
         _connectivity?.reportSuccess();
         await _store.writeUsername(result.user.username);
@@ -426,6 +457,41 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  /// Сверяет отпечаток тарифа из статуса туннеля с текущим снимком.
+  ///
+  /// Статус опрашивается постоянно, поэтому он же и переносит новости о
+  /// тарифе: покупка, продление и отзыв доезжают до экрана за один опрос и
+  /// без перелогина. Отдельный канал уведомлений ради этого не нужен.
+  Future<void> syncSubscriptionRevision(String revision) async {
+    if (revision.isEmpty || _stage != AuthStage.authenticated) return;
+    if (revision == _account.revision || revision == _seenRevision) return;
+    if (_revisionRefreshing) return;
+    // Отметку ставим до запроса: следующий опрос статуса придёт раньше
+    // ответа и иначе запустит второе перечитывание того же самого.
+    _seenRevision = revision;
+    _revisionRefreshing = true;
+    try {
+      await _loadMe();
+      _unconfirmed = false;
+      _connectivity?.reportSuccess();
+      // Именно ревизия из статуса, а не из ответа /me: если они разошлись,
+      // повторять запрос на каждый опрос всё равно бессмысленно.
+      _seenRevision = revision;
+      notifyListeners();
+    } on ApiException catch (error) {
+      // Не перечитали — отметку снимаем, иначе экран останется со старым
+      // тарифом до перезапуска приложения.
+      _seenRevision = '';
+      if (error.isNetwork) {
+        _unconfirmed = true;
+        _connectivity?.reportNetworkFailure();
+        notifyListeners();
+      }
+    } finally {
+      _revisionRefreshing = false;
+    }
+  }
+
   /// Starts an email change. The address only moves once the code is confirmed.
   Future<DateTime?> requestEmailChange(String email) =>
       _api.requestEmailChange(email.trim());
@@ -442,7 +508,9 @@ class AuthController extends ChangeNotifier {
   Future<void> _loadMe() async {
     final MeResult me = await _api.me();
     _user = me.user;
-    _subscription = me.subscription;
+    _account = me.account;
+    // Экран уже соответствует этой ревизии, перечитывать её ещё раз незачем.
+    _seenRevision = me.account.revision;
     if (me.currentDeviceId != null) _deviceId = me.currentDeviceId;
   }
 
@@ -493,7 +561,7 @@ class AuthController extends ChangeNotifier {
     } finally {
       await _store.wipe();
       _user = null;
-      _subscription = null;
+      _forgetAccount();
       _deviceId = null;
       _deviceName = null;
       _devicePublicKey = null;

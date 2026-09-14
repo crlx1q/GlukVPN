@@ -1067,6 +1067,10 @@ class DesktopVpnController extends ChangeNotifier {
     try {
       final VpnStatusInfo status = await _api.status();
       if (_disposed || revision != _connectRevision || scope != _api.authRevision.value) return;
+      // Тариф мог смениться без участия клиента: оплата на сайте или
+      // отзыв из админки. Сверка отпечатка довозит это до экрана без
+      // перелогина и не задерживает разбор самого статуса.
+      unawaited(_auth.syncSubscriptionRevision(status.subscriptionRevision));
       // Третий признак — догадка по прошлой причине закрытия, а не факт.
       // Во время connect() она относится к предыдущей сессии, поэтому под
       // _busy её игнорируем: иначе новое подключение уходит в «обслуживание».

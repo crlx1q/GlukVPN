@@ -85,6 +85,10 @@ class _AccountScreenState extends State<AccountScreen> {
     final AuthController auth = context.watch<AuthController>();
     final AuthUser? user = auth.user;
     final SubscriptionInfo? plan = auth.subscription;
+    // Лимиты берём из entitlement: в профиле лежит то, что назначено
+    // аккаунту, а действует то, что сервер посчитал по текущему тарифу.
+    final EntitlementInfo? limits = auth.entitlement;
+    final SubscriptionInfo? lastPlan = auth.lastSubscription;
 
     final List<DeviceInfo> all = _devices?.devices ?? const <DeviceInfo>[];
     final List<DeviceInfo> active =
@@ -201,13 +205,28 @@ class _AccountScreenState extends State<AccountScreen> {
                   label: s.deviceSlots,
                   value: s.usedOfTotal(
                     active.length,
-                    _devices?.maxDevices ?? user?.maxDevices ?? 3,
+                    limits?.maxDevices ??
+                        _devices?.maxDevices ??
+                        user?.maxDevices ??
+                        3,
                   ),
                 ),
                 _Row(
                   label: s.tunnelsAtOnce,
-                  value: '${user?.maxConcurrentSessions ?? 1}',
+                  value:
+                      '${limits?.maxSessions ?? user?.maxConcurrentSessions ?? 1}',
                 ),
+                // Закрытую строку показываем отдельной подписью, а не вместо
+                // действующего тарифа: именно она раньше и выдавала себя за
+                // подписку — β Pro до 2029 года поверх только что купленной.
+                if (!auth.subscriptionActive && lastPlan != null)
+                  _Row(
+                    label: s.isRussian ? 'Прошлый тариф' : 'Previous plan',
+                    value: lastPlan.planName.isNotEmpty
+                        ? lastPlan.planName
+                        : (lastPlan.plan.isNotEmpty ? lastPlan.plan : '\u2014'),
+                    trailing: PlanBadge(subscription: lastPlan, compact: true),
+                  ),
                 if (!auth.subscriptionActive) ...<Widget>[
                   const SizedBox(height: 6),
                   Text(s.noActivePlanBody, style: text.bodySmall),

@@ -244,6 +244,12 @@ class _DesktopAccountScreenState extends State<DesktopAccountScreen> {
         final List<DeviceInfo> all = _ordered(_devices ?? const <DeviceInfo>[]);
         final int activeCount = all.where((DeviceInfo d) => d.isActive).length;
         final int revokedCount = all.length - activeCount;
+        // Лимиты — из entitlement: их сервер считает по действующему тарифу,
+        // а список устройств приходит своим запросом и может отстать.
+        final EntitlementInfo? limits = widget.auth.entitlement;
+        final int deviceSlots = limits?.maxDevices ?? _maxDevices;
+        final int sessionSlots =
+            limits?.maxSessions ?? widget.auth.user?.maxConcurrentSessions ?? 1;
         final List<DeviceInfo> filtered = all.where(_matchesFilter).toList();
         final bool truncated =
             !_showAll && filtered.length > _collapsedCount;
@@ -277,7 +283,12 @@ class _DesktopAccountScreenState extends State<DesktopAccountScreen> {
               items: <_Fact>[
                 _Fact(
                   label: s.plan,
-                  value: widget.auth.subscription?.displayPlan ?? '—',
+                  // Без действующей строки это не «неизвестно», а Free:
+                  // название берём из лимитов, которые сервер присылает всегда.
+                  value: widget.auth.subscription?.displayPlan ??
+                      ((limits?.planName ?? '').isNotEmpty
+                          ? limits!.planName
+                          : 'Free'),
                 ),
                 _Fact(
                   label: s.expires,
@@ -287,13 +298,13 @@ class _DesktopAccountScreenState extends State<DesktopAccountScreen> {
                 ),
                 _Fact(
                   label: _ru ? 'Устройства' : 'Devices',
-                  value: _maxDevices > 0
-                      ? '$activeCount / $_maxDevices'
+                  value: deviceSlots > 0
+                      ? '$activeCount / $deviceSlots'
                       : '$activeCount',
                 ),
                 _Fact(
                   label: _ru ? 'Сессий сразу' : 'Concurrent',
-                  value: '${widget.auth.user?.maxConcurrentSessions ?? 1}',
+                  value: '$sessionSlots',
                 ),
               ],
             ),
@@ -478,7 +489,9 @@ class _ProfileHeader extends StatelessWidget {
     final String name = user?.username ?? (ru ? 'Аккаунт' : 'Account');
     final String initial =
         name.trim().isEmpty ? '?' : name.trim().substring(0, 1).toUpperCase();
-    final bool active = auth.subscription?.isActive ?? false;
+    // Платный тариф по данным сервера: строки подписки может не быть,
+    // а права — выданы лимитами.
+    final bool active = auth.subscriptionActive;
     final Color accent = active ? GlukColors.connected : GlukColors.violetLight;
 
     final String publicId = user?.publicIdLabel ?? '';

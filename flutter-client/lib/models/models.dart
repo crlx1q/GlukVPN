@@ -375,13 +375,32 @@ class QuotaInfo {
 }
 
 class SubscriptionInfo {
-  const SubscriptionInfo({required this.status, this.expiresAt, this.plan = '', this.planName = '', this.badge = ''});
+  const SubscriptionInfo({
+    required this.status,
+    this.expiresAt,
+    this.plan = '',
+    this.planName = '',
+    this.badge = '',
+    this.id = '',
+    this.tier = 0,
+    this.source = '',
+    this.serverActive,
+    this.daysLeft,
+  });
 
   factory SubscriptionInfo.fromJson(Map<String, dynamic> json) => SubscriptionInfo(
         plan: _asString(json['plan']), planName: _asString(json['planName']),
         badge: _asString(json['badge']),
         status: _asString(json['status'], 'EXPIRED'),
         expiresAt: _asDate(json['expiresAt']),
+        id: _asString(json['id']),
+        tier: _asInt(json['tier']),
+        source: _asString(json['source']),
+        // Живая ли строка, решает сервер: только он знает, отозвали её,
+        // заменили при смене тарифа или она просто дожила до конца срока.
+        // Старые серверы поля не присылают - тогда прежний расчёт по статусу.
+        serverActive: json['active'] is bool ? json['active'] as bool : null,
+        daysLeft: json['daysLeft'] == null ? null : _asInt(json['daysLeft']),
       );
 
   final String status;
@@ -399,8 +418,101 @@ class SubscriptionInfo {
   }
   final DateTime? expiresAt;
 
+  /// Идентификатор строки подписки. Строк у аккаунта бывает много: это
+  /// история продлений и замен, а не «несколько подписок сразу».
+  final String id;
+
+  /// Вес тарифа: free 0, дальше по возрастанию. Считает сервер.
+  final int tier;
+
+  /// Откуда взялась подписка: оплата, промокод, выдача из админки.
+  final String source;
+
+  /// Вердикт сервера о том, действует ли строка. `null` - сервер старый.
+  final bool? serverActive;
+
+  /// Дней до конца срока по часам сервера, а не по часам устройства.
+  final int? daysLeft;
+
+  /// Действует ли тариф прямо сейчас.
+  ///
+  /// Существование строки и её действие - разные вещи. Отозванная, заменённая
+  /// и истёкшая строки остаются в истории аккаунта, и раньше клиент показывал
+  /// именно такую строку как действующий тариф.
   bool get isActive =>
-      status == 'ACTIVE' && (expiresAt?.isAfter(DateTime.now()) ?? false);
+      serverActive ??
+      (status == 'ACTIVE' && (expiresAt?.isAfter(DateTime.now()) ?? false));
+
+  /// Статус закрытой строки для подписи «Прошлый тариф»; у действующей пусто.
+  String get closedReason => isActive ? '' : status;
+}
+
+/// Что аккаунту разрешено прямо сейчас.
+///
+/// Живёт отдельно от [SubscriptionInfo] намеренно: подписки может не быть
+/// вообще, а лимиты есть всегда - бесплатный тариф это тоже набор лимитов.
+/// Клиенты берут числа отсюда, поэтому показывают то же, что админка.
+class EntitlementInfo {
+  const EntitlementInfo({
+    required this.plan,
+    required this.revision,
+    this.planName = '',
+    this.badge = '',
+    this.tier = 0,
+    this.subscribed = false,
+    this.status = '',
+    this.expiresAt,
+    this.daysLeft,
+    this.maxDevices,
+    this.maxSessions,
+    this.trafficLimitBytes,
+    this.speedLimitMbps,
+    this.periodEnd,
+  });
+
+  factory EntitlementInfo.fromJson(Map<String, dynamic> json) => EntitlementInfo(
+        plan: _asString(json['plan'], 'free'),
+        revision: _asString(json['revision']),
+        planName: _asString(json['planName']),
+        badge: _asString(json['badge']),
+        tier: _asInt(json['tier']),
+        subscribed: _asBool(json['subscribed']),
+        status: _asString(json['status']),
+        expiresAt: _asDate(json['expiresAt']),
+        daysLeft: json['daysLeft'] == null ? null : _asInt(json['daysLeft']),
+        maxDevices:
+            json['maxDevices'] == null ? null : _asInt(json['maxDevices']),
+        maxSessions:
+            json['maxSessions'] == null ? null : _asInt(json['maxSessions']),
+        trafficLimitBytes: json['trafficLimitBytes'] == null
+            ? null
+            : _asInt(json['trafficLimitBytes']),
+        speedLimitMbps: json['speedLimitMbps'] == null
+            ? null
+            : _asInt(json['speedLimitMbps']),
+        periodEnd: _asDate(json['periodEnd']),
+      );
+
+  /// Код действующего тарифа. Без подписки это `free`, а не пустая строка.
+  final String plan;
+
+  /// Отпечаток тарифа и лимитов: меняется при любой правке подписки. Его
+  /// только сравнивают со своим — сервер считает его хешем, а не счётчиком,
+  /// поэтому «больше/меньше» здесь смысла не имеет.
+  final String revision;
+  final String planName, badge, status;
+  final int tier;
+
+  /// Платный ли тариф действует. Free - это `false` и при живой истории.
+  final bool subscribed;
+  final DateTime? expiresAt;
+  final int? daysLeft;
+
+  /// Лимиты тарифа. `null` - сервер их не прислал, берём прежние из профиля.
+  final int? maxDevices, maxSessions;
+  final int? trafficLimitBytes;
+  final int? speedLimitMbps;
+  final DateTime? periodEnd;
 }
 
 class NodeLocation {
@@ -850,6 +962,7 @@ class VpnStatusInfo {
     required this.connected,
     required this.peerReady,
     required this.subscriptionActive,
+    this.subscriptionRevision = '',
     this.quota,
     this.session,
     this.serverTime,
@@ -866,6 +979,7 @@ class VpnStatusInfo {
       connected: _asBool(json['connected']),
       peerReady: _asBool(json['peerReady']),
       subscriptionActive: _asBool(json['subscriptionActive'], fallback: true),
+      subscriptionRevision: _asString(json['subscriptionRevision']),
       // Лимит приходит вместе со статусом, поэтому шкала всегда такая же
       // свежая, как и состояние туннеля, и без второго запроса.
       quota: json['quota'] == null ? null : QuotaInfo.fromJson(_asMap(json['quota'])),
@@ -884,6 +998,13 @@ class VpnStatusInfo {
   /// True once the node has actually installed the WireGuard peer.
   final bool peerReady;
   final bool subscriptionActive;
+
+  /// Отпечаток тарифа на сервере: строка, а не счётчик.
+  ///
+  /// Статус туннеля опрашивается регулярно, поэтому он же и служит сигналом
+  /// «тариф поменялся, перечитай аккаунт»: отдельный канал уведомлений для
+  /// этого не нужен, а выдача и отзыв видны в течение одного опроса.
+  final String subscriptionRevision;
 
   /// Месячный лимит тарифа по данным сервера; `null` — ещё не пришёл.
   final QuotaInfo? quota;
@@ -990,20 +1111,72 @@ class LinkAuthPoll {
       status == LinkAuthStatus.pending || status == LinkAuthStatus.slowDown;
 }
 
+/// Состояние тарифа аккаунта в одном месте.
+///
+/// Один парсер на все входы - парольный вход, Google, вход по ссылке и
+/// `/api/auth/me`. Когда у каждой ветки был свой разбор, они расходились, и
+/// приложение показывало тариф, отличный от сайта и админки.
+class AccountSnapshot {
+  const AccountSnapshot({
+    this.subscription,
+    this.last,
+    this.entitlement,
+    this.revision = '',
+  });
+
+  factory AccountSnapshot.fromJson(Map<String, dynamic> json) => AccountSnapshot(
+        subscription: json['subscription'] == null
+            ? null
+            : SubscriptionInfo.fromJson(_asMap(json['subscription'])),
+        last: json['lastSubscription'] == null
+            ? null
+            : SubscriptionInfo.fromJson(_asMap(json['lastSubscription'])),
+        entitlement: json['entitlement'] == null
+            ? null
+            : EntitlementInfo.fromJson(_asMap(json['entitlement'])),
+        revision: _asString(json['subscriptionRevision']),
+      );
+
+  /// Действующий тариф. `null` значит Free: ни одной живой строки нет.
+  final SubscriptionInfo? subscription;
+
+  /// Последняя закрытая строка: истёкшая, отозванная или заменённая.
+  /// Нужна ровно для подписи «Прошлый тариф» и никакими правами не управляет.
+  final SubscriptionInfo? last;
+
+  /// Лимиты, которые действуют сейчас, включая бесплатные.
+  final EntitlementInfo? entitlement;
+
+  /// Отпечаток тарифа, с которым сверяется ревизия из статуса туннеля.
+  final String revision;
+
+  /// Действует ли платный тариф. Сначала спрашиваем живую строку, потом
+  /// лимиты: второе позволяет серверу выдать права и без строки подписки.
+  bool get paid =>
+      (subscription?.isActive ?? false) ||
+      (entitlement?.subscribed ?? false) ||
+      ((entitlement?.tier ?? 0) > 0);
+}
+
 class LoginResult {
-  const LoginResult({required this.tokens, required this.user, this.subscription});
+  const LoginResult({
+    required this.tokens,
+    required this.user,
+    this.account = const AccountSnapshot(),
+  });
 
   factory LoginResult.fromJson(Map<String, dynamic> json) => LoginResult(
         tokens: TokenBundle.fromJson(json),
         user: AuthUser.fromJson(_asMap(json['user'])),
-        subscription: json['subscription'] == null
-            ? null
-            : SubscriptionInfo.fromJson(_asMap(json['subscription'])),
+        account: AccountSnapshot.fromJson(json),
       );
 
   final TokenBundle tokens;
   final AuthUser user;
-  final SubscriptionInfo? subscription;
+  final AccountSnapshot account;
+
+  /// Только действующий тариф; история лежит в [AccountSnapshot.last].
+  SubscriptionInfo? get subscription => account.subscription;
 }
 
 class MeResult {
@@ -1011,22 +1184,22 @@ class MeResult {
     required this.user,
     required this.activeDevices,
     this.currentDeviceId,
-    this.subscription,
+    this.account = const AccountSnapshot(),
   });
 
   factory MeResult.fromJson(Map<String, dynamic> json) => MeResult(
         user: AuthUser.fromJson(_asMap(json['user'])),
         activeDevices: _asInt(json['activeDevices']),
         currentDeviceId: _asStringOrNull(json['currentDeviceId']),
-        subscription: json['subscription'] == null
-            ? null
-            : SubscriptionInfo.fromJson(_asMap(json['subscription'])),
+        account: AccountSnapshot.fromJson(json),
       );
 
   final AuthUser user;
   final int activeDevices;
   final String? currentDeviceId;
-  final SubscriptionInfo? subscription;
+  final AccountSnapshot account;
+
+  SubscriptionInfo? get subscription => account.subscription;
 }
 
 /// Result of `POST /api/devices/register`: the device row plus device-scoped

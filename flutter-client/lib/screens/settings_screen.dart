@@ -80,6 +80,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final AppSettings settings = context.watch<AppSettings>();
     final AuthUser? user = auth.user;
     final SubscriptionInfo? subscription = auth.subscription;
+    // Числа лимитов — из entitlement: их сервер считает по действующему
+    // тарифу, а поля профиля остаются прежними до его пересчёта.
+    final EntitlementInfo? limits = auth.entitlement;
+    final int maxDevices = limits?.maxDevices ?? user?.maxDevices ?? 3;
+    final int maxSessions =
+        limits?.maxSessions ?? user?.maxConcurrentSessions ?? 1;
 
     return SafeArea(
       bottom: false,
@@ -113,8 +119,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _SubscriptionCard(
             subscription: subscription,
             active: auth.subscriptionActive,
-            maxDevices: user?.maxDevices ?? 3,
-            maxSessions: user?.maxConcurrentSessions ?? 1,
+            maxDevices: maxDevices,
+            maxSessions: maxSessions,
           ),
           const SizedBox(height: 20),
           _SectionLabel(s.account),
@@ -137,7 +143,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: s.myDevices,
             subtitle: '${s.thisDevice}: '
                 '${auth.deviceName ?? s.notRegisteredYet}'
-                ' \u00b7 ${s.upTo} ${user?.maxDevices ?? 3} ${s.devicesShort}',
+                ' \u00b7 ${s.upTo} $maxDevices ${s.devicesShort}',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (BuildContext context) => const DevicesScreen(),
@@ -412,9 +418,12 @@ class _SubscriptionCard extends StatelessWidget {
     final AppStrings s = context.strings;
     final TextTheme text = Theme.of(context).textTheme;
     final DateTime? expires = subscription?.expiresAt;
-    final int? daysLeft = expires == null
-        ? null
-        : expires.difference(DateTime.now()).inMinutes ~/ (60 * 24);
+    // Дни считает сервер: у устройства часы могут врать, и тогда срок
+    // на экране расходится со сроком в кабинете.
+    final int? daysLeft = subscription?.daysLeft ??
+        (expires == null
+            ? null
+            : expires.difference(DateTime.now()).inMinutes ~/ (60 * 24));
     // A month is the mental unit of a subscription, so the bar is "how much of
     // a month is left" rather than a fake percentage of an unknown term.
     final double progress =

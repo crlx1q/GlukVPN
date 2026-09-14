@@ -402,4 +402,91 @@ void main() {
       expect(result.changed, isFalse);
     });
   });
+
+  group('AccountSnapshot', () {
+    Map<String, dynamic> payload() => <String, dynamic>{
+          'subscription': <String, dynamic>{
+            'id': 'sub-new',
+            'plan': 'pro',
+            'planName': 'Pro',
+            'badge': 'pro',
+            'status': 'ACTIVE',
+            'active': true,
+            'tier': 2,
+            'daysLeft': 29,
+            'expiresAt': '2026-10-14T00:00:00.000Z',
+          },
+          'lastSubscription': <String, dynamic>{
+            'id': 'sub-old',
+            'plan': 'beta_pro',
+            'planName': 'β Pro',
+            'badge': 'beta',
+            'status': 'REVOKED',
+            'active': false,
+            'expiresAt': '2029-01-01T00:00:00.000Z',
+          },
+          'entitlement': <String, dynamic>{
+            'plan': 'pro',
+            'planName': 'Pro',
+            'badge': 'pro',
+            'tier': 2,
+            'subscribed': true,
+            'revision': '3f6a1c9d2b7e4a55',
+            'maxDevices': 5,
+            'maxSessions': 3,
+          },
+          'subscriptionRevision': '3f6a1c9d2b7e4a55',
+        };
+
+    test('the plan in force wins over a longer-dated revoked row', () {
+      final AccountSnapshot account = AccountSnapshot.fromJson(payload());
+      expect(account.subscription?.plan, 'pro');
+      expect(account.subscription?.isActive, isTrue);
+      // Ровно тот баг, ради которого всё затевалось: β Pro до 2029 года
+      // остаётся историей и в действующий тариф больше не пролезает.
+      expect(account.last?.plan, 'beta_pro');
+      expect(account.last?.isActive, isFalse);
+      expect(account.paid, isTrue);
+    });
+
+    test('the server verdict outranks the local clock', () {
+      final Map<String, dynamic> json = payload();
+      (json['subscription']! as Map<String, dynamic>)['active'] = false;
+      // Срок ещё не вышел, но строку закрыли: клиент верит серверу.
+      expect(AccountSnapshot.fromJson(json).subscription?.isActive, isFalse);
+    });
+
+    test('limits and the revision come through as sent', () {
+      final AccountSnapshot account = AccountSnapshot.fromJson(payload());
+      expect(account.entitlement?.maxDevices, 5);
+      expect(account.entitlement?.maxSessions, 3);
+      expect(account.revision, '3f6a1c9d2b7e4a55');
+    });
+
+    test('no live row at all is Free, not an unknown plan', () {
+      final AccountSnapshot account =
+          AccountSnapshot.fromJson(<String, dynamic>{
+        'entitlement': <String, dynamic>{
+          'plan': 'free',
+          'revision': 'aa11bb22cc33dd44',
+          'subscribed': false,
+          'tier': 0,
+        },
+        'subscriptionRevision': 'aa11bb22cc33dd44',
+      });
+      expect(account.subscription, isNull);
+      expect(account.paid, isFalse);
+      expect(account.entitlement?.plan, 'free');
+    });
+
+    test('the tunnel status carries the fingerprint as a string', () {
+      final VpnStatusInfo status = VpnStatusInfo.fromJson(<String, dynamic>{
+        'connected': true,
+        'peerReady': true,
+        'subscriptionActive': true,
+        'subscriptionRevision': '3f6a1c9d2b7e4a55',
+      });
+      expect(status.subscriptionRevision, '3f6a1c9d2b7e4a55');
+    });
+  });
 }

@@ -686,6 +686,10 @@ class VpnController extends ChangeNotifier {
       final VpnStatusInfo status = await _api.status();
       // Ответ дошёл — значит туннель живой, улики обнуляем.
       _tunnelStrikes = 0;
+      // Тариф меняется прямо во время сессии — покупкой или отзывом из
+      // админки. Опрос статуса и есть тот канал, по которому об этом узнаёт
+      // экран аккаунта; ждать ответа здесь нельзя — это путь статуса туннеля.
+      unawaited(_auth.syncSubscriptionRevision(status.subscriptionRevision));
       final TunnelStage stage = await _vpn.currentStage();
       _peerReady = status.peerReady;
       _serviceMaintenance = status.maintenance || status.nodeMaintenance;
