@@ -125,10 +125,10 @@ export async function listPlans(): Promise<PlanWithPrices[]> {
 // -------------------------------------------------------- subscriptions ----
 
 /**
- * Applies a plan to a user: a new subscription row starting where the current
- * one of the same-or-lower tier ends (so paying early never loses days), and
- * the plan's device / session limits when they are more generous than what the
- * account already has. Never lowers a limit.
+ * Applies a plan to a user: a new subscription row starting where the days
+ * already paid for run out (so buying early never loses any), and the plan's
+ * device / session limits when they are more generous than what the account
+ * already has. Never lowers a limit.
  */
 export async function grantPlan(params: {
 	userId: string
@@ -150,20 +150,27 @@ export async function grantPlan(params: {
 	const mode = params.mode ?? "extend"
 	const days = params.days ?? params.plan.days
 	const now = new Date()
+	// Every row still valid at this moment, latest expiry first.
+	const live = await prisma.subscription.findMany({
+		where: { userId: params.userId, status: "ACTIVE", expiresAt: { gt: now } },
+		orderBy: { expiresAt: "desc" },
+	})
 	// Rows this grant takes over. Extending supersedes only the same-or-lower
 	// tier (a Pro month bought on top of Basic keeps Pro); replacing clears the
 	// lot, so an account can never sit on two plans at once.
-	const superseded = await prisma.subscription.findMany({
-		where: {
-			userId: params.userId,
-			status: "ACTIVE",
-			expiresAt: { gt: now },
-			...(mode === "extend" ? { tier: { lte: params.plan.tier } } : {}),
-		},
-		orderBy: { expiresAt: "desc" },
-	})
-	const current = superseded[0] ?? null
-	const start = mode === "extend" && current && current.expiresAt > now ? current.expiresAt : now
+	const superseded = mode === "extend" ? live.filter((row) => row.tier <= params.plan.tier) : live
+	// Where the new term begins: after the last day already paid for, whatever
+	// tier holds it. Reading this off `superseded` instead is what broke a
+	// downgrade - a Basic month bought while a Pro year was running started
+	// *now* and burned in parallel with the Pro it cannot out-rank, so the
+	// account lost the month it had just paid for. Queued behind Pro instead,
+	// Basic simply takes over on the day Pro ends.
+	//
+	// Legacy `free` rows are excluded on purpose: they are not paid days, and
+	// one of those ten-year rows would push every new term out to 2035.
+	const paidUntil =
+		live.find((row) => row.plan.trim().toLowerCase() !== FREE_PLAN_CODE)?.expiresAt ?? null
+	const start = mode === "extend" && paidUntil && paidUntil > now ? paidUntil : now
 	const expiresAt = new Date(start.getTime() + days * 24 * 60 * 60 * 1000)
 
 	await prisma.$transaction(async (tx) => {
