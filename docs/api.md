@@ -152,6 +152,49 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 `{ "refreshToken": "..." }` — выйти на одном устройстве;
 `{ "allDevices": true }` — аннулировать все refresh-токены пользователя.
 
+### Регистрация
+
+Воронка: почта и пароль → 6-значный код из письма → Telegram. Третий шаг
+обязателен, только если `REGISTER_REQUIRE_TELEGRAM=true`. По умолчанию флаг
+выключен: там, где бот недоступен, обязательный шаг даёт не меньше
+регистраций, а ни одной.
+
+| Действие | Запрос | Тело |
+| --- | --- | --- |
+| Начать | `POST /api/auth/register/start` | `{ email, password, passwordConfirm?, captchaToken? }` |
+| Повторить код | `POST /api/auth/register/resend` | `{ email }` |
+| Подтвердить почту | `POST /api/auth/register/verify-email` | `{ email, code }` |
+| Статус | `GET /api/auth/register/status?email=…` | — |
+
+`verify-email` и `status` отвечают одним набором полей:
+
+```json
+{ "state": "done", "username": "gluk_1a2b", "verified": false,
+  "telegramUrl": "", "telegramCode": "" }
+```
+
+`state` — `email`, `telegram` или `done`. `telegram` значит, что аккаунта ещё
+нет и создаст его бот; `done` — аккаунт есть. `verified` относится именно к
+Telegram: аккаунт без привязки рабочий, но неподтверждённый, и пробный
+период ему по-прежнему недоступен (`trial_telegram_required`). Привязка
+делается позже через `POST /api/auth/telegram/link` — той же ручкой, что и
+смена Telegram у старых аккаунтов.
+
+Подтверждение кода идемпотентно. Повторный `verify-email` после создания
+аккаунта отвечает `state: "done"`, а не ошибкой: заявка к этому моменту
+уже удалена, и «регистрация не начата» было бы неправдой.
+
+`GET /api/auth/config` отдаёт в блоке `telegram` два разных флага:
+
+```json
+{ "telegram": { "enabled": true, "required": false, "username": "glukvpnbot",
+                "botChannel": "prod", "channel": "prod" } }
+```
+
+`enabled` — может ли бот вообще завершить привязку на этом канале,
+`required` — заканчивается ли им регистрация. Клиент закрывает форму из-за
+неработающего бота только при `required: true`.
+
 ### Безопасность аккаунта
 
 Один и тот же набор ручек используют кабинет на сайте, телефон и ПК-версия —
