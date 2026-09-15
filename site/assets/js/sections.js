@@ -21,6 +21,49 @@
     });
   }
 
+  /* «Вы» на лендинге — по часовому поясу браузера, а не по зашитой точке из
+     config.js: гость из США видел нить, тянущуюся из Кызылорды. Сетевых
+     запросов здесь по-прежнему нет, пояс — самая точная догадка, доступная
+     лендингу. Неизвестный пояс — оставляем точку из конфига, как было. */
+  var TZ_HOME = {
+    "Asia/Qyzylorda": [44.85, 65.51, "Кызылорда"],
+    "Asia/Almaty": [43.24, 76.89, "Алматы"],
+    "Asia/Aqtobe": [50.28, 57.17, "Актобе"],
+    "Asia/Aqtau": [43.65, 51.16, "Актау"],
+    "Asia/Atyrau": [47.09, 51.92, "Атырау"],
+    "Asia/Oral": [51.23, 51.37, "Уральск"],
+    "Asia/Tashkent": [41.31, 69.28, "Ташкент"],
+    "Asia/Bishkek": [42.87, 74.59, "Бишкек"],
+    "Asia/Dushanbe": [38.56, 68.79, "Душанбе"],
+    "Asia/Baku": [40.41, 49.87, "Баку"],
+    "Asia/Tbilisi": [41.72, 44.79, "Тбилиси"],
+    "Asia/Yerevan": [40.18, 44.51, "Ереван"],
+    "Europe/Moscow": [55.75, 37.62, "Москва"],
+    "Europe/Kyiv": [50.45, 30.52, "Киев"],
+    "Europe/Minsk": [53.9, 27.57, "Минск"],
+    "Europe/Berlin": [52.52, 13.4, "Берлин"],
+    "Europe/London": [51.5, -0.13, "Лондон"],
+    "America/New_York": [40.71, -74.01, "Нью-Йорк"],
+    "America/Los_Angeles": [34.05, -118.24, "Лос-Анджелес"]
+  };
+
+  function visitorHome() {
+    var net = CFG.network || {};
+    var tz = "";
+    try {
+      tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    } catch (e) {}
+    var row = TZ_HOME[tz];
+    if (!row) return net.home;
+    var t = window.GlukT;
+    return {
+      id: "you",
+      name: typeof t === "function" ? t(row[2]) : row[2],
+      lat: row[0],
+      lon: row[1],
+    };
+  }
+
   /* ------------------------------------------------------------ hero globe */
   function initGlobe() {
     var canvas = $("[data-globe]");
@@ -40,7 +83,7 @@
     setCaption(liveNodes()[0]);
 
     new window.GlukGlobe(canvas, {
-      home: net.home,
+      home: visitorHome(),
       nodes: net.nodes || [],
       tilt: 15,
       dotSize: 1.6,
@@ -61,7 +104,7 @@
     var tipRows = tip ? $("[data-tip-rows]", tip) : null;
 
     var map = new window.GlukNetworkMap(canvas, {
-      home: net.home,
+      home: visitorHome(),
       nodes: net.nodes || [],
       interactive: true,
       cycle: 5200,
@@ -124,7 +167,7 @@
     $$("[data-phone-map]").forEach(function (canvas) {
       if (!window.GlukNetworkMap) return;
       new window.GlukNetworkMap(canvas, {
-        home: net.home,
+        home: visitorHome(),
         nodes: (net.nodes || []).filter(function (n) {
           return n.status !== "soon";
         }),
@@ -139,7 +182,7 @@
     $$("[data-onb-globe]").forEach(function (canvas) {
       if (!window.GlukGlobe) return;
       new window.GlukGlobe(canvas, {
-        home: net.home,
+        home: visitorHome(),
         nodes: net.nodes || [],
         tilt: 14,
         dotSize: 1.15,
