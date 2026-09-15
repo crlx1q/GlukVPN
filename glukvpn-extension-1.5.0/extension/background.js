@@ -482,6 +482,21 @@ const NODE_PING_SAMPLES = 2
 
 let measuringNodePings = false
 
+/*
+ * Когда ближайшему узлу снова станет пора мериться.
+ *
+ * Попап опрашивает getState каждые 5 секунд, и каждый опрос заходил внутрь
+ * measureNodePings, чтобы прочитать три ключа хранилища и выяснить: мерить
+ * некого. Кулдаун считается по узлам, ответ между опросами не меняется —
+ * поэтому он запоминается здесь и отдаётся без обращения к хранилищу.
+ */
+let nodePingSweepIdleUntil = 0
+
+/** Список узлов сменился — отметка «мерить некого» больше ничего не значит. */
+function invalidateNodePingSweep() {
+	nodePingSweepIdleUntil = 0
+}
+
 /** Хост самого узла, а не шлюз из настроек: мерить нужно узел. */
 function nodeProbeHost(node) {
 	return String(node?.gatewayHost || node?.pingTarget || node?.host || node?.publicIp || '').trim()
@@ -553,6 +568,10 @@ async function publishAutoNode({ pings, nodes } = {}) {
 }
 
 async function measureNodePings({ force = false } = {}) {
+	// Срок ещё не подошёл — ни одного чтения хранилища на опрос попапа.
+	if (!force && Date.now() < nodePingSweepIdleUntil) {
+		return { ok: true, fresh: true, skipped: 'cooldown' }
+	}
 	const [settings, runtime, cached] = await Promise.all([Store.settings(), Store.runtime(), Store.nodes()])
 	const pings = { ...(runtime?.nodePings ?? {}) }
 	const failed = { ...(runtime?.nodePingsFailed ?? {}) }
@@ -571,7 +590,19 @@ async function measureNodePings({ force = false } = {}) {
 		if (force) return true
 		return now - (Number(seenAt[id]) || 0) >= NODE_PING_COOLDOWN_MS
 	})
-	if (!due.length) return { ok: true, fresh: true, pings, failed }
+	if (!due.length) {
+		// Ближайший срок среди узлов, которые вообще можно мерить: до него
+		// следующие опросы отвечают по памяти.
+		let soonest = Infinity
+		for (const node of list) {
+			const id = String(node?.id ?? '')
+			if (!id || !nodeProbeHost(node)) continue
+			const dueAt = (Number(seenAt[id]) || 0) + NODE_PING_COOLDOWN_MS
+			if (dueAt < soonest) soonest = dueAt
+		}
+		nodePingSweepIdleUntil = Number.isFinite(soonest) ? soonest : 0
+		return { ok: true, fresh: true, pings, failed }
+	}
 
 	// Порядок: выбранный узел, затем ни разу не измеренные, затем самые давние.
 	// Батч ограничен, поэтому на большом парке первые заходы всё равно закрывают
@@ -689,6 +720,7 @@ async function connect({ nodeId, userInitiated = true } = {}) {
 
 		const nodes = await Api.nodes()
 		await Store.saveNodes(nodes)
+		invalidateNodePingSweep()
 		// Автовыбор считается на измеренных пингах и тарифе, а не только на
 		// загрузке: без пингов «лучший сервер» был просто самым свободным.
 		const runtimeNow = await Store.runtime()
@@ -1062,6 +1094,9 @@ async function refreshNodes() {
 	try {
 		const nodes = await Api.nodes()
 		await Store.saveNodes(nodes)
+		// Новый узел мог появиться в середине часа — отметку «мерить некого»
+		// сбрасываем, иначе его цифра ждала бы конца чужого кулдауна.
+		invalidateNodePingSweep()
 		// Новый список — новый ответ «кого выберет Авто» и мини-пинг тех узлов,
 		// у кого он просрочен. Кулдаун внутри, так что это дешёвый вызов.
 		await publishAutoNode({ nodes })
