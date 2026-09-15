@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/account_insights.dart';
 import '../theme/tokens.dart';
+import '../utils/domain_categories.dart';
 import '../utils/format.dart';
 import 'active_account_map.dart' show accountDeviceIcon;
 import 'glass.dart';
@@ -845,7 +846,6 @@ class _Domains extends StatefulWidget {
 class _DomainsState extends State<_Domains> {
 	static const int _collapsed = 5;
 	bool _open = false;
-	bool _categories = false;
 
 	bool get _ru => widget.russian;
 
@@ -855,13 +855,16 @@ class _DomainsState extends State<_Domains> {
 		if (!d.domainsEnabled) {
 			return _Empty(_ru ? 'Учёт доменов отключён' : 'Domain accounting is disabled');
 		}
-		if (d.domains.isEmpty) {
+		// Категории — самостоятельный раздел, а не приложение к доменам.
+		// Прежний выход по пустому списку доменов прятал их целиком, и
+		// «Сайты и категории» выглядели сломанными.
+		if (d.domains.isEmpty && d.categories.isEmpty) {
 			return _Empty(_ru ? 'Домены ещё не записаны' : 'No domains recorded yet');
 		}
 		final List<DomainUsage> shown =
 				_open ? d.domains : d.domains.take(_collapsed).toList(growable: false);
 		final int hidden = d.domains.length - shown.length;
-		final int peak = d.domains.first.totalBytes;
+		final int peak = d.domains.isEmpty ? 0 : d.domains.first.totalBytes;
 
 		return Column(
 			crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -892,39 +895,116 @@ class _DomainsState extends State<_Domains> {
 						),
 					),
 				if (d.categories.isNotEmpty) ...<Widget>[
-					Align(
-						alignment: Alignment.centerLeft,
-						child: TextButton.icon(
-							onPressed: () => setState(() => _categories = !_categories),
-							icon: Icon(_categories ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 18),
-							label: Text(
-								_categories
-										? (_ru ? 'Скрыть категории' : 'Hide categories')
-										: (_ru ? 'Категории (${d.categories.length})' : 'Categories (${d.categories.length})'),
-							),
-						),
-					),
-					if (_categories)
-						Wrap(
-							spacing: 7,
-							runSpacing: 7,
-							children: d.categories.map((CategoryUsage c) {
-								return Container(
-									padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-									decoration: BoxDecoration(
-										color: GlukColors.violet.withOpacity(0.10),
-										borderRadius: BorderRadius.circular(999),
-										border: Border.all(color: GlukColors.violet.withOpacity(0.24)),
-									),
-									child: Text(
-										'${c.category} · ${formatBytes(c.downloadBytes + c.uploadBytes)}',
-										style: const TextStyle(color: GlukColors.text1, fontSize: 11),
-									),
-								);
-							}).toList(),
-						),
+					const SizedBox(height: 6),
+					_Categories(items: d.categories, russian: _ru),
 				],
 			],
+		);
+	}
+}
+
+/// Категории трафика: иконка, человеческое имя, доля и объём.
+///
+/// Раздел был не «сломан» на сервере — `accountInsights.ts` честно
+/// присылает `categories`. Сломан был показ: категории лежали под
+/// тогглом (по умолчанию закрытым), а внутри стояли сырые коды вида
+/// `streaming-music`. Теперь это обычный список карточек, как домены.
+class _Categories extends StatelessWidget {
+	const _Categories({required this.items, required this.russian});
+
+	final List<CategoryUsage> items;
+	final bool russian;
+
+	static int _total(CategoryUsage c) => c.downloadBytes + c.uploadBytes;
+
+	@override
+	Widget build(BuildContext context) {
+		// Сервер сортировку не обещает, а «самое тратное сверху» — обещает
+		// глаз: порядок задаём здесь.
+		final List<CategoryUsage> sorted = List<CategoryUsage>.of(items)
+			..sort((CategoryUsage a, CategoryUsage b) => _total(b).compareTo(_total(a)));
+		final int peak = sorted.isEmpty ? 0 : _total(sorted.first);
+		return Column(
+			crossAxisAlignment: CrossAxisAlignment.stretch,
+			children: <Widget>[
+				Text(
+					russian ? 'Категории сайтов' : 'Site categories',
+					style: const TextStyle(color: GlukColors.text2, fontSize: 11.5, height: 1.35),
+				),
+				const SizedBox(height: 10),
+				for (final CategoryUsage c in sorted)
+					Padding(
+						padding: const EdgeInsets.only(bottom: 7),
+						child: _CategoryRow(usage: c, peak: peak, russian: russian),
+					),
+			],
+		);
+	}
+}
+
+class _CategoryRow extends StatelessWidget {
+	const _CategoryRow({required this.usage, required this.peak, required this.russian});
+
+	final CategoryUsage usage;
+	final int peak;
+	final bool russian;
+
+	@override
+	Widget build(BuildContext context) {
+		final DomainCategoryStyle style = domainCategoryStyle(usage.category);
+		final int total = usage.downloadBytes + usage.uploadBytes;
+		final double share = peak <= 0 ? 0 : (total / peak).clamp(0.0, 1.0);
+		return GlassPanel(
+			radius: 13,
+			padding: const EdgeInsets.fromLTRB(11, 9, 12, 10),
+			child: Row(
+				children: <Widget>[
+					Container(
+						width: 30,
+						height: 30,
+						alignment: Alignment.center,
+						decoration: BoxDecoration(
+							color: style.color.withOpacity(0.14),
+							borderRadius: BorderRadius.circular(10),
+							border: Border.all(color: style.color.withOpacity(0.28)),
+						),
+						child: Icon(style.icon, size: 16, color: style.color),
+					),
+					const SizedBox(width: 10),
+					Expanded(
+						child: Column(
+							crossAxisAlignment: CrossAxisAlignment.start,
+							children: <Widget>[
+								Text(
+									style.label(russian: russian),
+									maxLines: 1,
+									overflow: TextOverflow.ellipsis,
+									style: const TextStyle(color: GlukColors.text0, fontSize: 12.5, fontWeight: FontWeight.w600),
+								),
+								const SizedBox(height: 7),
+								ClipRRect(
+									borderRadius: BorderRadius.circular(999),
+									child: SizedBox(
+										height: 5,
+										child: Align(
+											alignment: Alignment.centerLeft,
+											child: FractionallySizedBox(
+												widthFactor: share <= 0 ? 0.02 : share,
+												child: ColoredBox(color: style.color),
+											),
+										),
+									),
+								),
+							],
+						),
+					),
+					const SizedBox(width: 10),
+					Text(
+						formatBytes(total),
+						style: const TextStyle(color: GlukColors.text0, fontSize: 12, fontWeight: FontWeight.w700),
+					),
+				],
+			),
 		);
 	}
 }
@@ -981,7 +1061,7 @@ class _DomainRow extends StatelessWidget {
 					),
 					const SizedBox(height: 6),
 					Text(
-						'${item.category} · ${item.connections} ${russian ? 'соединений' : 'connections'}',
+						'${domainCategoryStyle(item.category).label(russian: russian)} · ${item.connections} ${russian ? 'соединений' : 'connections'}',
 						style: const TextStyle(color: GlukColors.text2, fontSize: 10.5),
 					),
 				],
