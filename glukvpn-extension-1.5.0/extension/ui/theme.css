@@ -622,6 +622,11 @@ body.signed-out .rail { opacity: 0.5; }
 .sig.l3 i { background: var(--green); }
 
 .s-ping { font-size: 10.5px; font-weight: var(--fw-strong); color: var(--text-1); font-variant-numeric: tabular-nums; min-width: 44px; text-align: right; flex: 0 0 auto; }
+/* Цифра пинга красится по той же шкале, что деления сигнала (pingTone):
+   150/300 мс. Без класса — пинг ещё не измерен или узел не ответил. */
+.s-ping.is-fast { color: var(--green); }
+.s-ping.is-mid { color: var(--amber); }
+.s-ping.is-slow { color: var(--danger); }
 
 .empty { padding: 22px 12px; text-align: center; font-size: 12px; color: var(--text-2); font-weight: var(--fw-medium); }
 
@@ -1387,6 +1392,10 @@ body.signed-out .rail { opacity: 0.5; }
 .account-node { fill:#3ddc97; stroke:rgba(7,4,15,.85); stroke-width:.22; animation:account-node-pulse 2.4s ease-in-out infinite; }
 .account-origin-halo { fill:rgba(196,181,253,.2); }
 .account-node-halo { fill:rgba(61,220,151,.22); }
+/* Выбранный сервер без своего туннеля: точка видна, но приглушена
+   и не пульсирует — активными остаются только живые туннели. */
+.account-node.is-idle { fill:rgba(61,220,151,.42); animation:none; }
+.account-node-halo.is-idle { fill:rgba(61,220,151,.07); }
 @keyframes account-draw { from { stroke-dasharray:0 200; opacity:0; } to { stroke-dasharray:1.6 1.9; opacity:.92; } }
 @keyframes account-node-pulse { 0%,100% { r:1; } 50% { r:1.26; } }
 
@@ -1595,7 +1604,11 @@ button.account-device-off.is-busy{opacity:.55}
 #stats-body > .stats-h:first-child{margin-top:14px}
 .stats-quota{gap:7px;padding:13px}
 .stats-quota__head{display:flex;align-items:center;gap:10px}
-.stats-quota__ring{flex:0 0 34px;width:34px;height:34px;display:block}
+.stats-quota__ring{flex:0 0 42px;width:42px;height:42px;display:block}
+/* Процент в центре кольца, как во Flutter: цвет ставит popup.js
+   (quotaColor), здесь размер и запасной цвет. */
+.stats-quota__ring .stats-quota__pct{font-size:11px;font-weight:800;fill:#3ddc97;font-variant-numeric:tabular-nums}
+.stats-quota.is-over .stats-quota__ring .stats-quota__pct{fill:#f87171}
 .stats-quota__ring circle{fill:none;stroke-linecap:round}
 .stats-quota__ring .trk{stroke:rgba(255,255,255,.10);stroke-width:3.4}
 .stats-quota__ring .val{stroke:#3ddc97;stroke-width:3.4;transform:rotate(-90deg);transform-origin:50% 50%;transition:stroke-dashoffset .42s cubic-bezier(.22,1,.36,1)}

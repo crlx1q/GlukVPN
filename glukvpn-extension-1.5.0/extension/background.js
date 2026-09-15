@@ -473,6 +473,12 @@ async function gatewayStats(gateway, credentials) {
 const NODE_PING_COOLDOWN_MS = 3600000
 const NODE_PING_BATCH = 24
 const NODE_PING_TIMEOUT_MS = 5000
+/*
+ * Сколько проб считать после прогрева. Первая проба платит за DNS, TCP и TLS —
+ * это 400–500 мс на узел, и попап показывал их как пинг. Её время выбрасываем,
+ * а цифру берём из последующих: они идут по уже открытому соединению.
+ */
+const NODE_PING_SAMPLES = 2
 
 let measuringNodePings = false
 
@@ -481,11 +487,10 @@ function nodeProbeHost(node) {
 	return String(node?.gatewayHost || node?.pingTarget || node?.host || node?.publicIp || '').trim()
 }
 
-async function probeNode(host, port, scheme) {
-	const url = `${scheme === 'http' ? 'http' : 'https'}://${host}:${port}/__gluk/ping`
+async function probeOnce(url, timeoutMs) {
 	const started = Date.now()
 	try {
-		const response = await fetch(url, { cache: 'no-store', credentials: 'omit', signal: AbortSignal.timeout(NODE_PING_TIMEOUT_MS) })
+		const response = await fetch(url, { cache: 'no-store', credentials: 'omit', signal: AbortSignal.timeout(timeoutMs) })
 		// 401/407 — тоже ответ: на порту кто-то есть и говорит на нашем языке.
 		if (response.status >= 500) return { state: 'down' }
 		return { state: 'up', ping: Date.now() - started }
@@ -496,8 +501,31 @@ async function probeNode(host, port, scheme) {
 		// (сертификат, CORS, чужой порт) значит, что до узла мы доехали, а ответа
 		// не получили: пинг неизвестен, но серым красить нечестно.
 		if (name === 'TimeoutError' || name === 'AbortError') return { state: 'down' }
-		return elapsed >= NODE_PING_TIMEOUT_MS - 250 ? { state: 'down' } : { state: 'unknown' }
+		return elapsed >= timeoutMs - 250 ? { state: 'down' } : { state: 'unknown' }
 	}
+}
+
+/*
+ * Пинг узла — минимум по прогретым пробам, а не время первого запроса.
+ *
+ * Один fetch мерил DNS + TCP + TLS + ответ, поэтому в списке стояли 418 и 494
+ * мс при живом канале на 100. Первая проба теперь только открывает соединение
+ * и проверяет живость узла, а цифру дают следующие — по тому же keep-alive.
+ */
+async function probeNode(host, port, scheme) {
+	const url = `${scheme === 'http' ? 'http' : 'https'}://${host}:${port}/__gluk/ping`
+	const warmup = await probeOnce(url, NODE_PING_TIMEOUT_MS)
+	if (warmup.state !== 'up') return warmup
+	let best = null
+	for (let attempt = 0; attempt < NODE_PING_SAMPLES; attempt += 1) {
+		const sample = await probeOnce(url, NODE_PING_TIMEOUT_MS)
+		// Узел уже ответил на прогрев: осечка повтора не повод объявлять его
+		// мёртвым, её просто не берём в минимум.
+		if (sample.state !== 'up') continue
+		if (best === null || sample.ping < best) best = sample.ping
+	}
+	// Все повторы сорвались — отдаём время прогрева: оно завышено, но честное.
+	return { state: 'up', ping: Math.max(1, best ?? warmup.ping) }
 }
 
 /*

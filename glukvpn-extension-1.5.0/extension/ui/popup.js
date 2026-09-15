@@ -332,15 +332,31 @@ function pingLabel(ms) {
 	return Number.isFinite(value) && value > 0 ? `${Math.round(value)} ${t('stat.msUnit')}` : '--'
 }
 
+/* Единая шкала задержки на все клиенты: 0–150 мс — зелёный, 151–300 —
+ * жёлтый, дальше красный. Те же пороги во Flutter (pingGreenMs/pingAmberMs). */
+const PING_GREEN_MS = 150
+const PING_AMBER_MS = 300
+
 function signalOf(ms) {
 	const value = Number(ms)
 	// Нуль делений ставит только неудавшаяся проба — это решает вызывающий.
 	// Ещё не измеренный пинг остаётся на двух делениях — так же, как во Flutter,
 	// где неизвестный пинг оценивается в 0.55 (signalUnknownPingScore).
 	if (!Number.isFinite(value) || value <= 0) return 2
-	if (value <= 60) return 3
-	if (value <= 140) return 2
+	if (value <= PING_GREEN_MS) return 3
+	if (value <= PING_AMBER_MS) return 2
 	return 1
+}
+
+/* Цвет цифры пинга берётся с той же шкалы, что деления: иначе число и
+ * значок сигнала противоречили бы друг другу. Неизмеренный пинг остаётся
+ * нейтральным — серым он честнее, чем зелёным. */
+function pingTone(ms) {
+	const value = Number(ms)
+	if (!Number.isFinite(value) || value <= 0) return ''
+	if (value <= PING_GREEN_MS) return ' is-fast'
+	if (value <= PING_AMBER_MS) return ' is-mid'
+	return ' is-slow'
 }
 
 /* Пинги узлов меряет воркер (measureNodePings) и публикует в runtime, а не
@@ -1039,7 +1055,7 @@ function renderServers() {
 		row.appendChild(sig)
 
 		const ping = document.createElement('span')
-		ping.className = 's-ping'
+		ping.className = `s-ping${offline || unreachable ? '' : pingTone(measured)}`
 		ping.textContent = unreachable ? (ru ? 'нет ответа' : 'no reply') : pingLabel(measured)
 		row.appendChild(ping)
 
@@ -2995,17 +3011,18 @@ function renderAccountMap() {
 		}
 	}
 	if (dirty || pinsDirty) {
-		// Выбранный сервер — зелёная точка даже без туннеля.
+		// Выбранный сервер виден даже без туннеля, но помечен is-own:
+		// живой зелёный с пульсом или приглушённый — решает фаза ниже.
 		if (dirty && nodePoint && !seenNode[mapSpot(nodePoint)]) {
 			seenNode[mapSpot(nodePoint)] = true
 			const halo = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
-			halo.setAttribute('class', 'account-node-halo')
+			halo.setAttribute('class', 'account-node-halo is-own')
 			halo.setAttribute('cx', nodePoint.x)
 			halo.setAttribute('cy', nodePoint.y)
 			halo.setAttribute('r', '2.5')
 			group.appendChild(halo)
 			const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
-			dot.setAttribute('class', 'account-node')
+			dot.setAttribute('class', 'account-node is-own')
 			dot.setAttribute('cx', nodePoint.x)
 			dot.setAttribute('cy', nodePoint.y)
 			dot.setAttribute('r', '1')
@@ -3024,6 +3041,11 @@ function renderAccountMap() {
 			}, 1))
 		}
 	}
+	// Точка СВОЕГО выбранного сервера горит живым зелёным только при поднятом
+	// (или поднимающемся) локальном туннеле — иначе приглушена и без пульса,
+	// как на карте во Flutter. Класс переключаем на месте: сцена пересобирается
+	// по отпечаткам dirty/pinsDirty, в которые фаза намеренно не входит.
+	for (const own of group.querySelectorAll('.is-own')) own.classList.toggle('is-idle', !ownPhase)
 	count.hidden = guest;
 	count.classList.toggle('hidden', guest);
 	// Минимализм: только значок, а цифра — бейджем НА нём, а не рядом.
@@ -3244,7 +3266,7 @@ function statsRing(percent) {
 	const svg = document.createElementNS(NS, 'svg')
 	svg.setAttribute('viewBox', '0 0 40 40')
 	svg.setAttribute('class', 'stats-quota__ring')
-	svg.setAttribute('aria-hidden', 'true')
+	svg.setAttribute('role', 'img')
 	const radius = 16.4
 	const length = 2 * Math.PI * radius
 	let share = Math.max(0, Math.min(100, Number(percent) || 0)) / 100
@@ -3265,6 +3287,22 @@ function statsRing(percent) {
 		}
 		svg.appendChild(ring)
 	}
+	// Во Flutter процент стоит в центре кольца (_RingHead), а в расширении
+	// кружок был пустым. Текст внутри SVG, а не отдельный span: центр
+	// считает сам viewBox, накладывать DOM поверх дуги не нужно.
+	const shown = Math.max(0, Math.min(100, Number(percent) || 0))
+	const text = shown >= 10 ? `${Math.round(shown)}%` : `${shown.toFixed(1)}%`
+	const label = document.createElementNS(NS, 'text')
+	label.setAttribute('class', 'stats-quota__pct')
+	label.setAttribute('x', '20')
+	label.setAttribute('y', '20')
+	label.setAttribute('text-anchor', 'middle')
+	label.setAttribute('dominant-baseline', 'central')
+	// Тот же inline-приоритет, что у дуги: цвет расхода должен победить CSS.
+	label.style.fill = quotaColor(percent)
+	label.textContent = text
+	svg.appendChild(label)
+	svg.setAttribute('aria-label', text)
 	return svg
 }
 
@@ -3404,7 +3442,7 @@ function renderStats() {
 				: `Up to ${speedMbps} Mbit/s`))
 		}
 		head.appendChild(headText)
-		head.appendChild(statsNode('span', '', `${(Number(quota.usedPercent) || 0).toFixed(1)}%`))
+		// Процент теперь в центре кольца, дубль справа убран — как во Flutter.
 		card.appendChild(head)
 		const track = statsNode('span', 'stats-share is-quota')
 		const fill = statsNode('i', '')
