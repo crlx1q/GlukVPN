@@ -1,6 +1,6 @@
 {
   "name": "glukvpn",
-  "version": "0.1.0",
+  "version": "2.1.0",
   "private": true,
   "description": "GlukVPN — self-hosted WireGuard VPN prototype (control plane + node agent + Flutter client)",
   "license": "UNLICENSED",

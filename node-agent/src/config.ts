@@ -198,7 +198,7 @@ const Schema = z.object({
 	HTTP_TIMEOUT_MS: positiveInt(15000),
 
 	LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
-	AGENT_VERSION: z.string().trim().default("0.2.0"),
+	AGENT_VERSION: z.string().trim().default("2.1.0"),
 })
 
 export type AgentConfig = z.infer<typeof Schema>
