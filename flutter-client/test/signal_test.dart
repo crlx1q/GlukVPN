@@ -10,9 +10,9 @@ void main() {
       expect(SignalStrength.fair.bars, 2);
       expect(SignalStrength.weak.bars, 1);
       expect(SignalStrength.offline.bars, 0);
-      // Неизмеренный узел занимает то же место, что и средний,
-      // но красится серым — цвет ничего не утверждает.
-      expect(SignalStrength.unknown.bars, 2);
+      // Неизмеренный узел не зажигает делений (вместо 2 из 3),
+      // пока пинг не придёт — форма не прыгает, цвет ничего не обещает.
+      expect(SignalStrength.unknown.bars, 0);
     });
 
     test('every level says something a screen reader can use', () {
