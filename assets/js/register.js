@@ -722,12 +722,12 @@
     loadCaptcha().then(function (ok) {
       if (!ok) {
         captchaNote("register", t(
-          "Проверка не загрузилась — возможно, её блокирует расширение. Пробуйте продолжить или отключите блокировщик.",
-          "The check did not load - an extension may be blocking it. Try continuing anyway, or disable the blocker."
+          "Проверка не загрузилась — возможно, расширение браузера мешает загрузке. Попробуйте продолжить или временно отключите плагины.",
+          "The check did not load - a browser extension may be interfering. Try continuing anyway, or temporarily disable plugins."
         ));
         captchaNote("recover", t(
-          "Проверка не загрузилась — возможно, её блокирует расширение. Пробуйте продолжить или отключите блокировщик.",
-          "The check did not load - an extension may be blocking it. Try continuing anyway, or disable the blocker."
+          "Проверка не загрузилась — возможно, расширение браузера мешает загрузке. Попробуйте продолжить или временно отключите плагины.",
+          "The check did not load - a browser extension may be interfering. Try continuing anyway, or temporarily disable plugins."
         ));
         return;
       }

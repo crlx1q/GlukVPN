@@ -294,7 +294,7 @@
   function mountGoogle(clientId) {
     return loadGis().then(function (ok) {
       if (!ok) {
-        if (note) { note.textContent = T("Кнопка Google не загрузилась — возможно, её блокирует расширение."); note.hidden = false; }
+        if (note) { note.textContent = T("Кнопка Google не загрузилась — возможно, настройки браузера или расширения препятствуют загрузке скрипта."); note.hidden = false; }
         return false;
       }
       try {
@@ -307,7 +307,7 @@
           itp_support: true
         });
       } catch (e) {
-        if (note) { note.textContent = T("Кнопка Google не загрузилась — возможно, её блокирует расширение."); note.hidden = false; }
+        if (note) { note.textContent = T("Кнопка Google не загрузилась — возможно, настройки браузера или расширения препятствуют загрузке скрипта."); note.hidden = false; }
         return false;
       }
       googleHosts.forEach(function (host) {

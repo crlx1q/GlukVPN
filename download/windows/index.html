@@ -1,10 +1,15 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <title>Загрузка GlukVPN для Windows...</title>
-  <meta http-equiv="refresh" content="0; url=https://vpn.gluk.tech/download/windows">
-  <script>window.location.replace("https://vpn.gluk.tech/download/windows");</script>
+  <meta http-equiv="refresh" content="1; url=https://vpn.gluk.tech/download/windows">
+  <script>
+    fetch('/api/version.json').then(function(r){return r.json();}).then(function(d){
+      if(d&&d.downloads&&d.downloads.windows){window.location.replace(d.downloads.windows);}
+      else{window.location.replace('https://vpn.gluk.tech/download/windows');}
+    }).catch(function(){window.location.replace('https://vpn.gluk.tech/download/windows');});
+  </script>
 </head>
 <body>
   <p>Загрузка начинается автоматически. Если нет, <a href="https://vpn.gluk.tech/download/windows">нажмите здесь</a>.</p>
