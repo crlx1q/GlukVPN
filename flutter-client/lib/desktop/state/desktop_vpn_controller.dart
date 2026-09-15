@@ -1013,14 +1013,25 @@ class DesktopVpnController extends ChangeNotifier {
   }
 
   /// Switches servers without leaving the user on a dead tunnel.
+  ///
+  /// Выбор сервера сам по себе НЕ поднимает туннель: на телефоне и
+  /// в расширении клик по серверу меняет только локацию. ПК же
+  /// подключался на любой клик — даже когда VPN был выключен.
   Future<void> switchNode(VpnNodeInfo node) async {
-    if (_phase.isConnected || _phase == ConnectionPhase.connecting) {
-      await disconnect(userInitiated: false);
-    }
+    final bool wasUp =
+        _phase.isConnected || _phase == ConnectionPhase.connecting;
+    if (wasUp) await disconnect(userInitiated: false);
     await _settings.update(
       (DesktopSettings s) =>
           s.copyWith(autoNodeSelection: false, lastNodeId: node.id),
     );
+    if (!wasUp) {
+      // Туннеля не было: запоминаем выбор и обновляем интерфейс,
+      // но ничего не подключаем.
+      _resolveSelection();
+      _notify();
+      return;
+    }
     await connect(node: node);
   }
 
@@ -1568,7 +1579,17 @@ class DesktopVpnController extends ChangeNotifier {
     try {
       for (final VpnNodeInfo node in targets) {
         if (_disposed) return;
-        final PingSample sample = await _ping.probeHost(node.latencyHost);
+        final PingSample sample = await _ping.probeHost(
+          node.latencyHost,
+          // На Windows ICMP глушат чаще всего, и весь список оставался
+          // без цифр. Порты берём те, что у узла действительно открыты:
+          // шлюз браузерного прокси, затем 443 и 8443.
+          tcpPorts: <int>[
+            if (node.gatewayPort != null) node.gatewayPort!,
+            443,
+            8443,
+          ],
+        );
         if (_disposed) return;
         _pingedAt[node.id] = DateTime.now();
         final int? ms = sample.milliseconds;
