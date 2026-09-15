@@ -66,13 +66,19 @@ const COUNTRIES = {
 	BY: [53.7, 27.9],
 }
 
-/** Falls back to the map centre used by the site's home marker (Kazakhstan). */
+/*
+ * Unknown place -> null, never a guess.
+ *
+ * This used to fall back to the centre of Kazakhstan, so an unknown location
+ * was drawn as a confident marker in Central Asia: the same "pinned map" the
+ * popup suffered from. Callers must skip the marker instead.
+ */
 export function latLonFor({ city, countryCode } = {}) {
 	const key = String(city ?? '').trim().toLowerCase()
 	if (key && CITIES[key]) return CITIES[key]
 	const cc = String(countryCode ?? '').trim().toUpperCase()
 	if (cc && COUNTRIES[cc]) return COUNTRIES[cc]
-	return [48.0, 68.0]
+	return null
 }
 
 /* ----------------------------------------------------------- localization -- */

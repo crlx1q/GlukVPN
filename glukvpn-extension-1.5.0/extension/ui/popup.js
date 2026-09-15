@@ -532,10 +532,44 @@ function currentLang() {
 	}
 }
 
-/** Best-effort "where am I". Never returns null once a timezone is readable. */
+/*
+ * Своя точка по данным сервера, а не по догадке браузера.
+ *
+ * active-map отдаёт для каждой живой сессии origin с координатами: 'ip-country'
+ * — это реальный IP этой сессии, 'device-estimate' — наша же прошлая догадка по
+ * часовому поясу, которую сервер запомнил. Поэтому догадка стоит ПОСЛЕ GeoIP
+ * аккаунта с логина: иначе однажды отправленный TZ закреплял бы карту навсегда.
+ */
+function serverSelfOrigin() {
+	const devices = Array.isArray(activeMapData?.devices) ? activeMapData.devices : []
+	const mine = devices.find((device) => device?.isCurrent && device?.origin)
+	if (mine?.origin?.source === 'ip-country') return mine.origin
+	const account = state?.user?.origin
+	if (account?.countryCode || account?.country) {
+		return {
+			countryCode: account.countryCode,
+			country: account.country,
+			city: account.region,
+			approximate: true,
+		}
+	}
+	return mine?.origin ?? null
+}
+
+/*
+ * Где «я».
+ *
+ * Порядок: IP этой сессии, GeoIP аккаунта, и только потом часовой пояс. Раньше
+ * первым и единственным источником был runtime.geo, который воркер нигде не
+ * пишет, поэтому ответ всегда сводился к TZ — карта стояла на месте даже из
+ * США, в отличие от телефона. Место неизвестно — возвращаем null, и маркер не
+ * рисуется вовсе: точка «где-то» хуже отсутствия точки.
+ */
 function resolveGeo() {
 	const geo = state?.runtime?.geo ?? null
 	if (geo && (geo.countryCode || geo.city)) return geo
+	const origin = serverSelfOrigin()
+	if (origin) return origin
 	try {
 		const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
 		const cc = TZ_COUNTRY[tz]
@@ -547,7 +581,7 @@ function resolveGeo() {
 			}
 		}
 	} catch {}
-	return geo
+	return null
 }
 
 // ---------------------------------------------------------------- routing ---
@@ -792,7 +826,8 @@ function renderVpn() {
 	// always see where you are and where the tunnel lands, connected or not.
 	// Саму сцену собирает renderAccountMap(), здесь только координаты.
 	nodeLatLon = node ? latLonFor({ city: node.city, countryCode: node.countryCode ?? node.country }) : null
-	selfLatLon = latLonFor(geo)
+	// У origin сервера есть готовые координаты — они точнее центра страны.
+	selfLatLon = Number.isFinite(geo?.lat) && Number.isFinite(geo?.lon) ? [geo.lat, geo.lon] : latLonFor(geo)
 	renderAccountMap()
 
 	// Numbers.
@@ -3110,8 +3145,11 @@ async function refreshServiceAndMap() {
 		if (state?.signedIn === false) {
 			activeMapData = null
 		} else {
-			let countryCode;
-			try { countryCode = TZ_COUNTRY[Intl.DateTimeFormat().resolvedOptions().timeZone]; } catch (_) {}
+			// Страна уходит на сервер только как фоллбек для сессий без GeoIP,
+			// поэтому отдаём то же, что показываем сами: IP сессии, затем GeoIP
+			// аккаунта, и лишь в последнюю очередь часовой пояс. Так же делает
+			// телефон (reportMapCountry от approximateSelfLocation).
+			const countryCode = String(resolveGeo()?.countryCode ?? '').trim().toUpperCase() || undefined
 			const mapResponse = await call('activeMap', { countryCode })
       if(revision!==activeMapRevision||accountId!==state?.user?.id||state?.signedIn===false||channelSwitching)return;
       activeMapData=mapResponse?.ok ? (mapResponse?.data ?? mapResponse) : null;
