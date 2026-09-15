@@ -90,11 +90,13 @@ void main() {
 
   group('ping levels', () {
     test('buckets a round-trip into the three signal levels', () {
+      // Единая шкала всех площадок: 0-150 зелёный, 151-300 жёлтый,
+      // 301 и выше красный.
       expect(pingLevelFor(24), PingLevel.excellent);
-      expect(pingLevelFor(79), PingLevel.excellent);
-      expect(pingLevelFor(80), PingLevel.medium);
-      expect(pingLevelFor(179), PingLevel.medium);
-      expect(pingLevelFor(180), PingLevel.low);
+      expect(pingLevelFor(150), PingLevel.excellent);
+      expect(pingLevelFor(151), PingLevel.medium);
+      expect(pingLevelFor(300), PingLevel.medium);
+      expect(pingLevelFor(301), PingLevel.low);
       expect(pingLevelFor(900), PingLevel.low);
     });
 

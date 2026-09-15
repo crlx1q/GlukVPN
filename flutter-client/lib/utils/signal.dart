@@ -1,28 +1,36 @@
-import 'dart:math' as math;
+import '../models/models.dart';
 
-/// Signal strength for a VPN node, in the sense a phone means it: three bars
-/// that say "how good is this link right now".
+/// Уровень сигнала узла — три деления, как у телефона.
 ///
-/// The value is computed from data we actually have - the node's online flag,
-/// the load it reports over its heartbeat, and the round-trip this phone just
-/// measured to its ping target - never from the country it happens to sit in.
-/// A node in Germany with a 300 ms round trip deserves one bar.
+/// Считается только из того, что мы действительно знаем: онлайн ли узел,
+/// какую нагрузку он отдал в heartbeat и какой round-trip только что
+/// измерил сам клиент. Никогда — из страны узла: сервер во Франкфурте
+/// с пингом 400 мс заслуживает одно деление.
+///
+/// Шкала пинга одна на телефон, ПК, расширение и сайт: [pingGreenMs] и
+/// [pingAmberMs] из `models/models.dart`. Раньше здесь были свои 40/220, а у
+/// `pingLevelFor` — свои 80/180: один и тот же сервер получал цифру одного
+/// цвета и деления другого в одной и той же строке списка.
 enum SignalStrength {
-	/// Offline, disabled, or otherwise not connectable: all bars grey.
+	/// Оффлайн, выключен или иначе недоступен: все деления серые.
 	offline,
 
-	/// High latency or a nearly full node.
+	/// Пинг выше [pingAmberMs] либо узел практически полон.
 	weak,
 
-	/// Usable, middle of the range.
+	/// Середина шкалы: жёлтая зона пинга или занятый узел.
 	fair,
 
-	/// Low latency and plenty of headroom.
+	/// Пинг в зелёной зоне и на узле есть запас.
 	strong,
+
+	/// Замера ещё не было. Это не «средний сервер», а «неизвестно»:
+	/// деления серые, пока не придёт цифра.
+	unknown,
 }
 
 extension SignalStrengthDisplay on SignalStrength {
-	/// How many of the three bars are lit.
+	/// Сколько из трёх делений горит.
 	int get bars {
 		switch (this) {
 			case SignalStrength.strong:
@@ -31,12 +39,16 @@ extension SignalStrengthDisplay on SignalStrength {
 				return 2;
 			case SignalStrength.weak:
 				return 1;
+			case SignalStrength.unknown:
+				// Два деления, но серым: форма не прыгает, когда придёт замер,
+				// а цвет ничего не обещает.
+				return 2;
 			case SignalStrength.offline:
 				return 0;
 		}
 	}
 
-	/// Spoken by screen readers, and used for the (optional) caption.
+	/// Читается скринридером и годится для подписи.
 	String get label {
 		switch (this) {
 			case SignalStrength.strong:
@@ -45,41 +57,51 @@ extension SignalStrengthDisplay on SignalStrength {
 				return 'Good connection';
 			case SignalStrength.weak:
 				return 'Weak connection';
+			case SignalStrength.unknown:
+				return 'Latency not measured';
 			case SignalStrength.offline:
 				return 'Unavailable';
 		}
 	}
 }
 
-/// Round trips at or below this are as good as it gets on mobile.
-const double signalGoodPingMs = 40;
+/// Ниже этого пинг уже не улучшить — вершина непрерывной оценки.
+const double signalGoodPingMs = 30;
 
-/// At or above this, latency dominates everything else.
-const double signalBadPingMs = 220;
+/// Здесь непрерывная оценка падает до нуля. Совпадает с границей
+/// красной зоны [pingAmberMs] не случайно: авто-выбор и цвет обязаны
+/// считать плохим одно и то же.
+const double signalBadPingMs = pingAmberMs * 1.0;
 
-/// Load below this is free headroom.
+/// Нагрузка ниже этой — свободный запас.
 const double signalGoodLoadPercent = 40;
 
-/// Load at or above this means the node is effectively full.
+/// На этой нагрузке узел фактически полон.
 const double signalBadLoadPercent = 95;
 
-/// Latency carries most of the weight: users feel round-trip long before they
-/// feel a node being half full.
+/// Узел занят: три деления ему больше не положены, каким бы ни был пинг.
+const double signalBusyLoadPercent = 70;
+
+/// Узел почти полон: одно деление независимо от пинга.
+const double signalCrowdedLoadPercent = 85;
+
+/// Латентность весит больше: её чувствуют задолго до того, как заметят
+/// половину занятого узла.
 const double signalPingWeight = 0.65;
 const double signalLoadWeight = 0.35;
 
-/// Score used when no ping sample exists yet - deliberately mid-range, so a
-/// node is neither punished nor flattered for not having been measured.
+/// Оценка при отсутствии замера — сознательно серединная: узел ни наказан,
+/// ни обласкан за то, что его не успели измерить.
 const double signalUnknownPingScore = 0.55;
 
-/// 1 when [value] is at or past [good], 0 at or past [bad], linear between.
+/// 1 на [good] и лучше, 0 на [bad] и хуже, линейно между.
 double _grade(double value, double good, double bad) {
 	if (bad == good) return 1;
 	return ((bad - value) / (bad - good)).clamp(0.0, 1.0);
 }
 
-/// 0..1 quality for a node. Exposed for tests and for anything that wants a
-/// continuous value rather than three buckets.
+/// Непрерывное качество 0..1. Нужно авто-выбору и тестам: там, где надо
+/// сравнить два узла, три корзины слишком грубы.
 double signalScore({num? pingMs, num loadPercent = 0}) {
 	final double ping = pingMs == null
 			? signalUnknownPingScore
@@ -92,18 +114,22 @@ double signalScore({num? pingMs, num loadPercent = 0}) {
 	return ping * signalPingWeight + load * signalLoadWeight;
 }
 
-/// Three bars for a node.
+/// Три деления для узла.
 ///
-/// [online] is the node's heartbeat state and [available] its policy state
-/// (enabled, has capacity, connectable); either one being false means grey
-/// bars, because the number of bars must never suggest a server you cannot
-/// actually use.
+/// [online] — состояние heartbeat, [available] — политика (включён, есть
+/// место, к нему можно подключиться); любой из двух false даёт серые
+/// деления: число делений не должно обещать сервер, на который нельзя
+/// попасть.
 ///
-/// Without a ping sample the result is capped at [SignalStrength.fair]: three
-/// bars is a claim about latency, and unmeasured latency is not a claim.
-/// [pingMs] and [loadPercent] take `num` so callers can pass whatever the API
-/// gave them - an `int` percentage from a heartbeat or a `double` from a
-/// rolling average - without casting at every call site.
+/// Уровень берётся из той же шкалы, что и цвет цифры рядом: до
+/// [pingGreenMs] — три деления, до [pingAmberMs] — два, выше — одно.
+/// Нагрузка умеет только снимать уровень, но не добавлять: 20 мс на узле,
+/// забитом на 93 %, — это не три деления, а усреднение прятало бы плохую
+/// половину за хорошей.
+///
+/// Без замера результат — [SignalStrength.unknown]. Прежние «два жёлтых
+/// деления по умолчанию» делали всю ленту серверов одинаково жёлтой на
+/// ПК и телефоне — цвет без единого измерения.
 SignalStrength signalStrengthFor({
 	required bool online,
 	bool available = true,
@@ -112,25 +138,19 @@ SignalStrength signalStrengthFor({
 }) {
 	if (!online || !available) return SignalStrength.offline;
 
-	final double ping = pingMs == null
-			? signalUnknownPingScore
-			: _grade(pingMs.toDouble(), signalGoodPingMs, signalBadPingMs);
-	final double load = _grade(
-		loadPercent.toDouble(),
-		signalGoodLoadPercent,
-		signalBadLoadPercent,
-	);
-	final double score = ping * signalPingWeight + load * signalLoadWeight;
+	// Ноль и отрицательное — не замер, а мусор в данных.
+	if (pingMs == null || pingMs <= 0) return SignalStrength.unknown;
 
-	// Either dimension being bad on its own costs bars: a node with a 20 ms
-	// round trip that is 92% full is not a three-bar server, and averaging would
-	// let the good half hide the bad one.
-	final double weakest = math.min(ping, load);
-	if (weakest < 0.18) return SignalStrength.weak;
+	final double ms = pingMs.toDouble();
+	final double load = loadPercent.toDouble();
 
-	if (score >= 0.66 && weakest >= 0.40) {
-		return pingMs == null ? SignalStrength.fair : SignalStrength.strong;
+	final SignalStrength byPing = ms <= pingGreenMs
+			? SignalStrength.strong
+			: (ms <= pingAmberMs ? SignalStrength.fair : SignalStrength.weak);
+
+	if (load >= signalCrowdedLoadPercent) return SignalStrength.weak;
+	if (load >= signalBusyLoadPercent && byPing == SignalStrength.strong) {
+		return SignalStrength.fair;
 	}
-	if (score >= 0.36) return SignalStrength.fair;
-	return SignalStrength.weak;
+	return byPing;
 }

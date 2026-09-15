@@ -721,10 +721,18 @@ class VpnNodeInfo {
 /// details row.
 enum PingLevel { unknown, low, medium, excellent }
 
+/// Единая шкала пинга на всех площадках: 0-150 мс зелёный, 151-300 жёлтый,
+/// 301 и выше красный. Те же две цифры лежат в `utils/signal.dart` и в
+/// расширении (`lib/ping.js`). Держать их в одном месте важнее, чем
+/// подобрать «идеальные» пороги: пока шкалы расходились, один и тот же
+/// сервер был зелёным в браузере и жёлтым на телефоне.
+const int pingGreenMs = 150;
+const int pingAmberMs = 300;
+
 PingLevel pingLevelFor(int? milliseconds) {
   if (milliseconds == null || milliseconds <= 0) return PingLevel.unknown;
-  if (milliseconds < 80) return PingLevel.excellent;
-  if (milliseconds < 180) return PingLevel.medium;
+  if (milliseconds <= pingGreenMs) return PingLevel.excellent;
+  if (milliseconds <= pingAmberMs) return PingLevel.medium;
   return PingLevel.low;
 }
 

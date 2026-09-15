@@ -26,7 +26,11 @@ class SignalBars extends StatelessWidget {
   final double barWidth;
   final double gap;
 
-  /// green = excellent, amber = medium, red = bad, grey = offline.
+  /// Цвета по единой шкале пинга: зелёный 0-150 мс, жёлтый 151-300,
+  /// красный выше 300. Серый значит ровно две вещи и ни одной другой:
+  /// сервер недоступен либо его пинг ещё не измерен. Раньше
+  /// неизмеренный узел получал жёлтые деления — цвет утверждал то,
+  /// чего никто не мерил, и вся лента выглядела одинаково средней.
   Color get tone {
     switch (strength) {
       case SignalStrength.strong:
@@ -36,6 +40,8 @@ class SignalBars extends StatelessWidget {
       case SignalStrength.weak:
         return GlukColors.danger;
       case SignalStrength.offline:
+        return GlukColors.text2;
+      case SignalStrength.unknown:
         return GlukColors.text2;
     }
   }

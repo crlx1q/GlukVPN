@@ -341,10 +341,12 @@ class _RingPainter extends CustomPainter {
 				..style = PaintingStyle.stroke
 				..strokeWidth = stroke
 				..strokeCap = StrokeCap.round
-				..shader = SweepGradient(
-					colors: <Color>[tone.withOpacity(0.55), tone],
-					transform: const GradientRotation(-math.pi / 2),
-				).createShader(rect),
+				// Сплошной цвет вместо SweepGradient. Круглый кап на старте арки
+				// стоит на 12 часах, то есть на самом конце развёртки градиента,
+				// и сэмплил её яркий край, пока тело арки рядом шло с прозрачностью
+				// 0.55 — сверху горела заметная точка. Ограничить углы нельзя:
+				// у кольца развёртка ровно 2π, край всё равно окажется под капом.
+				..color = tone,
 		);
 	}
 

@@ -10,6 +10,9 @@ void main() {
       expect(SignalStrength.fair.bars, 2);
       expect(SignalStrength.weak.bars, 1);
       expect(SignalStrength.offline.bars, 0);
+      // Неизмеренный узел занимает то же место, что и средний,
+      // но красится серым — цвет ничего не утверждает.
+      expect(SignalStrength.unknown.bars, 2);
     });
 
     test('every level says something a screen reader can use', () {
@@ -40,18 +43,32 @@ void main() {
         signalStrengthFor(online: true, pingMs: 60, loadPercent: 30),
         SignalStrength.strong,
       );
+      // Граница зелёной зоны включительная: 150 мс ещё зелёные.
+      expect(
+        signalStrengthFor(online: true, pingMs: 150, loadPercent: 20),
+        SignalStrength.strong,
+      );
     });
 
     test('a middling round trip is two bars', () {
       expect(
-        signalStrengthFor(online: true, pingMs: 140, loadPercent: 50),
+        signalStrengthFor(online: true, pingMs: 151, loadPercent: 50),
+        SignalStrength.fair,
+      );
+      expect(
+        signalStrengthFor(online: true, pingMs: 300, loadPercent: 2),
         SignalStrength.fair,
       );
     });
 
     test('high latency is one bar however empty the node is', () {
+      // Шкала одна со всеми площадками: красное начинается с 301 мс.
       expect(
-        signalStrengthFor(online: true, pingMs: 210, loadPercent: 2),
+        signalStrengthFor(online: true, pingMs: 301, loadPercent: 2),
+        SignalStrength.weak,
+      );
+      expect(
+        signalStrengthFor(online: true, pingMs: 520, loadPercent: 2),
         SignalStrength.weak,
       );
     });
@@ -70,10 +87,15 @@ void main() {
       );
     });
 
-    test('without a ping sample it never claims three bars', () {
+    test('without a ping sample the level is unknown, not "fair"', () {
       expect(
         signalStrengthFor(online: true, loadPercent: 5),
-        SignalStrength.fair,
+        SignalStrength.unknown,
+      );
+      // Ноль миллисекунд бывает только у битого замера.
+      expect(
+        signalStrengthFor(online: true, pingMs: 0, loadPercent: 5),
+        SignalStrength.unknown,
       );
     });
 

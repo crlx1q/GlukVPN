@@ -271,9 +271,10 @@ class _ServerTile extends StatelessWidget {
       parts.add(s.unavailable);
     } else {
       parts.add(s.loadPercent(node.loadPercent.round()));
-      if (pingMs != null) {
-        parts.add('$pingMs ${s.ms}');
-      } else if (unreachable) {
+      // Сам пинг вынесен в цветную цифру справа, как на ПК и в
+      // расширении: в серой строке он не отличался от нагрузки,
+      // а цвет и есть главный сигнал.
+      if (pingMs == null && unreachable) {
         parts.add(s.isRussian ? 'нет ответа' : 'no reply');
       }
     }
@@ -281,6 +282,22 @@ class _ServerTile extends StatelessWidget {
     // Запреты больше не вытягивают эту строку в одно многоточие: их свод
     // теперь целиком в «Расширенных» настройках, а не под каждым сервером.
     return parts.join('  \u00b7  ');
+  }
+
+  /// Цвет цифры по единой шкале всех площадок: 0-150 зелёный,
+  /// 151-300 жёлтый, выше красный. Те же пороги дают цвет делениям,
+  /// иначе в одной строке цифра и бары спорили бы друг с другом.
+  Color _pingTone(int ms) {
+    switch (pingLevelFor(ms)) {
+      case PingLevel.excellent:
+        return GlukColors.connected;
+      case PingLevel.medium:
+        return GlukColors.amber;
+      case PingLevel.low:
+        return GlukColors.danger;
+      case PingLevel.unknown:
+        return GlukColors.text2;
+    }
   }
 
   @override
@@ -358,6 +375,20 @@ class _ServerTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
+            if (pingMs != null) ...<Widget>[
+              Text(
+                '$pingMs ${s.ms}',
+                style: text.bodySmall?.copyWith(
+                  color: _pingTone(pingMs!),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
             SignalBars(strength: signal),
             const SizedBox(width: 10),
             _Radio(selected: selected, enabled: node.connectable),

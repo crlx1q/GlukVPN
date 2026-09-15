@@ -20,6 +20,11 @@ enum PingSource {
   /// HTTPS round-trip to the control API: used when ICMP is filtered.
   controlApi,
 
+  /// Время TCP-хендшейка до открытого порта узла: SYN → SYN-ACK — это
+  /// ровно один round-trip. Используется, когда ICMP режется — на
+  /// Windows и в мобильных сетях это правило, а не исключение.
+  tcpHandshake,
+
   /// Nothing answered.
   none,
 }
@@ -41,6 +46,8 @@ class PingSample {
         return 'tunnel';
       case PingSource.controlApi:
         return 'api';
+      case PingSource.tcpHandshake:
+        return 'tcp';
       case PingSource.none:
         return '--';
     }
@@ -91,11 +98,78 @@ class PingService {
   /// API here would quietly report the same number on every row, which is worse
   /// than an empty reading. The source label is not surfaced in the list, only
   /// the millisecond value and the signal level derived from it.
-  Future<PingSample> probeHost(String host) async {
+  Future<PingSample> probeHost(
+    String host, {
+    List<int> tcpPorts = const <int>[443, 80],
+  }) async {
     if (host.isEmpty) return const PingSample.empty();
     final int? icmp = await _icmpRtt(host);
-    if (icmp == null) return const PingSample.empty();
-    return PingSample(source: PingSource.tunnelGateway, milliseconds: icmp);
+    if (icmp != null) {
+      return PingSample(source: PingSource.tunnelGateway, milliseconds: icmp);
+    }
+    // ICMP молчит — это ещё не ответ про сервер. На Windows и в
+    // мобильных сетях эхо режут целиком: список серверов оставался
+    // вообще без цифр, а деления стояли на «среднем по умолчанию».
+    final int? tcp = await _tcpRtt(host, tcpPorts);
+    if (tcp == null) return const PingSample.empty();
+    return PingSample(source: PingSource.tcpHandshake, milliseconds: tcp);
+  }
+
+  /// Время TCP-хендшейка до первого открытого порта из [ports].
+  ///
+  /// Два правила, без которых цифра врёт:
+  ///
+  /// 1. DNS решается до замера и в него не входит. Иначе первый узел
+  ///    в списке всегда выглядел бы самым медленным.
+  /// 2. Берём минимум из двух попыток: первый connect на свежем
+  ///    сокете стоит дороже самой сети.
+  ///
+  /// Больше трёх портов не пробуем и таймаут держим коротким: замер
+  /// идёт по всему флоту подряд, и десяток глухих узлов не должен
+  /// растянуть его на минуты.
+  Future<int?> _tcpRtt(String host, List<int> ports) async {
+    final List<int> candidates = <int>[];
+    for (final int port in ports) {
+      if (port <= 0 || port >= 65536 || candidates.contains(port)) continue;
+      candidates.add(port);
+      if (candidates.length == 3) break;
+    }
+    if (candidates.isEmpty) return null;
+
+    Object target = host;
+    try {
+      final List<InternetAddress> resolved = await InternetAddress.lookup(host)
+          .timeout(const Duration(seconds: 3));
+      if (resolved.isNotEmpty) target = resolved.first;
+    } catch (_) {
+      // Не разрешилось — пусть имя решает сам connect.
+    }
+
+    for (final int port in candidates) {
+      int? best;
+      for (int attempt = 0; attempt < 2; attempt++) {
+        final Stopwatch watch = Stopwatch()..start();
+        try {
+          final Socket socket = await Socket.connect(
+            target,
+            port,
+            timeout: const Duration(milliseconds: 1200),
+          );
+          watch.stop();
+          socket.destroy();
+          final int ms = watch.elapsedMilliseconds;
+          if (best == null || ms < best) best = ms;
+        } catch (_) {
+          watch.stop();
+          // Порт закрыт или отфильтрован — следующий кандидат.
+          break;
+        }
+      }
+      // Ноль миллисекунд бывает только у локальной петли; в UI нулёвой
+      // пинг читается как «замера нет», поэтому поднимаем до 1 мс.
+      if (best != null) return best == 0 ? 1 : best;
+    }
+    return null;
   }
 
   /// ICMP замер одного хоста.
