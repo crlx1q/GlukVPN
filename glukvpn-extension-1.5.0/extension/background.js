@@ -16,7 +16,7 @@
 import { Api, ApiError, REFRESH } from './lib/api.js'
 import { detectBrowser } from './lib/browser.js'
 import { ProxyEngine } from './lib/proxy.js'
-import { pickNode as chooseNode } from './lib/pick.js'
+import { bestNode, pickNode as chooseNode } from './lib/pick.js'
 import { DEFAULT_SETTINGS, Store } from './lib/store.js'
 import { generateKeyPair, isValidKey, publicKeyFor } from './lib/x25519.js'
 import { Telemetry } from './lib/telemetry.js'
@@ -352,9 +352,9 @@ async function ensureDeviceScope() {
  * load alone - what this used to do - sent everyone to an idle node on the
  * other side of the planet.
  */
-function pickNode(nodes, preferredId) {
+function pickNode(nodes, preferredId, options = {}) {
 	const list = Array.isArray(nodes) ? nodes : []
-	const chosen = chooseNode(list, preferredId)
+	const chosen = chooseNode(list, preferredId, options)
 	if (chosen.node) return chosen.node
 	// Nothing scored as usable: a stale heartbeat, or a one-node fleet that just
 	// went quiet. Trying it anyway beats refusing to connect at all.
@@ -453,6 +453,142 @@ async function gatewayStats(gateway, credentials) {
 	}
 }
 
+// ------------------------------------------------------------ node pings ---
+
+/*
+ * Мини-пинг всех узлов, как в популярных VPN.
+ *
+ * Раньше пинг появлялся только у уже подключённого узла: список серверов
+ * показывал «--» и два деления у всех, и выбрать ближний было нельзя. Теперь
+ * узлы опрашиваются прямым запросом к их собственному шлюзу, результат живёт
+ * в runtime (значит, переживает перезапуск воркера), а кулдаун в час не даёт
+ * превратить открытие попапа в веер запросов.
+ *
+ * Меряем только с опущенным туннелем: через поднятый прокси запрос ушёл бы
+ * на текущий шлюз, и мы бы мерили не тот путь. Значение — время до ответа
+ * /__gluk/ping, вместе с TLS, поэтому это метрика для сравнения узлов между
+ * собой, а не чистый ICMP RTT. Те же правила в Flutter — measureNodePings в
+ * vpn_controller.dart и desktop_vpn_controller.dart.
+ */
+const NODE_PING_COOLDOWN_MS = 3600000
+const NODE_PING_BATCH = 24
+const NODE_PING_TIMEOUT_MS = 5000
+
+let measuringNodePings = false
+
+/** Хост самого узла, а не шлюз из настроек: мерить нужно узел. */
+function nodeProbeHost(node) {
+	return String(node?.gatewayHost || node?.pingTarget || node?.host || node?.publicIp || '').trim()
+}
+
+async function probeNode(host, port, scheme) {
+	const url = `${scheme === 'http' ? 'http' : 'https'}://${host}:${port}/__gluk/ping`
+	const started = Date.now()
+	try {
+		const response = await fetch(url, { cache: 'no-store', credentials: 'omit', signal: AbortSignal.timeout(NODE_PING_TIMEOUT_MS) })
+		// 401/407 — тоже ответ: на порту кто-то есть и говорит на нашем языке.
+		if (response.status >= 500) return { state: 'down' }
+		return { state: 'up', ping: Date.now() - started }
+	} catch (error) {
+		const elapsed = Date.now() - started
+		const name = String(error?.name ?? '')
+		// Молчание до таймаута — узел недоступен, красим серым. Быстрый отказ
+		// (сертификат, CORS, чужой порт) значит, что до узла мы доехали, а ответа
+		// не получили: пинг неизвестен, но серым красить нечестно.
+		if (name === 'TimeoutError' || name === 'AbortError') return { state: 'down' }
+		return elapsed >= NODE_PING_TIMEOUT_MS - 250 ? { state: 'down' } : { state: 'unknown' }
+	}
+}
+
+/*
+ * Кого выберет «Авто» — считает воркер и публикует в runtime.
+ *
+ * Попап считал это сам и без пингов, поэтому строка «Авто · Франкфурт 1»
+ * расходилась с узлом, на который воркер реально подключался.
+ */
+async function publishAutoNode({ pings, nodes } = {}) {
+	const [runtime, list, session] = await Promise.all([
+		Store.runtime(),
+		nodes ? Promise.resolve(nodes) : Store.nodes(),
+		Store.session(),
+	])
+	const choice = bestNode(Array.isArray(list) ? list : [], {
+		pings: pings ?? runtime?.nodePings ?? {},
+		preferCountryCode: runtime?.geo?.countryCode ?? '',
+		paid: Boolean(session?.subscription?.isActive) || Number(session?.entitlement?.tier ?? 0) > 0,
+	})
+	await patchRuntime({
+		autoNodeId: choice.node?.id ? String(choice.node.id) : null,
+		autoNodeReason: choice.reason ?? null,
+	})
+	return choice
+}
+
+async function measureNodePings({ force = false } = {}) {
+	const [settings, runtime, cached] = await Promise.all([Store.settings(), Store.runtime(), Store.nodes()])
+	const pings = { ...(runtime?.nodePings ?? {}) }
+	const failed = { ...(runtime?.nodePingsFailed ?? {}) }
+	const seenAt = { ...(runtime?.nodePingsAt ?? {}) }
+	const list = Array.isArray(cached) ? cached : []
+	if (!list.length) return { ok: true, pings, failed }
+	if (measuringNodePings) return { ok: true, busy: true, pings, failed }
+	if (runtime?.phase === PHASE.connected || runtime?.phase === PHASE.connecting) {
+		return { ok: true, skipped: 'tunnel_up', pings, failed }
+	}
+
+	const now = Date.now()
+	const due = list.filter((node) => {
+		const id = String(node?.id ?? '')
+		if (!id || !nodeProbeHost(node)) return false
+		if (force) return true
+		return now - (Number(seenAt[id]) || 0) >= NODE_PING_COOLDOWN_MS
+	})
+	if (!due.length) return { ok: true, fresh: true, pings, failed }
+
+	// Порядок: выбранный узел, затем ни разу не измеренные, затем самые давние.
+	// Батч ограничен, поэтому на большом парке первые заходы всё равно закрывают
+	// самое нужное, а остальное догоняется следующими.
+	const preferred = String(settings.preferredNodeId ?? runtime?.node?.id ?? '')
+	const rank = (id) => (id && id === preferred ? 0 : 1)
+	due.sort((a, b) => {
+		const ida = String(a?.id ?? '')
+		const idb = String(b?.id ?? '')
+		if (rank(ida) !== rank(idb)) return rank(ida) - rank(idb)
+		return (Number(seenAt[ida]) || 0) - (Number(seenAt[idb]) || 0)
+	})
+	const batch = due.slice(0, NODE_PING_BATCH)
+	const port = settings.channel === 'beta' ? 8444 : 8443
+	const scheme = settings.gateway?.scheme || 'https'
+
+	measuringNodePings = true
+	await patchRuntime({ measuringPings: true })
+	try {
+		for (const node of batch) {
+			const id = String(node?.id ?? '')
+			const result = await probeNode(nodeProbeHost(node), port, scheme)
+			seenAt[id] = Date.now()
+			if (result.state === 'up') {
+				pings[id] = result.ping
+				delete failed[id]
+			} else if (result.state === 'down') {
+				delete pings[id]
+				failed[id] = true
+			} else {
+				delete failed[id]
+			}
+			// Публикуем после каждого узла: список заполняется на глазах, а не
+			// одним прыжком в конце обхода.
+			await patchRuntime({ nodePings: pings, nodePingsFailed: failed, nodePingsAt: seenAt })
+		}
+	} finally {
+		measuringNodePings = false
+		await patchRuntime({ measuringPings: false, nodePingsUpdatedAt: Date.now() })
+	}
+	// Свежие пинги меняют ответ «кого выберет Авто» — публикуем сразу.
+	await publishAutoNode({ pings })
+	return { ok: true, pings, failed, measured: batch.length }
+}
+
 // -------------------------------------------------------------- commands ---
 
 async function login({ identifier, password }) {
@@ -525,7 +661,15 @@ async function connect({ nodeId, userInitiated = true } = {}) {
 
 		const nodes = await Api.nodes()
 		await Store.saveNodes(nodes)
-		const target = pickNode(nodes, nodeId ?? settings.preferredNodeId)
+		// Автовыбор считается на измеренных пингах и тарифе, а не только на
+		// загрузке: без пингов «лучший сервер» был просто самым свободным.
+		const runtimeNow = await Store.runtime()
+		const account = await Store.session()
+		const target = pickNode(nodes, nodeId ?? settings.preferredNodeId, {
+			pings: runtimeNow?.nodePings ?? {},
+			preferCountryCode: runtimeNow?.geo?.countryCode ?? '',
+			paid: Boolean(account?.subscription?.isActive) || Number(account?.entitlement?.tier ?? 0) > 0,
+		})
 		if (!target) return fail('No VPN node is available right now.', 'no_nodes')
 
 		const result = await Api.connect(target.id)
@@ -890,6 +1034,10 @@ async function refreshNodes() {
 	try {
 		const nodes = await Api.nodes()
 		await Store.saveNodes(nodes)
+		// Новый список — новый ответ «кого выберет Авто» и мини-пинг тех узлов,
+		// у кого он просрочен. Кулдаун внутри, так что это дешёвый вызов.
+		await publishAutoNode({ nodes })
+		void measureNodePings()
 		return { ok: true, nodes }
 	} catch (error) {
 		return { ok: false, error: error?.message ?? 'Could not load servers.', nodes: await Store.nodes() }
@@ -1057,6 +1205,9 @@ const HANDLERS = {
 		// The same five seconds keep the plan fresh while the popup is open, which
 		// is the only moment anyone can read it. Throttled inside.
 		void syncAccount()
+		// Мини-пинг узлов. Внутри кулдаун в час, поэтому частый getState ничего
+		// не стоит, зато список серверов открывается уже с цифрами.
+		void measureNodePings()
 		return state()
 	},
 	/** Opening the profile re-reads the plan without waiting for the throttle. */
@@ -1099,6 +1250,11 @@ const HANDLERS = {
 		return { ok: true }
 	},
 	refreshNodes,
+	/** Мини-пинг узлов. Без force работает по кулдауну, с force — по кнопке
+	 *  «Обновить», где пользователь ждёт именно свежих цифр. */
+	async measureNodePings(payload) {
+		return measureNodePings({ force: payload?.force === true })
+	},
 	async serviceStatus() {
 		return checkMaintenance()
 	},
@@ -1168,11 +1324,16 @@ const HANDLERS = {
 	async selectNode({ nodeId }) {
 		await Store.saveSettings({ preferredNodeId: nodeId ?? null })
 		const runtime = await Store.runtime()
-		if (runtime?.phase === PHASE.connected) {
-			await disconnect({ silent: true })
-			return connect({ nodeId })
-		}
-		return { ok: true }
+		// «Авто» пересчитываем сразу: строка «Авто · город» в попапе читает
+		// именно этот ответ, а не собственную догадку.
+		await publishAutoNode()
+		if (runtime?.phase !== PHASE.connected) return { ok: true, switched: false }
+		// Туннель поднят — выбор сервера означает переход на него. Гасим тихо и
+		// поднимаем новый здесь же; попапу второй connect больше не нужен, а
+		// раньше он давал два реконнекта подряд.
+		await disconnect({ silent: true })
+		const result = await connect({ nodeId: nodeId ?? null })
+		return { ...result, switched: true }
 	},
 	async devices() {
 		try {

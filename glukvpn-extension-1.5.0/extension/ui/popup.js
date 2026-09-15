@@ -18,6 +18,7 @@
 import { createTranslator, resolveLanguage, errorKeyFor } from '../lib/i18n.js'
 import { formatNodeLocation, localizeCountry, localizeCity } from '../lib/geo.js'
 import { bestNode } from '../lib/pick.js'
+import { categoryLabel, categoryStyle } from '../lib/categories.js'
 import { paintIcons, iconSvg } from './icons.js'
 import { flagSvg } from './flags.js'
 import { Telemetry } from '../lib/telemetry.js'
@@ -154,6 +155,9 @@ let activeMapBusy = false
 let limitModalFingerprint = ''
 let dismissedLimitFingerprint = ''
 let limitModalError = null
+// Какие пинги уже отрисованы — чтобы не собирать список серверов заново на
+// каждый broadcast из воркера.
+let lastPingSignature = ''
 
 // ------------------------------------------------------------- messaging ---
 
@@ -330,10 +334,50 @@ function pingLabel(ms) {
 
 function signalOf(ms) {
 	const value = Number(ms)
+	// Нуль делений ставит только неудавшаяся проба — это решает вызывающий.
+	// Ещё не измеренный пинг остаётся на двух делениях — так же, как во Flutter,
+	// где неизвестный пинг оценивается в 0.55 (signalUnknownPingScore).
 	if (!Number.isFinite(value) || value <= 0) return 2
 	if (value <= 60) return 3
 	if (value <= 140) return 2
 	return 1
+}
+
+/* Пинги узлов меряет воркер (measureNodePings) и публикует в runtime, а не
+ * попап: иначе цифры живут ровно пока открыто окно. У подключённого узла
+ * живой RTT шлюза точнее любой пробы. */
+function nodePingMs(node) {
+	const id = String(node?.id ?? node?.nodeId ?? '')
+	if (!id) return null
+	if (id === String(state?.runtime?.node?.id ?? '')) {
+		const live = Number(state?.runtime?.stats?.ping)
+		if (Number.isFinite(live) && live > 0) return live
+	}
+	const measured = Number(state?.runtime?.nodePings?.[id])
+	if (Number.isFinite(measured) && measured > 0) return measured
+	const listed = Number(node?.ping ?? node?.pingMs)
+	return Number.isFinite(listed) && listed > 0 ? listed : null
+}
+
+/** Узел не ответил на пробу: серая строка и «нет ответа», но выбрать его
+ *  всё равно можно — проба видит не всё, что видит туннель. */
+function nodeUnreachable(node) {
+	const id = String(node?.id ?? node?.nodeId ?? '')
+	return Boolean(id && state?.runtime?.nodePingsFailed?.[id])
+}
+
+/** Загрузка узла: сервер присылает loadPercent, старый кэш — load. */
+function nodeLoadPercent(node) {
+	const value = Number(node?.loadPercent ?? node?.load)
+	return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null
+}
+
+/** Тонировка под цвет категории: #rrggbb -> rgba(). */
+function tintOf(hex, alpha) {
+	const match = /^#([0-9a-f]{6})$/i.exec(String(hex ?? ''))
+	if (!match) return null
+	const value = parseInt(match[1], 16)
+	return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`
 }
 
 // -------------------------------------------------------------------- geo ---
@@ -670,12 +714,9 @@ function activeNode() {
 	if (manual) return manual
 
 	// Nothing was chosen by hand, so name the server Auto would take instead of
-	// claiming none is selected. Same ranking as Windows and Android.
-	// `paid` is left at its default: the control plane does not mark premium
-	// nodes yet, so nothing is filtered out by it today.
-	return bestNode(nodes, {
-		preferCountryCode: state?.runtime?.geo?.countryCode ?? '',
-	}).node
+	// claiming none is selected. Счёт один на весь попап, иначе карточка и
+	// строка «Авто» в списке называют разные города.
+	return autoPickedNode()
 }
 
 function renderVpn() {
@@ -717,8 +758,12 @@ function renderVpn() {
 	const curMeta = $('cur-meta')
 	if (curMeta) {
 		const bits = []
-		if (node?.load !== undefined && node?.load !== null) bits.push(t('node.load', { n: Math.round(Number(node.load)) }))
-		if (node?.ping) bits.push(pingLabel(node.ping))
+		const nodeLoad = nodeLoadPercent(node)
+		if (nodeLoad !== null) bits.push(t('node.load', { n: Math.round(nodeLoad) }))
+		// Пинг известен и до подключения: его меряет воркер, а не туннель.
+		const nodePing = node ? nodePingMs(node) : null
+		if (nodePing !== null) bits.push(pingLabel(nodePing))
+		else if (node && nodeUnreachable(node)) bits.push(currentLang === 'ru' ? 'нет ответа' : 'no reply')
 		// Once a node is resolved - chosen by hand or picked automatically - the
 		// "fastest server" placeholder is stale and gets out of the way.
 		curMeta.textContent = node ? bits.join(' \u00b7 ') : t('node.fastest')
@@ -858,9 +903,21 @@ function autoSelectionEnabled() {
 	return !settings.preferredNodeId || manualSelectionLocked()
 }
 
-/** Узел, который выберет «Авто» — тот же расчёт, что на ПК и телефоне. */
+/*
+ * Узел, который выберет «Авто».
+ *
+ * Решение принимает воркер на измеренных пингах и публикует в
+ * runtime.autoNodeId — попап только показывает. Свой расчёт остался
+ * фолбэком на случай, когда воркер ещё не ответил. Именно этот расчёт и
+ * расходился с главным экраном («авто: Франкфурт 1» при втором узле в
+ * туннеле): у попапа нет своих пингов.
+ */
 function autoPickedNode() {
+	const published = state?.runtime?.autoNodeId
+	const known = published ? nodeById(published) : null
+	if (known) return known
 	return bestNode(nodes, {
+		pings: state?.runtime?.nodePings ?? {},
 		preferCountryCode: state?.runtime?.geo?.countryCode ?? '',
 	}).node
 }
@@ -889,6 +946,7 @@ function renderServers() {
 	}
 	const locked = manualSelectionLocked()
 	const autoOn = autoSelectionEnabled()
+	const ru = currentLang() === 'ru'
 	// «Авто · Лучший сервер» — первой строкой, как в версии для ПК.
 	const autoRow = document.createElement('button')
 	autoRow.type = 'button'
@@ -924,9 +982,12 @@ function renderServers() {
 		const id = String(node?.id ?? node?.nodeId ?? index)
 		const maintenance = node?.maintenance === true || String(node?.status ?? '').toUpperCase() === 'MAINTENANCE'
 		const offline = maintenance || node?.online === false || String(node?.status ?? '').toLowerCase() === 'offline'
+		// Недоступные сразу серые, но кликабельные: проба из браузера видит
+		// не всё, что видит туннель, и запретить выбор по ней было бы слишком.
+		const unreachable = !offline && nodeUnreachable(node)
 		const row = document.createElement('button')
 		row.type = 'button'
-		row.className = 'srv-row' + (!autoOn && id === activeId ? ' active' : '') + (offline ? ' offline' : '') + (maintenance ? ' maintenance' : '') + (locked ? ' locked' : '')
+		row.className = 'srv-row' + (!autoOn && id === activeId ? ' active' : '') + (offline ? ' offline' : '') + (maintenance ? ' maintenance' : '') + (locked ? ' locked' : '') + (unreachable ? ' unreachable' : '')
 		row.style.animationDelay = `${Math.min(index, 8) * 26}ms`
 
 		const flag = document.createElement('span')
@@ -949,7 +1010,9 @@ function renderServers() {
 		if (offline) {
 			meta.textContent = maintenance ? t('node.maintenance') : t('node.offline')
 		} else {
-			const load = Math.max(0, Math.min(100, Math.round(Number(node?.load ?? 0))))
+			// Сервер присылает loadPercent, а читался только node.load — полоска
+			// загрузки у всех узлов стояла на нуле.
+			const load = Math.round(nodeLoadPercent(node) ?? 0)
 			const bar = document.createElement('span')
 			// Загрузка узла красится той же шкалой, что и квоты: класс .warm
 			// давал ступеньку на 70 %, теперь переход плавный.
@@ -966,8 +1029,10 @@ function renderServers() {
 		text.appendChild(meta)
 		row.appendChild(text)
 
+		const measured = nodePingMs(node)
 		const sig = document.createElement('span')
-		sig.className = `sig l${signalOf(node?.ping)}`
+		// Без ответа — нуль делений (все серые), иначе шкала по пингу.
+		sig.className = `sig l${offline || unreachable ? 0 : signalOf(measured)}`
 		sig.appendChild(document.createElement('i'))
 		sig.appendChild(document.createElement('i'))
 		sig.appendChild(document.createElement('i'))
@@ -975,7 +1040,7 @@ function renderServers() {
 
 		const ping = document.createElement('span')
 		ping.className = 's-ping'
-		ping.textContent = pingLabel(node?.ping)
+		ping.textContent = unreachable ? (ru ? 'нет ответа' : 'no reply') : pingLabel(measured)
 		row.appendChild(ping)
 
 		row.addEventListener('click', () => chooseNode(id, offline))
@@ -2001,22 +2066,28 @@ async function chooseNode(nodeId, offline) {
 		banner('srv-banner', t('servers.manualLocked'), { kind: 'info' })
 		return
 	}
+	// Правило одно на все площадки: VPN выключен — выбор просто
+	// запоминается; VPN поднят — это переход на выбранный узел. Переход
+	// целиком делает воркер внутри selectNode; второй connect отсюда давал
+	// два реконнекта подряд и лишние секунды «подключаюсь».
+	const switching = phaseOf() === 'connected'
+	if (switching) markBusy(true)
 	const response = await call('selectNode', { nodeId })
+	if (switching) markBusy(false)
 	if (!response?.ok) {
-		banner('srv-banner', humanError(response), { actionLabel: t('common.retry'), onAction: () => chooseNode(nodeId, false) })
+		// Ошибка перехода — это ошибка подключения, ей место на главном экране.
+		if (switching) {
+			setView('vpn')
+			banner('vpn-banner', humanError(response), { title: t('err.connectTitle'), actionLabel: t('common.retry'), onAction: () => chooseNode(nodeId, false) })
+		} else {
+			banner('srv-banner', humanError(response), { actionLabel: t('common.retry'), onAction: () => chooseNode(nodeId, false) })
+		}
+		await refreshState({ quiet: true })
 		return
 	}
 	banner('srv-banner', '')
-	await refreshState({ quiet: true })
 	setView('vpn')
-	// Selecting a server while connected should move the tunnel there.
-	if (phaseOf() === 'connected') {
-		markBusy(true)
-		const reconnect = await call('connect', { nodeId })
-		markBusy(false)
-		if (!reconnect?.ok) banner('vpn-banner', humanError(reconnect), { title: t('err.connectTitle') })
-		await refreshState({ quiet: true })
-	}
+	await refreshState({ quiet: true })
 }
 
 function linesOf(id) {
@@ -2499,6 +2570,15 @@ function wire() {
 					}
 					state = { ...(state ?? {}), runtime }
 					renderVpn()
+					// Пинги и «Авто» приходят из воркера поштучно, поэтому список
+					// серверов надо перерисовывать — но только когда цифры
+					// действительно изменились, иначе строки мигали бы анимацией
+					// на каждом опросе.
+					const pingSignature = JSON.stringify([runtime.nodePings ?? null, runtime.nodePingsFailed ?? null, runtime.autoNodeId ?? null])
+					if (pingSignature !== lastPingSignature) {
+						lastPingSignature = pingSignature
+						renderServers()
+					}
 				}
 			}
 		})
@@ -3287,6 +3367,15 @@ function renderStats() {
 	const devices = Array.isArray(data.devices) ? data.devices : []
 	const domains = data.domains || {}
 	const items = Array.isArray(domains.items) ? domains.items : []
+	// Категории сервер отдаёт отдельным списком (accountInsights.categories),
+	// а попап его просто не читал — оттого раздел и выглядел сломанным.
+	const categories = (Array.isArray(data.categories) ? data.categories : [])
+		.map((item) => ({
+			code: String(item?.category ?? ''),
+			total: (Number(item?.downloadBytes) || 0) + (Number(item?.uploadBytes) || 0),
+		}))
+		.filter((item) => item.total > 0)
+		.sort((a, b) => b.total - a.total)
 	const budget = data.budget
 	const quota = data.quota || null
 	const frag = document.createDocumentFragment()
@@ -3517,6 +3606,29 @@ function renderStats() {
 	}
 
 	frag.appendChild(statsNode('h3', 'stats-h', ru ? 'Сайты и категории' : 'Sites and categories'))
+	if (categories.length) {
+		const top = categories[0].total
+		for (const item of categories) {
+			const style = categoryStyle(item.code)
+			const row = statsNode('div', 'stats-row')
+			const tile = statsNode('span', 'stats-tile')
+			// Цвет ставим через el.style: инлайновый атрибут style закрыт CSP MV3.
+			tile.style.color = style.color
+			const tint = tintOf(style.color, 0.16)
+			if (tint) tile.style.background = tint
+			tile.appendChild(iconSvg(style.icon, 18))
+			const text = statsNode('span', 'stats-row-text')
+			text.appendChild(statsNode('b', '', categoryLabel(item.code, ru)))
+			const track = statsNode('span', 'stats-share')
+			const fill = statsNode('i', '')
+			fill.style.width = `${(top ? Math.max(4, (item.total / top) * 100) : 4).toFixed(1)}%`
+			fill.style.background = style.color
+			track.appendChild(fill)
+			text.appendChild(track)
+			row.append(tile, text, statsNode('b', 'stats-row-v', statsBytes(item.total)))
+			frag.appendChild(row)
+		}
+	}
 	if (domains.enabled === false) {
 		frag.appendChild(statsNode('div', 'stats-empty', ru ? 'Учёт доменов отключён' : 'Domain accounting is disabled'))
 	} else if (!items.length) {
@@ -3527,7 +3639,8 @@ function renderStats() {
 			const row = statsNode('div', 'stats-row')
 			const text = statsNode('span', 'stats-row-text')
 			text.appendChild(statsNode('b', '', item.domain || '—'))
-			text.appendChild(statsNode('span', '', `${item.category || (ru ? 'без категории' : 'uncategorised')} · ${Number(item.connections) || 0} ${ru ? 'соед.' : 'conn.'}`))
+			// Имя категории — человеческое, а не сырой код вида streaming-music.
+			text.appendChild(statsNode('span', '', `${categoryLabel(item.category, ru)} · ${Number(item.connections) || 0} ${ru ? 'соед.' : 'conn.'}`))
 			row.append(text, statsNode('b', 'stats-row-v', statsBytes((Number(item.downloadBytes) || 0) + (Number(item.uploadBytes) || 0))))
 			frag.appendChild(row)
 		}

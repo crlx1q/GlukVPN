@@ -18,10 +18,11 @@
 const PING_BEST_MS = 20
 const PING_WORST_MS = 300
 const HOME_COUNTRY_BONUS = 0.06
-// Paid plans prefer premium hardware when it exists. The control plane does
-// not send `tier` yet, so today every node reads as `free` and this line is
-// inert; it starts working the moment the field appears, with no client
-// update.
+// Приоритет подписки. Управляющий сервер тир присылает — `toPublicNode`
+// отдаёт `tier` числом и `tierLabel` для показа, — но прошлая проверка
+// сравнивала это число со строками 'premium'/'pro' и не срабатывала никогда.
+// Теперь тир читается как число, и платному тарифу узел старшего тира
+// выгоднее при прочих равных.
 const PREMIUM_BONUS = 0.05
 
 function asNumber(value) {
@@ -55,9 +56,17 @@ function headroomOf(node) {
 	return Math.min(1, Math.max(0, free))
 }
 
+/* Тир узла числом. Кэш от прежних сборок мог сохранить только подпись, так
+ * что оба вида принимаются. */
+function nodeTier(node) {
+	const numeric = asNumber(node?.tier)
+	if (numeric !== null) return Math.max(0, Math.round(numeric))
+	const text = String(node?.tierLabel ?? node?.plan ?? '').toLowerCase()
+	return /premium|pro|plus/.test(text) ? 1 : 0
+}
+
 function isPremium(node) {
-	const tier = String(node?.tier ?? node?.plan ?? '').toLowerCase()
-	return tier === 'premium' || tier === 'pro'
+	return nodeTier(node) > 0
 }
 
 /* Offline is reported in three different shapes depending on how old the
@@ -69,12 +78,18 @@ export function isNodeOnline(node) {
 	return true
 }
 
-export function isNodeUsable(node, { paid = false } = {}) {
+/*
+ * Годен = управляющий сервер говорит, что узел сейчас примет сессию.
+ *
+ * Тир здесь намеренно не фильтр. Какие тиры доступны тарифу, решает сервер
+ * (`pickNode(nodeId, entitlement.tier)` и 403 на connect), а присланные
+ * числа — класс железа, а не название тарифа. Скрыть узел по догадке значит
+ * оставить пользователя с пустым списком, поэтому тир влияет только на
+ * порядок в nodeScore.
+ */
+export function isNodeUsable(node) {
 	if (!isNodeOnline(node)) return false
 	if (node.connectable === false) return false
-	// Premium hardware is not offered to a free plan: connecting would only
-	// earn a 403 from the control plane.
-	if (isPremium(node) && !paid) return false
 	return true
 }
 
@@ -111,7 +126,7 @@ export function nodeScore(node, { pingMs = null, paid = false } = {}) {
  */
 export function bestNode(nodes, { pings = {}, preferCountryCode = '', paid = false } = {}) {
 	const list = Array.isArray(nodes) ? nodes : []
-	const candidates = list.filter((node) => isNodeUsable(node, { paid }))
+	const candidates = list.filter((node) => isNodeUsable(node))
 	if (!candidates.length) return { node: null, reason: 'no_available_nodes' }
 
 	const prefer = String(preferCountryCode ?? '').toUpperCase()
@@ -153,7 +168,7 @@ export function pickNode(nodes, wantedId, options = {}) {
 	const wanted = String(wantedId ?? '')
 	if (wanted) {
 		const exact = list.find((node) => nodeId(node) === wanted)
-		if (exact && isNodeUsable(exact, options)) {
+		if (exact && isNodeUsable(exact)) {
 			return { node: exact, reason: 'manual', auto: false }
 		}
 	}

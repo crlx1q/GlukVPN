@@ -64,6 +64,22 @@ export const ICONS = {
 	laptop: '<rect x="3.6" y="5" width="16.8" height="11" rx="1.8"/><path d="M2 19h20"/>',
 	phone: '<rect x="7.4" y="2.6" width="9.2" height="18.8" rx="2.2"/><path d="M10.8 18.4h2.4"/>',
 
+	/* traffic categories - «Сайты и категории» в статистике. Какой код какой
+	 * иконкой рисуется, решает lib/categories.js - там же лежит название на
+	 * двух языках, синхронно с Flutter. */
+	catVideo: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10.4 9.2 15.2 12l-4.8 2.8Z"/>',
+	catMusic: '<circle cx="7.4" cy="17" r="2.6"/><circle cx="17" cy="15.2" r="2.6"/><path d="M10 17V7.2l9.6-2v10"/>',
+	catSocial: '<circle cx="9.4" cy="9.2" r="3"/><path d="M3.8 19.2a5.6 5.6 0 0 1 11.2 0"/><path d="M16.2 6.8a3 3 0 0 1 0 5.4"/><path d="M17.4 14.6a4.4 4.4 0 0 1 2.8 4.6"/>',
+	catChat: '<path d="M20 12.2c0 3.6-3.6 6.6-8 6.6-.9 0-1.8-.1-2.6-.4L4.8 20l.8-3.4A6.2 6.2 0 0 1 4 12.2c0-3.6 3.6-6.6 8-6.6s8 3 8 6.6Z"/>',
+	catGame: '<path d="M8.6 7.6h6.8A4.6 4.6 0 0 1 20 12.2v2.4a2.6 2.6 0 0 1-4.7 1.5l-.8-1.1H9.5l-.8 1.1A2.6 2.6 0 0 1 4 14.6v-2.4a4.6 4.6 0 0 1 4.6-4.6Z"/><path d="M8.4 10.8v2.4"/><path d="M7.2 12h2.4"/><path d="M15.6 11.6v.1"/>',
+	catSearch: '<circle cx="11" cy="11" r="6.2"/><path d="m15.6 15.6 4 4"/>',
+	catShop: '<path d="M5.6 8.6h12.8l-1 10.8H6.6L5.6 8.6Z"/><path d="M9.2 8.6V6.8a2.8 2.8 0 0 1 5.6 0v1.8"/>',
+	catCloud: '<path d="M7.6 18.4h9.2a3.9 3.9 0 0 0 .2-7.8 5.2 5.2 0 0 0-10-1.4 3.6 3.6 0 0 0 .6 9.2Z"/>',
+	catAds: '<path d="M4.6 10.6 15.4 6.4v11.2L4.6 13.4v-2.8Z"/><path d="M7.6 12.6v5a1.8 1.8 0 0 0 3.6 0v-3.7"/><path d="M18.4 10v4"/><path d="M20.8 9v6"/>',
+	catAdult: '<path d="M3.6 12C4.6 9.1 7.6 5.7 12 5.7s7.4 3.4 8.4 6.3c-1 2.9-4 6.3-8.4 6.3S4.6 14.9 3.6 12Z"/><circle cx="12" cy="12" r="2.4"/><path d="M4.6 4.6 19.4 19.4"/>',
+	catTorrent: '<path d="M8.4 4.6v11"/><path d="m5.2 12.4 3.2 3.2 3.2-3.2"/><path d="M15.6 19.4v-11"/><path d="m12.4 11.6 3.2-3.2 3.2 3.2"/>',
+	catTag: '<path d="M12.4 4.6H19a.6.6 0 0 1 .6.6v6.2L11 20 4 13l8.4-8.4Z"/><path d="M16 8v.1"/>',
+
 	/* states - these three were referenced by the code but never existed, so
 	 * every error frame silently rendered without its icon */
 	alert: '<path d="M12 3.6 2.9 19.4h18.2L12 3.6Z"/><path d="M12 10v4.2"/><path d="M12 17.1v.1"/>',
