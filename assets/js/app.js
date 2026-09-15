@@ -251,8 +251,11 @@
     var tz = "";
     try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) {}
     if (TZ[tz]) return { lat: TZ[tz][0], lon: TZ[tz][1], name: T(TZ[tz][2]) };
-    var home = NET.home || {};
-    return { lat: home.lat != null ? home.lat : 44.85, lon: home.lon != null ? home.lon : 65.51, name: home.name ? T(home.name) : T("Вы") };
+    // Пояс неизвестен — своей точки нет. Раньше здесь подставлялась
+    // Кызылорда из config.js, и кабинет «прикалывал» человека к чужому
+    // городу. Живая карта берёт место с сервера (IP сессии), а отсутствие
+    // маркера честнее маркера «где-то».
+    return null;
   }
 
   function liveNodes() {
@@ -387,7 +390,9 @@
     var h = here();
     var out = [];
     var usedNodes = {};
-    devices.slice(0, 5).forEach(function (d, i) {
+    // Без своей точки не выдумываем и места устройств; узловые пины ниже
+    // остаются — они стоят по реальным координатам узлов.
+    (h ? devices.slice(0, 5) : []).forEach(function (d, i) {
       var ang = (i * 2.399) + 0.6;
       var r = i === 0 ? 0 : 3.2 + i * 1.15;
       out.push({
