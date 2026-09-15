@@ -184,6 +184,38 @@ function idChip(publicId) {
 	return span
 }
 
+/**
+ * Роль в таблице пользователей значком, а не словами «yes»/«no».
+ *
+ * Иконки берём из того же спрайта, что и меню: щит \u2014 админ, человек \u2014
+ * поддержка, жучок \u2014 тестер. Выключенная роль остаётся приглушённым тире:
+ * серый значок читался бы как «включено, но недоступно».
+ */
+const ROLE_ICONS = { admin: "#i-shield", support: "#i-user", tester: "#i-bug" }
+const ROLE_TITLES = { admin: "Администратор", support: "Поддержка", tester: "Тестер" }
+
+function roleBadge(role, enabled) {
+	const span = document.createElement("span")
+	const title = ROLE_TITLES[role] || role
+	if (!enabled) {
+		span.className = "role-badge is-off"
+		span.textContent = "\u2014"
+		span.title = `${title}: нет`
+		return span
+	}
+	span.className = `role-badge role-badge--${role}`
+	span.title = `${title}: да`
+	const ns = "http://www.w3.org/2000/svg"
+	const svg = document.createElementNS(ns, "svg")
+	svg.setAttribute("class", "ic ic-sm")
+	svg.setAttribute("aria-hidden", "true")
+	const use = document.createElementNS(ns, "use")
+	use.setAttribute("href", ROLE_ICONS[role] || "#i-check")
+	svg.appendChild(use)
+	span.appendChild(svg)
+	return span
+}
+
 /** Owner cell: nickname on top, the permanent ID underneath. */
 function ownerCell(user) {
 	const wrap = document.createElement("div")
@@ -1236,9 +1268,9 @@ function renderUsers(users) {
 		cell(row, idChip(user.publicId))
 		cell(row, user.username)
 		cell(row, statusPill(user.status))
-		cell(row, user.isAdmin ? "yes" : "no")
-		cell(row, user.isSupport ? "yes" : "no")
-		cell(row, user.isTester ? "yes" : "no")
+		cell(row, roleBadge("admin", user.isAdmin))
+		cell(row, roleBadge("support", user.isSupport))
+		cell(row, roleBadge("tester", user.isTester))
 		cell(row, `${user.devices} / ${user.maxDevices}`)
 		cell(row, `${user.liveSessions} / ${user.maxSessions}`)
 		cell(row, subscriptionCell(user))

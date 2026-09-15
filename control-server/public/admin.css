@@ -344,6 +344,17 @@ tbody td.empty,tbody td.center{text-align:center;color:var(--text-3);padding:26p
 .plan-badge--pro{background:hsl(266 84% 75% / .18);border-color:hsl(266 84% 75% / .5);color:hsl(266 84% 82%)}
 .plan-badge--beta{background:hsl(172 70% 62% / .14);border:1px dashed hsl(172 70% 62% / .6);color:hsl(172 70% 70%)}
 
+/* ---------- роли в таблице пользователей ---------- */
+.role-badge{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:27px;height:27px;border-radius:9px;
+  background:var(--surface-3);border:1px solid var(--line);
+  color:var(--text-3);font-size:12px;font-weight:700;
+}
+.role-badge--admin{background:rgba(109,139,255,.16);border-color:rgba(109,139,255,.45);color:#c7d2ff}
+.role-badge--support{background:rgba(61,220,151,.12);border-color:rgba(61,220,151,.32);color:var(--ok)}
+.role-badge--tester{background:rgba(255,201,100,.12);border-color:rgba(255,201,100,.32);color:var(--warn)}
+
 /* ---------- подписки в таблице пользователей ---------- */
 .sub-cell{display:flex;flex-direction:column;gap:5px;align-items:flex-start}
 .sub-row>td{background:rgba(109,139,255,.05);padding:0}
