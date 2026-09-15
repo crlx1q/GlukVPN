@@ -221,7 +221,6 @@
   }
 
   function guess() {
-    if (typeof location !== "undefined" && location.hostname.startsWith("app.")) return "ru";
     if (tzIsCis()) return "ru";
     var list = navigator.languages && navigator.languages.length
       ? navigator.languages

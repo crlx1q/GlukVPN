@@ -66,8 +66,6 @@ window.GLUK_CONFIG = {
   },
 
   site: {
-    domain: (typeof location !== "undefined" && location.hostname.startsWith("app.")) ? location.hostname : "vpn.gluk.tech",
-    url: (typeof location !== "undefined" && location.hostname.startsWith("app.")) ? ("https://" + location.hostname) : "https://vpn.gluk.tech",
     name: "GlukVPN",
     domain: "vpn.gluk.tech",
     url: "https://vpn.gluk.tech",
@@ -89,14 +87,14 @@ window.GLUK_CONFIG = {
     android: {
       status: "available",
       label: "Android",
-      url: (typeof location !== "undefined" && location.hostname.startsWith("app.")) ? "https://github.com/crlx1q/GlukVPN/releases/download/android-v1.6.0%2B6-build138/glukvpn-release-1.6.0.apk" : "/download/android",
+      url: "/download/android",
       note: "Android 8.0 и новее",
     },
     googlePlay: { status: "soon", label: "Google Play", url: "", note: "Публикация готовится" },
     windows: {
       status: "available",
       label: "Windows",
-      url: (typeof location !== "undefined" && location.hostname.startsWith("app.")) ? "https://github.com/crlx1q/GlukVPN/releases/download/windows-v1.6.0-build124/GlukVPN-Setup-1.6.0.exe" : "/download/windows",
+      url: "/download/windows",
       note: "Windows 10, 11 (64-bit)",
     },
     ios: { status: "soon", label: "iOS", url: "", note: "В разработке" },
@@ -112,7 +110,7 @@ window.GLUK_CONFIG = {
   pricing: {
     /* Валюта и период до ответа API. Реальную валюту выбирает бэкенд
        по стране (Cloudflare CF-IPCountry): KZ -> KZT, RU -> RUB, остальные -> USD. */
-    defaultCurrency: (typeof location !== "undefined" && location.hostname.startsWith("app.")) ? "RUB" : "KZT",
+    defaultCurrency: "KZT",
     defaultPeriod: "monthly",
     /* Формат сумм: decimals 0 -> 790 ₸, decimals 2 -> $1.99. */
     currencies: {
