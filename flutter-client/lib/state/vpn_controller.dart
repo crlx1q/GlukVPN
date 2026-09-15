@@ -84,6 +84,11 @@ class VpnController extends ChangeNotifier {
   List<VpnNodeInfo> _nodes = const <VpnNodeInfo>[];
   VpnNodeInfo? _selectedNode;
   VpnUiState _state = VpnUiState.disconnected;
+
+  /// Номер текущей попытки подключения. Любой разрыв (кнопка,
+  /// шторка) его увеличивает, и connect(), проснувшись после своего
+  /// await, видит, что его попытку отменили.
+  int _connectAttempt = 0;
   TunnelStage _tunnelStage = TunnelStage.unknown;
   VpnSessionInfo? _session;
   TunnelConfig? _tunnel;
@@ -470,8 +475,16 @@ class VpnController extends ChangeNotifier {
       // сети стоит дороже, чем несколько замеров подряд.
       for (final VpnNodeInfo node in targets) {
         if (_disposed) return;
-        final PingSample sample =
-            await _pingService.probeHost(node.latencyHost);
+        final PingSample sample = await _pingService.probeHost(
+          node.latencyHost,
+          // Тот же набор портов, что и на ПК: в мобильных сетях ICMP
+          // тоже режут, и тогда цифра берётся из TCP-хендшейка.
+          tcpPorts: <int>[
+            if (node.gatewayPort != null) node.gatewayPort!,
+            443,
+            8443,
+          ],
+        );
         if (_disposed) return;
         _pingedAt[node.id] = DateTime.now();
         final int? ms = sample.milliseconds;
@@ -544,11 +557,17 @@ class VpnController extends ChangeNotifier {
     _tunnel = null;
     _pingSample = const PingSample.empty();
     _state = VpnUiState.connecting;
+    // Отмена долгого подключения: пользователь нажал кнопку ещё раз,
+    // и disconnect() поднял номер попытки. Продолжать нельзя —
+    // иначе туннель поднимается уже ПОСЛЕ отмены.
+    final int attempt = ++_connectAttempt;
+    bool cancelled() => _connectAttempt != attempt;
     _safeNotify();
 
     try {
       // On Android, request notification permission early so the shade notification appears.
       await _notifications.requestNotificationPermission();
+      if (cancelled()) return;
 
       // Ensure Android system VPN permission dialog is accepted BEFORE allocating server session.
       final bool vpnPrepared = await _notifications.prepareVpn();
@@ -563,15 +582,23 @@ class VpnController extends ChangeNotifier {
       }
 
       await _vpn.syncPermissions();
+      if (cancelled()) return;
 
       // 1. Our public key must be registered and the tokens device-scoped.
       await _auth.ensureDeviceRegistered();
+      if (cancelled()) return;
 
       // 2. The control plane allocates an IP and tells the node to add the peer.
       final ConnectResult result = await _api.connect(nodeId: node.id);
       _session = result.session;
       _tunnel = result.tunnel;
       _peerReady = result.session.isActive;
+      // С этого момента сессия уже выделена на сервере: отмену
+      // недостаточно просто вернуть, её надо свернуть.
+      if (cancelled()) {
+        await _rollbackConnect();
+        return;
+      }
 
       if (result.tunnel.peerPublicKey.isEmpty || result.tunnel.endpoint.isEmpty) {
         throw StateError('the node returned an incomplete tunnel configuration');
@@ -582,9 +609,20 @@ class VpnController extends ChangeNotifier {
       if (privateKey == null) {
         throw StateError('this device has no WireGuard key');
       }
+      if (cancelled()) {
+        await _rollbackConnect();
+        return;
+      }
 
       // 4. Raise the tunnel. On first use Android shows the system VPN dialog.
       await _vpn.start(tunnel: result.tunnel, privateKeyBase64: privateKey);
+      // Гонка «отменил, пока туннель поднимался»: disconnect() уже
+      // вызвал _vpn.stop() до того, как start() успел сработать, и без
+      // этой проверки туннель оставался поднятым после отмены.
+      if (cancelled()) {
+        await _rollbackConnect();
+        return;
+      }
 
       _connectedSince = DateTime.now();
       _startTimers();
@@ -617,6 +655,10 @@ class VpnController extends ChangeNotifier {
       _maintenanceRetry = null;
     }
 
+    // Идущий connect() обязан узнать, что его отменили: он мог
+    // уснуть на сетевом вызове и иначе поднял бы туннель уже после
+    // разрыва.
+    _connectAttempt++;
     _state = VpnUiState.disconnecting;
     _busy = true;
     _safeNotify();
@@ -761,6 +803,9 @@ class VpnController extends ChangeNotifier {
   Future<void> _serveShadeStop() async {
     if (_state == VpnUiState.disconnecting) return;
     debugPrint('vpn: serving Disconnect from the notification shade');
+    // Та же отмена, что и в disconnect(): идущая попытка подключения
+    // должна оборваться.
+    _connectAttempt++;
     _state = VpnUiState.disconnecting;
     _busy = true;
     _safeNotify();

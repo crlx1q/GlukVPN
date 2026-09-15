@@ -477,7 +477,13 @@ class _MapCard extends StatelessWidget {
 
             Positioned(
               top: 14, right: 14,
-              child: AccountDevicesButton(controller: accountMap, russian: s.isRussian),
+              child: AccountDevicesButton(
+                controller: accountMap,
+                russian: s.isRussian,
+                // Своё устройство отключается локально, как большой
+                // кнопкой, а не запросом на бэкенд.
+                onDisconnectSelf: vpn.disconnect,
+              ),
             ),
 
             // Globe <-> flat map, bottom right.
@@ -597,6 +603,10 @@ class _MetricsRail extends StatelessWidget {
         return strings.tunnel;
       case PingSource.controlApi:
         return strings.viaApi;
+      // Технический токен одинаков в обоих языках: цифра получена
+      // хендшейком до узла, а не эхо-запросом.
+      case PingSource.tcpHandshake:
+        return 'TCP';
       case PingSource.none:
         return '';
     }

@@ -79,7 +79,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
 
   Future<void> _toggle(VpnController vpn) async {
-    if (vpn.busy) return;
+    // Отмена подключения обязана проходить сквозь `busy`: connect()
+    // держит этот флаг всю попытку, и ранний выход по нему делал
+    // кнопку мёртвой до самого конца долгого коннекта.
+    final bool cancelling = vpn.state == VpnUiState.connecting;
+    if (vpn.busy && !cancelling) return;
     // Короткая отдача на само нажатие: палец получает ответ раньше,
     // чем сеть. Вторая, более заметная — в контроллере, когда ключ
     // реально заработал. Обе гасятся одним и тем же переключателем в
@@ -237,7 +241,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         child: GlukConnectButton(
                           phase: _phaseFor(vpn.state),
                           reduceMotion: motion.reduceMotion,
-                          onTap: vpn.busy ? null : () => _toggle(vpn),
+                          // Во время подключения кнопка остаётся живой, как
+                          // на ПК: повторный клик отменяет коннект. Раньше
+                          // `busy` гасил onTap на всё время попытки, и долгое
+                          // подключение невозможно было прервать.
+                          onTap: (vpn.busy && vpn.state != VpnUiState.connecting)
+                              ? null
+                              : () => _toggle(vpn),
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -368,7 +378,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         // На телефоне карта остаётся только фоном за героем: отдельной карточки
         // с картой посередине и режима «рассмотреть карту» больше нет —
         // всё живёт в той же панели «Устройства», что и на Windows.
-        Positioned(top:MediaQuery.paddingOf(context).top+64,right:12,child:AccountDevicesButton(controller:_accountMap,russian:s.isRussian)),
+        Positioned(top:MediaQuery.paddingOf(context).top+64,right:12,child:AccountDevicesButton(controller:_accountMap,russian:s.isRussian,
+          // «Отключить» у своего устройства рвёт туннель локально,
+          // без ожидания ответа бэкенда.
+          onDisconnectSelf: vpn.disconnect)),
       ],
     );
   }
@@ -673,6 +686,11 @@ class _MapBackdropState extends State<_MapBackdrop>
                           // Глиф внутри фиолетового маркера «я», когда туннеля ещё нет.
                           selfPlatform: 'phone',
                           serverPoint: serverPoint,
+                          // Активным зелёным выбранный сервер горит только
+                          // при своём живом или поднимающемся туннеле: иначе
+                          // при чужом активном устройстве карта рисовала
+                          // две зелёные точки серверов сразу.
+                          serverLive: live,
                           nodePoints: fleet,
                           accountArcs: widget.accountArcs,
                           arcProgress: drawn,

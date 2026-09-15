@@ -47,6 +47,7 @@ class DottedWorld extends StatelessWidget {
 		this.selfOpacity = 1,
 		this.serverPoint,
 		this.serverOpacity = 1,
+		this.serverLive = true,
 		this.nodePoints = const <MapPoint>[],
 		this.accountArcs,
 		this.arcProgress = 0,
@@ -110,6 +111,12 @@ class DottedWorld extends StatelessWidget {
 
 	/// Fades the node's marker in without moving it.
 	final double serverOpacity;
+
+	/// Горит ли выбранный сервер как АКТИВНЫЙ: туннель на ЭТОМ
+	/// устройстве поднят или поднимается. Выключенное устройство
+	/// оставляет свою точку приглушённой: зелёным на карте горит
+	/// только то, куда реально идёт туннель.
+	final bool serverLive;
 
 	/// Every node that is currently online, drawn as a small green point with
 	/// hair-thin links between them. These come from `GET /api/nodes`, so the
@@ -176,6 +183,7 @@ class DottedWorld extends StatelessWidget {
 					selfOpacity: selfOpacity.clamp(0.0, 1.0),
 					serverPoint: serverPoint,
 					serverOpacity: serverOpacity.clamp(0.0, 1.0),
+					serverLive: serverLive,
 					nodePoints: nodePoints,
 					accountArcs: accountArcs,
 					arcProgress: arcProgress.clamp(0.0, 1.0),
@@ -214,6 +222,7 @@ class _DottedWorldPainter extends CustomPainter {
 		required this.selfOpacity,
 		required this.serverPoint,
 		required this.serverOpacity,
+		required this.serverLive,
 		required this.nodePoints,
 		required this.accountArcs,
 		required this.arcProgress,
@@ -241,6 +250,7 @@ class _DottedWorldPainter extends CustomPainter {
 	final double selfOpacity;
 	final MapPoint? serverPoint;
 	final double serverOpacity;
+	final bool serverLive;
 	final List<MapPoint> nodePoints;
 	/// Null preserves onboarding's single route; an empty list means no account tunnels.
 	final List<ConnectionArc>? accountArcs;
@@ -368,7 +378,9 @@ class _DottedWorldPainter extends CustomPainter {
 			// «дыхании» зума он щёлкал на пиксель целиком. Именно это и
 			// выглядело как рывки вместо плавного движения.
 			final deviceSpots = <Offset, ({String platform, int count, double fade, Offset at})>{};
-			final serverSpots = <Offset, ({double fade, Offset at})>{};
+			// `live` отделяет реальные туннели (концы arc.to) от просто
+			// выбранного сервера: пульсирующим зелёным горят только первые.
+			final serverSpots = <Offset, ({double fade, Offset at, bool live})>{};
 			for (final arc in accountArcs!) {
 				final from = _project(arc.from, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
 				final to = _project(arc.to, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
@@ -398,7 +410,8 @@ class _DottedWorldPainter extends CustomPainter {
 				if (b > 0.02) {
 					final key = Offset(to.offset.dx.roundToDouble(), to.offset.dy.roundToDouble());
 					final kept = serverSpots[key];
-					serverSpots[key] = (fade: math.max(kept?.fade ?? 0, b), at: to.offset);
+					// Конец нитки — всегда живой туннель аккаунта.
+					serverSpots[key] = (fade: math.max(kept?.fade ?? 0, b), at: to.offset, live: true);
 				}
 			}
 			// ФАЗЫ 1-3, как на ПК: локальная нить «я → выбранный сервер».
@@ -488,6 +501,10 @@ class _DottedWorldPainter extends CustomPainter {
 					}
 				}
 			}
+			// Выбранный сервер стоит на карте всегда, но активным считается
+			// только при живом туннеле на этом устройстве (`serverLive`).
+			// Иначе при чужом живом туннеле и выключенном телефоне на
+			// карте горели ДВЕ зелёные точки серверов.
 			if (serverPoint != null) {
 				final node = _project(serverPoint!, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
 				if (node != null) {
@@ -495,13 +512,20 @@ class _DottedWorldPainter extends CustomPainter {
 					if (fade > 0.02) {
 						final key = Offset(node.offset.dx.roundToDouble(), node.offset.dy.roundToDouble());
 						final kept = serverSpots[key];
-						serverSpots[key] = (fade: math.max(kept?.fade ?? 0, fade), at: node.offset);
+						serverSpots[key] = (
+							fade: math.max(kept?.fade ?? 0, fade),
+							at: node.offset,
+							live: (kept?.live ?? false) || serverLive,
+						);
 					}
 				}
 			}
 			// Серверы снизу, устройства сверху: если ты сам сидишь в том же
 			// городе, что и сервер, видно именно твоё устройство.
-			serverSpots.forEach((_, info) => _paintMarker(canvas, info.at, GlukColors.connected, info.fade, flatScale, pulsing: true));
+			// Неактивная точка — приглушённая и без пульса: сервер выбран,
+			// но туннеля к нему нет, и обещать обратное карта не должна.
+			serverSpots.forEach((_, info) => _paintMarker(canvas, info.at, GlukColors.connected,
+				info.live ? info.fade : info.fade * 0.45, flatScale, pulsing: info.live));
 			deviceSpots.forEach((_, info) => paintDeviceMarker(canvas, info.at,
 				platform: info.platform, count: info.count, opacity: info.fade, flatScale: flatScale, pulse: pulse));
 			return;
@@ -1150,6 +1174,7 @@ class _DottedWorldPainter extends CustomPainter {
 			old.driftDegrees != driftDegrees ||
 			old.selfOpacity != selfOpacity ||
 			old.serverOpacity != serverOpacity ||
+			old.serverLive != serverLive ||
 			old.zoom != zoom ||
 			old.focus != focus ||
 			old.dotOpacity != dotOpacity ||

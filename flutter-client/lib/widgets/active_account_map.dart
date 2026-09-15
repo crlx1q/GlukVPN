@@ -110,9 +110,14 @@ List<ConnectionArc> accountMapArcs(ActiveMapSnapshot? snapshot) {
 /// это только значок, а счётчик сидит бейджем на самом значке. Так кнопка
 /// занимает 40x40 вместо полосы в пол-экрана.
 class AccountDevicesButton extends StatefulWidget {
-  const AccountDevicesButton({super.key, required this.controller, required this.russian});
+  const AccountDevicesButton({super.key, required this.controller, required this.russian, this.onDisconnectSelf});
   final AccountInsightsController controller;
   final bool russian;
+
+  /// Локальный разрыв туннеля ЭТОГО устройства — то же, что большая
+  /// кнопка на главном экране. Без него «Отключить» у своего
+  /// устройства ждало сетевой раундтрип до бэкенда.
+  final Future<void> Function()? onDisconnectSelf;
   @override State<AccountDevicesButton> createState() => _AccountDevicesButtonState();
 }
 
@@ -160,6 +165,7 @@ class _AccountDevicesButtonState extends State<AccountDevicesButton> {
                     width: (screen.width - 24).clamp(0.0, _panelWidth),
                     maxHeight: (screen.height - anchor.dy - 44).clamp(180.0, 400.0),
                     onClose: () => Navigator.pop(dialogContext),
+                    onDisconnectSelf: widget.onDisconnectSelf,
                   ),
                 ),
               ),
@@ -229,11 +235,12 @@ class _AccountDevicesButtonState extends State<AccountDevicesButton> {
 }
 
 class _AccountDevicesPanel extends StatefulWidget {
-  const _AccountDevicesPanel({required this.controller, required this.russian, required this.width, required this.maxHeight, required this.onClose});
+  const _AccountDevicesPanel({required this.controller, required this.russian, required this.width, required this.maxHeight, required this.onClose, this.onDisconnectSelf});
   final AccountInsightsController controller;
   final bool russian;
   final double width, maxHeight;
   final VoidCallback onClose;
+  final Future<void> Function()? onDisconnectSelf;
   @override State<_AccountDevicesPanel> createState() => _AccountDevicesPanelState();
 }
 
@@ -302,6 +309,15 @@ class _AccountDevicesPanelState extends State<_AccountDevicesPanel> {
                         // После «Выйти» устройства больше нет — возвращаемся в список,
                         // иначе панель покажет подробности того, чего уже не существует.
                         onSignedOut: () => setState(() => _openedId = null),
+                        // Своё устройство рвём локально и сразу закрываем
+                        // панель: главный экран уже показывает новое
+                        // состояние, ждать ответа сервера незачем.
+                        onDisconnectSelf: widget.onDisconnectSelf == null
+                            ? null
+                            : () async {
+                                await widget.onDisconnectSelf!();
+                                widget.onClose();
+                              },
                       ))
                     : ActiveAccountMap(
                         api: widget.controller.api,
@@ -401,13 +417,17 @@ class _DeviceRow extends StatelessWidget {
 
 /// Подробности одного устройства — то, что открывается стрелкой «>».
 class _DeviceDetail extends StatefulWidget {
-  const _DeviceDetail({required this.device, required this.russian, this.controller, this.onSignedOut});
+  const _DeviceDetail({required this.device, required this.russian, this.controller, this.onSignedOut, this.onDisconnectSelf});
   final ActiveTunnelDevice device;
   final bool russian;
   /// Нужен кнопкам «Отключить» / «Выйти»: через него ходим в API
   /// и сразу перезапрашиваем карту, чтобы список не врал.
   final AccountInsightsController? controller;
   final VoidCallback? onSignedOut;
+
+  /// Локальный разрыв своего туннеля: для `device.isCurrent` он
+  /// заменяет сетевой api.disconnect.
+  final Future<void> Function()? onDisconnectSelf;
   @override State<_DeviceDetail> createState() => _DeviceDetailState();
 }
 
@@ -436,10 +456,20 @@ class _DeviceDetailState extends State<_DeviceDetail> {
   }
 
   /// «Отключить» гасит только туннель: аккаунт на устройстве остаётся.
-  Future<void> _disconnect() => _run(
-        () => widget.controller!.api.disconnect(sessionId: widget.device.sessionId),
-        tag: 'off',
-      );
+  ///
+  /// Своё устройство рвём локально, как большая кнопка на главном
+  /// экране: запрос к бэкенду тут только добавлял секунды ожидания.
+  /// Для чужих устройств иначе нельзя — их гасит только сервер.
+  Future<void> _disconnect() {
+    final Future<void> Function()? local = widget.onDisconnectSelf;
+    if (widget.device.isCurrent && local != null) {
+      return _run(local, tag: 'off');
+    }
+    return _run(
+      () => widget.controller!.api.disconnect(sessionId: widget.device.sessionId),
+      tag: 'off',
+    );
+  }
 
   /// «Выйти» сначала гасит туннель, потом убирает устройство из аккаунта.
   /// Падение первого шага не блокирует второй: удаление устройства

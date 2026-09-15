@@ -254,6 +254,13 @@ class _WorldStageState extends State<WorldStage>
                 selfPlatform: 'computer',
                 selfOpacity: self == null ? 0 : 1,
                 serverPoint: server,
+                // Свой выбранный сервер активен только при живом или
+                // поднимающемся туннеле ИМЕННО на этом устройстве.
+                // `connected` выше для этого не годится: он включает
+                // чужие устройства аккаунта, и на карте горели ДВЕ
+                // зелёные точки серверов при выключенном ПК.
+                serverLive: widget.phase.isConnected ||
+                    widget.phase == ConnectionPhase.connecting,
                 serverOpacity: server == null ? 0 : _link.value.clamp(0.35, 1),
                 nodePoints: widget.allNodes,
                 accountArcs: widget.accountArcs,
