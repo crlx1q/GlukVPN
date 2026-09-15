@@ -2113,6 +2113,8 @@ function selectTab(tab) {
 	for (const view of document.querySelectorAll(".tabview")) {
 		view.hidden = view.dataset.view !== tab
 	}
+	setPageMeta(tab)
+	closeNav()
 }
 
 /**
@@ -2150,9 +2152,9 @@ function showDashboard() {
 	el("dashboard-view").hidden = false
 	el("session-box").hidden = false
 	// Роль рядом с именем: иначе саппорт решит, что панель сломалась.
-	el("who").textContent = `${state.username} \u00b7 ID ${state.publicId || "\u2014"} \u00b7 ${
-		canManage() ? "admin" : "support"
-	}`
+	el("who").textContent = `${state.username} \u00b7 ID ${state.publicId || "\u2014"}`
+	el("who-role").textContent = canManage() ? "администратор" : "поддержка"
+	el("who-avatar").textContent = (state.username || "?").slice(0, 1)
 	applyRoleVisibility()
 	selectTab(state.tab)
 }
@@ -2463,3 +2465,93 @@ el("promo-form").addEventListener("submit", (event) => {
 })
 
 void loadChannelBadge()
+
+/* ---------------- редизайн: шапка, меню, мобильные таблицы ---------------- */
+
+/** Заголовок и подсказка в topbar для каждой вкладки. */
+const PAGE_META = {
+	overview: ["Обзор", "Сводка по аккаунтам, узлам и трафику"],
+	channels: ["Каналы и релизы", "Деплой, промоут и история задач"],
+	nodes: ["VPN-узлы", "Состояние, политики и ограничения"],
+	users: ["Пользователи", "Аккаунты, роли и подписки"],
+	devices: ["Устройства", "Привязки и отзыв доступа"],
+	sessions: ["Сессии", "Активные и завершённые подключения"],
+	billing: ["Биллинг", "Пробная акция и промокоды"],
+	audit: ["Журнал аудита", "Действия администраторов и поддержки"],
+	errors: ["Ошибки клиентов", "Отчёты из приложений и расширения"],
+}
+
+function setPageMeta(tab) {
+	const meta = PAGE_META[tab] || PAGE_META.overview
+	const title = el("page-title")
+	const subtitle = el("page-subtitle")
+	if (title) title.textContent = meta[0]
+	if (subtitle) subtitle.textContent = meta[1]
+	document.title = `${meta[0]} \u00b7 GlukVPN`
+}
+
+/* На узких экранах боковое меню выезжает поверх контента. */
+function setNav(open) {
+	document.body.classList.toggle("nav-open", open)
+	const toggle = el("nav-toggle")
+	if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false")
+}
+
+function closeNav() {
+	setNav(false)
+}
+
+el("nav-toggle").addEventListener("click", () => {
+	setNav(!document.body.classList.contains("nav-open"))
+})
+el("nav-backdrop").addEventListener("click", closeNav)
+document.addEventListener("keydown", (event) => {
+	if (event.key === "Escape") closeNav()
+})
+
+/* Глазок у поля пароля на экране входа. */
+el("password-peek").addEventListener("click", () => {
+	const input = el("password")
+	const button = el("password-peek")
+	const shown = input.type === "text"
+	input.type = shown ? "password" : "text"
+	button.setAttribute("aria-pressed", shown ? "false" : "true")
+	button.setAttribute("aria-label", shown ? "Показать пароль" : "Скрыть пароль")
+	const icon = button.querySelector("use")
+	if (icon) icon.setAttribute("href", shown ? "#i-eye" : "#i-eye-off")
+	input.focus()
+})
+
+/**
+ * На телефоне таблицы распадаются в карточки, и каждой ячейке нужен
+ * заголовок столбца. Render-функции об этом не знают: подписи ставит
+ * наблюдатель после любой перерисовки <tbody>. Строка панели подписки
+ * (.sub-row) и ячейки с colSpan пропускаются — там заголовок столбца бессмыслен.
+ */
+function labelCells(body) {
+	const table = body.closest("table")
+	const head = table && table.tHead && table.tHead.rows[0]
+	if (!head) return
+	const titles = Array.from(head.cells).map((cell) => cell.textContent.trim())
+	for (const row of body.rows) {
+		if (row.classList.contains("sub-row")) continue
+		let index = 0
+		for (const cell of row.cells) {
+			const span = cell.colSpan || 1
+			if (span === 1 && titles[index]) cell.dataset.label = titles[index]
+			index += span
+		}
+	}
+}
+
+const tableObserver = new MutationObserver((records) => {
+	for (const record of records) {
+		if (record.target instanceof HTMLTableSectionElement) labelCells(record.target)
+	}
+})
+for (const body of document.querySelectorAll(".table-wrap table tbody")) {
+	tableObserver.observe(body, { childList: true })
+	labelCells(body)
+}
+
+setPageMeta(state.tab)

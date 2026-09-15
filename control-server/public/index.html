@@ -1,519 +1,810 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="robots" content="noindex, nofollow" />
-		<title>GlukVPN — control plane</title>
+		<meta name="color-scheme" content="dark" />
+		<title>GlukVPN · панель управления</title>
+		<link rel="icon" href="./logo.png" />
+		<link rel="apple-touch-icon" href="./logo.png" />
 		<link rel="stylesheet" href="./admin.css" />
 	</head>
 	<body>
-		<!-- Two soft violet lights, the only decoration. No external requests:
-		     the CSP is self-only, so fonts, images and scripts are all local. -->
-		<div class="glow glow-a" aria-hidden="true"></div>
-		<div class="glow glow-b" aria-hidden="true"></div>
+		<!-- Иконки: один inline-спрайт. CSP здесь self-only, внешних картинок,
+		     шрифтов и inline-стилей быть не должно. -->
+		<svg class="sprite" aria-hidden="true" focusable="false">
+			<symbol id="i-grid" viewBox="0 0 24 24">
+				<rect x="3" y="3" width="7" height="7" rx="1.5" />
+				<rect x="14" y="3" width="7" height="7" rx="1.5" />
+				<rect x="3" y="14" width="7" height="7" rx="1.5" />
+				<rect x="14" y="14" width="7" height="7" rx="1.5" />
+			</symbol>
+			<symbol id="i-layers" viewBox="0 0 24 24">
+				<path d="M12 2 2 7l10 5 10-5-10-5Z" />
+				<path d="m2 12 10 5 10-5" />
+				<path d="m2 17 10 5 10-5" />
+			</symbol>
+			<symbol id="i-server" viewBox="0 0 24 24">
+				<rect x="2" y="3" width="20" height="8" rx="2" />
+				<rect x="2" y="13" width="20" height="8" rx="2" />
+				<path d="M6 7h.01M6 17h.01" />
+			</symbol>
+			<symbol id="i-users" viewBox="0 0 24 24">
+				<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+				<circle cx="9" cy="7" r="4" />
+				<path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+				<path d="M16 3.13a4 4 0 0 1 0 7.75" />
+			</symbol>
+			<symbol id="i-device" viewBox="0 0 24 24">
+				<rect x="6" y="2" width="12" height="20" rx="2.5" />
+				<path d="M11 18h2" />
+			</symbol>
+			<symbol id="i-activity" viewBox="0 0 24 24">
+				<path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+			</symbol>
+			<symbol id="i-card" viewBox="0 0 24 24">
+				<rect x="2" y="5" width="20" height="14" rx="2.5" />
+				<path d="M2 10h20" />
+			</symbol>
+			<symbol id="i-list" viewBox="0 0 24 24">
+				<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+			</symbol>
+			<symbol id="i-bug" viewBox="0 0 24 24">
+				<rect x="6" y="6" width="12" height="13" rx="6" />
+				<path d="M8 2l1.6 2.6M16 2l-1.6 2.6" />
+				<path d="M6 12H2M22 12h-4M6.6 17 3.6 19M17.4 17l3 2M6.6 8 3.6 6M17.4 8l3-2" />
+			</symbol>
+			<symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18" /></symbol>
+			<symbol id="i-refresh" viewBox="0 0 24 24">
+				<path d="M21 12a9 9 0 1 1-3-6.7" />
+				<path d="M21 3v6h-6" />
+			</symbol>
+			<symbol id="i-logout" viewBox="0 0 24 24">
+				<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+				<path d="m16 17 5-5-5-5M21 12H9" />
+			</symbol>
+			<symbol id="i-user" viewBox="0 0 24 24">
+				<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+				<circle cx="12" cy="7" r="4" />
+			</symbol>
+			<symbol id="i-lock" viewBox="0 0 24 24">
+				<rect x="3" y="11" width="18" height="10" rx="2.5" />
+				<path d="M7 11V7a5 5 0 0 1 10 0v4" />
+			</symbol>
+			<symbol id="i-eye" viewBox="0 0 24 24">
+				<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z" />
+				<circle cx="12" cy="12" r="3" />
+			</symbol>
+			<symbol id="i-eye-off" viewBox="0 0 24 24">
+				<path d="M17.9 17.9A10.6 10.6 0 0 1 12 19c-6.4 0-10-7-10-7a18 18 0 0 1 5.1-5.9" />
+				<path d="M9.9 4.2A10 10 0 0 1 12 4c6.4 0 10 7 10 7a18 18 0 0 1-2.2 3.2" />
+				<path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+				<path d="m2 2 20 20" />
+			</symbol>
+			<symbol id="i-shield" viewBox="0 0 24 24">
+				<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+				<path d="m9 12 2 2 4-4" />
+			</symbol>
+			<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+			<symbol id="i-search" viewBox="0 0 24 24">
+				<circle cx="11" cy="11" r="7" />
+				<path d="m20 20-3.5-3.5" />
+			</symbol>
+			<symbol id="i-alert" viewBox="0 0 24 24">
+				<path d="M12 3 2 20h20L12 3Z" />
+				<path d="M12 9v5M12 17.5h.01" />
+			</symbol>
+			<symbol id="i-power" viewBox="0 0 24 24">
+				<path d="M18.4 6.6a9 9 0 1 1-12.8 0" />
+				<path d="M12 2v8" />
+			</symbol>
+			<symbol id="i-gift" viewBox="0 0 24 24">
+				<rect x="3" y="8" width="18" height="13" rx="2" />
+				<path d="M3 13h18M12 8v13" />
+				<path d="M12 8S10.5 3 8 3a2.5 2.5 0 0 0 0 5h4Zm0 0s1.5-5 4-5a2.5 2.5 0 0 1 0 5h-4Z" />
+			</symbol>
+			<symbol id="i-tag" viewBox="0 0 24 24">
+				<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 2.8 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.8Z" />
+				<path d="M7.5 7.5h.01" />
+			</symbol>
+			<symbol id="i-chart" viewBox="0 0 24 24">
+				<path d="M3 3v18h18" />
+				<path d="m7 15 4-5 3 3 5-7" />
+			</symbol>
+			<symbol id="i-clock" viewBox="0 0 24 24">
+				<circle cx="12" cy="12" r="9" />
+				<path d="M12 7v5l3.5 2" />
+			</symbol>
+			<symbol id="i-trash" viewBox="0 0 24 24">
+				<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
+				<path d="M10 11v5M14 11v5" />
+			</symbol>
+			<symbol id="i-check" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6" /></symbol>
+		</svg>
 
-		<header class="topbar">
-			<div class="brand">
-				<svg class="mark" viewBox="0 0 48 48" role="img" aria-label="GlukVPN">
-					<defs>
-						<linearGradient id="markGrad" x1="0" y1="0" x2="1" y2="1">
-							<stop offset="0" stop-color="#8b5cf6" />
-							<stop offset="1" stop-color="#4f7cff" />
-						</linearGradient>
-					</defs>
-					<rect x="1" y="1" width="46" height="46" rx="13" fill="url(#markGrad)" />
-					<circle cx="19.5" cy="19.5" r="7.6" fill="none" stroke="#fff" stroke-width="3.4" />
-					<path
-						d="M24.9 24.9 34 34"
-						stroke="#fff"
-						stroke-width="3.4"
-						stroke-linecap="round"
-					/>
-					<path
-						d="M30.2 30.2 33.6 26.8"
-						stroke="#fff"
-						stroke-width="3.4"
-						stroke-linecap="round"
-					/>
-				</svg>
-				<span class="brand-text">
-					<strong>GlukVPN</strong>
-					<span class="sub">control plane</span>
-				</span>
-				<span class="chan-badge" id="channel-badge">…</span>
-			</div>
-			<div class="topbar-actions" id="session-box" hidden>
-				<span class="who" id="who"></span>
-				<label class="toggle">
-					<input type="checkbox" id="auto-refresh" checked />
-					<span>auto 10s</span>
-				</label>
-				<button type="button" id="refresh-btn" class="ghost">Refresh</button>
-				<button type="button" id="logout-btn" class="ghost">Log out</button>
-			</div>
-		</header>
-
-		<main>
-			<!-- ---------------- login ---------------- -->
-			<section id="login-view" class="glass login-card">
-				<svg class="login-mark" viewBox="0 0 48 48" aria-hidden="true">
-					<rect x="1" y="1" width="46" height="46" rx="13" fill="url(#markGrad)" />
-					<circle cx="19.5" cy="19.5" r="7.6" fill="none" stroke="#fff" stroke-width="3.4" />
-					<path d="M24.9 24.9 34 34" stroke="#fff" stroke-width="3.4" stroke-linecap="round" />
-					<path d="M30.2 30.2 33.6 26.8" stroke="#fff" stroke-width="3.4" stroke-linecap="round" />
-				</svg>
-				<h1>Admin sign in</h1>
-				<p class="muted small" id="login-channel"></p>
+		<!-- ======================= вход ======================= -->
+		<section class="login-view" id="login-view">
+			<div class="login-card">
+				<img class="login-logo" src="./logo.png" alt="GlukVPN" width="66" height="66" />
+				<p class="login-kicker">GlukVPN · панель управления</p>
+				<h1>С возвращением</h1>
+				<p class="login-hint">Войдите в аккаунт администратора или поддержки</p>
 				<form id="login-form" autocomplete="on">
-					<label for="username">Username</label>
-					<input id="username" name="username" autocomplete="username" required />
-					<label for="password">Password</label>
-					<input
-						id="password"
-						name="password"
-						type="password"
-						autocomplete="current-password"
-						required
-					/>
-					<button type="submit" class="primary">Sign in</button>
-					<p class="error" id="login-error" hidden></p>
-				</form>
-				<p class="muted small">
-					An admin or support account is required. Support sees the panel read-only,
-					plus subscription grants. Tokens are kept in memory only — reloading the page
-					asks for the password again.
-				</p>
-			</section>
-
-			<!-- ---------------- dashboard ---------------- -->
-			<nav class="tabs" id="tabs" hidden>
-				<button type="button" class="tab is-active" data-tab="overview">Overview</button>
-				<button type="button" class="tab" data-tab="channels">Channels</button>
-				<button type="button" class="tab" data-tab="nodes">Nodes</button>
-				<button type="button" class="tab" data-tab="users">Users</button>
-				<button type="button" class="tab" data-tab="devices">Devices</button>
-				<button type="button" class="tab" data-tab="sessions">Sessions</button>
-				<button type="button" class="tab" data-tab="billing">Billing</button>
-				<button type="button" class="tab" data-tab="audit">Audit</button>
-				<button type="button" class="tab" data-tab="errors">Client Bug Logs</button>
-			</nav>
-
-			<div id="dashboard-view" hidden>
-				<!-- overview -->
-				<section class="tabview" data-view="overview">
-					<div class="cards" id="cards"></div>
-					<div class="glass block service-controls" id="service-controls" aria-busy="true">
-						<div class="block-head">
-							<div>
-								<h3>Service controls</h3>
-								<p class="muted small service-scope" id="service-scope">Loading current channel settings…</p>
-							</div>
-							<span class="muted small" id="service-updated"></span>
-						</div>
-						<div class="service-grid">
-							<label class="service-control" for="registration-enabled">
-								<span class="service-copy">
-									<strong>Registration enabled</strong>
-									<span>Allow new accounts to register on this channel.</span>
-								</span>
-								<input class="switch" type="checkbox" id="registration-enabled" disabled />
-							</label>
-							<label class="service-control is-risk" for="emergency-maintenance">
-								<span class="service-copy">
-									<strong>Emergency maintenance</strong>
-									<span>Block new sessions. Enabling also closes active sessions.</span>
-								</span>
-								<input class="switch" type="checkbox" id="emergency-maintenance" disabled />
-							</label>
-						</div>
-						<p class="service-error" id="service-error" role="alert" hidden></p>
-					</div>
-					<div class="glass block" id="egress-block">
-						<div class="block-head">
-							<h3>Oracle Cloud: Egress &amp; Costs (PAYG)</h3>
-							<span class="muted small" id="egress-updated"></span>
-						</div>
-						<div id="egress-body">
-							<p class="muted small">Loading Oracle Cloud data…</p>
-						</div>
-					</div>
-					<div class="glass block" id="version-block">
-						<div class="block-head">
-							<h3>Channels at a glance</h3>
-							<span class="muted small" id="overview-updated"></span>
-						</div>
-						<div class="chan-grid compact" id="overview-channels"></div>
-					</div>
-				</section>
-
-				<!-- channels -->
-				<section class="tabview" data-view="channels" hidden>
-					<div class="chan-grid" id="channel-cards"></div>
-
-					<div class="glass block">
-						<div class="block-head">
-							<h3>Promote readiness</h3>
-							<span class="muted small" id="deploy-updated"></span>
-						</div>
-						<ul class="checklist" id="checklist"></ul>
-						<div class="deploy-actions">
-							<button type="button" id="deploy-beta-btn" class="primary">
-								Deploy Beta
-							</button>
-							<button type="button" id="promote-btn" class="warn">
-								Promote Beta → PROD
-							</button>
-							<button type="button" id="rollback-btn" class="danger">Rollback PROD</button>
-						</div>
-						<div class="deploy-actions">
-							<button type="button" id="beta-start-btn" class="ghost">Start Beta</button>
-							<button type="button" id="beta-restart-btn" class="ghost">Restart Beta</button>
-							<button type="button" id="beta-stop-btn" class="danger">Stop Beta</button>
-							<span class="muted small" id="beta-state"></span>
-						</div>
-						<p class="muted small">
-							Promote moves <strong>code only</strong>: the current source tree is built,
-							activated through a new release directory and the symlink is flipped
-							atomically. The prod database is dumped with <code>pg_dump</code> first and is
-							never overwritten by beta data. Rollback only points prod back at the
-							previous release.
-						</p>
-					</div>
-
-					<div class="glass block" id="active-job-box" hidden></div>
-
-					<div class="block-head standalone">
-						<h3>Deployment history</h3>
-						<span class="muted small">last 20 jobs, newest first</span>
-					</div>
-					<div class="jobs" id="jobs-list"></div>
-				</section>
-
-				<!-- nodes -->
-				<section class="tabview" data-view="nodes" hidden>
-					<div class="block-head standalone">
-						<h3>VPN nodes</h3>
-						<button type="button" id="enroll-btn" class="primary small">
-							New enrollment token
-						</button>
-					</div>
-					<div id="enroll-box" class="notice" hidden></div>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Node</th>
-									<th>Country</th>
-									<th>Status</th>
-									<th>Policy</th>
-									<th>Restrictions</th>
-									<th>Endpoint</th>
-									<th>Load</th>
-									<th>CPU</th>
-									<th>RAM</th>
-									<th>Uptime</th>
-									<th>Peers</th>
-									<th>Sessions</th>
-									<th>Traffic rx / tx</th>
-									<th>Heartbeat</th>
-									<th>Actions</th>
-								</tr>
-							</thead>
-							<tbody id="nodes-body"></tbody>
-						</table>
-					</div>
-				</section>
-
-				<!-- users -->
-				<section class="tabview" data-view="users" hidden>
-					<div class="block-head standalone">
-						<h3>Users</h3>
-						<div class="head-tools">
-							<input
-								id="user-search"
-								type="search"
-								placeholder="search by ID (00000001) or nickname"
-								aria-label="Search users"
-							/>
-							<select id="user-filter" aria-label="Filter the user list">
-								<option value="active" selected>Active</option>
-								<option value="disabled">Disabled</option>
-								<option value="blocked">Blocked</option>
-								<option value="deleted">Deleted</option>
-								<option value="admins">Admins</option>
-								<option value="support">Support</option>
-								<option value="testers">Beta testers</option>
-								<option value="all">All</option>
-							</select>
-							<button type="button" id="create-user-btn" class="ghost small">
-								Create user
-							</button>
-						</div>
-					</div>
-					<form id="create-user-form" class="inline-form" hidden>
-						<input id="new-username" placeholder="nickname" minlength="3" required />
+					<div class="field field-icon">
+						<label for="username">Логин</label>
+						<svg class="ic" aria-hidden="true"><use href="#i-user" /></svg>
 						<input
-							id="new-password"
-							type="password"
-							placeholder="password (min 8 chars)"
-							minlength="8"
+							id="username"
+							name="username"
+							type="text"
+							autocomplete="username"
+							placeholder="никнейм"
 							required
 						/>
-						<button type="submit" class="primary small">Create</button>
-						<button type="button" id="cancel-user-btn" class="ghost small">Cancel</button>
-					</form>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>ID</th>
-									<th>Nickname</th>
-									<th>Status</th>
-									<th>Admin</th>
-									<th>Support</th>
-									<th>Tester</th>
-									<th>Devices</th>
-									<th>Live sessions</th>
-									<th>Subscription</th>
-									<th>Actions</th>
-								</tr>
-							</thead>
-							<tbody id="users-body"></tbody>
-						</table>
 					</div>
-					<p class="muted small">
-						The ID is assigned by the database and cannot be changed — a trigger rejects
-						any update. Nicknames are free to change, so bans and support lookups go by
-						ID.
-					</p>
-				</section>
-
-				<!-- devices -->
-				<section class="tabview" data-view="devices" hidden>
-					<div class="block-head standalone">
-						<h3>Devices</h3>
-						<button id="devices-purge" class="small ghost" type="button">
-							Purge stale records
+					<div class="field field-icon">
+						<label for="password">Пароль</label>
+						<svg class="ic" aria-hidden="true"><use href="#i-lock" /></svg>
+						<input
+							id="password"
+							name="password"
+							type="password"
+							autocomplete="current-password"
+							placeholder="••••••••"
+							required
+						/>
+						<button
+							type="button"
+							id="password-peek"
+							class="peek"
+							aria-label="Показать пароль"
+							aria-pressed="false"
+						>
+							<svg class="ic" aria-hidden="true"><use href="#i-eye" /></svg>
 						</button>
 					</div>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Device</th>
-									<th>Owner</th>
-									<th>Platform</th>
-									<th>Node</th>
-									<th>Status</th>
-									<th>Last seen</th>
-									<th>Actions</th>
-								</tr>
-							</thead>
-							<tbody id="devices-body"></tbody>
-						</table>
-					</div>
-				</section>
-
-				<!-- sessions -->
-				<section class="tabview" data-view="sessions" hidden>
-					<div class="block-head standalone">
-						<h3>Sessions</h3>
-						<label class="toggle">
-							<input type="checkbox" id="live-only" checked />
-							<span>live only</span>
-						</label>
-					</div>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>User</th>
-									<th>Device</th>
-									<th>Node</th>
-									<th>VPN IP</th>
-									<th>Status</th>
-									<th>Connected</th>
-									<th>Handshake</th>
-									<th>Traffic rx / tx</th>
-									<th>Actions</th>
-								</tr>
-							</thead>
-							<tbody id="sessions-body"></tbody>
-						</table>
-					</div>
-				</section>
-
-				<!-- billing: акция и промокоды -->
-				<section class="tabview" data-view="billing" hidden>
-					<div class="glass block" id="trial-block" aria-busy="true">
-						<div class="block-head">
-							<div>
-								<h3>Trial offer</h3>
-								<p class="muted small" id="trial-scope">Loading the promotion…</p>
-							</div>
-							<span class="muted small" id="trial-updated"></span>
-						</div>
-						<div class="service-grid">
-							<label class="service-control" for="trial-enabled">
-								<span class="service-copy">
-									<strong>Offer enabled</strong>
-									<span>Show the banner and let new accounts claim the trial.</span>
-								</span>
-								<input class="switch" type="checkbox" id="trial-enabled" disabled />
-							</label>
-							<label class="service-control" for="trial-telegram">
-								<span class="service-copy">
-									<strong>Telegram required</strong>
-									<span>Only accounts with a confirmed Telegram can claim it.</span>
-								</span>
-								<input class="switch" type="checkbox" id="trial-telegram" disabled />
-							</label>
-						</div>
-						<div class="billing-form">
-							<label class="sub-field" for="trial-plan">
-								<span>Plan on offer</span>
-								<select id="trial-plan" disabled>
-									<option value="basic">Basic</option>
-									<option value="pro">Pro</option>
-								</select>
-							</label>
-							<label class="sub-field" for="trial-days">
-								<span>Days of access</span>
-								<input id="trial-days" type="number" min="1" max="90" step="1" disabled />
-							</label>
-							<label class="sub-field" for="trial-window">
-								<span>Sign-up window, days</span>
-								<input id="trial-window" type="number" min="1" max="365" step="1" disabled />
-							</label>
-							<label class="sub-field" for="trial-price">
-								<span>Price, ₽</span>
-								<input id="trial-price" type="number" min="1" max="10000" step="0.01" disabled />
-							</label>
-						</div>
-						<div class="billing-actions">
-							<button type="button" class="primary small" id="trial-save" disabled>Save offer</button>
-							<span class="muted small" id="trial-stats"></span>
-						</div>
-						<p class="muted small">
-							One charge, no auto-renewal. Switching the offer off hides the banner
-							everywhere and makes the claim impossible, not just invisible.
-						</p>
-						<p class="service-error" id="trial-error" role="alert" hidden></p>
-					</div>
-
-					<div class="glass block" id="promo-block">
-						<div class="block-head">
-							<div>
-								<h3>Promo codes</h3>
-								<p class="muted small">A percentage off one order. A code is only spent when the money arrives.</p>
-							</div>
-							<button type="button" id="promo-new-btn" class="ghost small">New code</button>
-						</div>
-						<form id="promo-form" class="inline-form" hidden>
-							<input id="promo-code" placeholder="CODE" minlength="2" maxlength="32" required />
-							<input id="promo-percent" type="number" min="1" max="100" step="1" placeholder="% off" required />
-							<input id="promo-plans" placeholder="plans: basic,pro (empty = all)" />
-							<input id="promo-limit" type="number" min="1" max="100000" step="1" placeholder="total uses (empty = no cap)" />
-							<button type="submit" class="primary small">Create</button>
-							<button type="button" id="promo-cancel-btn" class="ghost small">Cancel</button>
-						</form>
-						<div class="table-wrap">
-							<table>
-								<thead>
-									<tr>
-										<th>Code</th>
-										<th>Discount</th>
-										<th>Plans</th>
-										<th>Used</th>
-										<th>Per account</th>
-										<th>Window</th>
-										<th>Actions</th>
-									</tr>
-								</thead>
-								<tbody id="promos-body"></tbody>
-							</table>
-						</div>
-						<p class="service-error" id="promo-error" role="alert" hidden></p>
-					</div>
-				</section>
-
-				<!-- audit -->
-				<section class="tabview" data-view="audit" hidden>
-					<div class="block-head standalone"><h3>Audit log</h3></div>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Time</th>
-									<th>Action</th>
-									<th>User</th>
-									<th>IP</th>
-									<th>Metadata</th>
-								</tr>
-							</thead>
-							<tbody id="audit-body"></tbody>
-						</table>
-					</div>
-				</section>
-
-				<!-- client bug logs -->
-				<section class="tabview" data-view="errors" hidden>
-					<div class="block-head standalone">
-						<h3>Client bug logs</h3>
-						<div class="head-tools">
-							<select id="error-platform" aria-label="Filter by platform">
-								<option value="">All platforms</option>
-								<option value="windows">Windows</option>
-								<option value="android">Android</option>
-								<option value="extension">Extension</option>
-								<option value="web">Web</option>
-							</select>
-							<span class="muted small" id="errors-summary"></span>
-							<button type="button" id="errors-clear" class="ghost">Clear log</button>
-						</div>
-					</div>
-					<div class="table-wrap">
-						<table>
-							<thead>
-								<tr>
-									<th>Time</th>
-									<th>Platform</th>
-									<th>Version</th>
-									<th>Error</th>
-									<th>Context</th>
-									<th>Account</th>
-									<th>Stack trace</th>
-								</tr>
-							</thead>
-							<tbody id="errors-body"></tbody>
-						</table>
-					</div>
-					<p class="muted small">
-						Reports arrive from every client, including the ones that never got as
-						far as signing in. Tokens, passwords and keys are stripped before a row
-						is written, identical reports are collapsed to one a minute, and rows are
-						deleted once the retention window passes.
-					</p>
-				</section>
-
-				<p class="muted small footnote">
-					This panel only shows control-plane metadata: accounts, devices, nodes, byte
-					counters and connection state. VPN traffic never passes through the control
-					server, and its contents are never recorded.
-				</p>
+					<button type="submit" class="primary">Войти</button>
+					<p class="login-error" id="login-error" role="alert" hidden></p>
+				</form>
+				<p class="muted small" id="login-channel"></p>
+				<div class="login-foot">
+					<svg class="ic ic-sm" aria-hidden="true"><use href="#i-shield" /></svg>
+					<span>
+						Поддержка видит панель только для чтения — кроме выдачи подписок. Токены
+						хранятся лишь в памяти страницы: после перезагрузки пароль спросят снова.
+					</span>
+				</div>
 			</div>
-		</main>
+		</section>
 
-		<dialog id="maintenance-dialog" class="confirm-dialog" aria-labelledby="maintenance-title" aria-describedby="maintenance-description">
+		<!-- ======================= панель ======================= -->
+		<div class="shell">
+			<aside class="sidebar" id="tabs" hidden>
+				<div class="brand">
+					<img src="./logo.png" alt="" width="34" height="34" />
+					<span>
+						<span class="brand-name">GlukVPN</span>
+						<span class="brand-sub">control plane</span>
+					</span>
+				</div>
+
+				<p class="nav-group">Мониторинг</p>
+				<button type="button" class="tab is-active" data-tab="overview">
+					<svg class="ic" aria-hidden="true"><use href="#i-grid" /></svg>
+					Обзор
+				</button>
+				<button type="button" class="tab" data-tab="nodes">
+					<svg class="ic" aria-hidden="true"><use href="#i-server" /></svg>
+					Узлы
+				</button>
+				<button type="button" class="tab" data-tab="sessions">
+					<svg class="ic" aria-hidden="true"><use href="#i-activity" /></svg>
+					Сессии
+				</button>
+
+				<p class="nav-group">Аккаунты</p>
+				<button type="button" class="tab" data-tab="users">
+					<svg class="ic" aria-hidden="true"><use href="#i-users" /></svg>
+					Пользователи
+				</button>
+				<button type="button" class="tab" data-tab="devices">
+					<svg class="ic" aria-hidden="true"><use href="#i-device" /></svg>
+					Устройства
+				</button>
+				<button type="button" class="tab" data-tab="billing">
+					<svg class="ic" aria-hidden="true"><use href="#i-card" /></svg>
+					Биллинг
+				</button>
+
+				<p class="nav-group">Система</p>
+				<button type="button" class="tab" data-tab="channels">
+					<svg class="ic" aria-hidden="true"><use href="#i-layers" /></svg>
+					Каналы и релизы
+				</button>
+				<button type="button" class="tab" data-tab="audit">
+					<svg class="ic" aria-hidden="true"><use href="#i-list" /></svg>
+					Журнал аудита
+				</button>
+				<button type="button" class="tab" data-tab="errors">
+					<svg class="ic" aria-hidden="true"><use href="#i-bug" /></svg>
+					Ошибки клиентов
+				</button>
+
+				<p class="sidebar-foot">
+					Только метаданные control-plane. VPN-трафик через этот сервер не проходит
+					и нигде не записывается.
+				</p>
+			</aside>
+
+			<div class="main-col">
+				<header class="topbar" id="session-box" hidden>
+					<button
+						type="button"
+						class="iconbtn nav-toggle"
+						id="nav-toggle"
+						aria-label="Меню"
+						aria-expanded="false"
+					>
+						<svg class="ic" aria-hidden="true"><use href="#i-menu" /></svg>
+					</button>
+					<div>
+						<div class="page-title" id="page-title">Обзор</div>
+						<div class="page-sub" id="page-subtitle">Сводка по аккаунтам, узлам и трафику</div>
+					</div>
+					<div class="topbar-tools">
+						<span id="channel-badge">…</span>
+						<label class="switchbox" title="Автообновление каждые 10 секунд">
+							<input type="checkbox" id="auto-refresh" checked />
+							<span class="switch switch-sm"></span>
+							<span>авто 10с</span>
+						</label>
+						<button type="button" id="refresh-btn" class="iconbtn" aria-label="Обновить" title="Обновить">
+							<svg class="ic" aria-hidden="true"><use href="#i-refresh" /></svg>
+						</button>
+						<div class="who-box">
+							<span class="avatar" id="who-avatar" aria-hidden="true"></span>
+							<span>
+								<span class="who-name" id="who"></span>
+								<span class="who-role" id="who-role"></span>
+							</span>
+						</div>
+						<button type="button" id="logout-btn" class="iconbtn" aria-label="Выйти" title="Выйти">
+							<svg class="ic" aria-hidden="true"><use href="#i-logout" /></svg>
+						</button>
+					</div>
+				</header>
+
+				<main class="content" id="dashboard-view" hidden>
+					<!-- ---------------- обзор ---------------- -->
+					<section class="tabview" data-view="overview">
+						<div class="cards" id="cards"></div>
+
+						<div class="block" id="service-controls" aria-busy="true">
+							<div class="block-head">
+								<span class="block-title">
+									<svg class="ic" aria-hidden="true"><use href="#i-power" /></svg>
+									<h3>Управление сервисом</h3>
+								</span>
+								<span class="muted small actions" id="service-updated"></span>
+								<p class="block-sub" id="service-scope">Загружаем настройки канала…</p>
+							</div>
+							<div class="control-grid">
+								<div class="control-card">
+									<svg class="ic ic-lg" aria-hidden="true"><use href="#i-user" /></svg>
+									<div>
+										<strong>Регистрация включена</strong>
+										<span>Разрешить новым аккаунтам регистрироваться в этом канале.</span>
+									</div>
+									<label class="switchbox" aria-label="Регистрация включена">
+										<input type="checkbox" id="registration-enabled" disabled />
+										<span class="switch"></span>
+									</label>
+								</div>
+								<div class="control-card">
+									<svg class="ic ic-lg" aria-hidden="true"><use href="#i-alert" /></svg>
+									<div>
+										<strong>Аварийное обслуживание</strong>
+										<span>Блокирует новые сессии, включение закрывает активные.</span>
+									</div>
+									<label class="switchbox" aria-label="Аварийное обслуживание">
+										<input type="checkbox" id="emergency-maintenance" disabled />
+										<span class="switch"></span>
+									</label>
+								</div>
+							</div>
+							<p class="notice is-error" id="service-error" role="alert" hidden></p>
+						</div>
+
+						<div class="block" id="egress-block">
+							<div class="block-head">
+								<span class="block-title">
+									<svg class="ic" aria-hidden="true"><use href="#i-chart" /></svg>
+									<h3>Oracle Cloud: трафик и расходы (PAYG)</h3>
+								</span>
+								<span class="muted small actions" id="egress-updated"></span>
+							</div>
+							<div id="egress-body">
+								<p class="muted small">Загружаем данные Oracle Cloud…</p>
+							</div>
+						</div>
+
+						<div class="block" id="version-block">
+							<div class="block-head">
+								<span class="block-title">
+									<svg class="ic" aria-hidden="true"><use href="#i-layers" /></svg>
+									<h3>Каналы кратко</h3>
+								</span>
+								<span class="muted small actions" id="overview-updated"></span>
+							</div>
+							<div class="chan-grid compact" id="overview-channels"></div>
+						</div>
+					</section>
+
+					<!-- ---------------- каналы и релизы ---------------- -->
+					<section class="tabview" data-view="channels" hidden>
+						<div class="chan-grid" id="channel-cards"></div>
+
+						<div class="block">
+							<div class="block-head">
+								<span class="block-title">
+									<svg class="ic" aria-hidden="true"><use href="#i-check" /></svg>
+									<h3>Готовность к промоуту</h3>
+								</span>
+								<span class="muted small actions" id="deploy-updated"></span>
+							</div>
+							<ul class="checklist" id="checklist"></ul>
+							<div class="actions" role="group" aria-label="Деплой">
+								<button type="button" id="deploy-beta-btn" class="primary">Деплой Beta</button>
+								<button type="button" id="promote-btn" class="warn">Промоут Beta → PROD</button>
+								<button type="button" id="rollback-btn" class="danger">Откат PROD</button>
+							</div>
+							<div class="actions" role="group" aria-label="Сервис Beta">
+								<button type="button" id="beta-start-btn" class="ghost small">Запустить Beta</button>
+								<button type="button" id="beta-restart-btn" class="ghost small">Перезапустить Beta</button>
+								<button type="button" id="beta-stop-btn" class="danger small">Остановить Beta</button>
+								<span class="muted small" id="beta-state"></span>
+							</div>
+							<p class="muted small">
+								Промоут переносит <strong>только код</strong>: текущее дерево исходников
+								собирается, активируется в новом каталоге релиза, и симлинк переключается
+								атомарно. База prod сначала выгружается через <code>pg_dump</code> и никогда не
+								затирается данными beta. Откат лишь возвращает prod на предыдущий релиз.
+							</p>
+						</div>
+
+						<div class="block" id="active-job-box" hidden></div>
+
+						<div class="block">
+							<div class="block-head">
+								<span class="block-title">
+									<svg class="ic" aria-hidden="true"><use href="#i-clock" /></svg>
+									<h3>История деплоя</h3>
+								</span>
+								<span class="muted small actions">последние 20 задач, свежие сверху</span>
+							</div>
+							<div id="jobs-list"></div>
+						</div>
+					</section>
+
+					<!-- ---------------- узлы ---------------- -->
+					<section class="tabview" data-view="nodes" hidden>
+						<div class="block">
+							<div class="block-head">
+								<span class="block-title">
+									<svg class="ic" aria-hidden="true"><use href="#i-server" /></svg>
+									<h3>VPN-узлы</h3>
+								</span>
+								<div class="actions">
+									<button type="button" id="enroll-btn" class="primary small">
+										<svg class="ic ic-sm" aria-hidden="true"><use href="#i-plus" /></svg>
+										Новый токен подключения
+									</button>
+								</div>
+							</div>
+							<div id="enroll-box" class="notice" hidden></div>
+							<div class="table-wrap stack-sm">
+								<table>
+									<thead>
+										<tr>
+											<th>Узел</th>
+											<th>Страна</th>
+											<th>Статус</th>
+											<th>Политика</th>
+											<th>Ограничения</th>
+											<th>Адрес</th>
+											<th>Нагрузка</th>
+											<th>CPU</th>
+											<th>RAM</th>
+											<th>Uptime</th>
+											<th>Пиры</th>
+											<th>Сессии</th>
+											<th>Трафик rx / tx</th>
+											<th>Heartbeat</th>
+											<th>Действия</th>
+										</tr>
+									</thead>
+									<tbody id="nodes-body"></tbody>
+								</table>
+							</div>
+						</div>
+					</section>
+
+					<!-- ---------------- пользователи ---------------- -->
+					<section class="tabview" data-view="users" hidden>
+						<div class="block">
+							<div class="block-head">
+								<span class="block-title">
+									<svg class="ic" aria-hidden="true"><use href="#i-users" /></svg>
+									<h3>Пользователи</h3>
+								</span>
+								<div class="actions">
+									<span class="field-icon">
+										<svg class="ic" aria-hidden="true"><use href="#i-search" /></svg>
+										<input
+											id="user-search"
+											type="search"
+											placeholder="ID (00000001) или никнейм"
+											aria-label="Поиск пользователей"
+										/>
+									</span>
+									<select id="user-filter" aria-label="Фильтр списка">
+										<option value="active" selected>Активные</option>
+										<option value="disabled">Отключённые</option>
+										<option value="blocked">Заблокированные</option>
+										<option value="deleted">Удалённые</option>
+										<option value="admins">Администраторы</option>
+										<option value="support">Поддержка</option>
+										<option value="testers">Бета-тестеры</option>
+										<option value="all">Все</option>
+									</select>
+									<button type="button" id="create-user-btn" class="ghost small">
+										<svg class="ic ic-sm" aria-hidden="true"><use href="#i-plus" /></svg>
+										Создать
+									</button>
+								</div>
+							</div>
+							<form id="create-user-form" class="form-card form-grid" hidden>
+								<div class="field">
+									<label for="new-username">Никнейм</label>
+									<input id="new-username" placeholder="минимум 3 символа" minlength="3" required />
+								</div>
+								<div class="field">
+									<label for="new-password">Пароль</label>
+									<input
+										id="new-password"
+										type="password"
+										placeholder="минимум 8 символов"
+										minlength="8"
+										required
+									/>
+								</div>
+								<div class="actions">
+									<button type="submit" class="primary small">Создать</button>
+									<button type="button" id="cancel-user-btn" class="ghost small">Отмена</button>
+								</div>
+							</form>
+							<div class="table-wrap stack-sm">
+								<table>
+									<thead>
+										<tr>
+											<th>ID</th>
+											<th>Никнейм</th>
+											<th>Статус</th>
+											<th>Админ</th>
+											<th>Поддержка</th>
+											<th>Тестер</th>
+											<th>Устройства</th>
+											<th>Активные сессии</th>
+											<th>Подписка</th>
+											<th>Действия</th>
+										</tr>
+									</thead>
+									<tbody id="users-body"></tbody>
+								</table>
+							</div>
+							<p class="muted small">
+								ID выдаёт база и изменить его нельзя — триггер отклоняет любое обновление.
+								Никнеймы меняются свободно, поэтому баны и поиск в поддержке идут по ID.
+							</p>
+						</div>
+					</section>
+
+					<!-- ---------------- устройства ---------------- -->
+					<section class="tabview" data-view="devices" hidden>
+						<div class="block">
+							<div class="block-head">
+								<span class="block-title">
+									<svg class="ic" aria-hidden="true"><use href="#i-device" /></svg>
+									<h3>Устройства</h3>
+								</span>
+								<div class="actions">
+									<button id="devices-purge" class="ghost small" type="button">
+										<svg class="ic ic-sm" aria-hidden="true"><use href="#i-trash" /></svg>
+										Очистить устаревшие
+									</button>
+								</div>
+							</div>
+							<div class="table-wrap stack-sm">
+								<table>
+									<thead>
+										<tr>
+											<th>Устройство</th>
+											<th>Владелец</th>
+											<th>Платформа</th>
+											<th>Узел</th>
+											<th>Статус</th>
+											<th>Видели</th>
+											<th>Действия</th>
+										</tr>
+									</thead>
+									<tbody id="devices-body"></tbody>
+								</table>
+							</div>
+						</div>
+					</section>
+
+					<!-- ---------------- сессии ---------------- -->
+					<section class="tabview" data-view="sessions" hidden>
+						<div class="block">
+							<div class="block-head">
+								<span class="block-title">
+									<svg class="ic" aria-hidden="true"><use href="#i-activity" /></svg>
+									<h3>Сессии</h3>
+								</span>
+								<div class="actions">
+									<label class="switchbox">
+										<input type="checkbox" id="live-only" checked />
+										<span class="switch switch-sm"></span>
+										<span>только активные</span>
+									</label>
+								</div>
+							</div>
+							<div class="table-wrap stack-sm">
+								<table>
+									<thead>
+										<tr>
+											<th>Пользователь</th>
+											<th>Устройство</th>
+											<th>Узел</th>
+											<th>VPN IP</th>
+											<th>Статус</th>
+											<th>Подключена</th>
+											<th>Handshake</th>
+											<th>Трафик rx / tx</th>
+											<th>Действия</th>
+										</tr>
+									</thead>
+									<tbody id="sessions-body"></tbody>
+								</table>
+							</div>
+						</div>
+					</section>
+
+					<!-- ---------------- биллинг: акция и промокоды ---------------- -->
+					<section class="tabview" data-view="billing" hidden>
+						<div class="block" id="trial-block" aria-busy="true">
+							<div class="block-head">
+								<span class="block-title">
+									<svg class="ic" aria-hidden="true"><use href="#i-gift" /></svg>
+									<h3>Пробная акция</h3>
+								</span>
+								<span class="muted small actions" id="trial-updated"></span>
+								<p class="block-sub" id="trial-scope">Загружаем акцию…</p>
+							</div>
+							<div class="control-grid">
+								<div class="control-card">
+									<svg class="ic ic-lg" aria-hidden="true"><use href="#i-gift" /></svg>
+									<div>
+										<strong>Акция включена</strong>
+										<span>Показывать баннер и разрешить новым аккаунтам забрать пробный период.</span>
+									</div>
+									<label class="switchbox" aria-label="Акция включена">
+										<input type="checkbox" id="trial-enabled" disabled />
+										<span class="switch"></span>
+									</label>
+								</div>
+								<div class="control-card">
+									<svg class="ic ic-lg" aria-hidden="true"><use href="#i-shield" /></svg>
+									<div>
+										<strong>Требовать Telegram</strong>
+										<span>Забрать акцию смогут только аккаунты с подтверждённым Telegram.</span>
+									</div>
+									<label class="switchbox" aria-label="Требовать Telegram">
+										<input type="checkbox" id="trial-telegram" disabled />
+										<span class="switch"></span>
+									</label>
+								</div>
+							</div>
+							<div class="form-card form-grid">
+								<div class="field">
+									<label for="trial-plan">Тариф в акции</label>
+									<select id="trial-plan" disabled>
+										<option value="basic">Basic</option>
+										<option value="pro">Pro</option>
+									</select>
+								</div>
+								<div class="field">
+									<label for="trial-days">Дней доступа</label>
+									<input id="trial-days" type="number" min="1" max="90" step="1" disabled />
+								</div>
+								<div class="field">
+									<label for="trial-window">Окно регистрации, дней</label>
+									<input id="trial-window" type="number" min="1" max="365" step="1" disabled />
+								</div>
+								<div class="field">
+									<label for="trial-price">Цена, ₽</label>
+									<input id="trial-price" type="number" min="1" max="10000" step="0.01" disabled />
+								</div>
+							</div>
+							<div class="actions">
+								<button type="button" class="primary small" id="trial-save" disabled>Сохранить акцию</button>
+								<span class="muted small" id="trial-stats"></span>
+							</div>
+							<p class="muted small">
+								Одно списание, без автопродления. Выключенная акция прячет баннер везде
+								и делает получение невозможным, а не просто невидимым.
+							</p>
+							<p class="notice is-error" id="trial-error" role="alert" hidden></p>
+						</div>
+
+						<div class="block" id="promo-block">
+							<div class="block-head">
+								<span class="block-title">
+									<svg class="ic" aria-hidden="true"><use href="#i-tag" /></svg>
+									<h3>Промокоды</h3>
+								</span>
+								<div class="actions">
+									<button type="button" id="promo-new-btn" class="ghost small">
+										<svg class="ic ic-sm" aria-hidden="true"><use href="#i-plus" /></svg>
+										Новый код
+									</button>
+								</div>
+								<p class="block-sub">Процент скидки на один заказ. Код считается использованным только после оплаты.</p>
+							</div>
+							<form id="promo-form" class="form-card form-grid" hidden>
+								<div class="field">
+									<label for="promo-code">Код</label>
+									<input id="promo-code" placeholder="CODE" minlength="2" maxlength="32" required />
+								</div>
+								<div class="field">
+									<label for="promo-percent">Скидка, %</label>
+									<input id="promo-percent" type="number" min="1" max="100" step="1" required />
+								</div>
+								<div class="field">
+									<label for="promo-plans">Тарифы</label>
+									<input id="promo-plans" placeholder="basic,pro (пусто = все)" />
+								</div>
+								<div class="field">
+									<label for="promo-limit">Всего активаций</label>
+									<input id="promo-limit" type="number" min="1" max="100000" step="1" placeholder="пусто = без лимита" />
+								</div>
+								<div class="actions">
+									<button type="submit" class="primary small">Создать</button>
+									<button type="button" id="promo-cancel-btn" class="ghost small">Отмена</button>
+								</div>
+							</form>
+							<div class="table-wrap stack-sm">
+								<table>
+									<thead>
+										<tr>
+											<th>Код</th>
+											<th>Скидка</th>
+											<th>Тарифы</th>
+											<th>Использован</th>
+											<th>На аккаунт</th>
+											<th>Срок</th>
+											<th>Действия</th>
+										</tr>
+									</thead>
+									<tbody id="promos-body"></tbody>
+								</table>
+							</div>
+							<p class="notice is-error" id="promo-error" role="alert" hidden></p>
+						</div>
+					</section>
+
+					<!-- ---------------- аудит ---------------- -->
+					<section class="tabview" data-view="audit" hidden>
+						<div class="block">
+							<div class="block-head">
+								<span class="block-title">
+									<svg class="ic" aria-hidden="true"><use href="#i-list" /></svg>
+									<h3>Журнал аудита</h3>
+								</span>
+							</div>
+							<div class="table-wrap stack-sm">
+								<table>
+									<thead>
+										<tr>
+											<th>Время</th>
+											<th>Действие</th>
+											<th>Пользователь</th>
+											<th>IP</th>
+											<th>Метаданные</th>
+										</tr>
+									</thead>
+									<tbody id="audit-body"></tbody>
+								</table>
+							</div>
+						</div>
+					</section>
+
+					<!-- ---------------- ошибки клиентов ---------------- -->
+					<section class="tabview" data-view="errors" hidden>
+						<div class="block">
+							<div class="block-head">
+								<span class="block-title">
+									<svg class="ic" aria-hidden="true"><use href="#i-bug" /></svg>
+									<h3>Ошибки клиентов</h3>
+								</span>
+								<div class="actions">
+									<select id="error-platform" aria-label="Фильтр по платформе">
+										<option value="">Все платформы</option>
+										<option value="windows">Windows</option>
+										<option value="android">Android</option>
+										<option value="extension">Расширение</option>
+										<option value="web">Веб</option>
+									</select>
+									<span class="muted small" id="errors-summary"></span>
+									<button type="button" id="errors-clear" class="ghost small">
+										<svg class="ic ic-sm" aria-hidden="true"><use href="#i-trash" /></svg>
+										Очистить журнал
+									</button>
+								</div>
+							</div>
+							<div class="table-wrap stack-sm">
+								<table>
+									<thead>
+										<tr>
+											<th>Время</th>
+											<th>Платформа</th>
+											<th>Версия</th>
+											<th>Ошибка</th>
+											<th>Контекст</th>
+											<th>Аккаунт</th>
+											<th>Стек</th>
+										</tr>
+									</thead>
+									<tbody id="errors-body"></tbody>
+								</table>
+							</div>
+							<p class="muted small">
+								Отчёты приходят со всех клиентов, включая те, что так и не дошли до входа.
+								Токены, пароли и ключи вырезаются до записи строки, одинаковые отчёты
+								сворачиваются до одного в минуту, а старые строки удаляются по истечении срока
+								хранения.
+							</p>
+						</div>
+					</section>
+
+					<p class="footnote">
+						Панель показывает только метаданные control-plane: аккаунты, устройства, узлы,
+						счётчики байт и состояние подключений. VPN-трафик не проходит через сервер
+						управления, и его содержимое нигде не записывается.
+					</p>
+				</main>
+			</div>
+		</div>
+
+		<div id="nav-backdrop"></div>
+
+		<dialog
+			id="maintenance-dialog"
+			class="confirm-dialog"
+			aria-labelledby="maintenance-title"
+			aria-describedby="maintenance-description"
+		>
 			<form method="dialog">
-				<div class="dialog-icon" aria-hidden="true">!</div>
-				<h2 id="maintenance-title">Enable emergency maintenance?</h2>
-				<p id="maintenance-description">Active VPN sessions on this channel will close, and new sessions will be blocked until maintenance is disabled.</p>
-				<p class="dialog-scope" id="maintenance-scope"></p>
-				<div class="dialog-actions">
-					<button type="submit" value="cancel" class="ghost">Cancel</button>
-					<button type="submit" value="confirm" class="danger">Enable maintenance</button>
+				<h3 id="maintenance-title">Включить аварийное обслуживание?</h3>
+				<p id="maintenance-description" class="muted">
+					Активные VPN-сессии в этом канале закроются, а новые будут блокироваться,
+					пока обслуживание не выключат.
+				</p>
+				<p class="muted small" id="maintenance-scope"></p>
+				<div class="actions">
+					<button type="submit" value="cancel" class="ghost">Отмена</button>
+					<button type="submit" value="confirm" class="danger">Включить обслуживание</button>
 				</div>
 			</form>
 		</dialog>
