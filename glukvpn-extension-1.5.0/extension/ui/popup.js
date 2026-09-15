@@ -339,10 +339,11 @@ const PING_AMBER_MS = 300
 
 function signalOf(ms) {
 	const value = Number(ms)
-	// Нуль делений ставит только неудавшаяся проба — это решает вызывающий.
-	// Ещё не измеренный пинг остаётся на двух делениях — так же, как во Flutter,
-	// где неизвестный пинг оценивается в 0.55 (signalUnknownPingScore).
-	if (!Number.isFinite(value) || value <= 0) return 2
+	// Пока замера нет — ни одного деления. Два серых деления читались как
+	// «2 из 3», то есть как оценка, которой никто не делал: на медленной сети
+	// весь список выглядел наполовину хорошим до первого ответа.
+	// Во Flutter то же правило: SignalStrength.unknown -> 0 делений.
+	if (!Number.isFinite(value) || value <= 0) return 0
 	if (value <= PING_GREEN_MS) return 3
 	if (value <= PING_AMBER_MS) return 2
 	return 1
@@ -969,7 +970,10 @@ function renderServers() {
 	autoRow.className = 'srv-row srv-row--auto' + (autoOn ? ' active' : '')
 	const autoMark = document.createElement('span')
 	autoMark.className = 'flag-circle sm auto-mark'
-	autoMark.appendChild(iconSvg('speed', 15))
+	// Глобус вместо спидометра: «Авто» помечен одинаково на телефоне, ПК и
+	// здесь (Icons.public_rounded во Flutter), а кружок стал плоским —
+	// градиент читался как «этот режим включён».
+	autoMark.appendChild(iconSvg('globe', 16))
 	autoRow.appendChild(autoMark)
 	const autoText = document.createElement('span')
 	autoText.className = 's-text'

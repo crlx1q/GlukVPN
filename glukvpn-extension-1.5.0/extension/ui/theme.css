@@ -1426,8 +1426,8 @@ body.signed-out .rail { opacity: 0.5; }
 .node-limits-node { font-size:10px; font-weight:800; letter-spacing:.01em; color:#f3c98b; }
 .srv-row.maintenance { opacity:.62; cursor:not-allowed; border-color:rgba(240,181,103,.35); }
 /* «Авто · Лучший сервер» и замок ручного выбора — как в версии для ПК. */
-.srv-row--auto .auto-mark { display:grid; place-items:center; background:linear-gradient(135deg, rgba(139,92,246,.92), rgba(90,160,255,.92)); box-shadow:none; }
-.srv-row--auto .auto-mark svg { width:15px; height:15px; color:#fff; }
+.srv-row--auto .auto-mark { display:grid; place-items:center; background:rgba(139,92,246,.18); border:1px solid rgba(196,181,253,.30); box-shadow:none; }
+.srv-row--auto .auto-mark svg { width:16px; height:16px; color:#c4b5fd; }
 .srv-row.locked { opacity:.55; cursor:not-allowed; }
 /* Узел не ответил на пробу: бледная строка и серая шкала, но клик разрешён —
    проба из браузера видит не всё, что видит туннель. */

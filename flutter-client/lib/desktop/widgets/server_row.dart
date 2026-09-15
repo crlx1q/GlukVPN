@@ -6,6 +6,7 @@ import '../../utils/format.dart';
 import '../../utils/signal.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/load_bar.dart';
 import '../../widgets/signal_bars.dart';
 import '../logic/node_selector.dart';
 
@@ -61,6 +62,7 @@ class _ServerRowState extends State<ServerRow> {
     final node = widget.node;
     final available = node.online && node.connectable;
     final enabled = available && !widget.locked && widget.onTap != null;
+    final String status = _status();
 
     final strength = signalStrengthFor(
       online: node.online,
@@ -125,36 +127,67 @@ class _ServerRowState extends State<ServerRow> {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _subtitle(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: GlukColors.text2,
-                            fontSize: 11,
+                        const SizedBox(height: 3),
+                        // Либо статус, либо шкала загрузки с процентом — тот же
+                        // элемент, что `.load-bar` в расширении, а не ещё одна
+                        // серая строка текста.
+                        if (status.isNotEmpty)
+                          Text(
+                            status,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: GlukColors.text2,
+                              fontSize: 11,
+                            ),
+                          )
+                        else
+                          Row(
+                            children: <Widget>[
+                              NodeLoadBar(percent: node.loadPercent),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  '${widget.loadLabel ?? 'Load'} '
+                                  '${formatPercent(node.loadPercent.toDouble())}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: GlukColors.text2,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
                       ],
                     ),
                   ),
                   const SizedBox(width: 10),
-                  if (widget.pingMs != null)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: Text(
-                        formatPing(widget.pingMs!),
-                        style: TextStyle(
-                          color: _pingColor(widget.pingMs!),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          fontFeatures: const <FontFeature>[
-                            FontFeature.tabularFigures(),
-                          ],
-                        ),
+                  // Порядок как в расширении: деления, затем цифра. Место
+                  // под цифру занято всегда: без замера там серое тире,
+                  // иначе строка перестраивалась при каждом ответе узла.
+                  SignalBars(strength: strength, height: 16),
+                  const SizedBox(width: 9),
+                  SizedBox(
+                    width: 52,
+                    child: Text(
+                      widget.pingMs == null
+                          ? '—'
+                          : formatPing(widget.pingMs, russian: widget.russian),
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        color: widget.pingMs == null
+                            ? GlukColors.text2
+                            : _pingColor(widget.pingMs!),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: const <FontFeature>[
+                          FontFeature.tabularFigures(),
+                        ],
                       ),
                     ),
-                  SignalBars(strength: strength, height: 16),
+                  ),
                   if (widget.locked) ...<Widget>[
                     const SizedBox(width: 10),
                     const Icon(
@@ -179,15 +212,14 @@ class _ServerRowState extends State<ServerRow> {
     );
   }
 
-  String _subtitle() {
+  /// Статус строкой — только когда ему есть что сказать. Загрузка ушла
+  /// в шкалу рядом, а город и страна уже написаны в названии выше.
+  String _status() {
     final node = widget.node;
     if (!node.online) {
       return widget.offlineLabel ?? 'Offline';
     }
-    // The title already spells out city and country, so the second line is
-    // just load and status now instead of repeating the city.
     final parts = <String>[];
-    parts.add('${widget.loadLabel ?? 'Load'} ${formatPercent(node.loadPercent.toDouble())}');
     if (widget.pingMs == null && widget.unreachable) {
       parts.add(widget.russian ? 'нет ответа' : 'no reply');
     }

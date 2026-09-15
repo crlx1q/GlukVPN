@@ -10,6 +10,7 @@ import '../utils/geo.dart';
 import '../utils/geo_dictionary.dart';
 import '../utils/signal.dart';
 import '../widgets/glass.dart';
+import '../widgets/load_bar.dart';
 import '../widgets/signal_bars.dart';
 import '../widgets/skeleton.dart';
 
@@ -258,29 +259,26 @@ class _ServerTile extends StatelessWidget {
   final bool selected;
   final VoidCallback? onTap;
 
-  /// City, region and live figures - all from the backend, never a node name.
-  String _details(AppStrings s) {
+  /// Статус строкой — только когда ему есть что сказать: оффлайн,
+  /// недоступен, техработы, «нет ответа». В обычном случае на этом
+  /// месте стоит шкала загрузки, как в расширении.
+  ///
+  /// Города и региона здесь больше нет: название выше уже читается
+  /// как «Франкфурт 1, Германия», и второй «Франкфурт 1» под ним был
+  /// просто дублем — именно он виден на фото со списком серверов.
+  String _status(AppStrings s) {
     if (!node.online) return s.offline;
-    final String city = localizeCity(node.city, russian: s.isRussian);
-    final List<String> parts = <String>[
-      city.isNotEmpty ? city : node.displaySubtitle,
-    ];
-    final String region = node.region ?? '';
-    if (region.isNotEmpty && region != node.displaySubtitle) parts.add(region);
-    if (!node.connectable) {
-      parts.add(s.unavailable);
-    } else {
-      parts.add(s.loadPercent(node.loadPercent.round()));
-      // Сам пинг вынесен в цветную цифру справа, как на ПК и в
-      // расширении: в серой строке он не отличался от нагрузки,
-      // а цвет и есть главный сигнал.
-      if (pingMs == null && unreachable) {
-        parts.add(s.isRussian ? 'нет ответа' : 'no reply');
-      }
+    final List<String> parts = <String>[];
+    if (!node.connectable) parts.add(s.unavailable);
+    if (node.maintenance) {
+      parts.add(s.isRussian ? 'Технические работы' : 'Maintenance');
     }
-    if (node.maintenance) parts.add(s.isRussian ? 'Технические работы' : 'Maintenance');
-    // Запреты больше не вытягивают эту строку в одно многоточие: их свод
-    // теперь целиком в «Расширенных» настройках, а не под каждым сервером.
+    // Сам пинг вынесен в цветную цифру справа, как на ПК и в
+    // расширении: в серой строке он не отличался от нагрузки,
+    // а цвет и есть главный сигнал.
+    if (pingMs == null && unreachable) {
+      parts.add(s.isRussian ? 'нет ответа' : 'no reply');
+    }
     return parts.join('  \u00b7  ');
   }
 
@@ -304,6 +302,7 @@ class _ServerTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppStrings s = context.strings;
     final TextTheme text = Theme.of(context).textTheme;
+    final String status = _status(s);
     // Three bars, computed from the node's own numbers: whether it is online,
     // how loaded it says it is, and the round trip this phone just measured.
     final SignalStrength signal = signalStrengthFor(
@@ -329,57 +328,72 @@ class _ServerTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      Flexible(
-                        child: Text(
-                          // ROUND 5: "Frankfurt, Германия" - city first, then
-                          // country, translated through the shared dictionary
-                          // that mirrors extension/lib/geo.js, so the phone and
-                          // the PC name the same server identically.
-                          formatNodeLocation(
-                            city: node.city,
-                            countryCode: node.countryCode,
-                            countryName: node.country,
-                            region: node.region,
-                            // Was left at the dictionary's default (Russian),
-                            // so an English interface still read "Германия".
-                            russian: s.isRussian,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: text.titleMedium,
-                        ),
-                      ),
-                      const SizedBox(width: 7),
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: node.online
-                              ? GlukColors.connected
-                              : GlukColors.text2,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
                   Text(
-                    _details(s),
+                    // ROUND 5: "Frankfurt, Германия" - city first, then
+                    // country, translated through the shared dictionary
+                    // that mirrors extension/lib/geo.js, so the phone and
+                    // the PC name the same server identically.
+                    //
+                    // Зелёной точки «онлайн» рядом больше нет: она висела
+                    // у каждого узла и сбивала выравнивание названий, а
+                    // оффлайн и так виден по серой строке и потушенным
+                    // делениям. В расширении и на ПК такой точки никогда и не было.
+                    formatNodeLocation(
+                      city: node.city,
+                      countryCode: node.countryCode,
+                      countryName: node.country,
+                      region: node.region,
+                      // Was left at the dictionary's default (Russian),
+                      // so an English interface still read "Германия".
+                      russian: s.isRussian,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: text.bodySmall?.copyWith(fontSize: 10.5),
+                    style: text.titleMedium,
                   ),
+                  const SizedBox(height: 3),
+                  // Либо статус, либо шкала загрузки с процентом — ровно
+                  // так, как выглядит строка сервера в расширении.
+                  if (status.isNotEmpty)
+                    Text(
+                      status,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: text.bodySmall?.copyWith(fontSize: 10.5),
+                    )
+                  else
+                    Row(
+                      children: <Widget>[
+                        NodeLoadBar(percent: node.loadPercent),
+                        const SizedBox(width: 7),
+                        Flexible(
+                          child: Text(
+                            s.loadPercent(node.loadPercent.round()),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: text.bodySmall?.copyWith(fontSize: 10.5),
+                          ),
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),
             const SizedBox(width: 10),
-            if (pingMs != null) ...<Widget>[
-              Text(
-                '$pingMs ${s.ms}',
+            // Порядок справа один на всех площадках, как в расширении:
+            // деления, затем цифра. Место под цифру занято всегда:
+            // без замера там серое тире, и строка не дёргается, когда
+            // пинг наконец придёт.
+            SignalBars(strength: signal),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 46,
+              child: Text(
+                pingMs == null ? '—' : '$pingMs ${s.ms}',
+                textAlign: TextAlign.right,
                 style: text.bodySmall?.copyWith(
-                  color: _pingTone(pingMs!),
+                  color:
+                      pingMs == null ? GlukColors.text2 : _pingTone(pingMs!),
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   fontFeatures: const <FontFeature>[
@@ -387,9 +401,7 @@ class _ServerTile extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-            ],
-            SignalBars(strength: signal),
+            ),
             const SizedBox(width: 10),
             _Radio(selected: selected, enabled: node.connectable),
           ],
@@ -441,8 +453,10 @@ class _ServerTileSkeleton extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          // Stand-ins for the signal bars and the radio.
+          // Stand-ins for the signal bars, the ping figure and the radio.
           SkeletonBox(width: 18, height: 12, radius: 3, animate: animate),
+          const SizedBox(width: 8),
+          SkeletonBox(width: 32, height: 9, radius: 3, animate: animate),
           const SizedBox(width: 10),
           SkeletonBox(
             width: GlukSizes.radio,
@@ -526,14 +540,21 @@ class _AutoTile extends StatelessWidget {
             width: GlukSizes.flagCircle,
             height: GlukSizes.flagCircle,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: GlukGradients.arrow,
+              // Плоский кружок вместо градиента и глобус вместо молнии —
+              // один знак «Авто» на телефоне, ПК и в расширении. Градиент
+              // здесь был тот же, что у выбранного радио справа, и строка
+              // выглядела выбранной всегда.
+              color: GlukColors.violet.withOpacity(0.18),
+              border: Border.all(
+                color: GlukColors.violetLight.withOpacity(0.30),
+              ),
             ),
             child: const Icon(
-              Icons.bolt_rounded,
-              size: 15,
-              color: GlukColors.bg,
+              Icons.public_rounded,
+              size: 16,
+              color: GlukColors.violetLight,
             ),
           ),
           const SizedBox(width: 11),

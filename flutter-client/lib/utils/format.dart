@@ -46,8 +46,11 @@ String formatBytes(int? bytes) {
   return '$text ${units[unit]}';
 }
 
-String formatPing(int? milliseconds) =>
-    milliseconds == null ? '--' : '$milliseconds ms';
+/// «42 ms» или «42 мс»: единица идёт за языком интерфейса. В русской
+/// сборке ПК строка сервера писала латинское «ms» рядом с «нагрузка 12%»,
+/// а телефон в той же строке — «мс».
+String formatPing(int? milliseconds, {bool russian = false}) =>
+    milliseconds == null ? '--' : '$milliseconds ${russian ? 'мс' : 'ms'}';
 
 String formatPercent(double? value) =>
     value == null ? '--' : '${value.clamp(0, 100).toStringAsFixed(0)}%';

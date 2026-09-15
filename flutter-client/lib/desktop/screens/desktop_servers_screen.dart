@@ -269,14 +269,21 @@ class _AutoCard extends StatelessWidget {
           Container(
             width: GlukSizes.flagCircle,
             height: GlukSizes.flagCircle,
+            alignment: Alignment.center,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: GlukGradients.blobInner,
+              // Плоский кружок вместо градиента и глобус вместо молнии —
+              // один знак «Авто» на телефоне, ПК и в расширении. Градиент
+              // повторял вид выбранного элемента и читался как «включено».
+              color: GlukColors.violet.withOpacity(0.18),
+              border: Border.all(
+                color: GlukColors.violetLight.withOpacity(0.30),
+              ),
             ),
             child: const Icon(
-              Icons.bolt_rounded,
-              size: 15,
-              color: Colors.white,
+              Icons.public_rounded,
+              size: 16,
+              color: GlukColors.violetLight,
             ),
           ),
           const SizedBox(width: 12),
