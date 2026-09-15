@@ -173,10 +173,28 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> with WidgetsBindi
     final MapPoint? serverPoint =
         node == null ? null : countryPoint(node.countryCode);
 
-    final List<MapPoint> nodePoints = <MapPoint>[
-      for (final VpnNodeInfo n in vpn.userVisibleNodes)
-        if (countryPoint(n.countryCode) != null) countryPoint(n.countryCode)!,
-    ];
+    // На карте живут только сервера, которые реально в игре: выбранный
+    // (или уже подключённый) узел этого ПК плюс концы живых нитей
+    // остальных устройств аккаунта.
+    //
+    // Раньше здесь лежали ВСЕ видимые узлы, поэтому без подключения карта
+    // рисовала сразу два-три сервера — ровно та же болячка, что была на
+    // телефоне. Авто тоже назначает один узел, значит и точка должна быть
+    // одна.
+    //
+    // Склейка идёт по той же сетке, что и в `accountMapArcs` (десятая доля
+    // карты): выбранный сервер и конец своей же нити не рисуются друг на
+    // друге, а близкие сервера (de1 + de2) остаются двумя точками — нить к
+    // ним всё равно считает `accountMapArcs` по паре «точка → сервер».
+    final List<ConnectionArc> accountArcs = accountMapArcs(_accountMap.snapshot);
+    final Map<String, MapPoint> serverSpots = <String, MapPoint>{
+      for (final MapPoint p in <MapPoint>[
+        if (serverPoint != null) serverPoint,
+        for (final ConnectionArc arc in accountArcs) arc.to,
+      ])
+        '${(p.x * 10).round()}:${(p.y * 10).round()}': p,
+    };
+    final List<MapPoint> nodePoints = serverSpots.values.toList(growable: false);
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -199,6 +217,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> with WidgetsBindi
           self: self,
           serverPoint: serverPoint,
           nodePoints: nodePoints,
+          accountArcs: accountArcs,
           flatMap: widget.flatMap,
           onToggleFlatMap: widget.onToggleFlatMap,
           onOpenServers: widget.onOpenServers,
@@ -279,6 +298,7 @@ class _MapCard extends StatelessWidget {
     required this.self,
     required this.serverPoint,
     required this.nodePoints,
+    required this.accountArcs,
     required this.flatMap,
     required this.onToggleFlatMap,
     required this.onOpenServers,
@@ -291,6 +311,10 @@ class _MapCard extends StatelessWidget {
   final SelfLocation? self;
   final MapPoint? serverPoint;
   final List<MapPoint> nodePoints;
+
+  /// Живые нити аккаунта. Считаются один раз в родителе — и карта, и набор
+  /// серверных точек обязаны смотреть на один и тот же список.
+  final List<ConnectionArc> accountArcs;
   final bool flatMap;
   final VoidCallback onToggleFlatMap;
   final VoidCallback onOpenServers;
@@ -357,7 +381,7 @@ class _MapCard extends StatelessWidget {
                     selfLocation: self,
                     serverPoint: serverPoint,
                     allNodes: nodePoints,
-                    accountArcs: accountMapArcs(accountMap.snapshot),
+                    accountArcs: accountArcs,
                     height: c.maxHeight,
                     // Fills the card instead of leaving empty bands above and
                     // below a thin strip of dots.
@@ -599,7 +623,15 @@ class _MetricsRail extends StatelessWidget {
     final String? publicIp = vpn.publicIp;
     final String? vpnIp = vpn.vpnIp;
     final Duration? duration = connected ? vpn.connectedFor : null;
-    final int? ping = connected ? vpn.currentPingMs : null;
+    // До подключения здесь был прочерк — именно отсюда ощущение «пинг
+    // никак не считается, пока не подключишься». Под туннелем цифра
+    // живая (делей движка), без туннеля — мини-замер до выбранного узла,
+    // тот же, что в списке серверов и в таблетке на карте.
+    final VpnNodeInfo? selected = vpn.selectedNode;
+    final int? nodePing = (connected || connecting || selected == null)
+        ? null
+        : vpn.pings[selected.id];
+    final int? ping = connected ? vpn.currentPingMs : nodePing;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -633,10 +665,18 @@ class _MetricsRail extends StatelessWidget {
             InfoRow(
               label: s.ping,
               value: ping == null ? null : formatPing(ping),
-              loading: connecting || (connected && ping == null),
+              loading: connecting ||
+                  (connected && ping == null) ||
+                  (!connected && ping == null && vpn.measuringPings),
               animate: animate,
               emptyLabel: s.dash,
-              unit: ping == null ? null : _pingSourceLabel(),
+              // Источник цифры называется вслух: мини-замер до узла не
+              // выдаётся за задержку внутри туннеля.
+              unit: ping == null
+                  ? null
+                  : (connected
+                      ? _pingSourceLabel()
+                      : (s.isRussian ? 'до узла' : 'to node')),
             ),
           ],
         ),

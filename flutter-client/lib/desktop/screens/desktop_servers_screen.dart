@@ -33,6 +33,15 @@ class _DesktopServersScreenState extends State<DesktopServersScreen> {
   String _query = '';
 
   @override
+  void initState() {
+    super.initState();
+    // Мини-пинг на заходе в список: до этого цифры появлялись только
+    // после обновления узлов. Кулдаун внутри контроллера, поэтому
+    // десять заходов подряд — ноль лишних замеров.
+    widget.vpn.measureNodePings();
+  }
+
+  @override
   void dispose() {
     _search.dispose();
     super.dispose();
@@ -87,7 +96,9 @@ class _DesktopServersScreenState extends State<DesktopServersScreen> {
                 tooltip: s.refresh,
                 onTap: () {
                   vpn.retryNodes();
-                  vpn.measureNodePings();
+                  // Ручное обновление — единственный способ обойти часовой
+                  // кулдаун.
+                  vpn.measureNodePings(force: true);
                 },
               ),
             ],
@@ -215,6 +226,7 @@ class _DesktopServersScreenState extends State<DesktopServersScreen> {
                         selected: !vpn.autoSelectionEnabled &&
                             vpn.selectedNode?.id == node.id,
                         pingMs: vpn.pings[node.id],
+                        unreachable: vpn.nodeUnreachable(node.id),
                         locked: !paid,
                         loadLabel: s.load,
                         offlineLabel: s.offline,

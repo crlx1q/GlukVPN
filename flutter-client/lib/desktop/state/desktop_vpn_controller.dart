@@ -85,7 +85,27 @@ class DesktopVpnController extends ChangeNotifier {
   List<VpnNodeInfo> _nodes = const <VpnNodeInfo>[];
   VpnNodeInfo? _selectedNode;
   AutoNodeChoice? _autoSelection;
+  /// Кулдаун мини-пинга: чаще раза в час флот не перемеряется — та же
+  /// цифра, что у `VpnController.nodePingCooldown` на телефоне и в расширении.
+  static const Duration nodePingCooldown = Duration(hours: 1);
+
+  /// Сколько узлов меряем за один проход. Остальные остаются с пустым
+  /// `_pingedAt` и догоняются следующим вызовом: когда серверов станет
+  /// сто, последовательный прогон по всем не должен длиться минутами.
+  static const int pingBatchLimit = 24;
+
   final Map<String, int> _pings = <String, int>{};
+
+  /// nodeId → когда его мерили. Кулдаун считается по узлу, а не по экрану.
+  final Map<String, DateTime> _pingedAt = <String, DateTime>{};
+
+  /// Узлы, не ответившие на последний замер.
+  final Set<String> _pingFailed = <String>{};
+
+  /// Сеть режет ICMP целиком: не ответил ни один узел. Тогда серым не
+  /// красим никого: это факт про сеть, а не про сервера.
+  bool _icmpBlocked = false;
+  bool _measuringPings = false;
   int? _currentPingMs;
   PingSource _pingSource = PingSource.none;
   String? _publicIp;
@@ -235,6 +255,14 @@ class DesktopVpnController extends ChangeNotifier {
   VpnNodeInfo? get selectedNode => _selectedNode;
   AutoNodeChoice? get autoSelection => _autoSelection;
   Map<String, int> get pings => Map<String, int>.unmodifiable(_pings);
+
+  /// Идёт мини-пинг флота.
+  bool get measuringPings => _measuringPings;
+
+  /// Узел не ответил на последний замер — его показываем серым.
+  /// Если же молчит вся сеть (ICMP зарезан), серым не красим никого.
+  bool nodeUnreachable(String nodeId) =>
+      !_icmpBlocked && _pingFailed.contains(nodeId);
   int? get currentPingMs => _currentPingMs;
   PingSource get pingSource => _pingSource;
   String? get publicIp => _publicIp;
@@ -1493,23 +1521,76 @@ class DesktopVpnController extends ChangeNotifier {
     return null;
   }
 
-  /// Measures latency to visible nodes so Auto has real data to work with.
-  Future<void> measureNodePings() async {
-    final List<VpnNodeInfo> targets = userVisibleNodes
-        .where((VpnNodeInfo n) => n.online && n.latencyHost != null)
-        .take(12)
-        .toList();
+  /// Мини-пинг видимых узлов: бары и авто-выбор должны работать ДО
+  /// первого подключения, а не после него.
+  ///
+  /// Раньше замер шёл на каждый `refreshNodes` без всякого кулдауна, а
+  /// неответившие узлы никак не помечались — в списке они выглядели
+  /// такими же, как живые, со своими двумя делениями по умолчанию.
+  ///
+  /// [force] — для кнопки обновления и диагностики в настройках:
+  /// только так можно обойти [nodePingCooldown].
+  Future<void> measureNodePings({bool force = false}) async {
+    if (_measuringPings || _disposed) return;
+    final DateTime now = DateTime.now();
+    final List<VpnNodeInfo> stale = <VpnNodeInfo>[
+      for (final VpnNodeInfo node in userVisibleNodes)
+        if (node.online && node.latencyHost.isNotEmpty)
+          if (force ||
+              _pingedAt[node.id] == null ||
+              now.difference(_pingedAt[node.id]!) >= nodePingCooldown)
+            node,
+    ];
+    if (stale.isEmpty) return;
 
-    for (final VpnNodeInfo node in targets) {
-      if (_disposed) return;
-      final String? host = node.latencyHost;
-      if (host == null) continue;
-      final PingSample? ms = await _ping.probeHost(host);
-      if (ms != null && ms.ok) _pings[node.id] = ms.milliseconds!;
+    // Порядок важен ровно при большом флоте: сначала выбранный узел
+    // (на него смотрит главный экран), затем ни разу не мерянные, затем
+    // самые старые замеры.
+    int rank(VpnNodeInfo n) {
+      if (n.id == _selectedNode?.id) return 0;
+      if (_pingedAt[n.id] == null) return 1;
+      return 2;
     }
 
-    if (_settings.value.autoNodeSelection) _resolveSelection();
+    stale.sort((VpnNodeInfo a, VpnNodeInfo b) {
+      final int byRank = rank(a).compareTo(rank(b));
+      if (byRank != 0) return byRank;
+      final DateTime? aAt = _pingedAt[a.id];
+      final DateTime? bAt = _pingedAt[b.id];
+      if (aAt == null || bAt == null) return 0;
+      return aAt.compareTo(bAt);
+    });
+
+    final List<VpnNodeInfo> targets =
+        stale.take(pingBatchLimit).toList(growable: false);
+    _measuringPings = true;
     _notify();
+    try {
+      for (final VpnNodeInfo node in targets) {
+        if (_disposed) return;
+        final PingSample sample = await _ping.probeHost(node.latencyHost);
+        if (_disposed) return;
+        _pingedAt[node.id] = DateTime.now();
+        final int? ms = sample.milliseconds;
+        if (ms != null) {
+          _pings[node.id] = ms;
+          _pingFailed.remove(node.id);
+        } else {
+          _pings.remove(node.id);
+          _pingFailed.add(node.id);
+        }
+        // Список заполняется по мере готовности, а не целиком в конце.
+        _notify();
+      }
+      // Ни одного ответа ни от кого — это про ICMP в этой сети, а не про
+      // сервера: красить всю ленту серым было бы враньём.
+      _icmpBlocked = _pings.isEmpty && _pingFailed.isNotEmpty;
+      if (_icmpBlocked) _pingFailed.clear();
+      if (_settings.value.autoNodeSelection) _resolveSelection();
+    } finally {
+      _measuringPings = false;
+      _notify();
+    }
   }
 
   /// One live latency sample for the header, the tray and the mini panel.

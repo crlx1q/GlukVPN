@@ -156,9 +156,16 @@ class _DesktopSettingsScreenState extends State<DesktopSettingsScreen> {
 
   Future<void> _testGateway() async {
     setState(() => _testingGateway = true);
-    await widget.vpn.measureNodePings();
+    // Кнопка диагностики обязана мерять сейчас, а не отдавать часовой
+    // кэш — иначе проверка ничего не проверяет.
+    await widget.vpn.measureNodePings(force: true);
     if (!mounted) return;
-    final int? ping = widget.vpn.currentPingMs;
+    // Под туннелем берём живой замер, без туннеля — только что
+    // измеренный пинг выбранного узла: `currentPingMs` без коннекта пуст,
+    // и проверка всегда рапортовала «сервер не ответил».
+    final String? nodeId = widget.vpn.selectedNode?.id;
+    final int? ping = widget.vpn.currentPingMs ??
+        (nodeId == null ? null : widget.vpn.pings[nodeId]);
     setState(() => _testingGateway = false);
     _showNotice(
       ping == null

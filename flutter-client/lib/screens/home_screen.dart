@@ -145,12 +145,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final VpnNodeInfo? node = vpn.selectedNode;
     final SelfLocation self = _selfFor(auth.user);
     final MapPoint? serverPoint = countryPoint(node?.countryCode);
-    // Every node that is up right now, so the map shows the real fleet.
-    final List<MapPoint> fleet = vpn.nodes
-        .where((VpnNodeInfo item) => item.online)
-        .map((VpnNodeInfo item) => countryPoint(item.countryCode))
-        .whereType<MapPoint>()
-        .toList();
+    // На карте живут только сервера, которые реально в игре:
+    // выбранный (или уже подключённый) сервер этого устройства плюс
+    // концы живых нитей остальных устройств аккаунта.
+    //
+    // Раньше здесь лежали ВСЕ online-узлы, и без подключения карта
+    // рисовала два-три сервера сразу — именно это и выглядело как
+    // «почему-то сразу 2 сервера». Нити считает `accountMapArcs`:
+    // устройства из одной точки на один сервер дают одну нить,
+    // разные сервера (de1 + usa2) — две, а близкие сервера остаются
+    // двумя точками с одной нитью.
+    final List<ConnectionArc> accountArcs = accountMapArcs(_accountMap.snapshot);
+    // Сетка склеивания та же, что у `accountMapArcs` (десятая доля
+    // карты), иначе выбранный сервер и конец своей же нити
+    // рисуются друг на друге.
+    final Map<String, MapPoint> serverSpots = <String, MapPoint>{
+      for (final MapPoint p in <MapPoint>[
+        if (serverPoint != null) serverPoint,
+        for (final ConnectionArc arc in accountArcs) arc.to,
+      ])
+        '${(p.x * 10).round()}:${(p.y * 10).round()}': p,
+    };
+    final List<MapPoint> fleet = serverSpots.values.toList(growable: false);
 
     final (String badgeLabel, Color badgeTone) = switch (vpn.state) {
       VpnUiState.connected => (s.stateConnected, GlukColors.connected),
@@ -167,8 +183,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final bool connected = vpn.isConnected;
     final bool transitioning = vpn.isTransitioning;
     final bool animate = !motion.reduceMotion;
-    final String? pingText =
-        connected ? vpn.ping.milliseconds?.toString() : null;
+    // До подключения показываем мини-замер до выбранного узла, а не
+    // прочерк: именно отсюда ощущение «пинг никак не считается,
+    // пока не подключишься». Под туннелем цифра живая, там она
+    // точнее любого кэша.
+    final String? pingText = connected
+        ? vpn.ping.milliseconds?.toString()
+        : (node == null ? null : vpn.pings[node.id]?.toString());
 
     return Stack(
       children: <Widget>[
@@ -179,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             selfPoint: self.point,
             serverPoint: serverPoint,
             fleet: fleet,
-            accountArcs: accountMapArcs(_accountMap.snapshot),
+            accountArcs: accountArcs,
             connected: vpn.isConnected || (_accountMap.snapshot?.activeTunnels ?? 0) > 0,
             live: vpn.isConnected || vpn.state == VpnUiState.connecting,
             connecting: vpn.state == VpnUiState.connecting,
@@ -951,17 +972,24 @@ class _ServerRow extends StatelessWidget {
         children: <Widget>[
           FlagCircle(flag: countryFlag(node!.countryCode)),
           const SizedBox(width: 10),
-          Text(title, style: text.titleMedium),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              '\u00b7 $subtitle',
+          // Страна и город - один текстовый блок на всю свободную ширину.
+          // Раньше рядом с Flexible(город) стоял Spacer(): он забирал
+          // свободное место себе, и город обрезался до «Франкфур...» даже
+          // тогда, когда в строке оставалось пустое место. Text.rich даёт
+          // приоритет названию: многоточие съедает только хвост строки.
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                children: <InlineSpan>[
+                  TextSpan(text: title, style: text.titleMedium),
+                  TextSpan(text: '  \u00b7 $subtitle', style: text.bodySmall),
+                ],
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: text.bodySmall,
             ),
           ),
-          const Spacer(),
+          const SizedBox(width: 8),
           Container(
             width: 7,
             height: 7,

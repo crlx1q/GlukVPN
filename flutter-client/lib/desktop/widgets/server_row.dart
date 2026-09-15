@@ -21,6 +21,7 @@ class ServerRow extends StatefulWidget {
     required this.selected,
     this.onTap,
     this.pingMs,
+    this.unreachable = false,
     this.locked = false,
     this.loadLabel,
     this.offlineLabel,
@@ -31,6 +32,12 @@ class ServerRow extends StatefulWidget {
   final bool selected;
   final VoidCallback? onTap;
   final int? pingMs;
+
+  /// Узел не ответил на мини-пинг: бары серые, в строке «нет ответа».
+  ///
+  /// Выбор при этом НЕ блокируется: молчание на ICMP — факт про
+  /// замер, а не про работоспособность туннеля.
+  final bool unreachable;
 
   /// True on a Free plan, where manual selection is not available.
   final bool locked;
@@ -57,7 +64,9 @@ class _ServerRowState extends State<ServerRow> {
 
     final strength = signalStrengthFor(
       online: node.online,
-      available: available,
+      // Узел, не ответивший на замер, становится серым сразу, а не
+      // показывает «две палки по умолчанию».
+      available: available && !widget.unreachable,
       pingMs: widget.pingMs,
       loadPercent: node.loadPercent,
     );
@@ -179,6 +188,9 @@ class _ServerRowState extends State<ServerRow> {
     // just load and status now instead of repeating the city.
     final parts = <String>[];
     parts.add('${widget.loadLabel ?? 'Load'} ${formatPercent(node.loadPercent.toDouble())}');
+    if (widget.pingMs == null && widget.unreachable) {
+      parts.add(widget.russian ? 'нет ответа' : 'no reply');
+    }
     if (node.maintenance) parts.add(widget.russian ? 'Технические работы' : 'Maintenance');
     // Запретов здесь нет: в одну строку они не влезали, а их свод
     // теперь целиком в «Расширенных» настройках.

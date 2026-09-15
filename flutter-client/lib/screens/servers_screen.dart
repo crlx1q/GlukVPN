@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../i18n/app_strings.dart';
 import '../models/models.dart';
-import '../services/ping_service.dart';
 import '../state/vpn_controller.dart';
 import '../theme/motion.dart';
 import '../theme/tokens.dart';
@@ -39,53 +38,35 @@ class ServersScreen extends StatefulWidget {
 }
 
 class _ServersScreenState extends State<ServersScreen> {
-  final PingService _ping = PingService();
-  final Map<String, PingSample> _samples = <String, PingSample>{};
-  bool _probing = false;
-
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _probeAll());
-  }
-
-  @override
-  void dispose() {
-    _ping.close();
-    super.dispose();
-  }
-
-  /// One ICMP sample per node, sequentially: a handful of pings in a row is
-  /// cheap, a burst of parallel ones on mobile data is not.
-  Future<void> _probeAll() async {
-    if (_probing) return;
-    _probing = true;
-    try {
-      final List<VpnNodeInfo> nodes =
-          List<VpnNodeInfo>.of(context.read<VpnController>().nodes);
-      for (final VpnNodeInfo node in nodes) {
-        if (!mounted) return;
-        if (!node.online) continue;
-        final PingSample sample = await _ping.probeHost(node.latencyHost);
-        if (!mounted) return;
-        setState(() => _samples[node.id] = sample);
-      }
-    } finally {
-      _probing = false;
-    }
+    // Мини-пинг всех узлов при заходе. Решение «мерить или нет»
+    // принимает контроллер: у него кулдаун час на узел, поэтому
+    // открывать список можно сколько угодно.
+    //
+    // Замеры больше не живут в state этого экрана: прежний
+    // `_samples` умирал вместе с экраном, и каждый заход пинговал
+    // всё заново, а главный экран пинга не видел вовсе.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => context.read<VpnController>().measureNodePings(),
+    );
   }
 
   Future<void> _refresh() async {
-    await context.read<VpnController>().loadNodes();
-    await _probeAll();
+    final VpnController vpn = context.read<VpnController>();
+    await vpn.loadNodes();
+    // Ручное обновление — единственный способ обойти кулдаун.
+    await vpn.measureNodePings(force: true);
   }
 
   void _select(VpnController vpn, VpnNodeInfo node) {
-    final bool wasConnected = vpn.isConnected || vpn.isTransitioning;
     vpn.selectNode(node);
-    // While a tunnel is up the controller refuses the switch and posts a
-    // notice; staying on this screen keeps that message visible.
-    if (!wasConnected) widget.onDone?.call();
+    // Правило одно на всех площадках: VPN выключен — это выбор,
+    // VPN включён — переход на выбранный сервер. Раньше
+    // контроллер отказывал под живым коннектом, и экран оставался
+    // открытым, чтобы показать «Сначала отключитесь».
+    widget.onDone?.call();
   }
 
   @override
@@ -206,7 +187,8 @@ class _ServersScreenState extends State<ServersScreen> {
                         padding: const EdgeInsets.only(bottom: 9),
                         child: _ServerTile(
                           node: node,
-                          sample: _samples[node.id],
+                          pingMs: vpn.pings[node.id],
+                          unreachable: vpn.nodeUnreachable(node.id),
                           selected: !vpn.autoSelectionEnabled &&
                               vpn.selectedNode?.id == node.id,
                           onTap: vpn.manualSelectionLocked
@@ -224,7 +206,8 @@ class _ServersScreenState extends State<ServersScreen> {
                         padding: const EdgeInsets.only(bottom: 9),
                         child: _ServerTile(
                           node: node,
-                          sample: _samples[node.id],
+                          pingMs: vpn.pings[node.id],
+                          unreachable: vpn.nodeUnreachable(node.id),
                           selected: !vpn.autoSelectionEnabled &&
                               vpn.selectedNode?.id == node.id,
                           onTap: null,
@@ -259,13 +242,19 @@ class _SectionLabel extends StatelessWidget {
 class _ServerTile extends StatelessWidget {
   const _ServerTile({
     required this.node,
-    required this.sample,
+    required this.pingMs,
+    required this.unreachable,
     required this.selected,
     required this.onTap,
   });
 
   final VpnNodeInfo node;
-  final PingSample? sample;
+
+  /// Последний замер RTT до узла, если он есть.
+  final int? pingMs;
+
+  /// Узел на замер не ответил: бары серые, в строке «нет ответа».
+  final bool unreachable;
   final bool selected;
   final VoidCallback? onTap;
 
@@ -282,8 +271,11 @@ class _ServerTile extends StatelessWidget {
       parts.add(s.unavailable);
     } else {
       parts.add(s.loadPercent(node.loadPercent.round()));
-      final int? ms = sample?.milliseconds;
-      if (ms != null) parts.add('$ms ${s.ms}');
+      if (pingMs != null) {
+        parts.add('$pingMs ${s.ms}');
+      } else if (unreachable) {
+        parts.add(s.isRussian ? 'нет ответа' : 'no reply');
+      }
     }
     if (node.maintenance) parts.add(s.isRussian ? 'Технические работы' : 'Maintenance');
     // Запреты больше не вытягивают эту строку в одно многоточие: их свод
@@ -299,8 +291,10 @@ class _ServerTile extends StatelessWidget {
     // how loaded it says it is, and the round trip this phone just measured.
     final SignalStrength signal = signalStrengthFor(
       online: node.online,
-      available: node.connectable,
-      pingMs: sample?.milliseconds,
+      // Узел, не ответивший на замер, становится серым сразу, а не
+      // показывает «две палки по умолчанию».
+      available: node.connectable && !unreachable,
+      pingMs: pingMs,
       loadPercent: node.loadPercent.toDouble(),
     );
 

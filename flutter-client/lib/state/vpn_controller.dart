@@ -94,6 +94,33 @@ class VpnController extends ChangeNotifier {
   /// carried over from a session.
   String? _homeIp;
   PingSample _pingSample = const PingSample.empty();
+
+  /// Кулдаун мини-пинга: чаще раза в час список серверов не
+  /// перемеряется — так же, как это делают популярные VPN.
+  static const Duration nodePingCooldown = Duration(hours: 1);
+
+  /// Сколько узлов меряем за один проход — та же цифра, что у
+  /// `DesktopVpnController.pingBatchLimit`. Остальные остаются с пустым
+  /// `_pingedAt` и догоняются следующим вызовом: когда серверов станет
+  /// сто, прогон по всем подряд на мобильной сети недопустим.
+  static const int pingBatchLimit = 24;
+
+  /// nodeId → последний измеренный RTT. Имя и смысл те же, что у
+  /// `DesktopVpnController.pings`, чтобы телефон и ПК считали одинаково.
+  final Map<String, int> _pings = <String, int>{};
+
+  /// nodeId → когда его мерили. Кулдаун считается по узлу, а не
+  /// по экрану: открыть список десять раз подряд — ноль замеров.
+  final Map<String, DateTime> _pingedAt = <String, DateTime>{};
+
+  /// Узлы, не ответившие на замер.
+  final Set<String> _pingFailed = <String>{};
+
+  /// Сеть режет ICMP целиком: не ответил ни один узел. Тогда
+  /// серым не красим никого: это факт про сеть, а не про сервера.
+  bool _icmpBlocked = false;
+
+  bool _measuringPings = false;
   String? _error;
   String? _notice;
   bool _loadingNodes = false;
@@ -114,6 +141,17 @@ class VpnController extends ChangeNotifier {
   VpnService get vpnService => _vpn;
   List<VpnNodeInfo> get nodes => _nodes;
 
+  /// Замеры RTT по узлам: nodeId → мс.
+  Map<String, int> get pings => Map<String, int>.unmodifiable(_pings);
+
+  /// Идёт мини-пинг флота.
+  bool get measuringPings => _measuringPings;
+
+  /// Узел не ответил на последний замер — его показываем серым.
+  /// Если же молчит вся сеть (ICMP зарезан), серым не красим никого.
+  bool nodeUnreachable(String nodeId) =>
+      !_icmpBlocked && _pingFailed.contains(nodeId);
+
   /// Free выбирает сервер только автоматически — тот же замок, что на ПК.
   bool get manualSelectionLocked => !manualSelectionAllowed(_auth.subscription);
 
@@ -123,7 +161,9 @@ class VpnController extends ChangeNotifier {
   /// Вернуться к авто-выбору и сразу пересчитать лучший узел.
   void enableAutoSelection() {
     _autoSelection = true;
-    final VpnNodeInfo? best = pickBestNode(_nodes).node ??
+    // С учётом замеров: без `pings` выбор шёл только по нагрузке и
+    // запасу емкости, то есть «лучший сервер» ничего не знал о пинге.
+    final VpnNodeInfo? best = pickBestNode(_nodes, pings: _pings).node ??
         _firstOrNull(_nodes.where((VpnNodeInfo n) => n.connectable));
     if (best != null) _selectedNode = best;
     _error = null;
@@ -306,7 +346,7 @@ class VpnController extends ChangeNotifier {
           loaded.where((VpnNodeInfo n) => n.id == currentId && n.connectable),
         );
       }
-      next ??= pickBestNode(loaded).node;
+      next ??= pickBestNode(loaded, pings: _pings).node;
       next ??= _firstOrNull(loaded.where((VpnNodeInfo n) => n.connectable));
       next ??= _firstOrNull(loaded);
       _selectedNode = next;
@@ -315,9 +355,27 @@ class VpnController extends ChangeNotifier {
     } finally {
       _loadingNodes = false;
       _safeNotify();
+      // Сразу после списка узлов — мини-пинг всего флота, чтобы
+      // бары и авто-выбор работали до первого подключения, а не
+      // после него. Кулдаун внутри, поэтому вызов здесь дешёвый.
+      measureNodePings().ignore();
     }
   }
 
+  /// Идёт горячая смена сервера: нить уже рвётся и сейчас поднимется
+  /// на другом узле. Держит одновременные нажатия от гонки.
+  bool _switchingNode = false;
+
+  bool get switchingNode => _switchingNode;
+
+  /// Выбор сервера. Правило одно на все площадки: VPN выключен —
+  /// это просто выбор, VPN включён — немедленный переход на выбранный
+  /// узел.
+  ///
+  /// Раньше здесь стоял отказ «Сначала отключитесь», и одна и та же
+  /// операция вела себя по-разному на трёх площадках: на ПК
+  /// `DesktopVpnController.switchNode` давно переключал на лету, в
+  /// расширении тоже, а телефон требовал ручного отключения.
   void selectNode(VpnNodeInfo node) {
     if (manualSelectionLocked) {
       _notice = _russian
@@ -326,17 +384,123 @@ class VpnController extends ChangeNotifier {
       _safeNotify();
       return;
     }
-    if (_state != VpnUiState.disconnected) {
-      _notice = _russian
-          ? 'Сначала отключитесь, чтобы сменить сервер.'
-          : 'Disconnect first to switch server.';
-      _safeNotify();
-      return;
-    }
+    if (_switchingNode) return;
     _autoSelection = false;
     _selectedNode = node;
     _error = null;
+    _notice = null;
     _safeNotify();
+    // Фаза «отключаюсь» ничего не переключает: там сессия уже едет
+    // вниз, а выбор пригодится на следующем connect.
+    if (_state == VpnUiState.connected || _state == VpnUiState.connecting) {
+      _switchTo(node).ignore();
+    }
+  }
+
+  /// Горячая смена сервера под живым коннектом.
+  ///
+  /// Порядок важен: `connect` отказывается работать, пока жива прежняя
+  /// фаза, поэтому подъём идёт строго после того, как `disconnect`
+  /// закрыл серверную сессию и отпустил `_busy`.
+  Future<void> _switchTo(VpnNodeInfo node) async {
+    _switchingNode = true;
+    _notice = _russian
+        ? 'Переключаю на ${node.displayTitle}…'
+        : 'Switching to ${node.displayTitle}…';
+    _safeNotify();
+    try {
+      // userInitiated: false — намерение быть подключённым не отменялось,
+      // пользователь просил другой сервер, а не выключение VPN.
+      await disconnect(userInitiated: false);
+      _selectedNode = node;
+      await connect();
+    } finally {
+      _switchingNode = false;
+      _safeNotify();
+    }
+  }
+
+  /// Мини-пинг всех узлов — как в популярных VPN: замер идёт при
+  /// заходе, а не «когда-нибудь после подключения», поэтому сразу
+  /// видно, кто ближе, а кто не отвечает.
+  ///
+  /// Замеры живут в контроллере, а не в state экрана серверов: прежний
+  /// `_samples` умирал вместе с экраном — каждый заход пинговал заново,
+  /// а главный экран и авто-выбор пинга не видели вовсе.
+  ///
+  /// [force] — для кнопки обновления и pull-to-refresh: только так
+  /// можно обойти [nodePingCooldown].
+  Future<void> measureNodePings({bool force = false}) async {
+    if (_measuringPings || _disposed) return;
+    final DateTime now = DateTime.now();
+    final List<VpnNodeInfo> stale = <VpnNodeInfo>[
+      for (final VpnNodeInfo node in _nodes)
+        if (node.online && node.latencyHost.isNotEmpty)
+          if (force ||
+              _pingedAt[node.id] == null ||
+              now.difference(_pingedAt[node.id]!) >= nodePingCooldown)
+            node,
+    ];
+    if (stale.isEmpty) return;
+
+    // Порядок важен ровно при большом флоте: сначала выбранный узел
+    // (на него смотрит главный экран), затем ни разу не мерянные,
+    // затем самые старые замеры.
+    int rank(VpnNodeInfo n) {
+      if (n.id == _selectedNode?.id) return 0;
+      if (_pingedAt[n.id] == null) return 1;
+      return 2;
+    }
+
+    stale.sort((VpnNodeInfo a, VpnNodeInfo b) {
+      final int byRank = rank(a).compareTo(rank(b));
+      if (byRank != 0) return byRank;
+      final DateTime? aAt = _pingedAt[a.id];
+      final DateTime? bAt = _pingedAt[b.id];
+      if (aAt == null || bAt == null) return 0;
+      return aAt.compareTo(bAt);
+    });
+
+    final List<VpnNodeInfo> targets =
+        stale.take(pingBatchLimit).toList(growable: false);
+    _measuringPings = true;
+    _safeNotify();
+    try {
+      // Последовательно: пачка параллельных пингов на мобильной
+      // сети стоит дороже, чем несколько замеров подряд.
+      for (final VpnNodeInfo node in targets) {
+        if (_disposed) return;
+        final PingSample sample =
+            await _pingService.probeHost(node.latencyHost);
+        if (_disposed) return;
+        _pingedAt[node.id] = DateTime.now();
+        final int? ms = sample.milliseconds;
+        if (ms != null) {
+          _pings[node.id] = ms;
+          _pingFailed.remove(node.id);
+        } else {
+          _pings.remove(node.id);
+          _pingFailed.add(node.id);
+        }
+        // Список заполняется по мере готовности, а не целиком в конце.
+        _safeNotify();
+      }
+      // Ни одного ответа ни от кого — это про ICMP в этой сети, а не
+      // про сервера: красить всю ленту серым было бы враньём.
+      _icmpBlocked = _pings.isEmpty && _pingFailed.isNotEmpty;
+      if (_icmpBlocked) _pingFailed.clear();
+      // Замеры появились — авто-выбор обязан их учесть, иначе «лучший
+      // сервер» остался бы тем, кого выбрали по одной нагрузке. Под
+      // живым туннелем выбор не трогаем: сервер под ногами менять
+      // может только человек.
+      if (autoSelectionEnabled && _state == VpnUiState.disconnected) {
+        final VpnNodeInfo? best = pickBestNode(_nodes, pings: _pings).node;
+        if (best != null) _selectedNode = best;
+      }
+    } finally {
+      _measuringPings = false;
+      _safeNotify();
+    }
   }
 
   static VpnNodeInfo? _firstOrNull(Iterable<VpnNodeInfo> items) {
