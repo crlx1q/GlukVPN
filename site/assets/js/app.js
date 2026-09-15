@@ -606,7 +606,7 @@
     });
 
     var ustatus = String(u.status || "").toUpperCase();
-    var ULABEL = { ACTIVE: "Активен", BLOCKED: "Заблокирован", SUSPENDED: "Приостановлен", PENDING: "Ожидает подтверждения" };
+    var ULABEL = { ACTIVE: "Активен", BLOCKED: "Отключён", SUSPENDED: "Приостановлен", PENDING: "Ожидает подтверждения" };
     set("status", esc(ustatus ? (ULABEL[ustatus] ? T(ULABEL[ustatus]) : ustatus) : "\u2014"));
     setClass("status-badge", "dash-badge--ok", ustatus === "ACTIVE");
     setClass("status-badge", "dash-badge--warn", !!ustatus && ustatus !== "ACTIVE");

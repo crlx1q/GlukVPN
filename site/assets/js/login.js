@@ -127,7 +127,7 @@
         var code = err && err.code ? String(err.code) : "";
         var text = t("Не удалось войти. Попробуйте снова.", "Could not sign in. Try again.");
         if (code === "account_deleted") text = t("Аккаунт удалён. Восстановить его нельзя — зарегистрируйте новый.", "This account was deleted. It cannot be restored — please register a new one.");
-        else if (code === "account_blocked") text = t("Аккаунт заблокирован. Напишите в поддержку, если это ошибка.", "This account is blocked. Contact support if you think this is a mistake.");
+        else if (code === "account_blocked") text = t("Аккаунт деактивирован. Напишите в поддержку, если это ошибка.", "This account is disabled. Contact support if you think this is a mistake.");
         else if (code === "account_disabled") text = t("Аккаунт отключён. Напишите в поддержку, чтобы вернуть доступ.", "This account is disabled. Contact support to restore access.");
         else if (err && err.status === 401) text = t("Неверный логин или пароль.", "Wrong login or password.");
         else if (err && err.status === 403) text = t("Доступ к аккаунту ограничен.", "Access to this account is restricted.");

@@ -338,6 +338,42 @@
       setDownloadLink(a, windowsUrl);
     });
 
+    /* Подтягиваем прямые файлы из /api/version.json при наличии */
+    if (typeof fetch === "function") {
+      fetch("/api/version.json").then(function (r) {
+        return r.ok ? r.json() : null;
+      }).then(function (m) {
+        if (!m || !m.downloads) return;
+        var wFile = m.downloads.windows;
+        var aFile = m.downloads.android;
+        if (wFile) {
+          $$("[data-download-windows]").forEach(function (a) {
+            setDownloadLink(a, wFile);
+          });
+        }
+        if (aFile) {
+          $$("[data-download-android]").forEach(function (a) {
+            if (isPlatformCard(a, "android")) {
+              setDownloadLink(a, aFile);
+            }
+          });
+        }
+        if (os === "windows" && wFile) {
+          $$("[data-download-android]").forEach(function (a) {
+            if (!isPlatformCard(a, "android")) {
+              setDownloadLink(a, wFile);
+            }
+          });
+        } else if (os === "android" && aFile) {
+          $$("[data-download-android]").forEach(function (a) {
+            if (!isPlatformCard(a, "android")) {
+              setDownloadLink(a, aFile);
+            }
+          });
+        }
+      }).catch(function () {});
+    }
+
     $$("[data-android-note]").forEach(function (n) {
       n.textContent = android.url
         ? android.note || ""
