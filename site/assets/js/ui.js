@@ -275,7 +275,11 @@
   function setDownloadLink(a, url) {
     if (!a || !url) return;
     a.setAttribute("href", url);
-    a.setAttribute("download", "");
+    if (/\.(exe|apk|zip|msi|dmg)$/i.test(url)) {
+      a.setAttribute("download", "");
+    } else {
+      a.removeAttribute("download");
+    }
   }
 
   /* Проверяет, что ссылка лежит внутри карточки платформы с нужным именем. */
@@ -290,13 +294,18 @@
   /* --------------------------------------------------- ссылки на загрузку */
   function downloads() {
     var d = CFG.downloads || {};
+    var isGitHubPages = typeof window !== "undefined" && window.location && (window.location.hostname === "app.gluk.tech" || window.location.hostname.indexOf("github.io") !== -1);
+    var baseDownload = isGitHubPages ? "https://vpn.gluk.tech" : "";
     var android = d.android || {};
     var windows = d.windows || {};
     var os = detectOS();
     var isEn = document.documentElement.lang === "en";
 
+    var windowsUrl = windows.url ? (windows.url.indexOf("://") !== -1 ? windows.url : baseDownload + windows.url) : (baseDownload + "/download/windows");
+    var androidUrl = android.url ? (android.url.indexOf("://") !== -1 ? android.url : baseDownload + android.url) : (baseDownload + "/download/android");
+
     /* Универсальная адаптация главных кнопок скачивания под ОС пользователя */
-    var primaryUrl = os === "windows" && windows.url ? windows.url : (android.url || "/download/");
+    var primaryUrl = os === "windows" && windowsUrl ? windowsUrl : (androidUrl || (baseDownload + "/download/"));
     var primaryText = os === "windows"
       ? (isEn ? "Download for Windows" : "Скачать для Windows")
       : (os === "android"
@@ -306,12 +315,12 @@
     $$("[data-download-android]").forEach(function (a) {
       /* Карточка Android на странице /download/ всегда ведёт на APK-эндпоинт */
       if (isPlatformCard(a, "android")) {
-        setDownloadLink(a, android.url || "/download/android");
+        setDownloadLink(a, androidUrl);
         return;
       }
 
       /* Главные CTA-кнопки (в шапке, на главном экране, в меню) ведут на софт под ОС клиента */
-      if (primaryUrl && primaryUrl !== "/download/") {
+      if (primaryUrl && primaryUrl !== "/download/" && primaryUrl !== baseDownload + "/download/") {
         setDownloadLink(a, primaryUrl);
       }
       /* Текст обновляем только у больших кнопок с текстом, не трогая иконки */
@@ -326,7 +335,7 @@
     });
 
     $$("[data-download-windows]").forEach(function (a) {
-      setDownloadLink(a, windows.url || "/download/windows");
+      setDownloadLink(a, windowsUrl);
     });
 
     $$("[data-android-note]").forEach(function (n) {
