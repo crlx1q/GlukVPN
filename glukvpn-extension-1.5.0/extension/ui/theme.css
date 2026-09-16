@@ -306,17 +306,10 @@ body.signed-out .rail { opacity: 0.5; }
 }
 .map-overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
 
-.net-node { fill: rgba(196, 181, 253, 0.55); }
-.net-node-ring {
-	fill: none;
-	stroke: rgba(139, 92, 246, 0.45);
-	stroke-width: 0.25;
-	animation: netPulse 3.4s ease-out infinite;
-}
-/* Правила легаси-«симуляции» (.conn-path, .pt-dot, .pt-ring) удалены
-   вместе с самими элементами: нитку и точки рисует #account-map по
-   данным аккаунта, а не статика в разметке. */
-.hero.offline .net-node-ring,
+/* Правила легаси-«симуляции» (.conn-path, .pt-dot, .pt-ring) и статичных
+   точек .net-node / .net-node-ring удалены вместе с самими элементами:
+   часть кругов лежала в океане и читалась как «выключенные серверы».
+   Нитку и точки рисует #account-map по данным аккаунта. */
 .hero.offline .map-img { animation: none !important; }
 .hero.offline .map-img { opacity: 0.14; filter: grayscale(1) brightness(0.9); }
 
@@ -1247,11 +1240,6 @@ body.signed-out .rail { opacity: 0.5; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.28; } }
 @keyframes dashFlow { to { stroke-dashoffset: -9.6; } }
-@keyframes netPulse {
-	0% { transform-origin: center; opacity: 0.7; stroke-width: 0.3; }
-	70% { opacity: 0; stroke-width: 0.05; }
-	100% { opacity: 0; }
-}
 @keyframes mapDrift {
 	from { transform: translate3d(0, 0, 0) scale(1); }
 	to { transform: translate3d(-2.5%, -1.2%, 0) scale(1.05); }

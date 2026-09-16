@@ -69,12 +69,11 @@
 								<stop offset="100%" stop-color="#3ddc97" />
 							</linearGradient>
 						</defs>
-						<circle class="net-node" cx="22" cy="18" r="0.7" />
-						<circle class="net-node" cx="55" cy="14" r="0.7" />
-						<circle class="net-node" cx="78" cy="22" r="0.7" />
-						<circle class="net-node" cx="96" cy="30" r="0.7" />
-						<circle class="net-node" cx="40" cy="38" r="0.7" />
-						<circle class="net-node-ring" cx="55" cy="14" r="2" />
+						<!-- Здесь висели пять декоративных <circle class="net-node">
+					     и пульсирующее кольцо: статика из макета, не связанная ни с
+					     одним узлом. Часть кругов попадала в океан (Южная Атлантика,
+					     запад Франции) и читалась как «выключенные серверы». Всю
+					     сцену рисует #account-map по живым сессиям аккаунта. -->
 						<g id="account-map"></g>
 						<!-- Своя нитка живёт в СВОЁМ слое: пересборка сцены чужих
 					     устройств (опрос раз в 5 с) не должна снимать её с карты,
