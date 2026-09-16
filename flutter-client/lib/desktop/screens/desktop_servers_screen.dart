@@ -67,6 +67,32 @@ class _DesktopServersScreenState extends State<DesktopServersScreen> {
                     .contains(needle);
           }).toList();
 
+    // Порядок и заголовки — как на телефоне: доступные сверху по
+    // нагрузке под «Для вас», недоступные — серыми вниз под
+    // «Другие серверы». До этого список шёл в порядке контроллера,
+    // и офлайн-узел мог стоять первой строкой.
+    String label(VpnNodeInfo node) =>
+        publicNodeLocation(node, russian: s.isRussian);
+    final List<VpnNodeInfo> recommended = filtered
+        .where((VpnNodeInfo n) => n.connectable)
+        .toList()
+      ..sort((VpnNodeInfo a, VpnNodeInfo b) {
+        final int byLoad = a.loadPercent.compareTo(b.loadPercent);
+        return byLoad != 0 ? byLoad : label(a).compareTo(label(b));
+      });
+    final List<VpnNodeInfo> others = filtered
+        .where((VpnNodeInfo n) => !n.connectable)
+        .toList()
+      ..sort((VpnNodeInfo a, VpnNodeInfo b) =>
+          label(a).compareTo(label(b)));
+    // Плоский список для ListView: заголовок — String, строка — узел.
+    final List<Object> entries = <Object>[
+      if (recommended.isNotEmpty) s.forYou,
+      ...recommended,
+      if (others.isNotEmpty) s.otherServers,
+      ...others,
+    ];
+
     return Padding(
       padding: const EdgeInsets.all(GlukSizes.pagePadding),
       child: Column(
@@ -218,9 +244,13 @@ class _DesktopServersScreenState extends State<DesktopServersScreen> {
                   )
                 : ListView.builder(
                     padding: EdgeInsets.zero,
-                    itemCount: filtered.length,
+                    itemCount: entries.length,
                     itemBuilder: (BuildContext context, int index) {
-                      final node = filtered[index];
+                      final Object entry = entries[index];
+                      if (entry is String) {
+                        return _SectionLabel(label: entry, first: index == 0);
+                      }
+                      final VpnNodeInfo node = entry as VpnNodeInfo;
                       return ServerRow(
                         node: node,
                         selected: !vpn.autoSelectionEnabled &&
@@ -233,7 +263,10 @@ class _DesktopServersScreenState extends State<DesktopServersScreen> {
                         // ROUND 7: the row localises its own geography label,
                         // so it has to know which language the shell is in.
                         russian: s.isRussian,
-                        onTap: paid ? () => vpn.switchNode(node) : null,
+                        // Офлайн-узел не выбирается — как на телефоне.
+                        onTap: paid && node.connectable
+                            ? () => vpn.switchNode(node)
+                            : null,
                       );
                     },
                   ),
@@ -323,6 +356,37 @@ class _AutoCard extends StatelessWidget {
               color: GlukColors.violetLight,
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Заголовок группы в списке серверов.
+///
+/// Тот же элемент, что `_SectionLabel` на телефоне и `.srv-section`
+/// в расширении: капсом, серый, без рамки.
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.label, this.first = false});
+
+  final String label;
+
+  /// У самого верхнего заголовка нет отступа сверху: над ним уже
+  /// стоит поле поиска или карточка «Авто».
+  final bool first;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(top: first ? 0 : 10, bottom: 8),
+      child: Text(
+        label.toUpperCase(),
+        style: const TextStyle(
+          color: GlukColors.text2,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.6,
+          decoration: TextDecoration.none,
+        ),
       ),
     );
   }

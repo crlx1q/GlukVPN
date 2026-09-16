@@ -61,6 +61,9 @@ class DesktopStrings {
   String get autoBestServer => _t('autoBestServer');
   String get autoDescription => _t('autoDescription');
   String get manualLocked => _t('manualLocked');
+  // Заголовки групп списка — один в слово с телефоном.
+  String get forYou => _t('forYou');
+  String get otherServers => _t('otherServers');
   String get offline => _t('offline');
   String get load => _t('load');
   String get refresh => _t('refresh');
@@ -209,6 +212,8 @@ class DesktopStrings {
     'autoBestServer': 'Auto · Best server',
     'autoDescription': 'Picks the fastest available server for you',
     'manualLocked': 'Manual selection is available on a paid plan',
+    'forYou': 'For You',
+    'otherServers': 'Other Servers',
     'offline': 'Offline',
     'load': 'Load',
     'refresh': 'Refresh',
@@ -365,6 +370,8 @@ class DesktopStrings {
     'autoBestServer': 'Авто · Лучший сервер',
     'autoDescription': 'Сами подберём самый быстрый доступный сервер',
     'manualLocked': 'Ручной выбор доступен на платном тарифе',
+    'forYou': 'Для вас',
+    'otherServers': 'Другие серверы',
     'offline': 'Недоступен',
     'load': 'Нагрузка',
     'refresh': 'Обновить',

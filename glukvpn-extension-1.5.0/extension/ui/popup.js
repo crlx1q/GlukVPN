@@ -1033,10 +1033,39 @@ function renderServers() {
 		list.appendChild(hint)
 	}
 	const activeId = activeNodeId() || String(activeNode()?.id ?? '')
-	nodes.forEach((node, index) => {
+	// Порядок и заголовки — как на телефоне: сначала «Для вас» по
+	// нагрузке, затем серые офлайн-узлы под «Другие серверы».
+	// Раньше список шёл в том порядке, в котором его вернул сервер,
+	// и выключенный узел мог стоять первой строкой.
+	const rowLang = resolveLanguage(settings.language, state?.runtime?.geo?.countryCode)
+	const rows = nodes.map((node, index) => {
 		const id = String(node?.id ?? node?.nodeId ?? index)
 		const maintenance = node?.maintenance === true || String(node?.status ?? '').toUpperCase() === 'MAINTENANCE'
 		const offline = maintenance || node?.online === false || String(node?.status ?? '').toLowerCase() === 'offline'
+		const title = formatNodeLocation(node, rowLang) || `${node?.city ?? node?.name ?? id}`
+		return { node, id, offline, maintenance, title }
+	})
+	rows.sort((a, b) => {
+		if (a.offline !== b.offline) return a.offline ? 1 : -1
+		if (!a.offline) {
+			const byLoad = Math.round(nodeLoadPercent(a.node) ?? 0) - Math.round(nodeLoadPercent(b.node) ?? 0)
+			if (byLoad !== 0) return byLoad
+		}
+		return a.title.localeCompare(b.title)
+	})
+	let shownSection = ''
+	// Параметр не `row`: ниже в том же блоке создаётся `const row`
+	// — кнопка строки.
+	rows.forEach((entry, index) => {
+		const { node, id, offline, maintenance, title } = entry
+		const section = offline ? 'servers.otherServers' : 'servers.forYou'
+		if (section !== shownSection) {
+			shownSection = section
+			const head = document.createElement('div')
+			head.className = 'srv-section'
+			head.textContent = t(section)
+			list.appendChild(head)
+		}
 		// Недоступные сразу серые, но кликабельные: проба из браузера видит
 		// не всё, что видит туннель, и запретить выбор по ней было бы слишком.
 		const unreachable = !offline && nodeUnreachable(node)
@@ -1056,8 +1085,8 @@ function renderServers() {
 		text.className = 's-text'
 		const name = document.createElement('span')
 		name.className = 's-name'
-		const currentLang = resolveLanguage(settings.language, state?.runtime?.geo?.countryCode)
-		name.textContent = formatNodeLocation(node, currentLang) || `${node?.city ?? node?.name ?? id}`
+		// Подпись уже посчитана выше — по ней же список и отсортирован.
+		name.textContent = title
 		text.appendChild(name)
 
 		const meta = document.createElement('span')
