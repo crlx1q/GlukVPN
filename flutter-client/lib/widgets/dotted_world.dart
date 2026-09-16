@@ -381,6 +381,19 @@ class _DottedWorldPainter extends CustomPainter {
 			// `live` отделяет реальные туннели (концы arc.to) от просто
 			// выбранного сервера: пульсирующим зелёным горят только первые.
 			final serverSpots = <Offset, ({double fade, Offset at, bool live})>{};
+			// Серверные точки склеиваются по РАССТОЯНИЮ, а не по
+			// округлённому пикселю: центроид страны и реальные
+			// координаты узла давали два ключа и две зелёные точки
+			// вплотную. У устройств такая защита (`crowded`, `taken`) была,
+			// а у серверов — нет. Порог тот же, что в `mergeServerPoints`:
+			// 1.2 единицы карты, переведённые в пиксели масштабом.
+			final double serverMerge = math.max(4.0, 1.2 * flatScale);
+			Offset serverKey(Offset at) {
+				for (final Offset key in serverSpots.keys) {
+					if ((key - at).distance <= serverMerge) return key;
+				}
+				return Offset(at.dx.roundToDouble(), at.dy.roundToDouble());
+			}
 			for (final arc in accountArcs!) {
 				final from = _project(arc.from, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
 				final to = _project(arc.to, flatScale: flatScale, flatCentre: centre, globeRadius: globeRadius, globeCentre: globeCentre, size: size, cull: false);
@@ -408,7 +421,7 @@ class _DottedWorldPainter extends CustomPainter {
 					}
 				}
 				if (b > 0.02) {
-					final key = Offset(to.offset.dx.roundToDouble(), to.offset.dy.roundToDouble());
+					final key = serverKey(to.offset);
 					final kept = serverSpots[key];
 					// Конец нитки — всегда живой туннель аккаунта.
 					serverSpots[key] = (fade: math.max(kept?.fade ?? 0, b), at: to.offset, live: true);
@@ -510,11 +523,13 @@ class _DottedWorldPainter extends CustomPainter {
 				if (node != null) {
 					final fade = ui.lerpDouble(1, node.visibility.clamp(0.0, 1.0), globeness)! * serverOpacity;
 					if (fade > 0.02) {
-						final key = Offset(node.offset.dx.roundToDouble(), node.offset.dy.roundToDouble());
+						final key = serverKey(node.offset);
 						final kept = serverSpots[key];
 						serverSpots[key] = (
 							fade: math.max(kept?.fade ?? 0, fade),
-							at: node.offset,
+							// Живой конец нити главнее: он стоит по реальным
+							// координатам узла, а не по центроиду страны.
+							at: kept?.at ?? node.offset,
 							live: (kept?.live ?? false) || serverLive,
 						);
 					}

@@ -42,6 +42,42 @@ bool _placed(GeoPoint? p) => p != null && p.valid;
 bool _placedNode(NodeLocation? p) =>
     p != null && p.lat.isFinite && p.lon.isFinite && p.lat.abs() <= 90 && p.lon.abs() <= 180;
 
+/// Где на карте стоит сам сервер.
+///
+/// РЕАЛЬНЫЕ координаты узла, а не центроид страны. Нить аккаунта
+/// (`accountMapArcs`) всегда ведёт в `node.location`, поэтому центроид давал
+/// вторую зелёную точку в паре пикселей от первой (центр Германии
+/// ≠ Франкфурт) — ровно это и выглядело как «подключён один, а на
+/// карте два сервера».
+MapPoint? serverMapPoint(NodeLocation? location, String? countryCode) =>
+    _placedNode(location)
+        ? projectLatLon(location!.lat, location.lon)
+        : countryPoint(countryCode);
+
+/// Склейка серверных точек по расстоянию.
+///
+/// Прежняя сетка `(x * 10).round()` раскидывала по разным ключам точки,
+/// отличающиеся на десятую долю карты, и на карте горели два зелёных
+/// кружка вплотную. Порог 1.2 единицы карты (из 119) склеивает центроид
+/// страны с её же городом, но оставляет раздельными разные города.
+List<MapPoint> mergeServerPoints(Iterable<MapPoint> points) {
+  const double merge = 1.2;
+  final List<MapPoint> out = <MapPoint>[];
+  for (final MapPoint p in points) {
+    bool near = false;
+    for (final MapPoint kept in out) {
+      final double dx = kept.x - p.x;
+      final double dy = kept.y - p.y;
+      if (dx * dx + dy * dy <= merge * merge) {
+        near = true;
+        break;
+      }
+    }
+    if (!near) out.add(p);
+  }
+  return List<MapPoint>.unmodifiable(out);
+}
+
 /// Нитки соединений для карты.
 ///
 /// ЭТАП 2 — так же, как это работало в старом клиенте на Windows:
@@ -101,6 +137,23 @@ List<ConnectionArc> accountMapArcs(ActiveMapSnapshot? snapshot) {
         })(),
   ];
 }
+
+/// Нити аккаунта для карты, без своей нити при опущенном туннеле.
+///
+/// Снапшот приходит раз в пять секунд, поэтому после отключения своя
+/// нить (`isCurrent`) жила ещё пару секунд: локальный круг гас сразу, а
+/// второй — с задержкой. Пока туннеля нет, свою нить ведёт локальная
+/// фаза подключения, а не запоздавший снапшот сервера.
+///
+/// Чужие нити не трогаем: другие устройства аккаунта остаются на карте,
+/// даже когда я сам отключён.
+List<ConnectionArc> accountArcsForMap(
+  ActiveMapSnapshot? snapshot, {
+  required bool ownTunnelUp,
+}) => <ConnectionArc>[
+      for (final ConnectionArc arc in accountMapArcs(snapshot))
+        if (ownTunnelUp || !(arc is AccountConnectionArc && arc.isCurrent)) arc,
+    ];
 
 /// Маленькая кнопка устройств и привязанная к ней выпадающая панель. Один и тот
 /// же виджет на Windows и Android, тот же макет повторён на сайте и в

@@ -148,7 +148,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     final VpnNodeInfo? node = vpn.selectedNode;
     final SelfLocation self = _selfFor(auth.user);
-    final MapPoint? serverPoint = countryPoint(node?.countryCode);
+    // Сервер стоит по реальным координатам узла, а не по центроиду
+    // страны: центр Германии и Франкфурт расходятся, и карта
+    // рисовала две зелёные точки: одну от `serverPoint`, вторую —
+    // от конца своей же нити.
+    final MapPoint? serverPoint =
+        node == null ? null : serverMapPoint(node.location, node.countryCode);
     // На карте живут только сервера, которые реально в игре:
     // выбранный (или уже подключённый) сервер этого устройства плюс
     // концы живых нитей остальных устройств аккаунта.
@@ -157,20 +162,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // рисовала два-три сервера сразу — именно это и выглядело как
     // «почему-то сразу 2 сервера». Нити считает `accountMapArcs`:
     // устройства из одной точки на один сервер дают одну нить,
-    // разные сервера (de1 + usa2) — две, а близкие сервера остаются
-    // двумя точками с одной нитью.
-    final List<ConnectionArc> accountArcs = accountMapArcs(_accountMap.snapshot);
-    // Сетка склеивания та же, что у `accountMapArcs` (десятая доля
-    // карты), иначе выбранный сервер и конец своей же нити
-    // рисуются друг на друге.
-    final Map<String, MapPoint> serverSpots = <String, MapPoint>{
-      for (final MapPoint p in <MapPoint>[
-        if (serverPoint != null) serverPoint,
-        for (final ConnectionArc arc in accountArcs) arc.to,
-      ])
-        '${(p.x * 10).round()}:${(p.y * 10).round()}': p,
-    };
-    final List<MapPoint> fleet = serverSpots.values.toList(growable: false);
+    // разные сервера (de1 + usa2) — две.
+    // Снапшот аккаунта обновляется раз в пять секунд, поэтому своя
+    // нить (`isCurrent`) жила ещё пару секунд после отключения —
+    // отсюда «один круг пропал сразу, второй через пару сек».
+    // Пока локальный туннель опущен, свою нить ведёт локальная
+    // фаза, а не запоздавший снапшот.
+    final bool ownTunnelUp = vpn.state == VpnUiState.connected ||
+        vpn.state == VpnUiState.connecting;
+    final List<ConnectionArc> accountArcs = accountArcsForMap(
+      _accountMap.snapshot,
+      ownTunnelUp: ownTunnelUp,
+    );
+    // Склейка по расстоянию, а не по сетке: соседние точки
+    // попадали в разные ключи и давали два кружка вплотную.
+    final List<MapPoint> fleet = mergeServerPoints(<MapPoint>[
+      if (serverPoint != null) serverPoint,
+      for (final ConnectionArc arc in accountArcs) arc.to,
+    ]);
 
     final (String badgeLabel, Color badgeTone) = switch (vpn.state) {
       VpnUiState.connected => (s.stateConnected, GlukColors.connected),

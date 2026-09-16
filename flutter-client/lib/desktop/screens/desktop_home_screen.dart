@@ -170,8 +170,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> with WidgetsBindi
     );
 
     final VpnNodeInfo? node = vpn.selectedNode;
+    // Сервер стоит по реальным координатам узла, а не по центроиду
+    // страны: центр Германии и Франкфурт расходятся, и при двух
+    // устройствах на ОДНОМ сервере карта рисовала две зелёные
+    // точки: одну от `serverPoint`, вторую — от конца нити.
     final MapPoint? serverPoint =
-        node == null ? null : countryPoint(node.countryCode);
+        node == null ? null : serverMapPoint(node.location, node.countryCode);
 
     // На карте живут только сервера, которые реально в игре: выбранный
     // (или уже подключённый) узел этого ПК плюс концы живых нитей
@@ -182,19 +186,24 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> with WidgetsBindi
     // телефоне. Авто тоже назначает один узел, значит и точка должна быть
     // одна.
     //
-    // Склейка идёт по той же сетке, что и в `accountMapArcs` (десятая доля
-    // карты): выбранный сервер и конец своей же нити не рисуются друг на
-    // друге, а близкие сервера (de1 + de2) остаются двумя точками — нить к
-    // ним всё равно считает `accountMapArcs` по паре «точка → сервер».
-    final List<ConnectionArc> accountArcs = accountMapArcs(_accountMap.snapshot);
-    final Map<String, MapPoint> serverSpots = <String, MapPoint>{
-      for (final MapPoint p in <MapPoint>[
-        if (serverPoint != null) serverPoint,
-        for (final ConnectionArc arc in accountArcs) arc.to,
-      ])
-        '${(p.x * 10).round()}:${(p.y * 10).round()}': p,
-    };
-    final List<MapPoint> nodePoints = serverSpots.values.toList(growable: false);
+    // Выбранный сервер и конец своей же нити — одна и та же точка,
+    // поэтому они склеиваются (`mergeServerPoints`), а нить к каждому
+    // серверу всё равно считает `accountMapArcs` по паре «точка → сервер».
+    // Снапшот аккаунта обновляется раз в пять секунд, поэтому своя
+    // нить (`isCurrent`) переживала отключение на пару секунд.
+    // Пока локальный туннель опущен, её рисует локальная фаза.
+    final bool ownTunnelUp = vpn.phase.isConnected ||
+        vpn.phase == ConnectionPhase.connecting;
+    final List<ConnectionArc> accountArcs = accountArcsForMap(
+      _accountMap.snapshot,
+      ownTunnelUp: ownTunnelUp,
+    );
+    // Склейка по расстоянию, а не по сетке: точки, разнесённые на
+    // десятую долю карты, давали два зелёных кружка вплотную.
+    final List<MapPoint> nodePoints = mergeServerPoints(<MapPoint>[
+      if (serverPoint != null) serverPoint,
+      for (final ConnectionArc arc in accountArcs) arc.to,
+    ]);
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
