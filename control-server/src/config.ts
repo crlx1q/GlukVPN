@@ -216,8 +216,9 @@ const EnvSchema = z.object({
 	TRIAL_OFFER_DAYS: z.coerce.number().int().min(1).max(90).default(7),
 	// How long after sign-up an account may still claim it.
 	TRIAL_OFFER_WINDOW_DAYS: z.coerce.number().int().min(1).max(365).default(14),
-	// The token charge, in kopecks. 100 = 1 ₽, which is also TabPay's minimum:
-	// a card that can be charged once is the point of the exercise.
+	// The token charge, in kopecks. 100 = 1 ₽, which is also the floor of every
+	// rouble gateway here: a card that can be charged once is the point of the
+	// exercise.
 	TRIAL_OFFER_PRICE_KOPECKS: z.coerce.number().int().min(100).max(1000000).default(100),
 	// A Telegram-verified account is the cheapest proof that a sign-up is a
 	// person; without it one browser could mint trials all day.

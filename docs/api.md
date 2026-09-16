@@ -68,7 +68,7 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 | GET | `/api/billing/trial` | открыто | 60/мин |
 | POST | `/api/billing/trial/claim` | user | 5/мин |
 | POST | `/api/billing/promo/check` | открыто | 20/мин |
-| POST | `/api/billing/webhook/tabpay` | подпись TabPay | — |
+| POST | `/api/billing/webhook/:provider` | проверка платёжки | — |
 | POST | `/api/node/register` | enrollment-токен | 10 / 10 мин |
 | POST | `/api/node/heartbeat` | node-токен | 120/мин |
 | POST | `/api/node/report` | node-токен | 60/мин |
@@ -101,6 +101,8 @@ Base URL: `https://api.gluk.tech`. Только HTTPS. Все тела запр�
 | GET | `/api/admin/audit` | admin, support | — |
 | GET | `/api/admin/client-errors` | admin, support | — |
 | GET | `/api/admin/traffic-budget` | admin, support | — |
+| GET | `/api/admin/billing/provider` | admin, support | — |
+| POST | `/api/admin/billing/provider` | admin | — |
 | GET | `/api/admin/billing/trial` | admin, support | — |
 | POST | `/api/admin/billing/trial` | admin | — |
 | GET | `/api/admin/billing/promos` | admin, support | — |
@@ -403,10 +405,17 @@ Telegram: аккаунт без привязки рабочий, но непод
 
 ## Биллинг, пробный период и промокоды
 
-Оплата идёт через внешний провайдер (`BILLING_PROVIDER=tabpay`). Карта вводится
-на его странице: мы отдаём `paymentUrl`, куда клиент перенаправляет
-пользователя, и ждём вебхук. Своих форм для карт нет и не будет: PAN не
-должен проходить через наш сервер.
+Оплата идёт через внешнюю платёжку. Карта вводится на её странице: мы отдаём
+`paymentUrl`, куда клиент перенаправляет пользователя, и ждём вебхук. Своих
+форм для карт нет и не будет: PAN не должен проходить через наш сервер.
+
+Платёжек три, и каждая — отдельная папка в `control-server/src/payments/` со
+своими ключами: `tabpay`, `mulenpay`, `cashera`. Активную выбирает админка
+(`POST /api/admin/billing/provider`), выбор лежит в `billing_settings`; пока
+строки нет — решает `BILLING_PROVIDER` из `.env`. Удаление папки отключает
+только её: остальные платёжки и весь остальной биллинг продолжают работать.
+Сверх них есть два встроенных режима — `manual` (заказ создаётся, админ
+помечает оплаченным руками) и `stripe`; пустое значение скрывает оплату.
 
 ### GET /api/billing/plans
 
@@ -448,8 +457,8 @@ Telegram: аккаунт без привязки рабочий, но непод
 }
 ```
 
-Когда провайдер не настроен (`BILLING_PROVIDER=manual`), `paymentUrl` отсутствует,
-`manual: true`, а в `instructions` лежит текст для ручной оплаты.
+Когда выбран режим `manual`, `paymentUrl` отсутствует, `manual: true`, а в
+`instructions` лежит текст для ручной оплаты.
 
 ### GET /api/billing/trial
 
@@ -559,15 +568,47 @@ Telegram: аккаунт без привязки рабочий, но непод
 `promo_not_started`, `promo_expired`, `promo_plan_not_eligible`,
 `promo_limit_reached`, `promo_already_used` или `promo_amount_too_small`.
 
-### POST /api/billing/webhook/tabpay
+### POST /api/billing/webhook/:provider
 
-Вебхук провайдера. Адрес для кабинета TabPay:
-`https://api.gluk.tech/api/billing/webhook/tabpay` (beta — `beta-api.gluk.tech`).
+Вебхук платёжки. `:provider` — id папки: `tabpay`, `mulenpay` или `cashera`
+(`stripe` живёт на отдельном маршруте и папкой не является). Адрес всегда
+на API-хосте:
 
-Проверка подписи: `X-Signature-V2` = HMAC-SHA256(`${X-Timestamp}.${rawBody}`) с
-`TABPAY_WEBHOOK_SECRET`, hex в нижнем регистре, окно ±300 с. Сравнение
-постоянного времени; тело берётся сырым, до JSON-разбора. Старый
-`X-Signature` тоже принимается.
+| Платёжка | Адрес для кабинета |
+| --- | --- |
+| TabPay | `https://api.gluk.tech/api/billing/webhook/tabpay` |
+| MulenPay | `https://api.gluk.tech/api/billing/webhook/mulenpay?token=<MULENPAY_WEBHOOK_TOKEN>` |
+| Cashera | `https://api.gluk.tech/api/billing/webhook/cashera` |
+
+Beta — тот же путь на `beta-api.gluk.tech`. Именно API-хост: `app.gluk.tech` —
+статический кабинет (GitHub Pages), он только показывает результат по
+`?paid=1` / `?failed=1` и спрашивает API про заказ, но ничего не выдаёт.
+Готовый адрес по каждой папке отдаёт `GET /api/admin/billing/provider`
+(`gateways[].webhookUrl`).
+
+Адрес не меняется при переключении платёжки, и вебхуки неактивной
+платёжки продолжают приниматься — это те самые поздние оплаты, которые
+иначе потерялись бы при переключении. Событие по заказу другой платёжки
+не применяется. Неизвестный id или удалённая папка — `401`.
+
+Подлинность каждая доказывает по-своему:
+
+- **TabPay** — `X-Signature-V2` = HMAC-SHA256(`${X-Timestamp}.${rawBody}`) с
+  `TABPAY_WEBHOOK_SECRET`, hex в нижнем регистре, окно ±300 с. Сравнение
+  постоянного времени; тело берётся сырым, до JSON-разбора. Старый
+  `X-Signature` тоже принимается.
+- **MulenPay** — подписи нет вовсе. Проверяется `?token=` (или заголовок
+  `x-webhook-token`) против `MULENPAY_WEBHOOK_TOKEN`, а статус перечитывается
+  из `GET /payments/{id}`: подписка выдаётся только если MulenPay сам
+  ответил `status: 3`. Пустой токен принимает любую доставку — защищает
+  именно перечитывание, а не токен.
+- **Cashera** — заголовки `X-Api-Key` и `X-Secret` сравниваются в постоянном
+  времени с `CASHERA_API_KEY` (`pk_…`) и `CASHERA_WEBHOOK_SECRET` (`sk_…`).
+  Кнопка «тестовый вебхук» в кабинете присылает `event: "webhook.test"` —
+  это проба: проверяет URL и оба ключа, но к заказу не относится и ничего
+  не выдаёт.
+
+Тела разные. TabPay:
 
 ```json
 {
@@ -581,8 +622,74 @@ Telegram: аккаунт без привязки рабочий, но непод
 }
 ```
 
-Ответ всегда быстрый `{ "received": true, … }`. Повторная доставка того же
-события безопасна: оплаченный заказ не продлевает подписку дважды.
+MulenPay — наш `orderId` уезжает как `uuid`, сумма приходит строкой рублей:
+
+```json
+{ "id": 4242, "uuid": "…", "amount": "1.00", "currency": "rub", "payment_status": "success" }
+```
+
+Cashera — наш `orderId` лежит в `external_id`, сумма в копейках:
+
+```json
+{
+  "event": "transaction.status_updated",
+  "transaction": { "uuid": "…", "external_id": "…", "status": "paid", "amount": 100 }
+}
+```
+
+Ответ всегда быстрый `{ "received": true, "provider": "tabpay", … }`. Повторная
+доставка того же события безопасна: оплаченный заказ не продлевает подписку
+дважды. Всё, что не провалило проверку подлинности, получает `200`: шлюз
+часами ретраит не-2xx, а чужое или неприменимое событие на пятой попытке
+применимым не станет; что именно произошло, видно в `handled` / `ignored`.
+
+### Админские ручки выбора платёжки
+
+`GET /api/admin/billing/provider` — что выбрано и что вообще установлено:
+
+```json
+{
+  "billingEnabled": true,
+  "provider": "mulenpay",
+  "active": "mulenpay",
+  "envProvider": "tabpay",
+  "switchable": true,
+  "builtin": ["", "manual", "stripe"],
+  "gateways": [
+    {
+      "id": "tabpay",
+      "label": "TabPay",
+      "currency": "RUB",
+      "installed": true,
+      "configured": true,
+      "active": false,
+      "webhookUrl": "https://api.gluk.tech/api/billing/webhook/tabpay"
+    }
+  ]
+}
+```
+
+`active` — что действует сейчас (строка `billing_settings`, а если её нет —
+значение из `.env`); `envProvider` — что выбрал бы `BILLING_PROVIDER`, то есть
+ответ на случай пропавшей строки; `switchable: false` — на сервере ещё не
+применена миграция `billing_settings`: читать можно, сохранить — нет.
+По папкам: `installed: false` — папка удалена, выбрать такую нельзя;
+`configured: false` — папка есть, ключей нет: в списке видна, но оплата через
+неё не пройдёт (состояние показывается намеренно — иначе сломанная касса
+выглядела бы как отсутствующая).
+
+`POST /api/admin/billing/provider` (только admin) — переключение:
+
+```json
+{ "provider": "cashera" }
+```
+
+Ответ: `{ "ok": true, "active": "cashera", "billingEnabled": true, "provider": "cashera" }`.
+Принимаются id установленных папок и встроенные `""` (выключить оплату),
+`manual`, `stripe`. Неизвестный id или удалённая папка — `400`; сервер без
+миграции — `503`. В аудит пишется `admin.billing.provider` с `from`, `to` и
+`enabled`. Новая папка появляется в списке после рестарта процесса:
+модули кешируются.
 
 ### Админские ручки акции
 
