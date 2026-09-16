@@ -1,37 +1,21 @@
 /**
- * TabPay — hosted checkout for roubles (SBP + bank cards, 3-D Secure).
+ * The TabPay REST client and its webhook signature check.
  *
- * The whole integration is three moves, and none of them touch card data:
- *
- *   1. POST /api/v1/payments with our own order id -> the gateway answers with
- *      a payment object and a `payUrl`;
- *   2. the browser is sent to `payUrl`, which is TabPay's own page (this is why
- *      GlukVPN has no card form of its own and never will);
- *   3. every final status arrives as a signed webhook, and that webhook - not
- *      the redirect back to the site - is what turns an order into a plan.
- *
- * Money is always an integer number of kopecks and the gateway settles in
- * roubles only; `settlementCurrency()` in billing.ts is what keeps a visitor
- * quoted in tenge from being charged "790" of something else.
- *
- * A test shop behaves exactly like a live one: same API, same signatures, same
- * webhooks, only `isTest: true` and buttons instead of a real bank on the
- * payment page. Going live is therefore an .env change (TABPAY_API_KEY,
- * TABPAY_SHOP_ID, TABPAY_WEBHOOK_SECRET) and nothing else.
+ * Nothing here knows about orders, plans or subscriptions: it speaks TabPay
+ * and returns TabPay's own objects. The translation into our vocabulary lives
+ * in `index.ts`, which is the only file the rest of the server ever reaches.
  */
 import { createHmac, timingSafeEqual } from "node:crypto"
-import { config } from "../config"
-import { serviceUnavailable } from "../lib/errors"
-import type { CheckoutResult, PaymentProvider } from "./billing"
-
-/** TabPay accepts roubles and nothing else. */
-export const TABPAY_CURRENCY = "RUB"
-/** Smallest payment the gateway accepts: 1 rouble. */
-export const TABPAY_MIN_KOPECKS = 100
-/** Largest payment the gateway accepts: 100 million roubles. */
-export const TABPAY_MAX_KOPECKS = 10_000_000_000
-/** Webhook freshness window for the v2 signature scheme, in seconds. */
-const SIGNATURE_WINDOW_SEC = 300
+import { serviceUnavailable } from "../../lib/errors"
+import {
+	SIGNATURE_WINDOW_SEC,
+	TABPAY_MAX_KOPECKS,
+	TABPAY_MIN_KOPECKS,
+	apiBase,
+	apiKey,
+	timeoutMs,
+	webhookSecret,
+} from "./config"
 
 export type TabpayStatus =
 	| "CREATED"
@@ -63,7 +47,7 @@ export type TabpayPayment = {
 
 /**
  * The webhook body. Every field is `unknown` because it arrives from the
- * network: the route validates before trusting anything.
+ * network: it is validated before anything is trusted.
  *
  * `test` is a value to read, never a field to detect - a sandbox payment is a
  * real event that must hand out the plan, while the dashboard's "send test
@@ -86,11 +70,7 @@ type TabpayResult<T> =
 	| { ok: false; status: number; message: string }
 
 function apiUrl(path: string): string {
-	return `${config.TABPAY_API_BASE.replace(/\/+$/, "")}${path}`
-}
-
-function siteUrl(path: string): string {
-	return `${config.SITE_BASE_URL.replace(/\/+$/, "")}${path}`
+	return `${apiBase()}${path}`
 }
 
 /** TabPay returns `{statusCode, message, error}`; message may be a list. */
@@ -112,7 +92,7 @@ async function tabpayRequest<T>(
 	path: string,
 	init: { method: "GET" | "POST"; body?: unknown },
 ): Promise<TabpayResult<T>> {
-	const key = config.TABPAY_API_KEY.trim()
+	const key = apiKey()
 	if (!key) throw serviceUnavailable("TabPay is not configured")
 
 	let response: Response
@@ -126,7 +106,7 @@ async function tabpayRequest<T>(
 				...(init.body === undefined ? {} : { "content-type": "application/json" }),
 			},
 			...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-			signal: AbortSignal.timeout(config.TABPAY_TIMEOUT_MS),
+			signal: AbortSignal.timeout(timeoutMs()),
 		})
 	} catch {
 		throw serviceUnavailable("Payment gateway did not respond")
@@ -258,7 +238,7 @@ function sameSignature(expected: string, candidate: string): boolean {
  * key order and whitespace, and the signature stops matching.
  */
 export function verifyTabpaySignature(rawBody: string, headers: Record<string, unknown>): boolean {
-	const secret = config.TABPAY_WEBHOOK_SECRET.trim()
+	const secret = webhookSecret()
 	if (!secret) return false
 
 	const v2 = headerText(headers, "x-signature-v2")
@@ -272,59 +252,4 @@ export function verifyTabpaySignature(rawBody: string, headers: Record<string, u
 
 	const v1 = headerText(headers, "x-signature")
 	return v1 ? sameSignature(hmacHex(secret, rawBody), v1) : false
-}
-
-/** Order metadata, defensively: it is JSON from the database. */
-function orderMeta(value: unknown): Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: {}
-}
-
-export const tabpayProvider: PaymentProvider = {
-	name: "tabpay",
-	async createCheckout(order, plan, user): Promise<CheckoutResult> {
-		if (order.currency.toUpperCase() !== TABPAY_CURRENCY) {
-			// Reaching this means the catalogue has no rouble price for the plan;
-			// charging the tenge number as roubles would be a silent 6x discount.
-			throw serviceUnavailable("This plan has no price in roubles")
-		}
-
-		const meta = orderMeta(order.metadata)
-		const isTrial = meta.source === "trial"
-		const description = `GlukVPN ${plan.name}, ${plan.days} дн. (заказ ${order.id.slice(0, 8).toUpperCase()})`
-		// Telegram ids are digits; anything else is not one and is left out.
-		const telegramId = /^\d{1,20}$/.test(user.telegramId ?? "") ? (user.telegramId as string) : undefined
-		// Where the payment page sends the browser back to. The operator can pin
-		// both in .env; by default a trial returns to /trial/ and a normal order
-		// to the account, because those are the two pages that can explain what
-		// just happened.
-		const successUrl =
-			config.BILLING_SUCCESS_URL.trim() ||
-			siteUrl(isTrial ? `/trial/?paid=1&order=${order.id}` : `/app/?paid=1&order=${order.id}`)
-		const failUrl =
-			config.BILLING_CANCEL_URL.trim() ||
-			siteUrl(isTrial ? `/trial/?failed=1&order=${order.id}` : `/app/?failed=1&order=${order.id}`)
-
-		const payment = await createTabpayPayment({
-			orderId: order.id,
-			amountKopecks: order.amountMinor,
-			description,
-			...(user.email ? { email: user.email } : {}),
-			...(telegramId ? { telegramId } : {}),
-			// Echoed back in the webhook, so the handler never has to guess.
-			metadata: {
-				orderId: order.id,
-				userId: user.id,
-				planCode: plan.code,
-				channel: config.CHANNEL,
-				...(isTrial ? { source: "trial" } : {}),
-			},
-			successUrl,
-			failUrl,
-			...(config.TABPAY_METHOD ? { method: config.TABPAY_METHOD } : {}),
-		})
-
-		return { paymentUrl: payment.payUrl, providerRef: payment.id, manual: false, instructions: null }
-	},
 }

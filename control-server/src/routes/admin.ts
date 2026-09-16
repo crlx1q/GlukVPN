@@ -8,7 +8,7 @@ import { badRequest, conflict, forbidden, notFound } from "../lib/errors"
 import { clientIp, getAuthUser, requireStaff } from "../middleware/auth"
 import { bytesToNumber, prisma } from "../prisma"
 import { deleteAccount } from "../services/accountDeletion"
-import { cancelOrder, grantPlan, markOrderPaid, orderView } from "../services/billing"
+import { billingStatus, cancelOrder, grantPlan, markOrderPaid, orderView } from "../services/billing"
 import { downgradeToPlanAllowance, purgeStaleDevices } from "../services/deviceAccess"
 import { categoryLabel } from "../services/domainCategories"
 import { egressBudgetView } from "../services/egressBudget"
@@ -1457,9 +1457,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 			orderBy: { createdAt: "desc" },
 			take: limit,
 		})
+		// The live selection, not the .env fallback: an admin may have switched
+		// gateway since boot, or deleted the folder the old one lived in.
+		const billing = await billingStatus()
 		return reply.send({
-			billingEnabled: config.billingEnabled,
-			provider: config.billingEnabled ? config.BILLING_PROVIDER : null,
+			billingEnabled: billing.enabled,
+			provider: billing.enabled ? billing.provider : null,
 			orders: orders.map((order) => ({ ...orderView(order), user: order.user })),
 		})
 	})
@@ -1495,9 +1498,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 			prisma.order.count({ where: { planId: plan.id } }),
 			prisma.order.count({ where: { planId: plan.id, status: "PAID" } }),
 		])
+		const billing = await billingStatus()
 		return reply.send({
-			billingEnabled: config.billingEnabled,
-			provider: config.billingEnabled ? config.BILLING_PROVIDER : null,
+			billingEnabled: billing.enabled,
+			provider: billing.enabled ? billing.provider : null,
 			trial: {
 				enabled: settings.enabled,
 				planCode: settings.planCode,

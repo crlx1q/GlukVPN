@@ -4,11 +4,13 @@ import { z } from "zod"
 import { config } from "../config"
 import { badRequest, unauthorized } from "../lib/errors"
 import { clientIp, getAuthUser, requireUser } from "../middleware/auth"
+import { paymentModule } from "../payments/registry"
 import { prisma } from "../prisma"
 import {
+	billingStatus,
 	createOrder,
+	handlePaymentEvent,
 	handleStripeEvent,
-	handleTabpayEvent,
 	listPlans,
 	minimumChargeMinor,
 	orderView,
@@ -20,7 +22,6 @@ import {
 } from "../services/billing"
 import { normalizeCurrency, resolveMarketByIp, resolvePlanPrice } from "../services/pricing"
 import { applyPromo, promoPlanCodes } from "../services/promo"
-import { verifyTabpaySignature } from "../services/tabpay"
 import { claimTrial, trialOffer } from "../services/trial"
 
 const CreateOrderBody = z.object({
@@ -77,14 +78,15 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 			const asked = (request.query as { currency?: string } | undefined)?.currency
 			const currency = normalizeCurrency(asked) ?? market.currency
 			const plans = await listPlans()
-			// TabPay settles in roubles only, so a visitor quoted in tenge or
-			// dollars still sees a rouble amount on their statement. The exact
-			// figure travels with every plan, so the page can name it up front
-			// instead of leaving it as a surprise on the gateway's own screen.
-			const settle = settlementCurrency()
+			// Every gateway we use settles in one currency only, so a visitor
+			// quoted in tenge or dollars still sees a rouble amount on their
+			// statement. The exact figure travels with every plan, so the page can
+			// name it up front instead of leaving it as a surprise on the
+			// gateway's own screen.
+			const [billing, settle] = await Promise.all([billingStatus(), settlementCurrency()])
 			return reply.send({
-				billingEnabled: config.billingEnabled,
-				provider: config.billingEnabled ? config.BILLING_PROVIDER : null,
+				billingEnabled: billing.enabled,
+				provider: billing.enabled ? billing.provider : null,
 				currency,
 				market,
 				settlement: settle ? { currency: settle } : null,
@@ -178,9 +180,10 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 			const currency =
 				normalizeCurrency(asked) ?? (await resolveMarketByIp(request)).currency
 			const trial = await trialOffer({ user, currency })
+			const billing = await billingStatus()
 			return reply.send({
-				billingEnabled: config.billingEnabled,
-				provider: config.billingEnabled ? config.BILLING_PROVIDER : null,
+				billingEnabled: billing.enabled,
+				provider: billing.enabled ? billing.provider : null,
 				trial,
 			})
 		},
@@ -237,7 +240,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 			const askedCurrency = normalizeCurrency(parsed.data.currency)
 			const wanted = askedCurrency ?? (await resolveMarketByIp(request)).currency
 			const shown = resolvePlanPrice(plan, wanted)
-			const settle = settlementCurrency()
+			const settle = await settlementCurrency()
 			const charged = settle ? resolvePlanPrice(plan, settle) : shown
 			const applied = await applyPromo({
 				code: parsed.data.code,
@@ -247,7 +250,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 				currency: charged.currency,
 				// The gateway's floor is a rouble figure, so it only means anything
 				// against the amount that is actually settled.
-				minimumMinor: minimumChargeMinor(),
+				minimumMinor: await minimumChargeMinor(),
 			})
 
 			// One currency on both sides: the validated figures are the ones to
@@ -315,29 +318,45 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 			},
 		)
 
-		// TabPay signs `${timestamp}.${rawBody}`, so it belongs in the same raw
-		// body scope. Anything that is not a signature failure answers 200: the
-		// gateway retries a non-2xx for a day, and an event we cannot act on -
-		// the other environment's shop, the dashboard's own probe - will not
-		// become actionable on the fifth attempt. What happened is reported in
+		// One route for every wallet: `:provider` is the folder id, the folder
+		// decides whether the delivery is really its own (a signature, a token, a
+		// pair of key headers - they all differ), and billing applies the event.
+		// Some of them sign `${timestamp}.${rawBody}`, so this has to live in the
+		// raw-body scope with Stripe's.
+		//
+		// The address in a dashboard therefore never changes when the panel
+		// switches wallets, and a gateway that is no longer the live one keeps
+		// being heard: its late deliveries are exactly the payments a switch
+		// would otherwise lose. `handlePaymentEvent` refuses an event for an
+		// order that belongs to another provider, so being heard is not the same
+		// as being trusted.
+		//
+		// Anything that is not a failed check answers 200: a gateway retries a
+		// non-2xx for hours, and an event we cannot act on - the other
+		// environment's shop, a dashboard's own probe - will not become
+		// actionable on the fifth attempt. What happened is reported in
 		// `handled` and `ignored`, which is what the delivery log then shows.
 		scope.post(
-			"/api/billing/webhook/tabpay",
+			"/api/billing/webhook/:provider",
 			{ config: { rateLimit: { max: 300, timeWindow: "1 minute" } } },
 			async (request, reply) => {
-				if (config.BILLING_PROVIDER !== "tabpay") throw unauthorized("Webhook not enabled")
-				const raw = typeof request.body === "string" ? request.body : ""
-				if (!verifyTabpaySignature(raw, request.headers as Record<string, unknown>)) {
-					throw unauthorized("Invalid webhook signature")
+				const asked = String((request.params as { provider?: string }).provider ?? "")
+					.trim()
+					.toLowerCase()
+				// Stripe is matched by the static route above; it signs its own way
+				// and is not a payment folder, so it must not fall through to here.
+				const mod = asked === "stripe" ? null : paymentModule(asked)
+				// An id with no folder: either a deleted gateway or somebody
+				// guessing. Neither gets to describe a payment.
+				if (!mod) throw unauthorized("Webhook not enabled")
+				const delivery = {
+					rawBody: typeof request.body === "string" ? request.body : "",
+					headers: request.headers as Record<string, unknown>,
+					query: (request.query ?? {}) as Record<string, unknown>,
 				}
-				let event: Record<string, unknown>
-				try {
-					event = JSON.parse(raw) as Record<string, unknown>
-				} catch {
-					throw badRequest("Malformed webhook body")
-				}
-				const outcome = await handleTabpayEvent(event as Parameters<typeof handleTabpayEvent>[0])
-				return reply.send({ received: true, ...outcome })
+				if (!mod.verifyWebhook(delivery)) throw unauthorized("Invalid webhook signature")
+				const outcome = await handlePaymentEvent(mod.id, mod.parseWebhook(delivery))
+				return reply.send({ received: true, provider: mod.id, ...outcome })
 			},
 		)
 	})

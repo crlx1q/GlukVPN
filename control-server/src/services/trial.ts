@@ -23,9 +23,8 @@ import { config } from "../config"
 import { writeAudit } from "../lib/audit"
 import { HttpError } from "../lib/errors"
 import { prisma } from "../prisma"
-import { type CheckoutResult, createOrder, priceLabel } from "./billing"
+import { type CheckoutResult, createOrder, priceLabel, settlementCurrency } from "./billing"
 import { planShape } from "./entitlements"
-import { TABPAY_CURRENCY } from "./tabpay"
 
 /** There is only ever one offer running, so the row has a fixed id. */
 export const TRIAL_SETTINGS_ID = "global"
@@ -36,6 +35,18 @@ export const TRIAL_PLAN_SUFFIX = "_trial"
 export const TRIAL_REMINDER_DAYS = 2
 
 const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * The currency the selected gateway will actually charge.
+ *
+ * The offer price is stored in kopecks, so every gateway we ship today
+ * settles in RUB - but the value is asked of the active adapter rather than
+ * hard-coded, because a gateway that settles elsewhere must not have its
+ * charge labelled in roubles.
+ */
+async function chargeCurrency(): Promise<string> {
+	return (await settlementCurrency()) ?? config.BILLING_CURRENCY
+}
 
 /**
  * Display equivalents of the rouble price.
@@ -166,7 +177,7 @@ export async function ensureTrialPlan(settings: TrialSettings): Promise<Plan> {
 		tier: base?.tier ?? shape.tier,
 		days: settings.days,
 		priceMinor: settings.priceKopecks,
-		currency: TABPAY_CURRENCY,
+		currency: await chargeCurrency(),
 		maxDevices: base?.maxDevices ?? shape.maxDevices,
 		maxSessions: base?.maxSessions ?? shape.maxSessions,
 		trafficGb: base?.trafficGb ?? shape.trafficGb,
@@ -315,8 +326,9 @@ export async function trialOffer(params: {
 	const base = await prisma.plan.findUnique({ where: { code: settings.planCode } })
 	const shape = planShape(settings.planCode)
 
+	const settle = await chargeCurrency()
 	const wanted = (params.currency ?? "").trim().toUpperCase()
-	const display = EQUIVALENT_RATIO[wanted] === undefined ? TABPAY_CURRENCY : wanted
+	const display = EQUIVALENT_RATIO[wanted] === undefined ? settle : wanted
 	const displayMinor = Math.max(1, Math.round(settings.priceKopecks * (EQUIVALENT_RATIO[display] ?? 1)))
 
 	const endsAt = new Date(at.getTime() + settings.days * DAY_MS)
@@ -335,7 +347,7 @@ export async function trialOffer(params: {
 		eligibilityDays: settings.eligibilityDays,
 		requireTelegram: settings.requireTelegram,
 		price: money(display, displayMinor),
-		charge: money(TABPAY_CURRENCY, settings.priceKopecks),
+		charge: money(settle, settings.priceKopecks),
 		equivalents: Object.keys(EQUIVALENT_RATIO).map((currency) =>
 			money(currency, Math.max(1, Math.round(settings.priceKopecks * (EQUIVALENT_RATIO[currency] ?? 1)))),
 		),
@@ -382,7 +394,7 @@ export async function claimTrial(params: {
 		planCode: plan.code,
 		ip: params.ip ?? null,
 		// The offer is priced in roubles; the equivalents are display only.
-		currency: TABPAY_CURRENCY,
+		currency: await chargeCurrency(),
 		allowHidden: true,
 		source: TRIAL_SOURCE,
 	})

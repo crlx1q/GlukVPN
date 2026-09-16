@@ -170,15 +170,26 @@ const EnvSchema = z.object({
 	REGISTER_REQUIRE_TELEGRAM: envFlag("false"),
 
 	// ------------------------------ billing ----------------------------------
-	// Payment gateway adapter: "" (billing hidden), "manual" (orders are
-	// created, an admin marks them paid), "stripe" (Checkout + webhook),
-	// "tabpay" (hosted RUB page for SBP/cards + signed webhook).
-	BILLING_PROVIDER: z.enum(["", "manual", "stripe", "tabpay"]).default(""),
+	// Which payment adapter serves checkout. This is only the *fallback*: the
+	// admin panel stores the live choice in billing_settings, and a value there
+	// wins. Kept as a free string on purpose - every folder under
+	// src/payments/<id> registers itself under its own id, so adding or
+	// deleting a gateway is a folder operation and not a schema change.
+	//
+	// Built-in ids: "" (billing hidden), "manual" (orders are created, an admin
+	// marks them paid), "stripe" (Checkout + webhook). Folder ids today:
+	// "tabpay", "mulenpay", "cashera".
+	BILLING_PROVIDER: z.string().default(""),
 	BILLING_CURRENCY: z.string().min(3).max(3).default("KZT"),
 	// Where the gateway sends the browser afterwards. Defaults derive from
-	// SITE_BASE_URL when empty.
+	// BILLING_APP_BASE_URL when empty.
 	BILLING_SUCCESS_URL: z.string().default(""),
 	BILLING_CANCEL_URL: z.string().default(""),
+	// Host that serves the return pages. The app shell lives on GitHub Pages,
+	// which is reachable from RU networks far more reliably than the marketing
+	// domain, and a payer coming back from a bank app must land on a page that
+	// actually loads.
+	BILLING_APP_BASE_URL: z.string().default("https://app.gluk.tech"),
 	// Shown to the user after a "manual" order is created. {orderId} and
 	// {amount} are substituted.
 	BILLING_MANUAL_INSTRUCTIONS: z
@@ -190,21 +201,10 @@ const EnvSchema = z.object({
 	STRIPE_SECRET_KEY: z.string().default(""),
 	STRIPE_WEBHOOK_SECRET: z.string().default(""),
 
-	// ------------------------------- TabPay ----------------------------------
-	// Russian acquirer with a hosted payment page: card data never touches this
-	// server, and the plan is handed out by the signed webhook rather than by
-	// the redirect back to the site. A sandbox shop speaks exactly the same API
-	// as a live one, so going live is a key swap and nothing else.
-	TABPAY_API_BASE: z.string().default("https://tabpay.org"),
-	// !! SECRETS !! TabPay only.
-	TABPAY_API_KEY: z.string().default(""),
-	TABPAY_WEBHOOK_SECRET: z.string().default(""),
-	// Which shop the key belongs to. Informational: the API identifies the shop
-	// by the key, but having the id in env makes a mismatch obvious.
-	TABPAY_SHOP_ID: z.string().default(""),
-	// Pin a single method ("SBP" or "CARD"); empty lets the payer choose.
-	TABPAY_METHOD: z.enum(["", "SBP", "CARD"]).default(""),
-	TABPAY_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(15000),
+	// Gateway credentials are *not* declared here. Each adapter reads its own
+	// keys straight from process.env inside src/payments/<id>/config.ts, which
+	// is what makes a folder deletable: no central schema mentions a gateway
+	// that no longer exists. See .env.example for the variable names.
 
 	// ----------------------------- trial offer -------------------------------
 	// Seed values for the "Basic for 1 ₽" promotion. They only fill the row on
@@ -473,10 +473,11 @@ function loadConfig(): Config {
 			env.SMTP_USER.trim().length > 0 &&
 			env.SMTP_PASSWORD.length > 0,
 		googleEnabled: env.GOOGLE_CLIENT_ID.trim().length > 0,
-		billingEnabled:
-			env.BILLING_PROVIDER === "manual" ||
-			(env.BILLING_PROVIDER === "stripe" && env.STRIPE_SECRET_KEY.trim().length > 0) ||
-			(env.BILLING_PROVIDER === "tabpay" && env.TABPAY_API_KEY.trim().length > 0),
+		// Coarse, env-only hint: "is billing configured at all". Whether the
+		// *selected* provider has usable credentials is decided at request time
+		// by services/billing.ts (billingStatus()), because the selection lives
+		// in the database and the credentials live in the adapter folders.
+		billingEnabled: env.BILLING_PROVIDER.trim().length > 0,
 		corsOrigins: env.CORS_ALLOWED_ORIGINS.split(",")
 			.map((origin) => origin.trim())
 			.filter((origin) => origin.length > 0),

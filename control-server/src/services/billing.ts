@@ -13,32 +13,33 @@
  *   - "stripe": Stripe Checkout (hosted page) + the `checkout.session.completed`
  *     webhook, verified with the endpoint secret. Written against Stripe's
  *     plain REST API with fetch, so there is no SDK to keep up to date.
- *   - "tabpay": TabPay's hosted page (SBP + cards, roubles only) + a webhook
- *     signed with the shop's secret. See `tabpay.ts`; the gateway settles in
- *     one currency, which is why `settlementCurrency()` exists.
+ *   - one folder per acquirer under `payments/` (TabPay, MulenPay, Cashera),
+ *     each implementing `PaymentModule` and loaded by `payments/registry`.
+ *     Which one is live is a row in the database, flipped in the admin panel -
+ *     not a redeploy.
  *
- * Adding Kaspi / Freedom Pay / CloudPayments / crypto means one more adapter
- * implementing `PaymentProvider`; nothing else changes.
+ * Nothing in this file names an acquirer any more, and that is the point:
+ * deleting `payments/mulenpay/` removes the gateway from the switch and from
+ * the build, and the shop keeps selling through the other two.
+ *
+ * A gateway that settles in one currency (all three Russian ones do) is why
+ * `settlementCurrency()` and `minimumChargeMinor()` exist - and why they, like
+ * `provider()` itself, are async now: the answer depends on a row.
  */
 import { createHmac, timingSafeEqual } from "node:crypto"
 import type { Order, Plan, Prisma, User } from "@prisma/client"
 import { config } from "../config"
 import { writeAudit } from "../lib/audit"
 import { badRequest, conflict, notFound, serviceUnavailable } from "../lib/errors"
+import { paymentModule } from "../payments/registry"
+import { activeProviderId } from "../payments/settings"
+import type { PaymentEvent, PaymentModule, PaymentSnapshot } from "../payments/types"
+import { returnUrls, webhookUrl } from "../payments/urls"
 import { prisma } from "../prisma"
 import { FREE_PLAN_CODE } from "./entitlements"
 import { requestPolicySync } from "./policy"
 import { type PlanWithPrices, resolvePlanPrice } from "./pricing"
 import { type PromoApplication, applyPromo, redeemPromo } from "./promo"
-import {
-	TABPAY_CURRENCY,
-	TABPAY_MIN_KOPECKS,
-	type TabpayPayment,
-	type TabpayWebhookEvent,
-	findTabpayPaymentByOrderId,
-	getTabpayPayment,
-	tabpayProvider,
-} from "./tabpay"
 
 // --------------------------------------------------------------- plans -----
 
@@ -301,33 +302,118 @@ const stripeProvider: PaymentProvider = {
 	},
 }
 
-function provider(): PaymentProvider {
-	if (!config.billingEnabled) throw serviceUnavailable("Billing is not enabled on this server")
-	if (config.BILLING_PROVIDER === "stripe") return stripeProvider
-	if (config.BILLING_PROVIDER === "tabpay") return tabpayProvider
-	return manualProvider
+/**
+ * Wraps a payment folder as a provider.
+ *
+ * The only place where our order model meets a gateway's, and deliberately
+ * thin: it fills in `PaymentOrderInput` and hands over. Everything specific to
+ * an acquirer - signatures, receipts, status words - stays in its folder.
+ */
+function moduleProvider(mod: PaymentModule): PaymentProvider {
+	return {
+		name: mod.id,
+		async createCheckout(order, plan, user) {
+			const meta = orderMetadata(order)
+			const isTrial = meta.source === "trial"
+			const urls = returnUrls({ orderId: order.id, isTrial })
+			// The short order id is what a payer sees on a bank statement and
+			// quotes to support, so it belongs in the description.
+			const reference = order.id.slice(0, 8).toUpperCase()
+			return mod.createCheckout({
+				orderId: order.id,
+				amountMinor: order.amountMinor,
+				currency: order.currency,
+				description: `GlukVPN ${plan.name}, ${plan.days} дн. (заказ ${reference})`,
+				isTrial,
+				successUrl: urls.successUrl,
+				failUrl: urls.failUrl,
+				webhookUrl: webhookUrl(mod.id),
+				customer: {
+					userId: user.id,
+					email: user.email,
+					// Digits only. A @username is not an id, and a gateway asked to
+					// treat one as a number answers with a validation error.
+					telegramId: /^\d+$/.test(String(user.telegramId ?? "")) ? String(user.telegramId) : null,
+				},
+				metadata: {
+					orderId: order.id,
+					userId: user.id,
+					planCode: plan.code,
+					channel: "glukvpn",
+					...(typeof meta.source === "string" ? { source: meta.source } : {}),
+				},
+			})
+		},
+	}
+}
+
+/**
+ * The gateway the next payment goes through.
+ *
+ * A provider that is selected but not installed, or installed without keys, is
+ * refused here rather than papered over: the alternative is an order nobody
+ * can pay and a customer staring at a broken link.
+ */
+async function provider(): Promise<PaymentProvider> {
+	const id = await activeProviderId()
+	if (!id) throw serviceUnavailable("Billing is not enabled on this server")
+	if (id === "manual") return manualProvider
+	if (id === "stripe") {
+		if (!config.STRIPE_SECRET_KEY.trim()) throw serviceUnavailable("Stripe is not configured")
+		return stripeProvider
+	}
+	const mod = paymentModule(id)
+	if (!mod) throw serviceUnavailable("The selected payment provider is not installed")
+	if (!mod.configured()) throw serviceUnavailable(`${mod.label} is not configured`)
+	return moduleProvider(mod)
+}
+
+export type BillingStatus = {
+	/** Can this server take money right now. */
+	enabled: boolean
+	/** The selected provider id, even when it cannot take money. */
+	provider: string
+}
+
+/**
+ * Whether the shop can sell, and through what.
+ *
+ * This replaces `config.billingEnabled`, which could only ever read .env. The
+ * answer now depends on the row an administrator flipped and on whether that
+ * folder is still installed and holding keys.
+ */
+export async function billingStatus(): Promise<BillingStatus> {
+	const id = await activeProviderId()
+	if (!id) return { enabled: false, provider: "" }
+	if (id === "manual") return { enabled: true, provider: id }
+	if (id === "stripe") return { enabled: config.STRIPE_SECRET_KEY.trim().length > 0, provider: id }
+	const mod = paymentModule(id)
+	return { enabled: mod ? mod.configured() : false, provider: id }
 }
 
 /** Which adapter is live, or "" when billing is switched off. */
-export function activeProviderName(): string {
-	return config.billingEnabled ? config.BILLING_PROVIDER : ""
+export async function activeProviderName(): Promise<string> {
+	const status = await billingStatus()
+	return status.enabled ? status.provider : ""
 }
 
 /**
  * The currency the active gateway can actually settle in, or null when it
  * takes whatever the visitor was quoted.
  *
- * TabPay is a Russian acquirer: roubles and nothing else. Without this, a
- * visitor quoted "790 ₸" would be handed a checkout for 790 roubles, and the
- * one-rouble trial would be a one-tenge trial.
+ * All three Russian acquirers settle in roubles and nothing else. Without
+ * this, a visitor quoted "790 ₸" would be handed a checkout for 790 roubles,
+ * and the one-rouble trial would be a one-tenge trial.
  */
-export function settlementCurrency(): string | null {
-	return config.BILLING_PROVIDER === "tabpay" ? TABPAY_CURRENCY : null
+export async function settlementCurrency(): Promise<string | null> {
+	const mod = paymentModule(await activeProviderId())
+	return mod ? mod.currency : null
 }
 
 /** Smallest amount the active gateway accepts, in minor units. */
-export function minimumChargeMinor(): number {
-	return config.BILLING_PROVIDER === "tabpay" ? TABPAY_MIN_KOPECKS : 1
+export async function minimumChargeMinor(): Promise<number> {
+	const mod = paymentModule(await activeProviderId())
+	return mod ? mod.minimumMinor : 1
 }
 
 // --------------------------------------------------------------- orders ----
@@ -401,7 +487,7 @@ export async function createOrder(params: {
 	/** Recorded on the order; "trial" makes the grant a trial subscription. */
 	source?: string | null
 }): Promise<{ order: Order & { plan: Plan }; checkout: CheckoutResult }> {
-	const gateway = provider()
+	const gateway = await provider()
 	const plan = await prisma.plan.findFirst({
 		where: {
 			code: params.planCode.toLowerCase(),
@@ -419,7 +505,7 @@ export async function createOrder(params: {
 	const quoted = resolvePlanPrice(plan, params.currency)
 	// When the gateway settles in a single currency, that currency wins and the
 	// quote is kept on the order so the site can explain the conversion.
-	const settle = settlementCurrency()
+	const settle = await settlementCurrency()
 	const price = settle ? resolvePlanPrice(plan, settle) : quoted
 	if (settle && price.currency.toUpperCase() !== settle) {
 		throw serviceUnavailable("This plan is not priced in the gateway's currency")
@@ -434,7 +520,7 @@ export async function createOrder(params: {
 			planCode: plan.code,
 			amountMinor: price.priceMinor,
 			currency: price.currency,
-			minimumMinor: minimumChargeMinor(),
+			minimumMinor: await minimumChargeMinor(),
 		})
 	}
 	const amountMinor = promo ? promo.amountMinor : price.priceMinor
@@ -499,8 +585,8 @@ export async function createOrder(params: {
 			}
 		}
 		// "dead": that attempt is over. Fall through and open a fresh payment
-		// under a fresh order id - TabPay answers a repeated one with 409, never
-		// with a second attempt.
+		// under a fresh order id - a gateway answers a repeated one with a
+		// refusal, never with a second attempt.
 	}
 
 	const created = await prisma.order.create({
@@ -550,9 +636,9 @@ export async function markOrderPaid(params: {
 	by: "webhook" | "admin"
 	adminId?: string | null
 	/**
-	 * Accept money for an order we had already given up on. TabPay documents
-	 * late settlement - EXPIRED or FAILED can still become SUCCESS - and the
-	 * payment is real, so the plan has to follow it.
+	 * Accept money for an order we had already given up on. Late settlement is
+	 * documented behaviour - an expired or failed attempt can still turn into a
+	 * payment - and the money is real, so the plan has to follow it.
 	 */
 	revive?: boolean
 }): Promise<Order & { plan: Plan }> {
@@ -732,7 +818,7 @@ export async function handleStripeEvent(event: {
 	return { handled: true, orderId }
 }
 
-// ---------------------------------------------------------- tabpay hook ----
+// ----------------------------------------------------------- order state ----
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -788,9 +874,9 @@ export async function markOrderRefunded(params: {
  *   - "reuse": CREATED or PENDING. Nobody finished paying; the link still works.
  *   - "paid": SUCCESS. The money did arrive - grant the plan now rather than
  *     wait for a webhook that may never come, and never ask for it twice.
- *   - "dead": FAILED, EXPIRED, CANCELED, REFUNDED. Close this attempt so the
- *     caller opens a new payment under a new order id: TabPay answers a
- *     repeated orderId with 409, not with a second attempt.
+ *   - "dead": failed, expired, canceled, refunded. Close this attempt so the
+ *     caller opens a new payment under a new order id: a gateway answers a
+ *     repeated order id with a refusal, not with a second attempt.
  *
  * A gateway we cannot reach counts as "reuse": the payment may well be alive,
  * and inventing a second one for somebody who is mid-3DS is the worse of the
@@ -799,30 +885,36 @@ export async function markOrderRefunded(params: {
 type OpenOrderVerdict = "reuse" | "paid" | "dead"
 
 async function openOrderVerdict(order: Order, gatewayName: string): Promise<OpenOrderVerdict> {
-	if (gatewayName !== "tabpay") return "reuse"
-	let payment: TabpayPayment | null = null
+	const mod = paymentModule(gatewayName)
+	// "manual" has nothing to ask, and Stripe expires its own sessions: the
+	// stored link stays usable until its webhook says otherwise.
+	if (!mod) return "reuse"
+	let snapshot: PaymentSnapshot | null = null
 	try {
-		payment = order.providerRef
-			? await getTabpayPayment(order.providerRef)
-			: await findTabpayPaymentByOrderId(order.id)
+		snapshot = await mod.fetchStatus({ orderId: order.id, providerRef: order.providerRef })
 	} catch {
 		return "reuse"
 	}
-	if (!payment) return "reuse"
-	const status = String(payment.status ?? "").trim().toUpperCase()
-	if (!status || status === "CREATED" || status === "PENDING") return "reuse"
-	// Replaying the status through the webhook handler keeps a single code path
-	// for what a status means: the grant, the audit entry and the promo
-	// redemption are written identically whether the news arrived by webhook or
-	// by this lookup.
-	await handleTabpayEvent({
-		id: payment.id,
-		orderId: order.id,
-		status,
-		amountKopecks: payment.amountKopecks,
-		test: payment.isTest,
-	})
-	return status === "SUCCESS" ? "paid" : "dead"
+	if (!snapshot) return "reuse"
+	// Still payable, or a status this adapter does not recognise: leave the
+	// customer's link alone rather than act on a guess.
+	if (snapshot.kind === "pending" || snapshot.kind === "unknown" || snapshot.kind === "probe") return "reuse"
+	// Replaying the status through the event handler keeps a single code path for
+	// what a status means: the grant, the audit entry and the promo redemption
+	// are written identically whether the news arrived by webhook or by this
+	// lookup. `confirmed` records that the gateway's own API is the source.
+	await handlePaymentEvent(
+		mod.id,
+		{
+			kind: snapshot.kind,
+			orderId: order.id,
+			providerRef: snapshot.providerRef,
+			status: snapshot.status,
+			amountMinor: snapshot.amountMinor ?? null,
+		},
+		{ confirmed: true },
+	)
+	return snapshot.kind === "paid" ? "paid" : "dead"
 }
 
 export type OrderSyncResult = {
@@ -841,8 +933,10 @@ export type OrderSyncResult = {
  * refused attempt cannot stand in the way of the next one.
  */
 export async function reconcilePendingOrders(user: User, limit = 5): Promise<OrderSyncResult[]> {
-	const gateway = provider()
-	if (gateway.name !== "tabpay") return []
+	const gateway = await provider()
+	// Only a gateway folder can be asked about a payment: "manual" has no API
+	// and Stripe reports through its own webhook.
+	if (!paymentModule(gateway.name)) return []
 	const now = Date.now()
 	const open = await prisma.order.findMany({
 		where: {
@@ -850,7 +944,7 @@ export async function reconcilePendingOrders(user: User, limit = 5): Promise<Ord
 			provider: gateway.name,
 			OR: [
 				{ status: "PENDING", createdAt: { gt: new Date(now - 7 * 24 * 60 * 60 * 1000) } },
-				// TabPay settles late: an attempt we already wrote off can still turn
+				// Gateways settle late: an attempt we already wrote off can still turn
 				// into SUCCESS. Re-asking about yesterday's refusals costs one call
 				// and is the difference between "declined" and the plan somebody paid
 				// for; markOrderPaid revives FAILED and CANCELLED for exactly this.
@@ -875,7 +969,7 @@ export async function reconcilePendingOrders(user: User, limit = 5): Promise<Ord
 	return results
 }
 
-export type TabpayEventOutcome = {
+export type PaymentEventOutcome = {
 	handled: boolean
 	orderId?: string
 	status?: string
@@ -884,47 +978,85 @@ export type TabpayEventOutcome = {
 }
 
 /**
- * Applies one TabPay webhook. The signature is verified by the route before
- * this runs; the only job here is to move the order.
+ * Applies one webhook, whichever wallet sent it.
  *
- * Anything unrecognised is acknowledged rather than refused: the gateway
- * retries every non-2xx for a day, and an event about an order this database
- * does not have (the other environment's shop, a purged order) will never
- * start succeeding.
+ * The delivery is authenticated by the route (`verifyWebhook`) and translated
+ * into our vocabulary by the provider folder (`parseWebhook`). Everything here
+ * is about the order, so it is identical for all three gateways.
+ *
+ * Two rails stop a webhook from being a way to get a free subscription:
+ *
+ *   - a gateway whose callback carries no signature at all (MulenPay) sets
+ *     `confirmWebhookByStatus`, and a "paid" claim is then re-read from the
+ *     gateway's own API before anything is handed out. `options.confirmed` is
+ *     how reconciliation says "this came from the API, don't ask twice";
+ *   - the amount is compared with the order. A callback that pays 1 rouble for
+ *     a 990-rouble plan is a mismatch, not a sale.
+ *
+ * Anything unrecognised is acknowledged rather than refused: a gateway retries
+ * every non-2xx for hours, and an event about an order this database does not
+ * have (the other environment's shop, a purged order) will never start
+ * succeeding.
  */
-export async function handleTabpayEvent(event: TabpayWebhookEvent): Promise<TabpayEventOutcome> {
-	const paymentId = typeof event.id === "string" ? event.id.trim() : ""
-	const orderId = typeof event.orderId === "string" ? event.orderId.trim() : ""
-	const status = typeof event.status === "string" ? event.status.trim().toUpperCase() : ""
+export async function handlePaymentEvent(
+	providerId: string,
+	event: PaymentEvent,
+	options: { confirmed?: boolean } = {},
+): Promise<PaymentEventOutcome> {
+	const status = event.status.trim()
+	const orderId = (event.orderId ?? "").trim()
+	const providerRef = (event.providerRef ?? "").trim()
 
-	// The dashboard's "send test webhook" button signs a synthetic event whose
-	// id is not a payment. It proves the URL and the secret, and must hand out
-	// nothing. `test: true` is a different thing entirely: a sandbox payment is
-	// exactly what the bank's reviewer will make, and it has to work.
-	if (paymentId.startsWith("test-")) return { handled: false, ignored: "probe", status }
-	if (!orderId || !status) return { handled: false, ignored: "malformed" }
+	// A dashboard "send test webhook" button proves the URL and the secret and
+	// must hand out nothing. A sandbox *payment* is a different thing entirely:
+	// that is exactly what a bank's reviewer makes, and it has to work.
+	if (event.kind === "probe") return { handled: false, ignored: "probe", status }
+	if (event.kind === "unknown") return { handled: false, ignored: "no_action", status }
+	if (!orderId) return { handled: false, ignored: "malformed", status }
 	if (!UUID_RE.test(orderId)) return { handled: false, ignored: "unknown_order", orderId, status }
 
-	const known = await prisma.order.findUnique({ where: { id: orderId }, select: { id: true } })
+	const known = await prisma.order.findUnique({
+		where: { id: orderId },
+		select: { id: true, provider: true, amountMinor: true },
+	})
 	if (!known) return { handled: false, ignored: "unknown_order", orderId, status }
 
-	switch (status) {
-		case "SUCCESS":
-			await markOrderPaid({ orderId, providerRef: paymentId || null, by: "webhook", revive: true })
+	// The order remembers which wallet opened it. After a switch in the panel
+	// the previous gateway's late deliveries keep arriving, and they must not be
+	// applied as if the new one had taken the money.
+	if (known.provider && known.provider !== providerId) {
+		return { handled: false, ignored: "provider_mismatch", orderId, status }
+	}
+
+	switch (event.kind) {
+		case "paid": {
+			const mod = paymentModule(providerId)
+			if (mod?.confirmWebhookByStatus && !options.confirmed) {
+				const snapshot = await mod
+					.fetchStatus({ orderId, providerRef: providerRef || null })
+					.catch(() => null)
+				if (snapshot?.kind !== "paid") {
+					return { handled: false, ignored: "status_unconfirmed", orderId, status }
+				}
+			}
+			if (typeof event.amountMinor === "number" && event.amountMinor !== known.amountMinor) {
+				return { handled: false, ignored: "amount_mismatch", orderId, status }
+			}
+			await markOrderPaid({ orderId, providerRef: providerRef || null, by: "webhook", revive: true })
 			return { handled: true, orderId, status }
-		case "FAILED":
-		case "EXPIRED":
-			await markOrderFailed({ orderId, status: "FAILED", reason: status.toLowerCase() })
+		}
+		case "failed":
+		case "expired":
+			await markOrderFailed({ orderId, status: "FAILED", reason: event.kind })
 			return { handled: true, orderId, status }
-		case "CANCELED":
-		case "CANCELLED":
+		case "canceled":
 			await markOrderFailed({ orderId, status: "CANCELLED", reason: "canceled" })
 			return { handled: true, orderId, status }
-		case "REFUNDED":
+		case "refunded":
 			await markOrderRefunded({ orderId, reason: "refunded" })
 			return { handled: true, orderId, status }
 		default:
-			// CREATED / PENDING, and whatever the status set grows into later.
+			// "pending", and whatever the vocabulary grows into later.
 			return { handled: false, ignored: "no_action", orderId, status }
 	}
 }

@@ -408,14 +408,14 @@ export async function plansView(user: User): Promise<BotView> {
 	const lines = ["💳 <b>Подписка</b>", planLine(status.entitlement)]
 	const rows: InlineButton[][] = []
 
-	if (!activeProviderName()) {
+	if (!(await activeProviderName())) {
 		// Nothing to sell without a gateway; the site may still take a transfer.
 		lines.push("", "Оплата в боте сейчас недоступна. Напишите нам или откройте сайт.")
 		rows.push([{ text: "🌐 Открыть сайт", url: siteUrl("/pricing/") }])
 		return { text: lines.join("\n"), markup: viewMarkup(rows) }
 	}
 
-	const settle = settlementCurrency()
+	const settle = await settlementCurrency()
 	lines.push("", "Выберите тариф — после оплаты подписка включится автоматически.", "")
 	for (const plan of plans) {
 		const price = resolvePlanPrice(plan, settle)

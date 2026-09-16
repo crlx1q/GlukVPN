@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify"
 import { z } from "zod"
 import { config } from "../config"
+import { billingStatus } from "../services/billing"
 import { requireRegistrationEnabled, serviceStatus } from "../services/serviceControl"
 import { writeAudit } from "../lib/audit"
 import { hashPassword, verifyPassword } from "../lib/crypto"
@@ -121,6 +122,28 @@ async function findByIdentifier(identifier: string) {
 	)
 }
 
+/**
+ * What every client needs to know about payments.
+ *
+ * Asked of the billing service rather than of .env: the gateway in use is the
+ * one an administrator selected, and it only counts as enabled while its
+ * folder is installed and holding credentials. The quoting currency stays an
+ * env value - it is what prices are displayed in, not what the gateway
+ * settles in.
+ */
+async function billingView(): Promise<{
+	enabled: boolean
+	provider: string | null
+	currency: string
+}> {
+	const status = await billingStatus()
+	return {
+		enabled: status.enabled,
+		provider: status.enabled ? status.provider : null,
+		currency: config.BILLING_CURRENCY,
+	}
+}
+
 export async function registrationRoutes(app: FastifyInstance): Promise<void> {
 	// ---------------------------------------------------------------- config
 	// One place for every client to learn what this deployment supports, so the
@@ -152,11 +175,7 @@ export async function registrationRoutes(app: FastifyInstance): Promise<void> {
 				clientId: config.googleEnabled ? config.GOOGLE_CLIENT_ID.trim() : null,
 				requireTelegram: config.GOOGLE_REQUIRE_TELEGRAM,
 			},
-			billing: {
-				enabled: config.billingEnabled,
-				provider: config.billingEnabled ? config.BILLING_PROVIDER : null,
-				currency: config.BILLING_CURRENCY,
-			},
+			billing: await billingView(),
 			codeTtlMinutes: config.VERIFICATION_CODE_TTL_MIN,
 			passwordMinLength: 8,
 		}),
