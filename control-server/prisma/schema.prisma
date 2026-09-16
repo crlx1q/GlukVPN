@@ -719,6 +719,25 @@ model TrialOffer {
   @@map("trial_offers")
 }
 
+/// Which payment gateway is live. One row, flipped in the admin panel.
+///
+/// BILLING_PROVIDER in .env seeds the choice and still answers while this
+/// table is empty; the row is what lets an administrator swap acquirer - a
+/// moderation refusal, an outage - without a deploy.
+///
+/// `provider` is either "" (billing off), "manual", "stripe", or the name of a
+/// folder under src/payments ("tabpay", "mulenpay", "cashera"). An id whose
+/// folder has been deleted from the build is not honoured: billing falls back
+/// to .env rather than charging through a gateway nobody chose. See
+/// src/payments/settings.ts.
+model BillingSettings {
+  id        String   @id @default("global")
+  provider  String   @default("")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("billing_settings")
+}
+
 model AuditLog {
   id        String   @id @default(uuid()) @db.Uuid
   userId    String?  @map("user_id") @db.Uuid

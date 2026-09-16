@@ -28,6 +28,9 @@ const state = {
 	channel: "current",
 	serviceSettings: null,
 	serviceBusy: false,
+	// Платёжка: выбранная и весь список так, как их показывает вкладка Billing.
+	gateway: null,
+	gatewayBusy: false,
 	// Акция и промокоды в том виде, в каком их сейчас показывает вкладка Billing.
 	trial: null,
 	trialBusy: false,
@@ -1795,6 +1798,149 @@ async function loadEgressBudget() {
 	}
 }
 
+/* ---------------- billing: платёжка ---------------- */
+/* Выбор платёжки лежит в базе, поэтому сменить эквайринг во время модерации или
+   сбоя — это клик здесь, а не деплой. Список честен насчёт папок: удалённую
+   платёжку панель показывает и выбрать не даёт, а установленную без ключей
+   выбрать можно, но она сама откажется принимать оплату. */
+
+const BUILTIN_GATEWAYS = {
+	"": { label: "Выключено", note: "Цены скрыты, оплата запрещена." },
+	manual: { label: "Вручную", note: "Заказы создаются, оплату отмечает администратор." },
+	stripe: { label: "Stripe", note: "Не для РФ: остаётся для зарубежных карт." },
+}
+
+function gatewayError(text) {
+	const box = el("gateway-error")
+	box.textContent = text
+	box.hidden = !text
+}
+
+/** Человеческое имя платёжки: встроенной или папки, даже удалённой. */
+function gatewayLabel(view, id) {
+	if (BUILTIN_GATEWAYS[id]) return BUILTIN_GATEWAYS[id].label
+	const list = view && view.gateways ? view.gateways : []
+	const found = list.find((gateway) => gateway.id === id)
+	return found ? found.label : id || "\u2014"
+}
+
+/** В каком состоянии папка платёжки: удалена, без ключей или готова. */
+function gatewayNote(gateway) {
+	if (!gateway.installed) return "Папка платёжки удалена с сервера — выбрать нельзя."
+	if (!gateway.configured) return "Установлена, но без ключей: оплату не примет."
+	return `Готова принимать оплату${gateway.currency ? ` в ${gateway.currency}` : ""}.`
+}
+
+/** Встроенные варианты и папки одним списком — в том порядке, что и в select. */
+function gatewayOptions(view) {
+	const builtin = (view.builtin || []).map((id) => ({
+		id,
+		label: BUILTIN_GATEWAYS[id] ? BUILTIN_GATEWAYS[id].label : id,
+		note: BUILTIN_GATEWAYS[id] ? BUILTIN_GATEWAYS[id].note : "",
+		selectable: true,
+		webhookUrl: "",
+	}))
+	const folders = (view.gateways || []).map((gateway) => ({
+		id: gateway.id,
+		label: gateway.installed ? gateway.label : `${gateway.label} \u00b7 папка удалена`,
+		note: gatewayNote(gateway),
+		selectable: gateway.installed,
+		webhookUrl: gateway.webhookUrl || "",
+	}))
+	return builtin.concat(folders)
+}
+
+/** Подсказка и адрес вебхука для варианта, выбранного в списке прямо сейчас. */
+function renderGatewayPick() {
+	if (!state.gateway) return
+	const picked = el("gateway-select").value
+	const option = gatewayOptions(state.gateway).find((item) => item.id === picked)
+	el("gateway-webhook").value = option && option.webhookUrl ? option.webhookUrl : "\u2014"
+	el("gateway-hint").textContent = state.gateway.switchable
+		? option
+			? option.note
+			: ""
+		: "Нужна миграция billing_settings."
+}
+
+function renderGateways(view) {
+	state.gateway = view
+	state.gatewayBusy = false
+	const select = el("gateway-select")
+	select.replaceChildren()
+	for (const option of gatewayOptions(view)) {
+		const node = document.createElement("option")
+		node.value = option.id
+		node.textContent = option.label
+		// Удалённую папку показываем, но выбрать не даём: сервер её всё равно не
+		// примет, а прятать её из списка — прятать причину, почему выбора нет.
+		node.disabled = !option.selectable
+		select.appendChild(node)
+	}
+	select.value = view.active || ""
+	select.disabled = !view.switchable
+	el("gateway-save").disabled = !view.switchable
+	el("gateway-block").setAttribute("aria-busy", "false")
+	el("gateway-state").textContent = view.billingEnabled
+		? `оплата идёт через ${gatewayLabel(view, view.active)}`
+		: "оплата сейчас не принимается"
+	el("gateway-scope").textContent = view.switchable
+		? `Выбрано в панели: ${gatewayLabel(view, view.active)} \u00b7 в .env: ${gatewayLabel(view, view.envProvider)}`
+		: "Выбор хранится в базе, но таблицы billing_settings на этом сервере ещё нет: решает BILLING_PROVIDER из .env."
+	gatewayError("")
+	renderGatewayPick()
+}
+
+async function loadGateways() {
+	try {
+		renderGateways(await request("/api/admin/billing/provider"))
+		return true
+	} catch (error) {
+		state.gateway = null
+		el("gateway-select").disabled = true
+		el("gateway-save").disabled = true
+		el("gateway-block").setAttribute("aria-busy", "true")
+		gatewayError(
+			error.status === 404
+				? "Этот control-server ещё не умеет переключать платёжки."
+				: `Не удалось загрузить список платёжек: ${error.message}`,
+		)
+		return false
+	}
+}
+
+async function saveGateway() {
+	if (!state.gateway || state.gatewayBusy) return
+	const next = el("gateway-select").value
+	if (next === state.gateway.active) {
+		gatewayError("")
+		toast(`${gatewayLabel(state.gateway, next)} уже выбрана.`)
+		return
+	}
+	state.gatewayBusy = true
+	el("gateway-save").disabled = true
+	try {
+		const result = await request("/api/admin/billing/provider", {
+			method: "POST",
+			body: { provider: next },
+		})
+		// Акция продаётся в валюте активной платёжки, поэтому её блок тоже
+		// перечитываем: иначе он покажет условия прошлого эквайринга.
+		await Promise.all([loadGateways(), loadTrial()])
+		toast(
+			result.billingEnabled
+				? `Оплата переключена на ${gatewayLabel(state.gateway, next)}.`
+				: `${gatewayLabel(state.gateway, next)} выбрана, но оплату пока не примет: нужны ключи.`,
+		)
+	} catch (error) {
+		await loadGateways()
+		gatewayError(`Платёжку не переключили: ${error.message}`)
+		toast(error.message, true)
+	} finally {
+		state.gatewayBusy = false
+	}
+}
+
 /* ---------------- billing: trial offer + promo codes ---------------- */
 /* Длина акции, окно регистрации, тариф, цена и сам выключатель лежат в базе,
    поэтому отключить рубль или отдать неделю Pro — это клик здесь, а не деплой.
@@ -2085,6 +2231,7 @@ async function loadAll() {
 						loadEgressBudget(),
 						loadDeploy(),
 						loadClientErrors(),
+						loadGateways(),
 						loadTrial(),
 						loadPromos(),
 					]
@@ -2482,6 +2629,14 @@ el("create-user-form").addEventListener("submit", async (event) => {
 
 el("trial-save").addEventListener("click", () => {
 	void saveTrial()
+})
+
+el("gateway-select").addEventListener("change", () => {
+	renderGatewayPick()
+})
+
+el("gateway-save").addEventListener("click", () => {
+	void saveGateway()
 })
 
 el("promo-new-btn").addEventListener("click", () => {

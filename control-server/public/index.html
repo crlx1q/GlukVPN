@@ -585,8 +585,39 @@
 						</div>
 					</section>
 
-					<!-- ---------------- биллинг: акция и промокоды ---------------- -->
+					<!-- ------------ биллинг: платёжка, акция и промокоды ------------ -->
 					<section class="tabview" data-view="billing" hidden>
+						<div class="block" id="gateway-block" aria-busy="true">
+							<div class="block-head">
+								<span class="block-title">
+									<svg class="ic" aria-hidden="true"><use href="#i-card" /></svg>
+									<h3>Платёжка</h3>
+								</span>
+								<span class="muted small actions" id="gateway-state"></span>
+								<p class="block-sub" id="gateway-scope">Загружаем платёжки…</p>
+							</div>
+							<div class="form-card form-grid">
+								<div class="field">
+									<label for="gateway-select">Принимать оплату через</label>
+									<select id="gateway-select" disabled></select>
+								</div>
+								<div class="field">
+									<label for="gateway-webhook">Адрес вебхука для кабинета платёжки</label>
+									<input id="gateway-webhook" type="text" readonly />
+								</div>
+							</div>
+							<div class="actions">
+								<button type="button" class="primary small" id="gateway-save" disabled>Переключить платёжку</button>
+								<span class="muted small" id="gateway-hint"></span>
+							</div>
+							<p class="muted small">
+								Оплату принимает только выбранная платёжка. Папку ненужной можно удалить
+								с сервера — она пропадёт из списка, остальные продолжат работать.
+								«Выключено» прячет цены и запрещает оплату.
+							</p>
+							<p class="notice is-error" id="gateway-error" role="alert" hidden></p>
+						</div>
+
 						<div class="block" id="trial-block" aria-busy="true">
 							<div class="block-head">
 								<span class="block-title">

@@ -66,8 +66,20 @@ export function providerIdExists(id: string): boolean {
 	return paymentModule(id) !== null
 }
 
+/**
+ * Whether a new choice can be stored at all.
+ *
+ * False on a server whose database has not run the `billing_settings`
+ * migration yet. Reading still works there - .env answers - so the panel can
+ * show the gateway in use and say why the switch is disabled, instead of
+ * offering a control that answers 503.
+ */
+export function providerSwitchAvailable(): boolean {
+	return settingsTable() !== null
+}
+
 /** The .env choice: the seed, and the fallback when the row cannot be used. */
-function envProviderId(): string {
+export function envProviderId(): string {
 	const id = config.BILLING_PROVIDER.trim()
 	return providerIdExists(id) ? id : ""
 }

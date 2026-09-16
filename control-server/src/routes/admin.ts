@@ -6,6 +6,15 @@ import { writeAudit } from "../lib/audit"
 import { generateSecret, hashPassword, hashSecret } from "../lib/crypto"
 import { badRequest, conflict, forbidden, notFound } from "../lib/errors"
 import { clientIp, getAuthUser, requireStaff } from "../middleware/auth"
+import { paymentModuleSummaries } from "../payments/registry"
+import {
+	BUILTIN_PROVIDER_IDS,
+	activeProviderId,
+	envProviderId,
+	providerSwitchAvailable,
+	setActiveProviderId,
+} from "../payments/settings"
+import { webhookUrl } from "../payments/urls"
 import { bytesToNumber, prisma } from "../prisma"
 import { deleteAccount } from "../services/accountDeletion"
 import { billingStatus, cancelOrder, grantPlan, markOrderPaid, orderView } from "../services/billing"
@@ -93,6 +102,10 @@ const TrialSettingsBody = z.object({
 	// Kopecks. The gateway refuses anything below one rouble.
 	priceKopecks: z.number().int().min(100).max(1_000_000).optional(),
 })
+
+// The gateway an administrator picked in the panel. An empty string is a valid
+// answer: it switches billing off without touching anybody's keys.
+const ProviderBody = z.object({ provider: z.string().trim().max(40) })
 
 const CreatePromoBody = z.object({
 	code: z.string().trim().min(2).max(32),
@@ -1481,6 +1494,62 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 		const { user: admin } = getAuthUser(request)
 		await cancelOrder(parsed.data.id, admin.id)
 		return reply.send({ ok: true })
+	})
+
+	// ----------------------------------------------------------- gateway ----
+
+	/**
+	 * Which acquirer takes the money.
+	 *
+	 * The choice lives in the database, so swapping gateway during a moderation
+	 * review or an outage is a click here instead of a deploy. The list is
+	 * honest about folders: a deleted one is reported as not installed and
+	 * cannot be selected, and an installed one without keys is listed but
+	 * refuses to charge. "Installed but unconfigured" is a real state, and
+	 * hiding it would hide a broken checkout.
+	 */
+	app.get("/api/admin/billing/provider", async (_request, reply) => {
+		const [active, billing] = await Promise.all([activeProviderId(), billingStatus()])
+		return reply.send({
+			billingEnabled: billing.enabled,
+			provider: billing.enabled ? billing.provider : null,
+			active,
+			// What .env would choose: the seed, and the answer if the row is gone.
+			envProvider: envProviderId(),
+			// False until this server runs the billing_settings migration: the
+			// gateway in use still reads, a new one cannot be stored.
+			switchable: providerSwitchAvailable(),
+			builtin: BUILTIN_PROVIDER_IDS,
+			gateways: paymentModuleSummaries().map((gateway) => ({
+				...gateway,
+				active: gateway.id === active,
+				// The address to type into the gateway's own dashboard.
+				webhookUrl: webhookUrl(gateway.id),
+			})),
+		})
+	})
+
+	app.post("/api/admin/billing/provider", async (request, reply) => {
+		const parsed = ProviderBody.safeParse(request.body ?? {})
+		if (!parsed.success) throw badRequest("provider is required")
+		const { user: admin } = getAuthUser(request)
+		const previous = await activeProviderId()
+		// An unknown id or a deleted folder is refused here, rather than stored
+		// and discovered by the next customer at the checkout.
+		const active = await setActiveProviderId(parsed.data.provider)
+		const billing = await billingStatus()
+		await writeAudit({
+			action: "admin.billing.provider",
+			userId: admin.id,
+			ip: clientIp(request),
+			metadata: { from: previous, to: active, enabled: billing.enabled },
+		})
+		return reply.send({
+			ok: true,
+			active,
+			billingEnabled: billing.enabled,
+			provider: billing.enabled ? billing.provider : null,
+		})
 	})
 
 	// ------------------------------------------------------ trial offer ----
