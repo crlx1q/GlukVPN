@@ -437,6 +437,13 @@ class VpnController extends ChangeNotifier {
   /// можно обойти [nodePingCooldown].
   Future<void> measureNodePings({bool force = false}) async {
     if (_measuringPings || _disposed) return;
+    // Мерить можно только с опущенным туннелем: через поднятый TUN
+    // хендшейк закрывает локальный стек, и все узлы отдают одинаковые
+    // 1–2 мс. Те же правила в расширении (background.js) и на ПК.
+    if (_state == VpnUiState.connected || _state == VpnUiState.connecting) {
+      debugPrint('vpn: node ping sweep skipped (tunnel_up, force=$force)');
+      return;
+    }
     final DateTime now = DateTime.now();
     final List<VpnNodeInfo> stale = <VpnNodeInfo>[
       for (final VpnNodeInfo node in _nodes)

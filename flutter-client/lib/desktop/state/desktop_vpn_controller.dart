@@ -1543,6 +1543,15 @@ class DesktopVpnController extends ChangeNotifier {
   /// только так можно обойти [nodePingCooldown].
   Future<void> measureNodePings({bool force = false}) async {
     if (_measuringPings || _disposed) return;
+    // Мерить можно только с опущенным туннелем. С поднятым TUN
+    // TCP-хендшейк закрывает локальный стек sing-box, а не узел, и весь
+    // флот показывает одинаковые 1–2 мс независимо от расстояния.
+    // То же правило в расширении: background.js, measureNodePings →
+    // skipped: 'tunnel_up'. Старые цифры честнее свежего вранья.
+    if (_phase.isConnected || _phase == ConnectionPhase.connecting) {
+      dlog.write('ping', 'node sweep skipped: tunnel_up (force=$force)');
+      return;
+    }
     final DateTime now = DateTime.now();
     final List<VpnNodeInfo> stale = <VpnNodeInfo>[
       for (final VpnNodeInfo node in userVisibleNodes)

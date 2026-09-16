@@ -80,7 +80,7 @@ class PingService {
   /// the active channel instead of the compile-time default.
   Future<PingSample> measure({String? host, String? apiBaseUrl}) async {
     if (host != null && host.isNotEmpty) {
-      final int? icmp = await _icmpRtt(host);
+      final int? icmp = _plausible(await _icmpRtt(host));
       if (icmp != null) {
         return PingSample(source: PingSource.tunnelGateway, milliseconds: icmp);
       }
@@ -103,14 +103,14 @@ class PingService {
     List<int> tcpPorts = const <int>[443, 80],
   }) async {
     if (host.isEmpty) return const PingSample.empty();
-    final int? icmp = await _icmpRtt(host);
+    final int? icmp = _plausible(await _icmpRtt(host));
     if (icmp != null) {
       return PingSample(source: PingSource.tunnelGateway, milliseconds: icmp);
     }
     // ICMP молчит — это ещё не ответ про сервер. На Windows и в
     // мобильных сетях эхо режут целиком: список серверов оставался
     // вообще без цифр, а деления стояли на «среднем по умолчанию».
-    final int? tcp = await _tcpRtt(host, tcpPorts);
+    final int? tcp = _plausible(await _tcpRtt(host, tcpPorts));
     if (tcp == null) return const PingSample.empty();
     return PingSample(source: PingSource.tcpHandshake, milliseconds: tcp);
   }
@@ -165,12 +165,21 @@ class PingService {
           break;
         }
       }
-      // Ноль миллисекунд бывает только у локальной петли; в UI нулёвой
-      // пинг читается как «замера нет», поэтому поднимаем до 1 мс.
-      if (best != null) return best == 0 ? 1 : best;
+      // Ноль миллисекунд до удалённого узла не бывает: так отвечает
+      // локальный стек — наш TUN, прокси или петля. Прежняя выдуманная
+      // 1 мс ровно этим и оборачивалась: «1–2 мс» у всего флота.
+      if (best != null) return best;
     }
     return null;
   }
+
+  /// Отбрасывает нефизичные замеры.
+  ///
+  /// До удалённого узла меньше миллисекунды не бывает: такой ответ
+  /// закрыл локальный стек — наш же TUN-адаптер или прокси. Пустой
+  /// замер честнее выдуманной цифры: в списке лучше «--», чем «1 мс»
+  /// у сервера на другом континенте.
+  static int? _plausible(int? ms) => (ms == null || ms <= 0) ? null : ms;
 
   /// ICMP замер одного хоста.
   ///
