@@ -322,7 +322,11 @@
             type: "standard",
             theme: "filled_black",
             size: "large",
-            shape: "pill",
+            /* Прямоугольная, а не pill: корпус с радиусом 14px рисуем мы — тот
+               же, что у кнопки Telegram. Пилюля GIS внутри такого корпуса
+               оставляла по углам светлые уголки. Высоту GIS отдаёт только через
+               size, поэтому сравнивает её с Telegram уже CSS (min-height корпуса). */
+            shape: "rectangular",
             width: width,
             text: "signin",
             logo_alignment: "left",
