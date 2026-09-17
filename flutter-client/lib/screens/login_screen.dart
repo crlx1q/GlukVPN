@@ -48,6 +48,10 @@ class _LoginViewState extends State<LoginView> {
   bool _linking = false;
   bool _linkCancelled = false;
 
+  /// Which provider started the running flow, so the other button does not
+  /// borrow its spinner.
+  bool _linkViaTelegram = true;
+
   @override
   void dispose() {
     _identifier.dispose();
@@ -98,7 +102,17 @@ class _LoginViewState extends State<LoginView> {
   /// they are confirming somebody else's request. It also owns cancellation:
   /// closing it stops the poll instead of leaving it running for the link's
   /// full five minutes.
-  Future<void> _signInWithTelegram() async {
+  Future<void> _signInWithTelegram() => _signInWithLink(viaTelegram: true);
+
+  /// ROUND 13: the Google button, running the very same grant.
+  ///
+  /// Only the place of confirmation differs: `verifyUrl` is the site's
+  /// `/link/?code=...` card, where one press of "Continue with Google"
+  /// finishes the sign-in. The Google credential stays in the browser, so the
+  /// app never stores one and there is no second sign-in system to secure.
+  Future<void> _signInWithGoogle() => _signInWithLink(viaTelegram: false);
+
+  Future<void> _signInWithLink({required bool viaTelegram}) async {
     if (_linking) return;
     final AuthController auth = context.read<AuthController>();
     if (auth.busy) return;
@@ -107,6 +121,7 @@ class _LoginViewState extends State<LoginView> {
     setState(() {
       _linking = true;
       _linkCancelled = false;
+      _linkViaTelegram = viaTelegram;
     });
 
     LinkAuthStart? started;
@@ -118,23 +133,29 @@ class _LoginViewState extends State<LoginView> {
       onStarted: (LinkAuthStart start) {
         started = start;
         if (!mounted) return;
-        // Open the bot first, then show the sheet: the user is looking at
-        // Telegram within a second, and the sheet is what they come back to.
-        LinkOpener.openOrCopy(
-          context,
-          start.confirmUrl,
-          failureMessage: context.strings.telegramCannotOpen,
-        );
+        final AppStrings sheetStrings = context.strings;
+        // Telegram confirms in the bot, Google on the site's link card.
+        final String target = viaTelegram ? start.confirmUrl : start.verifyUrl;
+        final String cannotOpen = viaTelegram
+            ? sheetStrings.telegramCannotOpen
+            : (sheetStrings.isRussian
+                ? 'Не удалось открыть браузер. Откройте ссылку вручную: $target'
+                : 'Could not open the browser. Open this link manually: $target');
+        // Open the target first, then show the sheet: the user is looking at
+        // the confirmation within a second, and the sheet is what they come
+        // back to.
+        LinkOpener.openOrCopy(context, target, failureMessage: cannotOpen);
         showModalBottomSheet<void>(
           context: context,
           backgroundColor: Colors.transparent,
           isDismissible: true,
-          builder: (BuildContext sheetContext) => _TelegramSheet(
+          builder: (BuildContext sheetContext) => _LinkSheet(
             start: start,
+            viaTelegram: viaTelegram,
             onOpenAgain: () => LinkOpener.openOrCopy(
               sheetContext,
-              start.confirmUrl,
-              failureMessage: sheetContext.strings.telegramCannotOpen,
+              target,
+              failureMessage: cannotOpen,
             ),
           ),
         ).then((_) {
@@ -308,7 +329,7 @@ class _LoginViewState extends State<LoginView> {
                     mark: const TelegramMark(size: 20),
                     label: s.telegram,
                     enabled: AppConfig.telegramSignInEnabled && !auth.busy,
-                    busy: _linking,
+                    busy: _linking && _linkViaTelegram,
                     onTap: _signInWithTelegram,
                   ),
                 ),
@@ -317,7 +338,9 @@ class _LoginViewState extends State<LoginView> {
                   child: _SocialButton(
                     mark: const GoogleMark(size: 20),
                     label: s.google,
-                    enabled: AppConfig.googleSignInEnabled,
+                    enabled: AppConfig.googleSignInEnabled && !auth.busy,
+                    busy: _linking && !_linkViaTelegram,
+                    onTap: _signInWithGoogle,
                   ),
                 ),
               ],
@@ -374,21 +397,46 @@ class LoginScreen extends StatelessWidget {
   }
 }
 
-/// What the user sees while the bot has the question.
+/// What the user sees while the bot - or the website - has the question.
 ///
-/// The code is the point of this sheet. Telegram will show the same eight
-/// characters, and a request whose code does not match is somebody else's -
-/// which is the only way a person can catch a confirmation they did not start.
-class _TelegramSheet extends StatelessWidget {
-  const _TelegramSheet({required this.start, required this.onOpenAgain});
+/// The code is the point of this sheet. The confirmation screen shows the same
+/// eight characters, and a request whose code does not match is somebody
+/// else's - which is the only way a person can catch a confirmation they did
+/// not start.
+class _LinkSheet extends StatelessWidget {
+  const _LinkSheet({
+    required this.start,
+    required this.viaTelegram,
+    required this.onOpenAgain,
+  });
 
   final LinkAuthStart start;
+
+  /// Telegram confirms in the bot; Google confirms on the site's link card.
+  final bool viaTelegram;
   final VoidCallback onOpenAgain;
 
   @override
   Widget build(BuildContext context) {
     final AppStrings s = context.strings;
+    final bool ru = s.isRussian;
     final TextTheme text = Theme.of(context).textTheme;
+    final String title = viaTelegram
+        ? s.telegramSignInTitle
+        : (ru ? 'Вход через Google' : 'Sign in with Google');
+    final String bodyText = viaTelegram
+        ? s.telegramSignInBody
+        : (ru
+            ? 'В браузере откроется страница подтверждения. Нажмите «Продолжить с Google» — экран закроется сам.'
+            : 'The confirmation page opens in your browser. Press "Continue with Google" and this screen finishes by itself.');
+    final String waiting = viaTelegram
+        ? s.telegramWaiting
+        : (ru
+            ? 'Ждём подтверждения в браузере…'
+            : 'Waiting for confirmation in your browser…');
+    final String openLabel = viaTelegram
+        ? s.telegramOpenBot
+        : (ru ? 'Открыть браузер' : 'Open the browser');
 
     return SafeArea(
       child: Padding(
@@ -402,15 +450,15 @@ class _TelegramSheet extends StatelessWidget {
             children: <Widget>[
               Row(
                 children: <Widget>[
-                  const TelegramMark(size: 22),
+                  viaTelegram
+                      ? const TelegramMark(size: 22)
+                      : const GoogleMark(size: 22),
                   const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(s.telegramSignInTitle, style: text.titleLarge),
-                  ),
+                  Expanded(child: Text(title, style: text.titleLarge)),
                 ],
               ),
               const SizedBox(height: 10),
-              Text(s.telegramSignInBody, style: text.bodyMedium),
+              Text(bodyText, style: text.bodyMedium),
               if (start.userCode.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 16),
                 Text(s.confirmationCode.toUpperCase(),
@@ -434,13 +482,13 @@ class _TelegramSheet extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(s.telegramWaiting, style: text.bodySmall),
+                    child: Text(waiting, style: text.bodySmall),
                   ),
                 ],
               ),
               const SizedBox(height: 18),
               PrimaryPillButton(
-                label: s.telegramOpenBot,
+                label: openLabel,
                 icon: Icons.open_in_new_rounded,
                 onPressed: onOpenAgain,
               ),

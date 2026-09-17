@@ -194,7 +194,7 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
   /// ROUND 12: which door the running request came through. The website flow
   /// and the Telegram flow are the same grant and share one busy flag, but
   /// only the button that was actually pressed should show a spinner.
-  bool _linkViaTelegram = false;
+  _LinkSource _linkSource = _LinkSource.site;
 
   /// Signs in through the website without a password field in this window.
   ///
@@ -203,11 +203,14 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
   /// already signed in there, and this window collects the tokens. The Chrome
   /// extension calls the same three endpoints, so there is now one sign-in
   /// system instead of three improvised ones.
-  Future<void> _signInWithLink({bool viaTelegram = false}) async {
+  Future<void> _signInWithLink({
+    bool viaTelegram = false,
+    _LinkSource source = _LinkSource.site,
+  }) async {
     if (_linkBusy) return;
     setState(() {
       _linkBusy = true;
-      _linkViaTelegram = viaTelegram;
+      _linkSource = source;
       _linkCancelled = false;
       _linkCode = null;
       _localError = null;
@@ -260,7 +263,7 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
     if (!mounted) return;
     setState(() {
       _linkBusy = false;
-      _linkViaTelegram = false;
+      _linkSource = _LinkSource.site;
       _linkCode = null;
       if (outcome == LinkSignInOutcome.signedIn ||
           outcome == LinkSignInOutcome.cancelled) {
@@ -516,10 +519,13 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
                           label: 'Telegram',
                           enabled: AppConfig.telegramSignInEnabled && !busy,
                           soonLabel: _ru ? 'скоро' : 'soon',
-                          busy: _linkBusy && _linkViaTelegram,
+                          busy: _linkBusy && _linkSource == _LinkSource.telegram,
                           onTap: (busy || _linkBusy)
                               ? null
-                              : () => _signInWithLink(viaTelegram: true),
+                              : () => _signInWithLink(
+                                    viaTelegram: true,
+                                    source: _LinkSource.telegram,
+                                  ),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -528,7 +534,13 @@ class _DesktopLoginScreenState extends State<DesktopLoginScreen>
                           mark: const GoogleMark(size: 18),
                           label: 'Google',
                           enabled: AppConfig.googleSignInEnabled && !busy,
-                          soonLabel: _ru ? 'скоро' : 'soon',
+                          busy: _linkBusy && _linkSource == _LinkSource.google,
+                          onTap: (busy || _linkBusy)
+                              ? null
+                              : () => _signInWithLink(
+                                    viaTelegram: false,
+                                    source: _LinkSource.google,
+                                  ),
                         ),
                       ),
                     ],
@@ -844,18 +856,22 @@ class _OutlineButton extends StatelessWidget {
   }
 }
 
+/// Which button started the link flow, so only that one spins.
+enum _LinkSource { site, telegram, google }
+
 /// Telegram / Google.
 ///
-/// Google is still a placeholder and says so on hover. Telegram is a real
-/// button since ROUND 12: it starts the same device-authorization grant the
-/// phone uses and opens the bot, which is why this widget now takes an
-/// `onTap` and can show its own spinner.
+/// Both are real buttons now: they start the same device-authorization grant,
+/// Telegram confirming in the bot and Google on the website's link card, which
+/// is why this widget takes an `onTap` and can show its own spinner.
+/// `soonLabel` is only the hover text for a provider the deployment turned
+/// off; wired buttons leave it out.
 class _SocialButton extends StatelessWidget {
   const _SocialButton({
     required this.mark,
     required this.label,
     required this.enabled,
-    required this.soonLabel,
+    this.soonLabel,
     this.onTap,
     this.busy = false,
   });
@@ -863,7 +879,10 @@ class _SocialButton extends StatelessWidget {
   final Widget mark;
   final String label;
   final bool enabled;
-  final String soonLabel;
+
+  /// Hover text for a provider this build has switched off. Null falls back
+  /// to the provider's own name.
+  final String? soonLabel;
 
   /// Null means "not wired yet": the pill still renders so the layout is
   /// final, but clicking does nothing and the tooltip explains why.
@@ -910,7 +929,7 @@ class _SocialButton extends StatelessWidget {
     );
 
     if (!enabled || onTap == null) {
-      return Tooltip(message: soonLabel, child: body);
+      return Tooltip(message: soonLabel ?? label, child: body);
     }
     // Material + InkWell so the ripple is clipped to the pill instead of
     // landing on the card behind it.
