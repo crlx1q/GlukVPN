@@ -37,14 +37,14 @@
   <link rel="stylesheet" href="/assets/css/fonts.css?v=1.3.0">
   <link rel="stylesheet" href="/assets/css/tokens.css?v=1.3.0">
   <link rel="stylesheet" href="/assets/css/base.css?v=1.3.0">
-  <link rel="stylesheet" href="/assets/css/components.css?v=1.3.0">
-  <link rel="stylesheet" href="/assets/css/sections.css?v=1.3.1">
+  <link rel="stylesheet" href="/assets/css/components.css?v=1.3.2">
+  <link rel="stylesheet" href="/assets/css/sections.css?v=1.3.2">
   <link rel="stylesheet" href="/assets/css/app-ui.css?v=1.3.0">
   <link rel="stylesheet" href="/assets/css/utilities.css?v=1.3.0">
   <link rel="stylesheet" href="/assets/css/fx.css?v=1.3.0">
   <link rel="stylesheet" href="/assets/css/auth.css?v=20260907.1">
   <link rel="stylesheet" href="/assets/css/trial.css?v=20260909.2">
-  <script src="/assets/js/config.js?v=20260912.1" defer></script>
+  <script src="/assets/js/config.js?v=20260912.2" defer></script>
   <script src="/assets/js/i18n.js?v=1.3.1" defer></script>
   <script src="/assets/js/world-dots.js?v=1.3.0" defer></script>
   <script src="/assets/js/globe.js?v=1.3.0" defer></script>
@@ -53,9 +53,9 @@
   <script src="/assets/js/ui.js?v=20260912.1" defer></script>
   <script src="/assets/js/fx.js?v=1.3.0" defer></script>
   <script src="/assets/js/auth.js?v=20260907.1" defer></script>
-  <script src="/assets/js/trial.js?v=20260909.3" defer></script>
+  <script src="/assets/js/trial.js?v=20260909.4" defer></script>
   <script src="/assets/js/fonts.js?v=1.3.0" defer></script>
-  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Can I use it for free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. The Free plan needs no payment and no card: one region, one device and limited speed."}}, {"@type": "Question", "name": "When do payments go live?", "acceptedAnswer": {"@type": "Answer", "text": "Payments switch on together with billing. Until then the prices on the site are preliminary and may change."}}, {"@type": "Question", "name": "Can I switch plans?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, you can change the plan in the app at any time. Your account and device list stay in place."}}, {"@type": "Question", "name": "How many devices can I connect?", "acceptedAnswer": {"@type": "Answer", "text": "Free covers one device, Basic up to three, Pro up to ten. The device list lives in the app and extra devices can be disconnected."}}]}</script>
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Can I use it for free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. The Free plan needs no payment and no card: one region, one device and limited speed."}}, {"@type": "Question", "name": "Which payment methods are available?", "acceptedAnswer": {"@type": "Answer", "text": "SBP and MIR, Visa and Mastercard bank cards. You choose the method on the pricing page before checkout; the payment runs on the payment provider's secure page with 3-D Secure."}}, {"@type": "Question", "name": "Can I switch plans?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, you can change the plan in the app at any time. Your account and device list stay in place."}}, {"@type": "Question", "name": "How many devices can I connect?", "acceptedAnswer": {"@type": "Answer", "text": "Free covers one device, Basic up to three, Pro up to ten. The device list lives in the app and extra devices can be disconnected."}}]}</script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -132,6 +132,12 @@
         <article class="plan glass"><div class="plan__head"><h3 class="plan__name">Pro</h3></div><div class="plan__price"><span class="plan__amount">$3.99</span><span class="plan__period">/ mo</span></div><p class="plan__note">For the family and every device</p><ul class="plan__features"><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>5 devices</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>5 simultaneous connections</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>150 GB per month</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>All servers and new regions first</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>DNS Protection and Kill Switch</span></li><li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Priority support</span></li></ul><a class="btn btn--ghost btn--block plan__cta" href="/en/pricing/">Choose Pro</a></article>
       </div>
       <p class="pricing-note" data-pricing-note>Prices are preliminary and may change before the public launch.</p>
+      <!-- Payment security note (moderation requirement). Kept outside the
+           data-pricing-note paragraph: ui.js and billing.js rewrite its text. -->
+      <div class="pay-secure">
+        <svg class="pay-secure__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l7 3v5.2c0 4.3-2.8 8.2-7 9.8-4.2-1.6-7-5.5-7-9.8V6l7-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 12.3l2.1 2.1L15.5 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <p class="pay-secure__text">Payment runs on the payment provider's secure page: the connection uses HTTPS, cards pass 3-D Secure verification, and card details never reach GlukVPN servers. SBP and MIR, Visa, Mastercard bank cards are supported.</p>
+      </div>
     </div>
   </section>
 
@@ -188,7 +194,7 @@
       </div>
       <div class="faq reveal" data-delay="1">
         <details class="faq__item"><summary class="faq__q">Can I use it for free?</summary><div class="faq__a"><div class="faq__inner">Yes. The Free plan needs no payment and no card: one region, one device and limited speed.</div></div></details>
-        <details class="faq__item"><summary class="faq__q">When do payments go live?</summary><div class="faq__a"><div class="faq__inner">Payments switch on together with billing. Until then the prices on the site are preliminary and may change.</div></div></details>
+        <details class="faq__item"><summary class="faq__q">Which payment methods are available?</summary><div class="faq__a"><div class="faq__inner">SBP and MIR, Visa and Mastercard bank cards. You choose the method right here, before you continue to checkout; the payment runs on the payment provider's secure page with 3-D Secure.</div></div></details>
         <details class="faq__item"><summary class="faq__q">Can I switch plans?</summary><div class="faq__a"><div class="faq__inner">Yes, you can change the plan in the app at any time. Your account and device list stay in place.</div></div></details>
         <details class="faq__item"><summary class="faq__q">How many devices can I connect?</summary><div class="faq__a"><div class="faq__inner">Free covers one device, Basic up to three, Pro up to ten. The device list lives in the app and extra devices can be disconnected.</div></div></details>
       </div>
@@ -210,7 +216,7 @@
 
   <!-- 0.8.0: plans and checkout buttons from /api/billing/plans; without billing —
        cards from config.js and "Coming soon" on paid plans. -->
-  <script src="/assets/js/billing.js?v=0.9.2" defer></script>
+  <script src="/assets/js/billing.js?v=0.9.3" defer></script>
 
   </main>
 
@@ -250,6 +256,15 @@
             <a href="/en/terms/">Terms of Use</a>
           </div>
         </div>
+      </div>
+      <div class="footer__pay">
+        <span class="footer__pay-title">We accept</span>
+        <ul class="footer__pay-list">
+          <li class="footer__pay-item">SBP</li>
+          <li class="footer__pay-item">MIR</li>
+          <li class="footer__pay-item">Visa</li>
+          <li class="footer__pay-item">Mastercard</li>
+        </ul>
       </div>
       <div class="footer__bottom">
         <span>© <span data-year>2026</span> GlukVPN · <span data-site-domain>vpn.gluk.tech</span></span>

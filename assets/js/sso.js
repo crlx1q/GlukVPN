@@ -313,7 +313,10 @@
       googleHosts.forEach(function (host) {
         host.hidden = false;
         host.innerHTML = "";
-        var width = Math.min(400, Math.max(120, Math.floor(host.clientWidth || (host.closest('[data-google-mode="login"]') ? 190 : 320))));
+        // Ширина — по фактическому контейнеру, а не по дефолту GIS: рядом
+        // стоит кнопка Telegram, и расхождение в пару десятков пикселей видно сразу.
+        var box = host.clientWidth || (host.parentElement ? host.parentElement.clientWidth : 0);
+        var width = Math.min(400, Math.max(120, Math.floor(box || (host.closest('[data-google-mode="login"]') ? 190 : 320))));
         try {
           window.google.accounts.id.renderButton(host, {
             type: "standard",
