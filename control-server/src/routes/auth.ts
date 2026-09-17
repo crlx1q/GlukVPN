@@ -312,6 +312,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 				email: identity.email,
 				googleSub: identity.sub,
 				name: identity.name,
+				ip,
 			})
 			await writeAudit({
 				action: "auth.register.google_completed",

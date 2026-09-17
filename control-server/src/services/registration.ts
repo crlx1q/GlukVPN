@@ -354,6 +354,10 @@ export async function createUserFromGoogle(params: {
 	email: string
 	googleSub: string
 	name?: string | null
+	/** The same admin-notice facts a pending row would have carried. */
+	ip?: string | null
+	platform?: string | null
+	source?: string | null
 }): Promise<import("@prisma/client").User> {
 	await requireRegistrationEnabled()
 	const email = normalizeEmail(params.email)
@@ -386,6 +390,20 @@ export async function createUserFromGoogle(params: {
 	// step) must not keep the email reserved.
 	await prisma.pendingRegistration.deleteMany({ where: { email } }).catch(() => undefined)
 	await grantDefaultSubscription(created.id).catch(() => undefined)
+
+	// Without a pending row this was the one finished sign-up the admin chat
+	// never heard about; same notice, same shape as the other two paths.
+	notifyNewAccount({
+		origin: {
+			email,
+			method: "google",
+			platform: params.platform ?? null,
+			source: params.source ?? "google",
+			ip: params.ip ?? null,
+		},
+		username: created.username,
+		publicId: created.publicId,
+	})
 	return created
 }
 
@@ -399,7 +417,7 @@ export async function createUserFromGoogle(params: {
  * Shared by both finishing paths so the two never drift apart.
  */
 function notifyNewAccount(params: {
-	pending: PendingRegistration
+	origin: NewAccountOrigin
 	username: string
 	publicId: string
 	telegramUsername?: string | null
@@ -407,26 +425,49 @@ function notifyNewAccount(params: {
 }): void {
 	const notices = adminNotices()
 	if (!notices) return
-	const pending = params.pending
+	const account = params.origin
 	void (async () => {
 		// Region comes from the address the sign-up was started from, and only
 		// when GEOIP is configured. The address itself is never sent to a chat.
 		const geo = require("./geo") as typeof import("./geo")
-		const origin = pending.createdIp
-			? await geo.lookupOrigin(pending.createdIp).catch(() => null)
+		const origin = account.ip
+			? await geo.lookupOrigin(account.ip).catch(() => null)
 			: null
 		await notices.notifyRegistration({
 			username: params.username,
 			publicId: params.publicId,
-			email: pending.email,
-			method: pending.googleSub ? "google" : "email",
-			platform: pending.createdPlatform,
-			source: pending.createdSource ?? (pending.googleSub ? "google" : null),
+			email: account.email,
+			method: account.method,
+			platform: account.platform ?? null,
+			source: account.source ?? (account.method === "google" ? "google" : null),
 			region: [origin?.country, origin?.region].filter(Boolean).join(", ") || null,
 			telegramUsername: params.telegramUsername ?? null,
 			telegramPhone: params.telegramPhone ?? null,
 		})
 	})().catch(() => undefined)
+}
+
+/**
+ * Where a finished sign-up came from. A pending row carries all of these
+ * facts, but the instant Google path never creates one - so it passes them
+ * directly and both paths reach the admin chat in the same shape.
+ */
+type NewAccountOrigin = {
+	email: string
+	method: "email" | "google"
+	platform?: string | null
+	source?: string | null
+	ip?: string | null
+}
+
+function originFromPending(pending: PendingRegistration): NewAccountOrigin {
+	return {
+		email: pending.email,
+		method: pending.googleSub ? "google" : "email",
+		platform: pending.createdPlatform,
+		source: pending.createdSource,
+		ip: pending.createdIp,
+	}
 }
 
 /**
@@ -490,7 +531,11 @@ async function createUserFromPending(
 		.delete({ where: { id: pending.id } })
 		.catch(() => undefined)
 
-	notifyNewAccount({ pending, username: created.username, publicId: created.publicId })
+	notifyNewAccount({
+		origin: originFromPending(pending),
+		username: created.username,
+		publicId: created.publicId,
+	})
 	return { username: created.username }
 }
 
@@ -744,7 +789,7 @@ export async function attachTelegram(params: {
 		.catch(() => undefined)
 
 	notifyNewAccount({
-		pending,
+		origin: originFromPending(pending),
 		username: created.username,
 		publicId: created.publicId,
 		telegramUsername: params.telegramUsername ?? null,
