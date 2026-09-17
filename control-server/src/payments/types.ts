@@ -54,6 +54,24 @@ export type PaymentCustomer = {
 }
 
 /**
+ * One rail a payer may choose, as the checkout offers it.
+ *
+ * `id` is the gateway's own code for the rail, passed back unchanged when the
+ * order is created - except `"all"`, which every gateway understands as "your
+ * universal form, let the payer choose there".
+ *
+ * `minimumMinor` is the floor for *this rail* when it is higher than the
+ * module's own (Cashera takes a rouble by SBP and a hundred by card). It is
+ * what lets a 1 ₽ trial grey out the card instead of sending somebody to a
+ * page that will refuse them.
+ */
+export type PaymentMethodOption = {
+	id: string
+	label: string
+	minimumMinor?: number
+}
+
+/**
  * One order, as a gateway needs to see it.
  *
  * `amountMinor` is always an integer in the smallest unit of `currency`
@@ -67,6 +85,12 @@ export type PaymentOrderInput = {
 	description: string
 	/** A trial claim. Changes only which page the payer comes back to. */
 	isTrial: boolean
+	/**
+	 * The rail the payer picked, as an id from `availableMethods`, or absent
+	 * when they were not asked - in which case the gateway's own .env default
+	 * applies. `"all"` is a choice too: it means "show me every rail".
+	 */
+	method?: string | null
 	successUrl: string
 	failUrl: string
 	/**
@@ -124,6 +148,15 @@ export type PaymentModule = {
 	 * which is the honest way round.
 	 */
 	configured(): boolean
+	/**
+	 * The rails a payer may choose for this currency, the universal form
+	 * first, or `[]` when the gateway cannot settle it at all.
+	 *
+	 * Optional: a gateway that leaves it out takes whatever its dashboard is
+	 * set to, and the site shows no selector rather than a selector that
+	 * promises a rail nobody honours.
+	 */
+	availableMethods?(currency: string): PaymentMethodOption[]
 	createCheckout(input: PaymentOrderInput): Promise<PaymentCheckout>
 	/**
 	 * Asks the gateway what really happened. Used to reconcile an order whose

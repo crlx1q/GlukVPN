@@ -53,14 +53,19 @@ export function merchantId(): string {
 }
 
 /**
+ * The rails the API recognises. Anything else is a rejected transaction, so
+ * this list is the filter for both .env and a payer's own choice.
+ */
+export const CASHERA_KNOWN_METHODS: readonly string[] = ["sbp", "card", "mastercard", "crypto", "cryptobot"]
+
+/**
  * Pin one rail, or leave empty to let the payer choose on Cashera's form.
  * Unknown values are ignored rather than passed through, because an
  * unrecognised `payment_method` is a rejected transaction.
  */
 export function paymentMethod(): string {
 	const value = envText("CASHERA_PAYMENT_METHOD").toLowerCase()
-	const known = ["sbp", "card", "mastercard", "crypto", "cryptobot"]
-	return known.includes(value) ? value : ""
+	return CASHERA_KNOWN_METHODS.includes(value) ? value : ""
 }
 
 /** The smallest charge this shop will send, in kopecks. */

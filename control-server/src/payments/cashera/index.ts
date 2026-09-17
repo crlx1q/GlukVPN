@@ -22,11 +22,12 @@
  *     sell one-off orders; a recurring charge still arrives as an ordinary
  *     `transaction.status_updated`, which is the one that grants a plan.
  */
-import { serviceUnavailable } from "../../lib/errors"
+import { badRequest, serviceUnavailable } from "../../lib/errors"
 import type {
 	PaymentCheckout,
 	PaymentEvent,
 	PaymentEventKind,
+	PaymentMethodOption,
 	PaymentModule,
 	PaymentOrderInput,
 	PaymentSnapshot,
@@ -34,8 +35,10 @@ import type {
 } from "../types"
 import { createCasheraTransaction, getCasheraTransaction, verifyCasheraCredentials } from "./client"
 import {
+	CASHERA_CARD_MIN_MINOR,
 	CASHERA_CURRENCY,
 	CASHERA_ID,
+	CASHERA_KNOWN_METHODS,
 	CASHERA_LABEL,
 	isConfigured,
 	minimumMinor,
@@ -74,6 +77,42 @@ function text(value: unknown): string {
 	return ""
 }
 
+/**
+ * The rails Cashera offers, as the checkout lists them.
+ *
+ * The card floor is the one thing a payer has to be told before they pick:
+ * Cashera refuses a card payment under 100 ₽, and the 1 ₽ trial is exactly
+ * the order that runs into it. `mastercard` and `cryptobot` exist in the API
+ * but are not listed - they are narrower variants of the two rails above
+ * them, and .env can still pin either.
+ */
+const METHODS: readonly PaymentMethodOption[] = [
+	{ id: "all", label: "Все способы" },
+	{ id: "sbp", label: "СБП" },
+	{ id: "card", label: "Карта (от 100 ₽)", minimumMinor: CASHERA_CARD_MIN_MINOR },
+	{ id: "crypto", label: "Криптовалюта" },
+]
+
+/**
+ * Which rail this transaction is created for.
+ *
+ * The payer's choice wins over .env: "all" sends no `payment_method` and lets
+ * them choose on Cashera's form, a known id pins that rail, and no choice at
+ * all falls back to CASHERA_PAYMENT_METHOD. An unknown id is treated as no
+ * choice, because passing one through is a rejected transaction.
+ */
+function checkoutMethod(asked: string | null | undefined): string {
+	const value = (asked ?? "").trim().toLowerCase()
+	if (!value) return paymentMethod()
+	if (value === "all") return ""
+	return CASHERA_KNOWN_METHODS.includes(value) ? value : paymentMethod()
+}
+
+/** The rails that carry Cashera's 100 ₽ floor. */
+function isCardRail(method: string): boolean {
+	return method === "card" || method === "mastercard"
+}
+
 type WebhookBody = {
 	event?: unknown
 	transaction?: unknown
@@ -98,15 +137,27 @@ export const paymentModule: PaymentModule = {
 	},
 	configured: isConfigured,
 
+	availableMethods(currency: string): PaymentMethodOption[] {
+		// Roubles or nothing: a currency this gateway cannot settle has no rails.
+		return currency.trim().toUpperCase() === CASHERA_CURRENCY ? [...METHODS] : []
+	},
+
 	async createCheckout(input: PaymentOrderInput): Promise<PaymentCheckout> {
 		if (input.currency.toUpperCase() !== CASHERA_CURRENCY) {
 			throw serviceUnavailable("This plan has no price in roubles")
+		}
+		const chosen = checkoutMethod(input.method)
+		// Cashera answers a card payment under 100 ₽ with a refusal. Saying so
+		// here is the difference between a clear message and a gateway error on
+		// the 1 ₽ trial; the site greys the card out for the same reason.
+		if (isCardRail(chosen) && input.amountMinor < CASHERA_CARD_MIN_MINOR) {
+			throw badRequest("Card payments start at 100 ₽ - pay by SBP instead")
 		}
 		const transaction = await createCasheraTransaction({
 			orderId: input.orderId,
 			amountMinor: input.amountMinor,
 			description: input.description,
-			...(paymentMethod() ? { paymentMethod: paymentMethod() } : {}),
+			...(chosen ? { paymentMethod: chosen } : {}),
 			// Per-payment callback: the merchant-wide address stays as a backup.
 			callbackUrl: input.webhookUrl,
 			successUrl: input.successUrl,

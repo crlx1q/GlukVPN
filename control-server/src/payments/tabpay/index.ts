@@ -23,6 +23,7 @@ import type {
 	PaymentCheckout,
 	PaymentEvent,
 	PaymentEventKind,
+	PaymentMethodOption,
 	PaymentModule,
 	PaymentOrderInput,
 	PaymentSnapshot,
@@ -80,6 +81,34 @@ function text(value: unknown): string {
 	return typeof value === "string" ? value.trim() : ""
 }
 
+/**
+ * The rails TabPay's hosted page can be pinned to.
+ *
+ * "all" is the page as TabPay draws it by default, with both rails on it. The
+ * other two ids are the gateway's own codes and travel to the API unchanged.
+ */
+const METHODS: readonly PaymentMethodOption[] = [
+	{ id: "all", label: "Все способы" },
+	{ id: "SBP", label: "СБП" },
+	{ id: "CARD", label: "Банковская карта" },
+]
+
+/**
+ * Which rail this payment is created for.
+ *
+ * The payer's choice wins over .env: "all" sends no `method` at all and lets
+ * them choose on TabPay's page, a known id pins that rail, and no choice -
+ * an old client, or the Telegram bot - falls back to TABPAY_METHOD. An id we
+ * do not recognise is treated as no choice rather than passed through: an
+ * unknown `method` is a rejected payment.
+ */
+function checkoutMethod(asked: string | null | undefined): string {
+	const value = (asked ?? "").trim().toUpperCase()
+	if (!value) return method()
+	if (value === "ALL") return ""
+	return value === "SBP" || value === "CARD" ? value : method()
+}
+
 export const paymentModule: PaymentModule = {
 	id: TABPAY_ID,
 	label: TABPAY_LABEL,
@@ -87,12 +116,18 @@ export const paymentModule: PaymentModule = {
 	minimumMinor: TABPAY_MIN_KOPECKS,
 	configured: isConfigured,
 
+	availableMethods(currency: string): PaymentMethodOption[] {
+		// Roubles or nothing: a currency this gateway cannot settle has no rails.
+		return currency.trim().toUpperCase() === TABPAY_CURRENCY ? [...METHODS] : []
+	},
+
 	async createCheckout(input: PaymentOrderInput): Promise<PaymentCheckout> {
 		if (input.currency.toUpperCase() !== TABPAY_CURRENCY) {
 			// Reaching this means the catalogue has no rouble price for the plan;
 			// charging the tenge number as roubles would be a silent 6x discount.
 			throw serviceUnavailable("This plan has no price in roubles")
 		}
+		const chosen = checkoutMethod(input.method)
 		const payment = await createTabpayPayment({
 			orderId: input.orderId,
 			amountKopecks: input.amountMinor,
@@ -103,7 +138,7 @@ export const paymentModule: PaymentModule = {
 			metadata: input.metadata,
 			successUrl: input.successUrl,
 			failUrl: input.failUrl,
-			...(method() ? { method: method() } : {}),
+			...(chosen ? { method: chosen } : {}),
 		})
 		return { paymentUrl: payment.payUrl, providerRef: payment.id, manual: false, instructions: null }
 	},

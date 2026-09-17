@@ -24,6 +24,7 @@ import type {
 	PaymentCheckout,
 	PaymentEvent,
 	PaymentEventKind,
+	PaymentMethodOption,
 	PaymentModule,
 	PaymentOrderInput,
 	PaymentSnapshot,
@@ -119,6 +120,21 @@ function sameToken(expected: string, given: string): boolean {
 	return diff === 0
 }
 
+/**
+ * The one rail this gateway can be asked for: its own page, with everything
+ * on it.
+ *
+ * MulenPay's hosted form takes cards and SBP, but `POST /payments` documents
+ * no field for choosing between them - the body is currency, amount, uuid,
+ * shopId, description, sign, language, subscribe, website_url, client and
+ * items[], and nothing else. Inventing a `payment_method` would risk a
+ * validation error on *every* payment, so the checkout offers the universal
+ * form only and the payer picks the rail on MulenPay's own page. When the
+ * field is documented, adding it here and in `createCheckout` is the whole
+ * change.
+ */
+const METHODS: readonly PaymentMethodOption[] = [{ id: "all", label: "Все способы" }]
+
 /** The shop's own site, for the payment page. Derived from the return URL. */
 function websiteUrl(successUrl: string): string {
 	try {
@@ -134,6 +150,10 @@ export const paymentModule: PaymentModule = {
 	currency: MULENPAY_CURRENCY,
 	minimumMinor: MULENPAY_MIN_KOPECKS,
 	configured: isConfigured,
+
+	availableMethods(currency: string): PaymentMethodOption[] {
+		return currency.trim().toUpperCase() === MULENPAY_CURRENCY ? [...METHODS] : []
+	},
 	// The callback is unsigned: never grant on its word alone.
 	confirmWebhookByStatus: true,
 
