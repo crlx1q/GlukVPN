@@ -22,7 +22,7 @@ import {
 } from "../services/billing"
 import { normalizeCurrency, resolveMarketByIp, resolvePlanPrice } from "../services/pricing"
 import { applyPromo, promoPlanCodes } from "../services/promo"
-import { claimTrial, trialOffer } from "../services/trial"
+import { type TrialReason, claimTrial, trialOffer } from "../services/trial"
 
 const CreateOrderBody = z.object({
 	planCode: z.string().trim().min(2).max(32),
@@ -49,6 +49,15 @@ const PromoCheckBody = z.object({
 const ClaimTrialBody = z.object({
 	method: z.string().trim().max(32).optional(),
 })
+
+/**
+ * The reasons that still lead to the offer, and therefore to a banner.
+ *
+ * "sign_in_required" and "telegram_required" are invitations, not refusals:
+ * the page asks for exactly what is missing. Everything else is a no, and then
+ * the banner has no business being on the page at all.
+ */
+const TRIAL_BANNER_REASONS = new Set<TrialReason>(["ok", "sign_in_required", "telegram_required"])
 
 /**
  * The signed-in user, or null for a visitor.
@@ -204,10 +213,15 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 			// has to be compared with.
 			const live = billing.enabled ? paymentModule(billing.provider) : null
 			const methods = live?.availableMethods?.(trial.charge.currency) ?? []
+			// One flag instead of the same three rules re-implemented in every
+			// client: may this visitor still take the offer, and therefore may the
+			// banner appear at all. The pages show nothing until it arrives.
+			const show = billing.enabled && trial.enabled && TRIAL_BANNER_REASONS.has(trial.eligibility.reason)
 			return reply.send({
 				billingEnabled: billing.enabled,
 				provider: billing.enabled ? billing.provider : null,
 				methods,
+				show,
 				trial,
 			})
 		},

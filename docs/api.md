@@ -487,6 +487,7 @@ Telegram: аккаунт без привязки рабочий, но непод
   "billingEnabled": true,
   "provider": "tabpay",
   "methods": [{ "id": "all", "label": "Все способы" }, { "id": "SBP", "label": "СБП" }],
+  "show": false,
   "trial": {
     "enabled": true,
     "planCode": "basic",
@@ -522,6 +523,11 @@ Telegram: аккаунт без привязки рабочий, но непод
 `reason`: `ok`, `offer_disabled`, `sign_in_required`, `telegram_required`,
 `window_passed`, `already_used`, `already_subscribed`. Первые три — повод показать
 акцию (с разными кнопками), остальные — повод её скрыть.
+
+`show` — то же правило, посчитанное сервером: `billingEnabled && trial.enabled`
+плюс `reason` из первых трёх. Баннер на главной и полоса над тарифами
+показываются только при `show: true`; до ответа сервера они скрыты
+атрибутом `hidden`.
 
 ### POST /api/billing/trial/claim
 
