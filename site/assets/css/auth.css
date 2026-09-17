@@ -84,9 +84,14 @@
 .auth-alt__btn--tg{border-color:rgba(38,165,228,.32);background:rgba(38,165,228,.08)}
 .auth-alt__btn--tg svg{color:#26a5e4}
 .auth-alt__btn--tg:hover{border-color:rgba(38,165,228,.55);background:rgba(38,165,228,.14)}
-.auth-alt__google{display:flex;justify-content:center;min-height:44px}
+.auth-alt__google{display:flex;align-items:center;justify-content:center;width:100%;min-height:48px;padding:0;border-radius:14px;overflow:hidden;background:transparent!important}
 .auth-alt__google[hidden]{display:none}
-.auth-alt__google>div{max-width:100%}
+/* GIS рисует свою обёртку и саму кнопку со светлым фоном — на тёмной
+   карточке это белый прямоугольник вокруг пилюли. Гасим фоны обёрток и
+   одеваем саму кнопку в тот же корпус, что у кнопки Telegram. */
+.auth-alt__google>div,.auth-alt__google>div>div,.auth-alt__google iframe{max-width:100%;background:transparent!important;background-color:transparent!important;box-shadow:none!important}
+.auth-alt__google [role="button"]{width:100%!important;max-width:100%!important;min-height:48px!important;border-radius:14px!important;border:1px solid rgba(255,255,255,.12)!important;background:rgba(255,255,255,.035)!important;background-color:rgba(255,255,255,.035)!important;box-shadow:none!important;transition:border-color .18s ease,background .18s ease}
+.auth-alt__google [role="button"]:hover{border-color:rgba(255,255,255,.28)!important;background:rgba(255,255,255,.06)!important;background-color:rgba(255,255,255,.06)!important}
 .auth-alt__note{margin:0;font-size:12px;line-height:1.5;color:var(--text-2);text-align:center}
 .auth-alt__note[hidden]{display:none}
 
