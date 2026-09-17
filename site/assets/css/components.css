@@ -472,6 +472,56 @@
   color: var(--text-2);
 }
 
+/* принимаемые платёжные системы (требование модерации платёжных шлюзов) */
+
+.footer__pay {
+  margin-top: var(--s-6);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.footer__pay-title {
+  font-size: 0.8rem;
+  color: var(--text-2);
+}
+
+.footer__pay-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.footer__pay-item {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--stroke-soft);
+  border-radius: 9px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .footer__pay {
+    gap: 8px 10px;
+  }
+  .footer__pay-item {
+    height: 24px;
+    padding: 0 8px;
+    font-size: 0.68rem;
+  }
+}
+
 @media (max-width: 860px) {
   .footer__grid {
     grid-template-columns: 1fr 1fr;

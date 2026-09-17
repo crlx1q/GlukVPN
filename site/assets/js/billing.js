@@ -860,9 +860,16 @@
         state.enabled = true;
         render();
         var provider = json.provider ? String(json.provider) : "";
+        /* Рельсов у шлюза может быть несколько (СБП, карта, крипта), поэтому
+           платёж больше не называем «картой» — иначе подпись противоречит
+           селектору способов над кнопками. */
         setPricingNote(
-          T("Оплата картой") + (provider ? " " + T("через") + " " + provider : "") + ". " +
-          T("Подписка активируется автоматически после платежа; автосписаний нет.")
+          (provider ? L("Оплата через", "Payment via") + " " + provider + ". " : "") +
+          L("Платёж проходит на защищённой странице платёжного сервиса", "The payment runs on the provider's secure page") + ". " +
+          L(
+            "Подписка активируется автоматически после платежа; автосписаний нет.",
+            "Access is activated automatically after the payment and there are no recurring charges."
+          )
         );
       } else {
         disabledMode(plans, currency);
