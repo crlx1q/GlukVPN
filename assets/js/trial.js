@@ -52,6 +52,9 @@
   /* methods/method — способы оплаты активного шлюза и выбранный рельс.
      Список составляет шлюз, а не витрина: у TabPay он один, у Cashera другой,
      у MulenPay выбора нет вовсе. */
+  /* ready/show — «ответ сервера получен для устоявшегося статуса» и сам ответ
+     на вопрос «показывать ли этому посетителю акцию». До ответа не показываем
+     ничего: гостевой баннер, мелькнувший перед вошедшим, — это и был баг. */
   var state = {
     offer: null,
     enabled: false,
@@ -60,7 +63,9 @@
     currency: "",
     provider: "",
     methods: [],
-    method: ""
+    method: "",
+    ready: false,
+    show: null
   };
 
   /* ------------------------------------------------------------- утилиты */
@@ -85,6 +90,29 @@
   function param(name) {
     var m = new RegExp("[?&]" + name + "=([^&]*)").exec(location.search || "");
     return m ? decodeURIComponent(m[1]) : "";
+  }
+
+  /* Признак начатой сессии — refresh-токен auth.js. Канал спрашиваем у него
+     же: у беты ключ другой, а чужой канал ничего не говорит о этой странице.
+     Если auth.js ещё не объявился, смотрим оба ключа. localStorage бывает
+     запрещён (приватный режим, блокировка сторонних данных), поэтому всё в
+     try/catch: недоступное хранилище — это «токена нет». */
+  function sessionKeys() {
+    var A = window.GlukAuth;
+    var ch = A && A.channel ? String(A.channel) : "";
+    return ch ? ["gluk." + ch + ".refresh"] : ["gluk.prod.refresh", "gluk.beta.refresh"];
+  }
+
+  function hasSession() {
+    var keys = sessionKeys();
+    for (var i = 0; i < keys.length; i++) {
+      try {
+        if (localStorage.getItem(keys[i])) return true;
+      } catch (e) {
+        return false;
+      }
+    }
+    return false;
   }
 
   function daysLabel(n) {
@@ -354,7 +382,7 @@
         '<a class="btn btn--primary btn--lg" href="' + esc(href("/trial/")) + '">' + esc(L("Попробуйте", "Try it")) + "</a>" +
         '<a class="trial-banner__more" href="' + esc(href("/pricing/")) + '">' + esc(L("Смотреть тарифы", "See pricing")) + "</a>" +
       "</div>";
-    host.hidden = false;
+    unhide(host);
   }
 
   function renderStrip(host, offer) {
@@ -368,7 +396,7 @@
               " for " + days + " at " + priceLabel(offer) + ", then the usual price.")) +
       "</p>" +
       '<a class="btn btn--primary" href="' + esc(href("/trial/")) + '">' + esc(L("Попробуйте", "Try it")) + "</a>";
-    host.hidden = false;
+    unhide(host);
   }
 
   /* Метка на самой карточке тарифа. Карточки рисует billing.js и
@@ -768,6 +796,15 @@
     return (host.closest && host.closest("[data-trial-section]")) || host;
   }
 
+  /* hidden стоит в разметке и на секции, и на самом блоке: так до ответа
+     сервера на странице нет ни баннера, ни отступов его секции. Показ снимает
+     атрибут с обоих. */
+  function unhide(host) {
+    var box = section(host);
+    if (box !== host) box.hidden = false;
+    host.hidden = false;
+  }
+
   /* Кому акция не положена, у того блока нет в разметке вовсе. Скрытый пустой
      блок всё равно находится поиском по странице и оставляет дырку в ритме
      секций, а попытки заплатить рубль у такого человека быть не должно вовсе.
@@ -778,6 +815,10 @@
     if (!box.parentNode) return;
     if (!host.trialSlot) host.trialSlot = { parent: box.parentNode, next: box.nextSibling };
     host.innerHTML = "";
+    /* Возвращать блок в документ можно только скрытым: вернуть его видимым
+       значит показать пустую рамку до того, как придёт ответ. */
+    host.hidden = true;
+    if (box !== host) box.hidden = true;
     box.parentNode.removeChild(box);
   }
 
@@ -790,10 +831,23 @@
     slot.parent.insertBefore(box, ref);
   }
 
+  /* Право на баннер решает сервер — полем show в /api/billing/trial. Старый
+     control-server его не отдаёт: тогда повторяем то же правило по reason,
+     чтобы сайт не остался без акции до обновления бэкенда. */
+  function promoted(offer) {
+    return !!offer && state.enabled && !!offer.enabled &&
+      !!PROMO_REASONS[String((offer.eligibility || {}).reason || "")];
+  }
+
+  /* Пока ответа для устоявшегося статуса нет — не показываем ничего. */
+  function visible() {
+    if (!state.ready) return false;
+    return state.show === null ? promoted(state.offer) : state.show === true;
+  }
+
   function apply() {
     var offer = state.offer;
-    var show = !!offer && state.enabled && !!offer.enabled &&
-      !!PROMO_REASONS[String((offer.eligibility || {}).reason || "")];
+    var show = visible();
 
     banners.forEach(function (host) {
       if (!show) {
@@ -842,13 +896,29 @@
   function load() {
     var A = window.GlukAuth;
     if (!A || !A.public) return;
-    state.authStatus = A.state ? A.state.status : "";
+    var status = A.state ? A.state.status : "";
+    var authed = !!(A.isAuthed && A.isAuthed());
+    /* Гостевой запрос — только для настоящих гостей. Пока сессия не устоялась
+       (status "loading") или в хранилище лежит refresh-токен, человек, скорее
+       всего, входит: сервер ответил бы ему "sign_in_required", и перед
+       вошедшим мелькнул бы баннер «создайте аккаунт». Ждём gluk:auth и
+       спросим уже с токеном — обработчик события ниже позовёт load() сам. */
+    if (!authed && (status === "loading" || hasSession())) {
+      state.authStatus = status;
+      state.ready = false;
+      apply();
+      return;
+    }
+    state.authStatus = status;
     /* Вошедшему нужен токен: без него сервер ответит "sign_in_required" и
        страница предложит регистрацию тому, кто уже зарегистрирован. */
     var url = "/api/billing/trial" + marketQuery();
-    var req = A.isAuthed && A.isAuthed() ? A.call(url) : A.public(url);
+    var req = authed ? A.call(url) : A.public(url);
     req.then(
       function (json) {
+        state.ready = true;
+        /* show — ответ сервера; null значит «сервер не сказал», решаем сами. */
+        state.show = json && typeof json.show === "boolean" ? json.show : null;
         state.enabled = !!(json && json.billingEnabled);
         state.offer = (json && json.trial) || null;
         state.provider = (json && json.provider) ? String(json.provider) : "";
@@ -861,6 +931,8 @@
       },
       function () {
         /* Акция — не критичный блок: молчащий сервер её просто не показывает. */
+        state.ready = true;
+        state.show = false;
         state.enabled = false;
         state.offer = null;
         state.provider = "";
@@ -911,10 +983,7 @@
       load();
       return;
     }
-    var offer = state.offer;
-    var show = !!offer && state.enabled && !!offer.enabled &&
-      !!PROMO_REASONS[String(((offer || {}).eligibility || {}).reason || "")];
-    decorateCards(offer, show);
+    decorateCards(state.offer, visible());
   });
 
   function boot() {

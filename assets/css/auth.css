@@ -89,7 +89,12 @@
 /* GIS рисует свою обёртку и саму кнопку со светлым фоном — на тёмной
    карточке это белый прямоугольник вокруг пилюли. Гасим фоны обёрток и
    одеваем саму кнопку в тот же корпус, что у кнопки Telegram. */
-.auth-alt__google>div,.auth-alt__google>div>div,.auth-alt__google iframe{max-width:100%;background:transparent!important;background-color:transparent!important;box-shadow:none!important}
+.auth-alt__google div,.auth-alt__google span,.auth-alt__google iframe{max-width:100%;background:transparent!important;background-color:transparent!important;border-color:transparent!important;box-shadow:none!important}
+/* Иногда GIS отдаёт кнопку в iframe: у него свой холст, и в тёмной
+   карточке он светится белым прямоугольником. color-scheme убирает светлый
+   холст, border — рамку, радиус повторяет корпус, а stretch подтягивает
+   высоту к той же строке, что у кнопки Telegram. */
+.auth-alt__google iframe{width:100%!important;align-self:stretch;border:0!important;border-radius:14px!important;color-scheme:dark}
 .auth-alt__google [role="button"]{width:100%!important;max-width:100%!important;min-height:48px!important;border-radius:14px!important;border:1px solid rgba(255,255,255,.12)!important;background:rgba(255,255,255,.035)!important;background-color:rgba(255,255,255,.035)!important;box-shadow:none!important;transition:border-color .18s ease,background .18s ease}
 .auth-alt__google [role="button"]:hover{border-color:rgba(255,255,255,.28)!important;background:rgba(255,255,255,.06)!important;background-color:rgba(255,255,255,.06)!important}
 .auth-alt__note{margin:0;font-size:12px;line-height:1.5;color:var(--text-2);text-align:center}
