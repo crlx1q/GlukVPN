@@ -8,8 +8,8 @@
        billingEnabled:true  → цены, названия, длительность и фичи из API
                               (config — запасной вариант для отсутствующих
                               полей), CTA Basic/Pro создают заказ:
-                              POST /api/billing/orders { planCode, currency } →
-                              paymentUrl → переход к оплате;
+                              POST /api/billing/orders { planCode, currency,
+                              method } → paymentUrl → переход к оплате;
                               manual:true → показываем instructions.
                               Без входа — на /login/?next=/pricing/.
        billingEnabled:false → карточки из config как раньше, CTA платных
@@ -60,7 +60,12 @@
     enabled: false,
     /* Промокод: клиент его только запоминает и передаёт с заказом. Скидку
        считает сервер, поэтому подставить в консоли «−90%» бесполезно. */
-    promoCode: ""
+    promoCode: "",
+    /* Способы оплаты активного шлюза и выбранный платёжный «рельс». Список
+       приходит из /api/billing/plans: какие рельсы у него есть, знает только
+       сам шлюз — витрина ничего не додумывает. */
+    methods: [],
+    method: ""
   };
 
   function esc(s) {
@@ -78,6 +83,15 @@
   var ICONS = {
     check: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     minus: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>'
+  };
+
+  /* Значки способов оплаты. Рисуем свои: логотипы СБП, «Мира» и Visa —
+     товарные знаки с правилами показа, а понятный значок их не требует. */
+  var PAY_ICONS = {
+    all: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.6" y="6.4" width="14.8" height="10.4" rx="2.4" stroke="currentColor" stroke-width="1.7"/><path d="M2.6 10.2h14.8" stroke="currentColor" stroke-width="1.7"/><path d="M6.8 20.2h11a2.6 2.6 0 0 0 2.6-2.6V9.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+    sbp: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="6.6" y="2.8" width="10.8" height="18.4" rx="2.6" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.4v6.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M9.7 11.4L12 13.8L14.3 11.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.4 17.4h3.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+    card: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.6" y="5.2" width="18.8" height="13.6" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M2.6 10.2h18.8" stroke="currentColor" stroke-width="1.7"/><path d="M6.4 14.8h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+    crypto: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.8" stroke="currentColor" stroke-width="1.7"/><path d="M9.6 7.6v8.8M12.2 7.6v8.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M8.6 9.4h4.2a1.8 1.8 0 0 1 0 3.6H8.6h4.6a1.8 1.8 0 0 1 0 3.6H8.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
   };
 
   /* ------------------------------------------------------------- форматы */
@@ -344,6 +358,7 @@
         .join("");
     });
     renderToggle(group, pairs);
+    renderMethods();
     /* Акция «пробный период» вешает метку на карточку Basic (trial.js), а
        карточки переживают смену периода — поэтому сообщаем о перерисовке. */
     try {
@@ -351,6 +366,98 @@
         detail: { periodId: state.periodId, currency: state.currency, enabled: state.enabled, plans: list }
       }));
     } catch (e) {}
+  }
+
+  /* ------------------------------------------------- способы оплаты */
+  /* Подписи знакомых рельсов держим здесь: сервер отдаёт их по-русски,
+     потому что список составляет шлюз, а не витрина. Незнакомый id
+     показываем как пришёл — новый способ появится на странице сам. */
+  var PAY_LABELS = {
+    all: ["Все способы", "All methods"],
+    sbp: ["СБП", "SBP"],
+    card: ["Банковская карта", "Bank card"],
+    crypto: ["Криптовалюта", "Crypto"]
+  };
+
+  function methodId(m) {
+    return String((m && m.id) || "").toLowerCase();
+  }
+
+  function methodById(id) {
+    var want = String(id || "").toLowerCase();
+    var all = state.methods || [];
+    for (var i = 0; i < all.length; i++) {
+      if (methodId(all[i]) === want) return all[i];
+    }
+    return null;
+  }
+
+  /* Порог рельса — часть подписи, а не сюрприз на странице шлюза:
+     «Карта (от 100 ₽)» сразу объясняет, почему её нет на акции за 1 ₽. */
+  function methodLabel(m) {
+    var pair = PAY_LABELS[methodId(m)];
+    var text = pair ? L(pair[0], pair[1]) : String((m && m.label) || methodId(m));
+    if (m && Number(m.minimumMinor) > 0) {
+      text += " (" + L("от ", "from ") + money(m.minimumMinor, state.settlement || state.currency) + ")";
+    }
+    return text;
+  }
+
+  /* Сумма, которая реально уйдёт шлюзу: витрина бывает в тенге, а списание
+     идёт в рублях — порог рельса сравнивать надо со вторым. */
+  function chargeMinor(code) {
+    var p = planByCode(code);
+    if (!p) return 0;
+    if (p.settlementMinor != null) return Number(p.settlementMinor) || 0;
+    return Number(p.priceMinor) || 0;
+  }
+
+  function methodFits(m, minor) {
+    var min = Number(m && m.minimumMinor) || 0;
+    return !min || !minor || minor >= min;
+  }
+
+  function methodsHost() {
+    var el = document.querySelector("[data-pay-methods]");
+    if (el) return el;
+    el = document.createElement("div");
+    el.className = "pay-method";
+    el.setAttribute("data-pay-methods", "");
+    el.setAttribute("role", "group");
+    el.setAttribute("aria-label", L("Способ оплаты", "Payment method"));
+    el.hidden = true;
+    hosts[0].parentNode.insertBefore(el, hosts[0]);
+    return el;
+  }
+
+  /* Выбор показываем только там, где он есть: один рельс — это не выбор,
+     а лишний вопрос перед оплатой. */
+  function renderMethods() {
+    var existing = document.querySelector("[data-pay-methods]");
+    var all = state.methods || [];
+    if (!state.enabled || all.length < 2) {
+      if (existing) {
+        existing.innerHTML = "";
+        existing.hidden = true;
+      }
+      return;
+    }
+    var host = existing || methodsHost();
+    host.hidden = false;
+    host.innerHTML =
+      '<span class="pay-method__title">' + esc(L("Способ оплаты", "Payment method")) + "</span>" +
+      '<div class="pay-method__row">' +
+        all
+          .map(function (m) {
+            var id = methodId(m);
+            var on = id === String(state.method || "").toLowerCase();
+            return '<button class="pay-method__btn' + (on ? " is-on" : "") + '" type="button" data-pay-method="' + esc(id) + '" aria-pressed="' + (on ? "true" : "false") + '">' +
+              '<span class="pay-method__icon" aria-hidden="true">' + (PAY_ICONS[id] || PAY_ICONS.card) + "</span>" +
+              '<span class="pay-method__label">' + esc(methodLabel(m)) + "</span>" +
+              "</button>";
+          })
+          .join("") +
+      "</div>";
   }
 
   function noteBox() {
@@ -601,6 +708,35 @@
     }
     if (!A.isAuthed()) { goLogin(); return; }
 
+    /* Рельс с порогом выше суммы заказа шлюз не примет — отказ случился бы
+       уже после перехода на оплату. Подменять выбор молча тоже нечестно:
+       переключаем, говорим вслух и ждём повторного нажатия. */
+    var picked = methodById(state.method);
+    var minor = chargeMinor(code);
+    if (picked && !methodFits(picked, minor)) {
+      var fits = null;
+      var sbp = methodById("sbp");
+      if (sbp && methodFits(sbp, minor)) fits = sbp;
+      for (var i = 0; !fits && i < state.methods.length; i++) {
+        if (methodFits(state.methods[i], minor)) fits = state.methods[i];
+      }
+      state.method = fits ? methodId(fits) : "";
+      renderMethods();
+      notice(
+        "<b>" + esc(L("Этот способ не подходит к сумме заказа", "That method does not fit this amount")) + "</b>" +
+        '<p class="billing-notice__text">' +
+          esc(L(
+            "«" + methodLabel(picked) + "» не принимает такую сумму." +
+              (fits ? " Выбрали «" + methodLabel(fits) + "» — нажмите оплату ещё раз." : ""),
+            "\u201c" + methodLabel(picked) + "\u201d cannot take this amount." +
+              (fits ? " Switched to \u201c" + methodLabel(fits) + "\u201d — press pay again." : "")
+          )) +
+        "</p>",
+        "err"
+      );
+      return;
+    }
+
     var label = btn.textContent;
     btn.disabled = true;
     btn.textContent = T("Создаём заказ…");
@@ -609,6 +745,9 @@
     notice(hint ? '<p class="billing-notice__text">' + esc(hint) + "</p>" : "");
     var body = { planCode: code, currency: state.currency };
     if (state.promoCode) body.promoCode = state.promoCode;
+    /* «Все способы» — это отсутствие выбора: пусть шлюз покажет свою
+       страницу целиком, как и делал до появления селектора. */
+    if (state.method && state.method !== "all") body.method = state.method;
     A.call("/api/billing/orders", { method: "POST", body: body })
       .then(function (res) {
         var order = (res && res.order) || {};
@@ -664,11 +803,24 @@
     render();
   });
 
+  document.addEventListener("click", function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest("[data-pay-method]") : null;
+    if (!btn) return;
+    e.preventDefault();
+    var id = String(btn.getAttribute("data-pay-method") || "").toLowerCase();
+    if (!id || id === state.method) return;
+    state.method = id;
+    renderMethods();
+  });
+
   /* ---------------------------------------------------------------- старт */
   function disabledMode(plans, currency) {
     state.plans = plans && plans.length ? plans : [];
     if (currency) state.currency = String(currency).toUpperCase();
     state.enabled = false;
+    /* Платить нечем — и выбирать способ не из чего. */
+    state.methods = [];
+    state.method = "";
     render();
     setPricingNote((PRICING.note || "") + (PRICING.note ? " " : "") + T("Кнопки оплаты включатся вместе с запуском биллинга."));
   }
@@ -694,6 +846,14 @@
       state.settlement = json && json.settlement && json.settlement.currency
         ? String(json.settlement.currency).toUpperCase()
         : "";
+      /* Способы оплаты того шлюза, который включён сейчас. Старый сервер
+         поля не присылает — тогда селектора просто нет. */
+      state.methods = json && Array.isArray(json.methods)
+        ? json.methods.filter(function (m) { return m && m.id; })
+        : [];
+      if (!methodById(state.method)) {
+        state.method = state.methods.length ? methodId(state.methods[0]) : "";
+      }
       if (json && json.billingEnabled) {
         state.plans = plans;
         if (currency) state.currency = String(currency).toUpperCase();

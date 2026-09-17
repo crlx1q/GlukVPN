@@ -1234,3 +1234,116 @@
 .plan-period[hidden] {
   display: none;
 }
+
+/* --------------------------------------------------- способ оплаты ---
+   Селектор СБП / карта / все способы. Разметку рисуют billing.js
+   (тарифы) и trial.js (акция) — одинаковую, поэтому стили общие.
+   Список приходит от шлюза, так что кнопок бывает от двух до четырёх. */
+.pay-method {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto 22px;
+}
+
+/* До ответа API селектор скрыт атрибутом hidden, а display:flex выше
+   его перебивает — возвращаем поведение явно. */
+.pay-method[hidden] {
+  display: none;
+}
+
+.pay-method__title {
+  color: var(--text-1);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.pay-method__row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.pay-method__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-pill);
+  background: var(--glass);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease-soft), color var(--t-fast) var(--ease-soft), background var(--t-fast) var(--ease-soft);
+}
+
+.pay-method__btn:hover {
+  border-color: var(--stroke-violet);
+  color: var(--text-0);
+}
+
+.pay-method__btn.is-on {
+  border-color: transparent;
+  background: var(--grad-cta);
+  color: #fff;
+  box-shadow: var(--glow-violet);
+}
+
+/* Рельс с порогом выше суммы — не тайна: кнопка видна, но выключена,
+   а причина живёт в title и в подписи вида «Карта (от 100 ₽)». */
+.pay-method__btn[disabled],
+.pay-method__btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pay-method__btn[disabled]:hover,
+.pay-method__btn[aria-disabled="true"]:hover {
+  border-color: var(--stroke);
+  color: var(--text-1);
+}
+
+.pay-method__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+}
+
+.pay-method__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* В карточке акции селектор стоит над кнопкой и выровнен по левому
+   краю, а не по центру страницы. */
+.trial-claim .pay-method {
+  align-items: flex-start;
+  width: 100%;
+  margin: 0 0 6px;
+}
+
+.trial-claim .pay-method__row {
+  justify-content: flex-start;
+}
+
+@media (max-width: 640px) {
+  .pay-method,
+  .pay-method__row {
+    width: 100%;
+  }
+
+  .pay-method__btn {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 9px 12px;
+    font-size: 0.85rem;
+  }
+}

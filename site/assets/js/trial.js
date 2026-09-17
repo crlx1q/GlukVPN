@@ -20,6 +20,10 @@
 
    Списание одно и сразу (1 ₽), автопродления не существует, поэтому третий
    шаг таймлайна — окончание подписки, а не «с вас спишут».
+
+   Способ оплаты тоже приходит с сервера: набор рельсов зависит от включённого
+   шлюза, а порог рельса сверяется с суммой списания — карту Cashera «от 100 ₽»
+   на акции за рубль выбрать нельзя, и она выключена прямо в разметке.
    ========================================================================== */
 (function () {
   "use strict";
@@ -45,7 +49,19 @@
   /* currency — валюта, в которой сервер выдал карточки тарифов (приходит
      с событием gluk:plans). Акция обязана быть в ней же: «$0.10» рядом
      с «790 ₸» — это и была рассинхронизация на странице тарифов. */
-  var state = { offer: null, enabled: false, authStatus: "", busy: false, currency: "" };
+  /* methods/method — способы оплаты активного шлюза и выбранный рельс.
+     Список составляет шлюз, а не витрина: у TabPay он один, у Cashera другой,
+     у MulenPay выбора нет вовсе. */
+  var state = {
+    offer: null,
+    enabled: false,
+    authStatus: "",
+    busy: false,
+    currency: "",
+    provider: "",
+    methods: [],
+    method: ""
+  };
 
   /* ------------------------------------------------------------- утилиты */
   function list(sel) {
@@ -159,6 +175,146 @@
     );
   }
 
+  /* ------------------------------------------------- способы оплаты */
+  /* Значки рисуем свои: логотипы СБП, «Мира» и Visa — товарные знаки со
+     своими правилами показа, а понятный значок их не требует. Набор тот же,
+     что на /pricing/ (billing.js): один и тот же выбор не должен выглядеть
+     на двух страницах по-разному. */
+  var PAY_ICONS = {
+    all: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.6" y="6.4" width="14.8" height="10.4" rx="2.4" stroke="currentColor" stroke-width="1.7"/><path d="M2.6 10.2h14.8" stroke="currentColor" stroke-width="1.7"/><path d="M6.8 20.2h11a2.6 2.6 0 0 0 2.6-2.6V9.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+    sbp: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="6.6" y="2.8" width="10.8" height="18.4" rx="2.6" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.4v6.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M9.7 11.4L12 13.8L14.3 11.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.4 17.4h3.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+    card: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.6" y="5.2" width="18.8" height="13.6" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M2.6 10.2h18.8" stroke="currentColor" stroke-width="1.7"/><path d="M6.4 14.8h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+    crypto: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.8" stroke="currentColor" stroke-width="1.7"/><path d="M9.6 7.6v8.8M12.2 7.6v8.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M8.6 9.4h4.2a1.8 1.8 0 0 1 0 3.6H8.6h4.6a1.8 1.8 0 0 1 0 3.6H8.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  };
+
+  /* Подписи знакомых рельсов держим здесь: сервер отдаёт их по-русски.
+     Незнакомый id показываем как пришёл — новый способ появится сам. */
+  var PAY_LABELS = {
+    all: ["Все способы", "All methods"],
+    sbp: ["СБП", "SBP"],
+    card: ["Банковская карта", "Bank card"],
+    crypto: ["Криптовалюта", "Crypto"]
+  };
+
+  var PROVIDER_LABELS = { tabpay: "TabPay", cashera: "Cashera", mulenpay: "MulenPay" };
+
+  /* Шлюз называем правильно: он переключается в админке, и обещать «страницу
+     TabPay» там, где платит Cashera, нельзя. */
+  function providerLabel() {
+    var id = String(state.provider || "").trim();
+    return PROVIDER_LABELS[id.toLowerCase()] || id;
+  }
+
+  function money(minor, currency) {
+    var P = window.GlukPrice;
+    if (P && P.money) {
+      try {
+        return P.money(minor, currency);
+      } catch (e) {}
+    }
+    /* Запас, если ui.js не загрузился. */
+    var amount = (Number(minor) || 0) / 100;
+    var code = String(currency || "").toUpperCase();
+    var sym = code === "RUB" ? "\u20bd" : code === "KZT" ? "\u20b8" : code === "USD" ? "$" : code;
+    var num = amount % 1 ? amount.toFixed(2) : String(Math.round(amount));
+    return sym === "$" ? sym + num : num + "\u00a0" + sym;
+  }
+
+  function methodId(m) {
+    return String((m && m.id) || "").toLowerCase();
+  }
+
+  function methodById(id) {
+    var want = String(id || "").toLowerCase();
+    var all = state.methods || [];
+    for (var i = 0; i < all.length; i++) {
+      if (methodId(all[i]) === want) return all[i];
+    }
+    return null;
+  }
+
+  /* Порог рельса сравниваем с суммой списания, а не с ценой на экране:
+     цена бывает в тенге, а платёж всегда уходит в рублях. */
+  function chargeMinor(offer) {
+    var charge = (offer && offer.charge) || null;
+    return charge ? Number(charge.minor) || 0 : 0;
+  }
+
+  function chargeCurrency(offer) {
+    var charge = (offer && offer.charge) || null;
+    return String((charge && charge.currency) || "").toUpperCase();
+  }
+
+  function methodFits(m, offer) {
+    var min = Number(m && m.minimumMinor) || 0;
+    var minor = chargeMinor(offer);
+    return !min || !minor || minor >= min;
+  }
+
+  /* Порог — часть подписи, а не сюрприз на странице шлюза: «Карта (от 100 ₽)»
+     сразу объясняет, почему её нельзя нажать на акции за рубль. */
+  function methodLabel(m, offer) {
+    var pair = PAY_LABELS[methodId(m)];
+    var text = pair ? L(pair[0], pair[1]) : String((m && m.label) || methodId(m));
+    if (m && Number(m.minimumMinor) > 0) {
+      text += " (" + L("от ", "from ") + money(m.minimumMinor, chargeCurrency(offer)) + ")";
+    }
+    return text;
+  }
+
+  /* Выбор по умолчанию. Обычно это первый способ («Все способы»), но если
+     сумме подходят не все рельсы, «все способы» превращаются в ловушку: на
+     витрине шлюза человек выберет карту и получит отказ. Тогда ведём на СБП. */
+  function pickMethod(offer) {
+    var all = state.methods || [];
+    if (!all.length) return "";
+    var current = methodById(state.method);
+    if (current && methodFits(current, offer)) return methodId(current);
+    var blocked = false;
+    for (var i = 0; i < all.length; i++) {
+      if (!methodFits(all[i], offer)) blocked = true;
+    }
+    if (blocked) {
+      var sbp = methodById("sbp");
+      if (sbp && methodFits(sbp, offer)) return methodId(sbp);
+    }
+    for (var k = 0; k < all.length; k++) {
+      if (methodFits(all[k], offer)) return methodId(all[k]);
+    }
+    return "";
+  }
+
+  /* Один рельс — это не выбор, а лишний вопрос перед оплатой. */
+  function methodsMarkup(offer) {
+    var all = state.methods || [];
+    if (!state.enabled || all.length < 2) return "";
+    return '<div class="pay-method" role="group" aria-label="' + esc(L("Способ оплаты", "Payment method")) + '" data-trial-methods>' +
+      '<span class="pay-method__title">' + esc(L("Способ оплаты", "Payment method")) + "</span>" +
+      '<div class="pay-method__row">' +
+        all
+          .map(function (m) {
+            var id = methodId(m);
+            var fits = methodFits(m, offer);
+            var on = fits && id === String(state.method || "").toLowerCase();
+            /* Причину блокировки говорим сразу: неактивная кнопка без
+               объяснения читается как поломка страницы. */
+            var why = fits ? "" : L(
+              "Недоступно для суммы " + chargeLabel(offer) + ": шлюз принимает картой от " +
+                money(m.minimumMinor, chargeCurrency(offer)) + ".",
+              "Not available for " + chargeLabel(offer) + ": the gateway takes cards from " +
+                money(m.minimumMinor, chargeCurrency(offer)) + "."
+            );
+            return '<button class="pay-method__btn' + (on ? " is-on" : "") + '" type="button" data-trial-method="' + esc(id) + '"' +
+              (fits ? "" : ' disabled aria-disabled="true" title="' + esc(why) + '"') +
+              ' aria-pressed="' + (on ? "true" : "false") + '">' +
+              '<span class="pay-method__icon" aria-hidden="true">' + (PAY_ICONS[id] || PAY_ICONS.card) + "</span>" +
+              '<span class="pay-method__label">' + esc(methodLabel(m, offer)) + "</span>" +
+              "</button>";
+          })
+          .join("") +
+      "</div>" +
+      "</div>";
+  }
 
   function planName(offer) {
     return (offer && offer.planName) || "Basic";
@@ -303,12 +459,18 @@
       var left = typeof el.daysLeft === "number" && el.daysLeft > 0
         ? L(" Активировать можно ещё " + daysLabel(el.daysLeft) + ".", " " + daysLabel(el.daysLeft) + " left to claim it.")
         : "";
+      /* Шлюз называем тот, который включён сейчас, а не тот, с которым акцию
+         запускали: провайдер переключается в админке. */
+      var gate = providerLabel();
       return {
+        methods: methodsMarkup(offer),
         cta: '<button class="btn btn--primary btn--lg" type="button" data-trial-claim-btn>' +
           esc(L("Подключить за " + price, "Get it for " + price)) + "</button>",
         note: L(
-          "Оплата на защищённой странице TabPay — СБП или карта. Данные карты не проходят через наш сервер." + left,
-          "Payment happens on TabPay's own secure page — SBP or card. Card details never touch our server." + left
+          "Оплата проходит на защищённой странице " + (gate || "платёжного сервиса") +
+            ": соединение по HTTPS, карты проходят проверку 3-D Secure. Данные карты не проходят через наш сервер." + left,
+          "Payment happens on " + (gate || "the payment provider") +
+            "'s own secure page: HTTPS, with 3-D Secure for cards. Card details never touch our server." + left
         )
       };
     }
@@ -371,7 +533,9 @@
     var box = host.querySelector("[data-trial-claim]");
     if (!box) return;
     var parts = claimBox(offer);
-    box.innerHTML = parts.cta + '<p class="trial-claim__note">' + esc(parts.note) + "</p>";
+    /* Селектор способов показываем только там, где кнопка оплаты живая:
+       в остальных состояниях выбирать нечего. */
+    box.innerHTML = (parts.methods || "") + parts.cta + '<p class="trial-claim__note">' + esc(parts.note) + "</p>";
   }
 
   function renderPage(host, offer) {
@@ -450,12 +614,31 @@
     }
     if (state.busy) return;
 
+    /* Выбранный рельс мог перестать подходить (сумму акции меняют
+       настройкой) — переключаем сами и просим нажать ещё раз, а не
+       отправляем заказ, который шлюз всё равно отклонит. */
+    var picked = methodById(state.method);
+    if (picked && !methodFits(picked, state.offer)) {
+      state.method = pickMethod(state.offer);
+      if (state.offer) pages.forEach(function (host) { renderClaim(host, state.offer); });
+      status(
+        "err",
+        "<b>" + esc(L("Этот способ не подходит к сумме", "That method does not fit this amount")) + "</b><p>" +
+          esc(L("Выбрали другой способ — нажмите оплату ещё раз.",
+                "We picked another method — press pay again.")) + "</p>"
+      );
+      return;
+    }
+
     var label = btn.textContent;
     state.busy = true;
     btn.disabled = true;
     btn.textContent = T("Создаём заказ…");
     status("", "");
-    A.call("/api/billing/trial/claim", { method: "POST", body: {} }).then(
+    /* «Все способы» — это отсутствие выбора: пусть шлюз покажет свою витрину. */
+    var body = {};
+    if (state.method && state.method !== "all") body.method = state.method;
+    A.call("/api/billing/trial/claim", { method: "POST", body: body }).then(
       function (res) {
         var order = (res && res.order) || {};
         if (res && res.paymentUrl) {
@@ -668,12 +851,21 @@
       function (json) {
         state.enabled = !!(json && json.billingEnabled);
         state.offer = (json && json.trial) || null;
+        state.provider = (json && json.provider) ? String(json.provider) : "";
+        /* Способы отдаёт активный шлюз; без id строка бесполезна. */
+        state.methods = ((json && json.methods) || []).filter(function (m) {
+          return m && m.id;
+        });
+        state.method = pickMethod(state.offer);
         apply();
       },
       function () {
         /* Акция — не критичный блок: молчащий сервер её просто не показывает. */
         state.enabled = false;
         state.offer = null;
+        state.provider = "";
+        state.methods = [];
+        state.method = "";
         apply();
       }
     );
@@ -684,6 +876,19 @@
     if (!btn) return;
     e.preventDefault();
     claim(btn);
+  });
+
+  /* Ключи разметки у акции свои (data-trial-method): на /pricing/ рядом
+     работает billing.js со своим селектором, и два обработчика на одних
+     и тех же кнопках меняли бы выбор друг другу. */
+  document.addEventListener("click", function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest("[data-trial-method]") : null;
+    if (!btn || btn.disabled) return;
+    e.preventDefault();
+    var id = String(btn.getAttribute("data-trial-method") || "").toLowerCase();
+    if (!id || id === state.method) return;
+    state.method = id;
+    if (state.offer) pages.forEach(function (host) { renderClaim(host, state.offer); });
   });
 
   /* Вход, выход и первая проверка сессии меняют ответ сервера. */
