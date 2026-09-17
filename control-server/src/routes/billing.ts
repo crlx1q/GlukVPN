@@ -33,12 +33,21 @@ const CreateOrderBody = z.object({
 	// A code typed by the visitor. It is validated again on the server, and the
 	// reply carries the amount that was actually charged.
 	promoCode: z.string().trim().max(32).optional(),
+	// Which rail to open the payment on: an id from the `methods` the plans
+	// endpoint returned. Not checked against a list here - the gateway folder
+	// owns its own vocabulary and ignores an id it does not know.
+	method: z.string().trim().max(32).optional(),
 })
 
 const PromoCheckBody = z.object({
 	code: z.string().trim().min(2).max(32),
 	planCode: z.string().trim().min(2).max(32),
 	currency: z.string().trim().min(3).max(3).optional(),
+})
+
+/** The trial takes no parameters beyond the rail to charge it on. */
+const ClaimTrialBody = z.object({
+	method: z.string().trim().max(32).optional(),
 })
 
 /**
@@ -84,11 +93,19 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 			// name it up front instead of leaving it as a surprise on the
 			// gateway's own screen.
 			const [billing, settle] = await Promise.all([billingStatus(), settlementCurrency()])
+			// Which rails the live gateway can actually take the money on, so the
+			// checkout can offer SBP or a card instead of leaving the choice to
+			// whatever the acquirer's own page happens to show first. A gateway
+			// that does not answer the question gets no selector at all, which is
+			// the honest way round: it takes what its dashboard is set to.
+			const live = billing.enabled ? paymentModule(billing.provider) : null
+			const methods = live?.availableMethods?.(settle ?? currency) ?? []
 			return reply.send({
 				billingEnabled: billing.enabled,
 				provider: billing.enabled ? billing.provider : null,
 				currency,
 				market,
+				methods,
 				settlement: settle ? { currency: settle } : null,
 				plans: plans.map((plan) => {
 					const view = planView(plan, currency)
@@ -122,6 +139,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 					normalizeCurrency(parsed.data.currency) ??
 					(await resolveMarketByIp(request)).currency,
 				promoCode: parsed.data.promoCode ?? null,
+				method: parsed.data.method ?? null,
 			})
 			return reply.code(201).send({
 				order: orderView(order),
@@ -181,9 +199,15 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 				normalizeCurrency(asked) ?? (await resolveMarketByIp(request)).currency
 			const trial = await trialOffer({ user, currency })
 			const billing = await billingStatus()
+			// The rails are quoted against the currency the offer is charged in,
+			// not the one on the visitor's screen: 1 ₽ is what a rail's minimum
+			// has to be compared with.
+			const live = billing.enabled ? paymentModule(billing.provider) : null
+			const methods = live?.availableMethods?.(trial.charge.currency) ?? []
 			return reply.send({
 				billingEnabled: billing.enabled,
 				provider: billing.enabled ? billing.provider : null,
+				methods,
 				trial,
 			})
 		},
@@ -196,7 +220,14 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 		{ preHandler: requireUser, config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
 		async (request, reply) => {
 			const { user } = getAuthUser(request)
-			const { order, checkout, days } = await claimTrial({ user, ip: clientIp(request) })
+			// The body is optional: an older client claims the trial without
+			// naming a rail, and the gateway's own default applies.
+			const parsed = ClaimTrialBody.safeParse(request.body ?? {})
+			const { order, checkout, days } = await claimTrial({
+				user,
+				ip: clientIp(request),
+				method: parsed.success ? (parsed.data.method ?? null) : null,
+			})
 			return reply.code(201).send({
 				order: orderView(order),
 				paymentUrl: checkout.paymentUrl,

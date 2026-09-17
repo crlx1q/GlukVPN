@@ -381,6 +381,12 @@ const REFUSAL_TEXT: Record<TrialReason, string> = {
 export async function claimTrial(params: {
 	user: User
 	ip?: string | null
+	/**
+	 * The rail the payer picked on /trial. It matters more here than anywhere
+	 * else: the offer charges 1 ₽, and a gateway whose card rail starts at
+	 * 100 ₽ would refuse that payment on the card and take it by SBP.
+	 */
+	method?: string | null
 }): Promise<{ order: Order & { plan: Plan }; checkout: CheckoutResult; days: number }> {
 	const settings = await trialSettings()
 	const eligibility = await trialEligibility(params.user, settings)
@@ -395,6 +401,7 @@ export async function claimTrial(params: {
 		ip: params.ip ?? null,
 		// The offer is priced in roubles; the equivalents are display only.
 		currency: await chargeCurrency(),
+		method: params.method ?? null,
 		allowHidden: true,
 		source: TRIAL_SOURCE,
 	})

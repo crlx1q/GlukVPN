@@ -315,6 +315,9 @@ function moduleProvider(mod: PaymentModule): PaymentProvider {
 		async createCheckout(order, plan, user) {
 			const meta = orderMetadata(order)
 			const isTrial = meta.source === "trial"
+			// The rail the payer picked, remembered on the order: a checkout that
+			// is handed back later opens on the one it was created for.
+			const method = typeof meta.method === "string" ? meta.method : null
 			const urls = returnUrls({ orderId: order.id, isTrial })
 			// The short order id is what a payer sees on a bank statement and
 			// quotes to support, so it belongs in the description.
@@ -325,6 +328,7 @@ function moduleProvider(mod: PaymentModule): PaymentProvider {
 				currency: order.currency,
 				description: `GlukVPN ${plan.name}, ${plan.days} дн. (заказ ${reference})`,
 				isTrial,
+				...(method ? { method } : {}),
 				successUrl: urls.successUrl,
 				failUrl: urls.failUrl,
 				webhookUrl: webhookUrl(mod.id),
@@ -425,6 +429,22 @@ function orderMetadata(order: Order): Record<string, unknown> {
 		: {}
 }
 
+/**
+ * The payer's chosen rail as it will be stored, or null when nothing was
+ * picked. Nothing is validated against a list here: which ids exist is the
+ * gateway folder's business, and it ignores what it does not know.
+ */
+function normalizeMethod(value?: string | null): string | null {
+	const text = (value ?? "").trim()
+	return text ? text.slice(0, 32) : null
+}
+
+/** Two rails, compared the way a gateway would: case does not matter. */
+function sameMethod(stored: unknown, wanted: string | null): boolean {
+	const left = typeof stored === "string" ? stored.trim().toLowerCase() : ""
+	return left === (wanted ?? "").toLowerCase()
+}
+
 export type OrderView = {
 	id: string
 	status: Order["status"]
@@ -479,6 +499,13 @@ export async function createOrder(params: {
 	/** A promo code typed by the visitor. Validated here, never trusted. */
 	promoCode?: string | null
 	/**
+	 * The rail the payer picked, as an id from the active gateway's own
+	 * `availableMethods` ("sbp", "CARD", "all", ...). Kept on the order and
+	 * handed to the adapter, which is the only thing that knows what its
+	 * acquirer calls a rail.
+	 */
+	method?: string | null
+	/**
 	 * Allow ordering a plan that is not in the public catalogue. Only the trial
 	 * uses this: its plan is hidden so it cannot be bought straight off the
 	 * pricing page, and `trial.ts` opens it once eligibility is proven.
@@ -524,9 +551,14 @@ export async function createOrder(params: {
 		})
 	}
 	const amountMinor = promo ? promo.amountMinor : price.priceMinor
+	// Which rail to open the payment on. It lives on the order rather than in
+	// an extra argument, so every adapter reads it the same way - and so a
+	// reused checkout cannot quietly move a payer from SBP to a card.
+	const method = normalizeMethod(params.method)
 	const metadata: Prisma.InputJsonValue = {
 		quotedCurrency: quoted.currency,
 		quotedMinor: quoted.priceMinor,
+		...(method ? { method } : {}),
 		...(promo
 			? {
 					promoCode: promo.promo.code,
@@ -551,7 +583,10 @@ export async function createOrder(params: {
 		},
 		include: { plan: true },
 	})
-	if (open && open.provider === gateway.name && (gateway.name === "manual" || open.paymentUrl)) {
+	// A payer who came back and picked another rail needs a new payment: the
+	// stored link opens on the rail it was created for.
+	const sameRail = open ? sameMethod(orderMetadata(open).method, method) : false
+	if (open && sameRail && open.provider === gateway.name && (gateway.name === "manual" || open.paymentUrl)) {
 		// ...but only while the gateway still considers that attempt payable. A
 		// declined payment stays PENDING here until its webhook lands, and
 		// handing back the same `paymentUrl` would drop the customer onto the
