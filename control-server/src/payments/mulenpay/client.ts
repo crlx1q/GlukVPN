@@ -17,6 +17,9 @@
  *     callback, by contrast, carries no signature at all, which is why every
  *     webhook is re-checked against `GET /payments/{id}` before anything is
  *     handed out.
+ *   - answers arrive wrapped: the payment itself sits under `data`, while
+ *     older answers are flat and a read may put it under `payment`. Every
+ *     response is unwrapped before a single field is read out of it.
  */
 import { createHash } from "node:crypto"
 import { serviceUnavailable } from "../../lib/errors"
@@ -106,8 +109,8 @@ function errorText(body: MulenpayError | null, fallback: string): string {
  * One call to the API.
  *
  * A refusal is returned rather than thrown so the caller can read the reason;
- * only "no answer at all" throws. The key goes in `Authorization` raw - no
- * "Bearer", which the documentation is explicit about.
+ * only "no answer at all" throws. The key travels as a bearer token -
+ * `Authorization: Bearer <key>` - which is what the gateway accepts.
  */
 async function mulenpayRequest<T>(
 	path: string,
@@ -122,7 +125,7 @@ async function mulenpayRequest<T>(
 			method: init.method,
 			headers: {
 				// !! SECRET !! Server-side only.
-				Authorization: key,
+				Authorization: "Bearer " + key,
 				accept: "application/json",
 				...(init.body === undefined ? {} : { "content-type": "application/json" }),
 			},
@@ -171,6 +174,35 @@ function paymentLink(value: unknown): string {
 	return "https://" + raw.replace(/^\/+/, "")
 }
 
+/** A plain object out of an untyped payload, or null when it is not one. */
+function record(value: unknown): Record<string, unknown> | null {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return null
+	return value as Record<string, unknown>
+}
+
+/** The created payment: under `data` in the current API, flat in older answers. */
+function createdBody(payload: unknown): Record<string, unknown> {
+	const body = record(payload)
+	if (!body) return {}
+	return record(body.data) ?? body
+}
+
+/**
+ * The payment object of a read: `data`, `payment`, or the body itself.
+ *
+ * Whichever of the three actually carries a `status` wins. When none of them
+ * does, the answer said nothing about this payment, and the caller is told so
+ * with null rather than with a status invented here.
+ */
+function paymentBody(payload: unknown): Record<string, unknown> | null {
+	const body = record(payload)
+	if (!body) return null
+	for (const candidate of [record(body.data), record(body.payment), body]) {
+		if (candidate && candidate.status !== undefined && candidate.status !== null) return candidate
+	}
+	return null
+}
+
 /** Roubles ("149.00" or 149) as whole kopecks. */
 export function kopecksFrom(value: unknown): number | null {
 	const amount = typeof value === "number" ? value : Number.parseFloat(String(value ?? "").replace(",", "."))
@@ -197,13 +229,13 @@ export async function createMulenpayPayment(input: CreateMulenpayPaymentInput): 
 	const amountText = roublesText(input.amountKopecks)
 	const description = input.description.slice(0, 255)
 
-	const result = await mulenpayRequest<{ success?: unknown; paymentUrl?: unknown; id?: unknown }>("/payments", {
+	const result = await mulenpayRequest<Record<string, unknown>>("/payments", {
 		method: "POST",
 		body: {
 			currency: MULENPAY_API_CURRENCY,
 			amount: amountText,
 			uuid: input.orderId,
-			shopId: shop,
+			shop_id: shop,
 			description,
 			sign: signature(amountText),
 			language: language(),
@@ -226,26 +258,26 @@ export async function createMulenpayPayment(input: CreateMulenpayPaymentInput): 
 	})
 
 	if (!result.ok) throw serviceUnavailable(result.message)
-	const paymentUrl = paymentLink(result.data?.paymentUrl)
+	const data = createdBody(result.data)
+	const paymentUrl = paymentLink(data.payment_url ?? data.paymentUrl)
 	if (!paymentUrl) throw serviceUnavailable("Payment gateway returned no payment link")
-	return { id: idText(result.data?.id), paymentUrl }
+	const paymentId = idText(data.id)
+	return { id: paymentId, paymentUrl }
 }
 
 /**
- * GET /payments/{id} -> `{ success, payment: { status } }`.
+ * GET /payments/{id} -> `{ success, data: { status, amount } }`.
  *
  * This is the authority on whether a payment happened. The callback only
  * prompts the question; this answers it.
  */
 export async function getMulenpayPayment(id: string): Promise<MulenpayPaymentState | null> {
-	const result = await mulenpayRequest<{ success?: unknown; payment?: unknown }>(
-		"/payments/" + encodeURIComponent(id),
-		{ method: "GET" },
-	)
+	const result = await mulenpayRequest<Record<string, unknown>>("/payments/" + encodeURIComponent(id), {
+		method: "GET",
+	})
 	if (!result.ok) return null
-	const payment = result.data?.payment
-	if (typeof payment !== "object" || payment === null) return null
-	const row = payment as { status?: unknown; amount?: unknown }
+	const row = paymentBody(result.data)
+	if (!row) return null
 	const status = typeof row.status === "number" ? row.status : Number.parseInt(String(row.status ?? ""), 10)
 	return {
 		status: Number.isFinite(status) ? status : -1,
