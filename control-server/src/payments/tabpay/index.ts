@@ -82,16 +82,13 @@ function text(value: unknown): string {
 }
 
 /**
- * The rails TabPay's hosted page can be pinned to.
+ * The one rail this gateway offers on our site: its own hosted checkout page,
+ * which presents all available rails (SBP, bank cards) directly.
  *
- * "all" is the page as TabPay draws it by default, with both rails on it. The
- * other two ids are the gateway's own codes and travel to the API unchanged.
+ * Suppresses the redundant method selector on the site and lets the payer pick
+ * the rail on TabPay's own page.
  */
-const METHODS: readonly PaymentMethodOption[] = [
-	{ id: "all", label: "Все способы" },
-	{ id: "SBP", label: "СБП" },
-	{ id: "CARD", label: "Банковская карта" },
-]
+const METHODS: readonly PaymentMethodOption[] = [{ id: "all", label: "Все способы" }]
 
 /**
  * Which rail this payment is created for.
