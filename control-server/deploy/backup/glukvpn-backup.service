@@ -1,0 +1,23 @@
+[Unit]
+Description=GlukVPN full application backup
+Documentation=file:///opt/glukvpn/bin/README-backup.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Environment=BACKUP_ENV_FILE=/etc/glukvpn/backup.env
+ExecStart=/opt/glukvpn/bin/glukvpn-backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+PrivateTmp=true
+ProtectHome=true
+NoNewPrivileges=true
+UMask=0077
+TimeoutStartSec=45min
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=glukvpn-backup

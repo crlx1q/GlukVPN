@@ -1,0 +1,5 @@
+# Allow only the control API service accounts to start the fixed backup unit.
+# No arguments, shell or arbitrary unit names are allowed.
+glukvpn ALL=(root) NOPASSWD: /bin/systemctl start glukvpn-backup.service
+glukvpn-control ALL=(root) NOPASSWD: /bin/systemctl start glukvpn-backup.service
+glukvpn-beta-control ALL=(root) NOPASSWD: /bin/systemctl start glukvpn-backup.service
