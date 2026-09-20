@@ -53,7 +53,7 @@ const CodeParams = z.object({
 
 /** Where the browser is sent. Kept out of `config` so no migration is needed. */
 function siteBaseUrl(): string {
-	const raw = process.env.SITE_BASE_URL ?? "https://vpn.gluk.tech"
+	const raw = process.env.SITE_BASE_URL ?? config.SITE_BASE_URL ?? "https://app.gluk.tech"
 	return raw.replace(/\/+$/, "")
 }
 

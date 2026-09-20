@@ -330,7 +330,7 @@ const EnvSchema = z.object({
 	TURNSTILE_ENABLED: envFlag("true"),
 
 	// Where the browser is sent for link sign-in and sign-up confirmation.
-	SITE_BASE_URL: z.string().default("https://vpn.gluk.tech"),
+	SITE_BASE_URL: z.string().default("https://app.gluk.tech"),
 
 	// -------------------------- approximate origin ---------------------------
 	// Country/region of the login IP, used to place the map marker. Coarse by

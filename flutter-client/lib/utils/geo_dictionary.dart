@@ -308,6 +308,45 @@ const Map<String, GeoPoint> cityCoords = <String, GeoPoint>{
   'tunis': GeoPoint(36.81, 10.18),
 };
 
+const Map<String, String> _cyrillicCityAliases = <String, String>{
+  'франкфурт': 'frankfurt',
+  'берлин': 'berlin',
+  'мюнхен': 'munich',
+  'дюссельдорф': 'duesseldorf',
+  'амстердам': 'amsterdam',
+  'париж': 'paris',
+  'лондон': 'london',
+  'дублин': 'dublin',
+  'мадрид': 'madrid',
+  'барселона': 'barcelona',
+  'лиссабон': 'lisbon',
+  'милан': 'milan',
+  'рим': 'rome',
+  'цюрих': 'zurich',
+  'женева': 'geneva',
+  'вена': 'vienna',
+  'прага': 'prague',
+  'варшава': 'warsaw',
+  'стокгольм': 'stockholm',
+  'хельсинки': 'helsinki',
+  'осло': 'oslo',
+  'копенгаген': 'copenhagen',
+  'таллин': 'tallinn',
+  'рига': 'riga',
+  'вильнюс': 'vilnius',
+  'бухарест': 'bucharest',
+  'софия': 'sofia',
+  'будапешт': 'budapest',
+  'афины': 'athens',
+  'стамбул': 'istanbul',
+  'истанбул': 'istanbul',
+  'москва': 'moscow',
+  'санктпетербург': 'saintpetersburg',
+  'питер': 'saintpetersburg',
+  'алматы': 'almaty',
+  'астана': 'astana',
+};
+
 /// Normalises a raw city string into a [geoCities] key.
 ///
 /// The control plane is not consistent: "Frankfurt", "frankfurt am main",
@@ -319,6 +358,14 @@ String? cityKey(String? raw) {
       .replaceAll(RegExp(r'[^a-zа-яё0-9]'), '')
       .trim();
   if (key.isEmpty) return null;
+
+  if (_cyrillicCityAliases.containsKey(key)) {
+    return _cyrillicCityAliases[key];
+  }
+  for (final MapEntry<String, String> entry in _cyrillicCityAliases.entries) {
+    if (key.startsWith(entry.key)) return entry.value;
+  }
+
   if (geoCities.containsKey(key)) return key;
 
   // "frankfurtammain" -> "frankfurt", "newyorkcity" -> "newyork".
@@ -343,12 +390,18 @@ String localizeCountry(
 
 /// City name in the interface language, falling back to a tidied raw value.
 String localizeCity(String? city, {bool russian = true}) {
-  final String? key = cityKey(city);
-  final LocalizedName? name = key == null ? null : geoCities[key];
-  if (name != null) return name.pick(russian);
-
   final String raw = (city ?? '').trim();
   if (raw.isEmpty) return '';
+
+  // Preserve trailing node index like "Франкфурт 1" -> suffix " 1"
+  final Match? numberMatch = RegExp(r'(?:\s+|[-_#])(\d+)$').firstMatch(raw);
+  final String numberSuffix = numberMatch != null ? ' ${numberMatch.group(1)}' : '';
+  final String baseName = numberMatch != null ? raw.substring(0, numberMatch.start).trim() : raw;
+
+  final String? key = cityKey(baseName.isNotEmpty ? baseName : raw);
+  final LocalizedName? name = key == null ? null : geoCities[key];
+  if (name != null) return '${name.pick(russian)}$numberSuffix';
+
   // Title-case whatever we were given so "frankfurt" never reaches the UI.
   return raw
       .split(RegExp(r'[\s_-]+'))

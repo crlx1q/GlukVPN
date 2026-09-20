@@ -147,9 +147,18 @@ export function localizeCountry(code, lang = 'ru') {
 
 export function localizeCity(city, lang = 'ru') {
 	if (!city) return ''
-	const key = String(city).trim().toLowerCase()
+	const raw = String(city).trim()
+	const numMatch = raw.match(/(?:\s+|[-_#])(\d+)$/)
+	const numSuffix = numMatch ? ` ${numMatch[1]}` : ''
+	const base = numMatch ? raw.slice(0, numMatch.index).trim() : raw
+	const key = base.toLowerCase()
+	for (const [k, val] of Object.entries(GEO_DICTIONARY.cities)) {
+		if (k === key || val.ru?.toLowerCase() === key || val.en?.toLowerCase() === key) {
+			return `${val[lang] || val.en || base}${numSuffix}`
+		}
+	}
 	const entry = GEO_DICTIONARY.cities[key]
-	return entry?.[lang] || entry?.en || city
+	return entry ? `${entry[lang] || entry.en}${numSuffix}` : city
 }
 
 export function formatNodeLocation(node, lang = 'ru') {

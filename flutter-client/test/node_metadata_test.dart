@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:glukvpn/models/models.dart';
+import 'package:glukvpn/utils/geo_dictionary.dart';
 
 /// What a user is allowed to see about a server, and what they are not.
 ///
@@ -85,6 +86,29 @@ void main() {
       final VpnNodeInfo noTarget =
           VpnNodeInfo.fromJson(nodeJson(pingTarget: ''));
       expect(noTarget.latencyHost, 'de1.example.net');
+    });
+
+    test('localizes Russian city names and preserves server index in English and Russian', () {
+      expect(localizeCity('Франкфурт 1', russian: false), 'Frankfurt 1');
+      expect(localizeCity('Франкфурт 1', russian: true), 'Франкфурт 1');
+      expect(
+        formatNodeLocation(
+          city: 'Франкфурт 1',
+          countryCode: 'DE',
+          countryName: 'Germany',
+          russian: false,
+        ),
+        'Frankfurt 1, Germany',
+      );
+      expect(
+        formatNodeLocation(
+          city: 'Франкфурт 1',
+          countryCode: 'DE',
+          countryName: 'Germany',
+          russian: true,
+        ),
+        'Франкфурт 1, Германия',
+      );
     });
   });
 
