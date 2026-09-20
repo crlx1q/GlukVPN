@@ -311,5 +311,6 @@ class WireGuardTunnel(
         onStateChanged?.invoke(newState)
     }
 
+    override fun isIpv4ResolutionPreferred(): Boolean = false
 }
 
