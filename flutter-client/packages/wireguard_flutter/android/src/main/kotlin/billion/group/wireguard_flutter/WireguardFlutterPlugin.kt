@@ -114,7 +114,7 @@ class WireguardFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
 
     private fun createBackend(): Backend {
         if (backend == null) {
-            backend = GoBackend(context)
+            backend = GoBackend(context, NoopTunnelActionHandler())
         }
         return backend as Backend
     }
@@ -276,7 +276,7 @@ class WireguardFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
     }
 
     private fun checkPermission() {
-        val intent = GoBackend.VpnService.prepare(this.activity)
+        val intent = android.net.VpnService.prepare(this.activity)
         if (intent != null) {
             havePermission = false
             this.activity?.startActivityForResult(intent, PERMISSIONS_REQUEST_CODE)
@@ -312,5 +312,7 @@ class WireGuardTunnel(
     }
 
     override fun isIpv4ResolutionPreferred(): Boolean = false
+
+    override fun isMetered(): Boolean = false
 }
 
