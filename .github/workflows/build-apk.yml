@@ -89,10 +89,10 @@ jobs:
           echo "--- Kotlin sources in $KOTLIN_DIR ---"
           cat android_overrides/namespace_patch.gradle >> android/build.gradle
           if [ -f android/settings.gradle ]; then
-            sed -i -E 's/id "org.jetbrains.kotlin.android" version "[0-9.]+"/id "org.jetbrains.kotlin.android" version "2.0.21"/' android/settings.gradle || true
+            sed -i -E 's/id "org.jetbrains.kotlin.android" version "[0-9.]+"/id "org.jetbrains.kotlin.android" version "2.2.21"/' android/settings.gradle || true
           fi
           if [ -f android/build.gradle ]; then
-            sed -i -E "s/ext.kotlin_version = '[0-9.]+'/ext.kotlin_version = '2.0.21'/" android/build.gradle || true
+            sed -i -E "s/ext.kotlin_version = '[0-9.]+'/ext.kotlin_version = '2.2.21'/" android/build.gradle || true
           fi
           # Persistent release signing. Reads android/key.properties (written by
           # the step below from the repository secrets) or the ANDROID_* env
