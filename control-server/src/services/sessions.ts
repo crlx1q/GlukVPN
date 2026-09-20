@@ -46,6 +46,23 @@ export type ClientTunnelConfig = {
 		sni?: string
 		flow?: string
 	}
+
+	/**
+	 * AmneziaWG obfuscation parameters for DPI-resistant connections in Russia.
+	 */
+	amnezia?: {
+		port: number
+		publicKey: string
+		jc: number
+		jmin: number
+		jmax: number
+		s1: number
+		s2: number
+		h1: number
+		h2: number
+		h3: number
+		h4: number
+	}
 }
 
 export type SessionView = {
@@ -374,6 +391,32 @@ export function gatewayFor(
 }
 
 /**
+ * AmneziaWG obfuscation parameters for DPI-resistant connections in Russia.
+ * Included in the tunnel payload so mobile clients can connect through TSPU filters.
+ */
+export function amneziaForNode(
+	node: VpnNode,
+): ClientTunnelConfig["amnezia"] | undefined {
+	if (!config.AWG_ENABLED && !config.AWG_PUBLIC_KEY) return undefined
+	if (config.AWG_NODE_ID && config.AWG_NODE_ID !== node.id && config.AWG_NODE_ID !== node.name) {
+		return undefined
+	}
+	return {
+		port: config.AWG_PORT,
+		publicKey: config.AWG_PUBLIC_KEY || (node.wireguardPublicKey ?? ""),
+		jc: config.AWG_JC,
+		jmin: config.AWG_JMIN,
+		jmax: config.AWG_JMAX,
+		s1: config.AWG_S1,
+		s2: config.AWG_S2,
+		h1: config.AWG_H1,
+		h2: config.AWG_H2,
+		h3: config.AWG_H3,
+		h4: config.AWG_H4,
+	}
+}
+
+/**
  * Allocates a free tunnel IP and creates the session row atomically, so two
  * parallel connects can never receive the same address.
  *
@@ -568,6 +611,7 @@ export async function connectSession(params: {
 	// simply does not advertise one. The credential is the device's own, and the
 	// port is the one that enforces this plan's speed once shaping is wired up.
 	const gateway = gatewayFor(node, device, entitlement.speedLimitMbps) ?? undefined
+	const amnezia = amneziaForNode(node)
 	await requireVpnAvailable(await prisma.vpnNode.findUnique({ where: { id: node.id } }))
 	const current = await prisma.session.findUnique({ where: { id: session.id }, select: { status: true } })
 	if (!current || (current.status !== "PENDING" && current.status !== "ACTIVE")) throw forbidden("This session was closed. Connect again.")
@@ -589,6 +633,7 @@ export async function connectSession(params: {
 			allowedIps: tunnelAllowedIps(config.TUNNEL_BYPASS_IPS),
 			persistentKeepalive: 25,
 			...(gateway ? { gateway } : {}),
+			...(amnezia ? { amnezia } : {}),
 		},
 	}
 }

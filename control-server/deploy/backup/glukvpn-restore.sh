@@ -17,7 +17,12 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl nginx postgresql postgresql-client nodejs npm rclone
+apt-get install -y ca-certificates curl nginx postgresql postgresql-client nodejs npm rclone wireguard-tools software-properties-common
+if ! command -v awg >/dev/null 2>&1; then
+	add-apt-repository -y ppa:amnezia/ppa || true
+	apt-get update || true
+	apt-get install -y amneziawg-tools amneziawg-dkms || true
+fi
 
 if ! getent group glukvpn >/dev/null; then groupadd --system glukvpn; fi
 if ! id glukvpn >/dev/null 2>&1; then
@@ -61,9 +66,20 @@ done
 systemctl daemon-reload
 nginx -t
 systemctl enable --now nginx
-for service in glukvpn-control glukvpn-beta-control glukvpn-node glukvpn-beta-node; do
-	if systemctl cat "${service}.service" >/dev/null 2>&1; then
-		systemctl enable --now "${service}.service"
+for service in \
+	glukvpn-control \
+	glukvpn-beta-control \
+	glukvpn-node-agent \
+	glukvpn-beta-node-agent \
+	glukvpn-browser-proxy \
+	glukvpn-beta-browser-proxy \
+	glukvpn-deploy-worker \
+	glukvpn-egress-guard \
+	glukvpn-singbox \
+	glukvpn-singbox-reload.path \
+	awg-quick@awg0; do
+	if systemctl cat "${service}.service" >/dev/null 2>&1 || [[ "$service" == *.path ]] || [[ "$service" == awg* ]]; then
+		systemctl enable --now "$service" || true
 	fi
 done
 if systemctl cat glukvpn-backup.timer >/dev/null 2>&1; then systemctl enable --now glukvpn-backup.timer; fi

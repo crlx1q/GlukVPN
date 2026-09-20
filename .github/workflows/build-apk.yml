@@ -18,6 +18,8 @@ on:
       - "flutter-client/lib/**"
       - "flutter-client/test/**"
       - "flutter-client/pubspec.yaml"
+      - "flutter-client/pubspec.lock"
+      - "flutter-client/packages/**"
       - "flutter-client/android_overrides/**"
       - ".github/workflows/build-apk.yml"
 

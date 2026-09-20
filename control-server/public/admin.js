@@ -2177,6 +2177,145 @@ async function createPromo() {
 	}
 }
 
+async function downloadBackup(filename) {
+	try {
+		toast(`Загрузка архива ${filename}...`)
+		const response = await fetch(`/api/admin/backups/${encodeURIComponent(filename)}/download`, {
+			headers: {
+				Authorization: `Bearer ${state.accessToken}`,
+			},
+		})
+		if (!response.ok) throw new Error(`HTTP ${response.status}`)
+		const blob = await response.blob()
+		const url = URL.createObjectURL(blob)
+		const a = document.createElement("a")
+		a.href = url
+		a.download = filename
+		document.body.appendChild(a)
+		a.click()
+		a.remove()
+		URL.revokeObjectURL(url)
+		toast(`Архив ${filename} скачан`)
+	} catch (error) {
+		toast(`Ошибка скачивания: ${error.message}`, true)
+	}
+}
+
+function renderBackups(data) {
+	const status = data.status || {}
+	const backups = data.backups || []
+
+	const scheduleEl = el("backup-schedule")
+	if (scheduleEl) scheduleEl.textContent = `Каждые 24ч (${status.schedule || "03:00 UTC"})`
+
+	const nextEl = el("backup-next-run")
+	if (nextEl) {
+		nextEl.textContent = status.nextBackupAt
+			? `Следующий: ${new Date(status.nextBackupAt).toLocaleDateString()} ${new Date(status.nextBackupAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+			: "Следующий: —"
+	}
+
+	const gdriveEl = el("backup-gdrive-status")
+	if (gdriveEl) {
+		if (status.googleDriveConfigured) {
+			gdriveEl.textContent = `Подключен (${status.googleDriveStatus || "active"})`
+		} else {
+			gdriveEl.textContent = "Не настроен (rclone)"
+		}
+	}
+
+	const retentionEl = el("backup-retention")
+	if (retentionEl) retentionEl.textContent = `Ротация: до ${status.retention || 5} копий`
+
+	const lastTimeEl = el("backup-last-time")
+	if (lastTimeEl) {
+		lastTimeEl.textContent = status.lastBackupAt ? ago(status.lastBackupAt) : "—"
+	}
+
+	const lastFileEl = el("backup-last-file")
+	if (lastFileEl) {
+		lastFileEl.textContent = status.lastFilename || "—"
+	}
+
+	const noticeEl = el("backup-running-notice")
+	if (noticeEl) {
+		noticeEl.hidden = !status.running
+	}
+
+	const createBtn = el("backup-create-btn")
+	if (createBtn) {
+		createBtn.disabled = Boolean(status.running)
+	}
+
+	const body = el("backups-body")
+	if (!body) return
+	body.replaceChildren()
+
+	if (backups.length === 0) {
+		const row = document.createElement("tr")
+		const emptyCell = document.createElement("td")
+		emptyCell.colSpan = 5
+		emptyCell.className = "muted"
+		emptyCell.textContent = "Резервные копии ещё не создавались."
+		row.appendChild(emptyCell)
+		body.appendChild(row)
+		return
+	}
+
+	for (const b of backups) {
+		const row = document.createElement("tr")
+
+		const code = document.createElement("code")
+		code.textContent = b.filename
+		cell(row, code)
+
+		const dt = new Date(b.createdAt)
+		cell(row, `${dt.toLocaleDateString()} ${dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`)
+
+		cell(row, `${b.sizeMb} MB`)
+
+		let gdrivePillText = "Локально"
+		let gdrivePillClass = "pill disabled"
+		if (b.googleDrive === "uploaded") {
+			gdrivePillText = "В Google Drive"
+			gdrivePillClass = "pill succeeded"
+		} else if (b.googleDrive === "failed") {
+			gdrivePillText = "Ошибка загрузки"
+			gdrivePillClass = "pill failed"
+		} else if (b.googleDrive === "pending") {
+			gdrivePillText = "Выгружается..."
+			gdrivePillClass = "pill pending"
+		} else if (b.googleDrive === "disabled") {
+			gdrivePillText = "Только локально"
+			gdrivePillClass = "pill disabled"
+		}
+		const span = document.createElement("span")
+		span.className = gdrivePillClass
+		span.textContent = gdrivePillText
+		cell(row, span)
+
+		const downloadBtn = document.createElement("button")
+		downloadBtn.type = "button"
+		downloadBtn.className = "ghost small"
+		downloadBtn.textContent = "Скачать"
+		downloadBtn.addEventListener("click", () => downloadBackup(b.filename))
+		cell(row, downloadBtn)
+
+		body.appendChild(row)
+	}
+}
+
+async function loadBackups() {
+	try {
+		const data = await request("/api/admin/backups")
+		renderBackups(data)
+	} catch (error) {
+		if (error.status !== 404 && error.status !== 403) {
+			toast(`Ошибка загрузки бэкапов: ${error.message}`, true)
+		}
+	}
+}
+
 async function loadDeploy() {
 	try {
 		const status = await request("/api/admin/deploy/status")
@@ -2234,6 +2373,7 @@ async function loadAll() {
 						loadGateways(),
 						loadTrial(),
 						loadPromos(),
+						loadBackups(),
 					]
 				: [loadEgressBudget(), loadClientErrors()],
 		)
@@ -2294,6 +2434,9 @@ function selectTab(tab) {
 	}
 	setPageMeta(tab)
 	closeNav()
+	if (tab === "backups" && canManage()) {
+		void loadBackups()
+	}
 }
 
 /**
@@ -2307,12 +2450,12 @@ function selectTab(tab) {
  */
 function applyRoleVisibility() {
 	const manage = canManage()
-	for (const name of ["channels", "billing"]) {
+	for (const name of ["channels", "billing", "backups"]) {
 		const button = document.querySelector(`.tab[data-tab="${name}"]`)
 		if (button) button.hidden = !manage
 	}
 	// Вкладка могла остаться выбранной от предыдущего сеанса в этой же вкладке браузера.
-	if (!manage && (state.tab === "channels" || state.tab === "billing")) state.tab = "overview"
+	if (!manage && (state.tab === "channels" || state.tab === "billing" || state.tab === "backups")) state.tab = "overview"
 	for (const id of [
 		"service-controls",
 		"create-user-btn",
@@ -2651,6 +2794,28 @@ el("promo-form").addEventListener("submit", (event) => {
 	void createPromo()
 })
 
+const backupCreateBtn = el("backup-create-btn")
+if (backupCreateBtn) {
+	backupCreateBtn.addEventListener("click", async () => {
+		const confirmed = window.confirm(
+			"Создать резервную копию сейчас? Процесс выполнит дамп баз данных prod и beta, сохранит конфигурации и выгрузит архив в Google Drive.",
+		)
+		if (!confirmed) return
+		backupCreateBtn.disabled = true
+		const notice = el("backup-running-notice")
+		if (notice) notice.hidden = false
+		try {
+			await request("/api/admin/backups/create", { method: "POST" })
+			toast("Создание бэкапа запущено в фоне")
+			await loadBackups()
+		} catch (error) {
+			toast(error.message, true)
+		} finally {
+			backupCreateBtn.disabled = false
+		}
+	})
+}
+
 void loadChannelBadge()
 
 /* ---------------- редизайн: шапка, меню, мобильные таблицы ---------------- */
@@ -2659,6 +2824,7 @@ void loadChannelBadge()
 const PAGE_META = {
 	overview: ["Обзор", "Сводка по аккаунтам, узлам и трафику"],
 	channels: ["Каналы и релизы", "Деплой, промоут и история задач"],
+	backups: ["Резервные копии", "Полные снимки сервера и Disaster Recovery"],
 	nodes: ["VPN-узлы", "Состояние, политики и ограничения"],
 	users: ["Пользователи", "Аккаунты, роли и подписки"],
 	devices: ["Устройства", "Привязки и отзыв доступа"],

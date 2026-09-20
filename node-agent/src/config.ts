@@ -84,6 +84,7 @@ const Schema = z.object({
 	WG_SUBNET: z.string().trim().default("10.8.0.0/24"),
 	WG_MTU: positiveInt(1420),
 	WG_EGRESS_INTERFACE: optionalString,
+	AWG_INTERFACE: optionalString,
 
 	// sing-box VLESS gateway (ROUND 26).
 	//

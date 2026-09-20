@@ -71,6 +71,12 @@ if (glukStorePassword == null) glukMissing << 'storePassword / KEYSTORE_PASSWORD
 if (glukKeyAlias == null) glukMissing << 'keyAlias / KEY_ALIAS'
 if (glukKeyPassword == null) glukMissing << 'keyPassword / KEY_PASSWORD'
 
+android {
+    defaultConfig {
+        minSdkVersion 24
+    }
+}
+
 if (glukMissing.isEmpty()) {
     android {
         signingConfigs {

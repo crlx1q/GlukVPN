@@ -98,6 +98,7 @@ copy_path() {
 }
 
 copy_path /etc/glukvpn
+copy_path /etc/amnezia
 copy_path /etc/nginx
 copy_path /etc/letsencrypt
 copy_path /var/www/vpn.gluk.tech
@@ -112,7 +113,7 @@ done
 mkdir -p "$STAGING/snapshot/etc/systemd/system"
 while IFS= read -r -d '' unit; do
 	cp -a "$unit" "$STAGING/snapshot/etc/systemd/system/"
-done < <(find /etc/systemd/system -maxdepth 1 -name 'glukvpn*' -print0)
+done < <(find /etc/systemd/system -maxdepth 1 \( -name 'glukvpn*' -o -name 'awg*' \) -print0)
 
 if [[ ! -r "$RESTORE_SOURCE" ]]; then
 	echo "restore script not found: $RESTORE_SOURCE" >&2

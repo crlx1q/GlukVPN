@@ -807,6 +807,49 @@ class DeviceInfo {
   bool get isActive => status == 'ACTIVE';
 }
 
+/// Obfuscation parameters for AmneziaWG (DPI bypass in Russia).
+class AmneziaConfig {
+  const AmneziaConfig({
+    required this.jc,
+    required this.jmin,
+    required this.jmax,
+    required this.s1,
+    required this.s2,
+    required this.h1,
+    required this.h2,
+    required this.h3,
+    required this.h4,
+    this.port,
+    this.peerPublicKey,
+  });
+
+  factory AmneziaConfig.fromJson(Map<String, dynamic> json) => AmneziaConfig(
+        jc: _asInt(json['jc'], 4),
+        jmin: _asInt(json['jmin'], 40),
+        jmax: _asInt(json['jmax'], 70),
+        s1: _asInt(json['s1'], 25),
+        s2: _asInt(json['s2'], 45),
+        h1: _asInt(json['h1'], 1234567890),
+        h2: _asInt(json['h2'], 987654321),
+        h3: _asInt(json['h3'], 1122334455),
+        h4: _asInt(json['h4'], 2233445566),
+        port: json['port'] == null ? null : _asInt(json['port']),
+        peerPublicKey: _asStringOrNull(json['publicKey'] ?? json['peerPublicKey']),
+      );
+
+  final int jc;
+  final int jmin;
+  final int jmax;
+  final int s1;
+  final int s2;
+  final int h1;
+  final int h2;
+  final int h3;
+  final int h4;
+  final int? port;
+  final String? peerPublicKey;
+}
+
 /// Everything the phone needs to build a WireGuard tunnel, as returned by
 /// `POST /api/vpn/connect`.
 ///
@@ -823,6 +866,7 @@ class TunnelConfig {
     required this.allowedIps,
     required this.persistentKeepalive,
     this.gateway = const <String, dynamic>{},
+    this.amnezia,
   });
 
   factory TunnelConfig.fromJson(Map<String, dynamic> json) => TunnelConfig(
@@ -835,6 +879,9 @@ class TunnelConfig {
         allowedIps: _asStringList(json['allowedIps']),
         persistentKeepalive: _asInt(json['persistentKeepalive'], 25),
         gateway: _asMap(json['gateway']),
+        amnezia: json['amnezia'] is Map<String, dynamic>
+            ? AmneziaConfig.fromJson(json['amnezia'] as Map<String, dynamic>)
+            : null,
       );
 
   final String sessionId;
@@ -855,6 +902,9 @@ class TunnelConfig {
   /// node has not been migrated and the WireGuard fields above are the only
   /// way in.
   final Map<String, dynamic> gateway;
+
+  /// AmneziaWG obfuscation parameters for DPI-resistant connections.
+  final AmneziaConfig? amnezia;
 
   String get assignedIp => interfaceAddress.split('/').first;
 
@@ -878,15 +928,31 @@ class TunnelConfig {
       ..writeln('PrivateKey = $privateKeyBase64')
       ..writeln('Address = $interfaceAddress');
     if (dns.isNotEmpty) out.writeln('DNS = ${dns.join(', ')}');
+    out.writeln('MTU = $mtu');
+    if (amnezia != null) {
+      out
+        ..writeln('Jc = ${amnezia!.jc}')
+        ..writeln('Jmin = ${amnezia!.jmin}')
+        ..writeln('Jmax = ${amnezia!.jmax}')
+        ..writeln('S1 = ${amnezia!.s1}')
+        ..writeln('S2 = ${amnezia!.s2}')
+        ..writeln('H1 = ${amnezia!.h1}')
+        ..writeln('H2 = ${amnezia!.h2}')
+        ..writeln('H3 = ${amnezia!.h3}')
+        ..writeln('H4 = ${amnezia!.h4}');
+    }
+    final String targetEndpoint = (amnezia?.port != null)
+        ? '${endpoint.split(':').first}:${amnezia!.port}'
+        : endpoint;
+    final String targetKey = amnezia?.peerPublicKey ?? peerPublicKey;
     out
-      ..writeln('MTU = $mtu')
       ..writeln()
       ..writeln('[Peer]')
-      ..writeln('PublicKey = $peerPublicKey')
+      ..writeln('PublicKey = $targetKey')
       ..writeln(
         'AllowedIPs = ${allowedIps.isEmpty ? '0.0.0.0/0' : allowedIps.join(', ')}',
       )
-      ..writeln('Endpoint = $endpoint')
+      ..writeln('Endpoint = $targetEndpoint')
       ..writeln('PersistentKeepalive = $persistentKeepalive');
     return out.toString();
   }

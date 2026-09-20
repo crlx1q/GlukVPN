@@ -61,6 +61,37 @@ void main() {
           .toWgQuickConfig(privateKeyBase64: 'k');
       expect(config, contains('AllowedIPs = 0.0.0.0/0'));
     });
+
+    test('builds an AmneziaWG config with obfuscation parameters when present', () {
+      final Map<String, dynamic> json = payload()
+        ..['amnezia'] = <String, dynamic>{
+          'port': 51822,
+          'publicKey': 'awgPublicKey0000000000000000000000000000000=',
+          'jc': 4,
+          'jmin': 40,
+          'jmax': 70,
+          's1': 25,
+          's2': 45,
+          'h1': 1234567890,
+          'h2': 987654321,
+          'h3': 1122334455,
+          'h4': 2233445566,
+        };
+      final TunnelConfig tunnel = TunnelConfig.fromJson(json);
+      final String config = tunnel.toWgQuickConfig(privateKeyBase64: 'DEVICE_PRIVATE_KEY');
+
+      expect(config, contains('Jc = 4'));
+      expect(config, contains('Jmin = 40'));
+      expect(config, contains('Jmax = 70'));
+      expect(config, contains('S1 = 25'));
+      expect(config, contains('S2 = 45'));
+      expect(config, contains('H1 = 1234567890'));
+      expect(config, contains('H2 = 987654321'));
+      expect(config, contains('H3 = 1122334455'));
+      expect(config, contains('H4 = 2233445566'));
+      expect(config, contains('Endpoint = 138.2.186.223:51822'));
+      expect(config, contains('PublicKey = awgPublicKey0000000000000000000000000000000='));
+    });
   });
 
   group('VpnNodeInfo', () {

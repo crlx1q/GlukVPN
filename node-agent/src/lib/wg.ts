@@ -14,7 +14,13 @@ import { promisify } from "node:util"
 const execFileAsync = promisify(execFile)
 
 const WG_BIN = "/usr/bin/wg"
+const AWG_BIN = "/usr/bin/awg"
 const IP_BIN = "/usr/sbin/ip"
+
+function wgBin(iface?: string): string {
+	if (iface && iface.startsWith("awg")) return AWG_BIN
+	return process.env.WG_BIN || WG_BIN
+}
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/
 const IPV4_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/
 const IFACE_RE = /^[a-zA-Z0-9_.-]{2,15}$/
@@ -94,7 +100,7 @@ export async function interfaceExists(iface: string): Promise<boolean> {
 /** The node's own WireGuard public key (safe to publish to clients). */
 export async function interfacePublicKey(iface: string): Promise<string> {
 	assertInterface(iface)
-	const output = await run(WG_BIN, ["show", iface, "public-key"])
+	const output = await run(wgBin(iface), ["show", iface, "public-key"])
 	const key = output.trim()
 	if (!isValidWgKey(key)) {
 		throw new WgError(`Interface ${iface} did not return a valid public key`)
@@ -108,7 +114,7 @@ export async function interfacePublicKey(iface: string): Promise<string> {
  */
 export async function dumpInterface(iface: string): Promise<WgInterfaceState> {
 	assertInterface(iface)
-	const output = await run(WG_BIN, ["show", iface, "dump"])
+	const output = await run(wgBin(iface), ["show", iface, "dump"])
 	const lines = output.split("\n").filter((line) => line.trim() !== "")
 
 	const state: WgInterfaceState = {
@@ -167,7 +173,7 @@ export async function addPeer(options: {
 	assertKey(options.publicKey)
 	assertIpv4(options.assignedIp)
 
-	await run(WG_BIN, [
+	await run(wgBin(options.iface), [
 		"set",
 		options.iface,
 		"peer",
@@ -184,7 +190,7 @@ export async function removePeer(options: {
 }): Promise<void> {
 	assertInterface(options.iface)
 	assertKey(options.publicKey)
-	await run(WG_BIN, ["set", options.iface, "peer", options.publicKey, "remove"])
+	await run(wgBin(options.iface), ["set", options.iface, "peer", options.publicKey, "remove"])
 }
 
 /** Convenience: current peer count without exposing keys. */

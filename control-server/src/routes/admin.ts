@@ -45,6 +45,12 @@ import {
 import { clearClientErrors, listClientErrors } from "../services/telemetry"
 import { revokeRefreshTokens } from "../services/tokens"
 import { ensureTrialPlan, trialSettings, updateTrialSettings } from "../services/trial"
+import {
+	backupDownload,
+	backupStatus,
+	listBackups,
+	startBackup,
+} from "../services/backups"
 
 const IdParams = z.object({ id: z.string().uuid("Invalid id") })
 
@@ -1805,5 +1811,52 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 			platform: platform ?? "all",
 			before: before.toISOString(),
 		})
+	})
+
+	/**
+	 * Получение списка локальных и облачных резервных копий и статуса.
+	 */
+	app.get("/api/admin/backups", async (_request, reply) => {
+		const [backups, status] = await Promise.all([listBackups(), backupStatus()])
+		return reply.send({ ok: true, backups, status })
+	})
+
+	/**
+	 * Текущий статус системы резервного копирования.
+	 */
+	app.get("/api/admin/backups/status", async (_request, reply) => {
+		return reply.send(await backupStatus())
+	})
+
+	/**
+	 * Запуск внеочередного создания полного снимка сервера.
+	 */
+	app.post("/api/admin/backups/create", async (request, reply) => {
+		const { user } = getAuthUser(request)
+		await startBackup()
+		await writeAudit({
+			action: "admin.backups.create",
+			userId: user.id,
+			ip: clientIp(request),
+			metadata: { manual: true },
+		})
+		return reply.send({ ok: true, message: "Backup started", status: await backupStatus() })
+	})
+
+	/**
+	 * Защищённое скачивание архива бэкапа в браузер администратора.
+	 */
+	app.get("/api/admin/backups/:filename/download", async (request, reply) => {
+		const parsed = z.object({ filename: z.string().min(1) }).safeParse(request.params)
+		if (!parsed.success) throw badRequest("Invalid backup filename")
+
+		const file = await backupDownload(parsed.data.filename)
+		if (!file) throw notFound("Backup file not found")
+
+		return reply
+			.header("Content-Type", "application/gzip")
+			.header("Content-Disposition", `attachment; filename="${parsed.data.filename}"`)
+			.header("Content-Length", file.sizeBytes)
+			.send(file.stream)
 	})
 }

@@ -39,8 +39,9 @@ dependencies:
   # Pure-Dart X25519: the WireGuard key pair is generated ON the device.
   cryptography: ^2.7.0
 
-  # Real WireGuard tunnel through Android VpnService (GoBackend).
-  wireguard_flutter: ^0.1.3
+  # Real WireGuard / AmneziaWG tunnel through Android VpnService (GoBackend).
+  wireguard_flutter:
+    path: packages/wireguard_flutter
 
   # ICMP ping to the tunnel gateway, for the live latency readout.
   dart_ping: ^9.0.1

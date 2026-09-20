@@ -132,6 +132,17 @@ async function runCommand(api: ControlApi, command: NodeCommand): Promise<string
 				publicKey,
 				assignedIp,
 			})
+			if (config.AWG_INTERFACE && config.AWG_INTERFACE !== config.WG_INTERFACE) {
+				try {
+					await addPeer({
+						iface: config.AWG_INTERFACE,
+						publicKey,
+						assignedIp,
+					})
+				} catch (error) {
+					log.warn("awg peer add failed", { peer: shortKey(publicKey), ip: assignedIp, reason: errorMessage(error) })
+				}
+			}
 			try {
 				await applyPeerShaping({
 					iface: config.WG_INTERFACE,
@@ -151,6 +162,13 @@ async function runCommand(api: ControlApi, command: NodeCommand): Promise<string
 			if (!publicKey) return "invalid or missing peer public key"
 			// `wg set ... remove` is idempotent: a missing peer is not an error.
 			await removePeer({ iface: config.WG_INTERFACE, publicKey })
+			if (config.AWG_INTERFACE && config.AWG_INTERFACE !== config.WG_INTERFACE) {
+				try {
+					await removePeer({ iface: config.AWG_INTERFACE, publicKey })
+				} catch (error) {
+					log.warn("awg peer remove failed", { peer: shortKey(publicKey), reason: errorMessage(error) })
+				}
+			}
 			// A shaping class is keyed by the leased address, so it can only be
 			// dropped when the payload names one. When it does not, the class is
 			// left behind harmlessly: whoever leases that address next replaces it.

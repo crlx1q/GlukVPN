@@ -60,6 +60,21 @@ const EnvSchema = z.object({
 	GIT_COMMIT: z.string().default(""),
 	RELEASED_AT: z.string().default(""),
 
+	// --------------------------- AmneziaWG (AWG) ----------------------------
+	AWG_ENABLED: envFlag("false"),
+	AWG_PORT: z.coerce.number().int().min(1).max(65535).default(51822),
+	AWG_PUBLIC_KEY: z.string().default(""),
+	AWG_NODE_ID: z.string().default(""),
+	AWG_JC: z.coerce.number().int().default(4),
+	AWG_JMIN: z.coerce.number().int().default(40),
+	AWG_JMAX: z.coerce.number().int().default(70),
+	AWG_S1: z.coerce.number().int().default(25),
+	AWG_S2: z.coerce.number().int().default(45),
+	AWG_H1: z.coerce.number().int().default(1234567890),
+	AWG_H2: z.coerce.number().int().default(987654321),
+	AWG_H3: z.coerce.number().int().default(1122334455),
+	AWG_H4: z.coerce.number().int().default(2233445566),
+
 	DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
 
 	// Secrets. Length is validated, values are never logged.
